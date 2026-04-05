@@ -312,6 +312,83 @@ async function runSigningTests(): Promise<number> {
     console.log(`    cross-domain overlap: ${overlap.length}`);
   }
 
+  // ═══ HEALTHCARE CLAUSE EVALUATORS ═══
+  console.log('\n  [Healthcare Clauses]');
+  {
+    const { evaluatePatientCountConsistency, evaluateRateBound, evaluateSmallCellSuppression, evaluatePhiCompleteness, evaluateTemporalConsistency } = await import('../domains/healthcare-clauses.js');
+
+    // Patient count consistency — valid
+    const validPop = [
+      { numerator: 80, excluded: 20, denominator: 100 },
+      { numerator: 150, excluded: 50, denominator: 200 },
+    ];
+    const pcValid = evaluatePatientCountConsistency(validPop, 'numerator', 'excluded', 'denominator');
+    assert(pcValid.passed, 'HC: patient count consistent');
+    assert(pcValid.clauseId === 'patient_count_consistency', 'HC: clause ID');
+    passed += 2;
+
+    // Patient count consistency — invalid
+    const invalidPop = [{ numerator: 80, excluded: 20, denominator: 90 }]; // 80+20=100 != 90
+    const pcInvalid = evaluatePatientCountConsistency(invalidPop, 'numerator', 'excluded', 'denominator');
+    assert(!pcInvalid.passed, 'HC: patient count inconsistent detected');
+    passed += 1;
+
+    // Rate bound — valid
+    const validRates = [{ readmit_rate: 0.12 }, { readmit_rate: 0.15 }, { readmit_rate: 0.08 }];
+    const rbValid = evaluateRateBound(validRates, 'readmit_rate', 0.0, 0.5, 'readmission');
+    assert(rbValid.passed, 'HC: rate within bounds');
+    passed += 1;
+
+    // Rate bound — violation
+    const badRates = [{ readmit_rate: 0.12 }, { readmit_rate: 0.95 }]; // 0.95 > 0.5
+    const rbBad = evaluateRateBound(badRates, 'readmit_rate', 0.0, 0.5, 'readmission');
+    assert(!rbBad.passed, 'HC: rate out of bounds detected');
+    passed += 1;
+
+    // Small cell suppression — valid
+    const validCells = [{ patient_count: 25 }, { patient_count: 50 }, { patient_count: 100 }];
+    const scValid = evaluateSmallCellSuppression(validCells, 'patient_count', 11);
+    assert(scValid.passed, 'HC: cells above minimum');
+    passed += 1;
+
+    // Small cell suppression — violation
+    const badCells = [{ patient_count: 25 }, { patient_count: 5 }, { patient_count: 3 }]; // 5 and 3 below 11
+    const scBad = evaluateSmallCellSuppression(badCells, 'patient_count', 11);
+    assert(!scBad.passed, 'HC: small cells detected');
+    assert((scBad.evidence as any).violations.length === 2, 'HC: 2 small cell violations');
+    passed += 2;
+
+    // PHI completeness — valid
+    const validPhi = [{ name: 'John', mrn: '12345', dob: '1990-01-01' }];
+    const phiValid = evaluatePhiCompleteness(validPhi, ['name', 'mrn', 'dob']);
+    assert(phiValid.passed, 'HC: PHI complete');
+    passed += 1;
+
+    // PHI completeness — missing
+    const badPhi = [{ name: 'John', mrn: null, dob: '1990-01-01' }];
+    const phiBad = evaluatePhiCompleteness(badPhi, ['name', 'mrn', 'dob']);
+    assert(!phiBad.passed, 'HC: PHI missing detected');
+    passed += 1;
+
+    // Temporal consistency — valid
+    const validDates = [{ admit: '2026-01-01', discharge: '2026-01-05' }];
+    const tcValid = evaluateTemporalConsistency(validDates, 'admit', 'discharge');
+    assert(tcValid.passed, 'HC: dates consistent');
+    passed += 1;
+
+    // Temporal consistency — violation
+    const badDates = [{ admit: '2026-01-10', discharge: '2026-01-05' }]; // admit > discharge
+    const tcBad = evaluateTemporalConsistency(badDates, 'admit', 'discharge');
+    assert(!tcBad.passed, 'HC: temporal inconsistency detected');
+    passed += 1;
+
+    console.log(`    patient_count: pass=${pcValid.passed}, fail=${!pcInvalid.passed}`);
+    console.log(`    rate_bound: pass=${rbValid.passed}, fail=${!rbBad.passed}`);
+    console.log(`    small_cell: pass=${scValid.passed}, fail=${!scBad.passed}`);
+    console.log(`    phi: pass=${phiValid.passed}, fail=${!phiBad.passed}`);
+    console.log(`    temporal: pass=${tcValid.passed}, fail=${!tcBad.passed}`);
+  }
+
   console.log(`\n  Signing Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }
