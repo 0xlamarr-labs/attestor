@@ -26,6 +26,7 @@ import { governSql } from './sql-governance.js';
 import type { FinancialRunReport, LiveProofInput } from './types.js';
 import { generateKeyPair, loadPrivateKey, loadPublicKey, derivePublicKeyIdentity, type AttestorKeyPair } from '../signing/keys.js';
 import { verifyCertificate } from '../signing/certificate.js';
+import { buildVerificationKit } from '../signing/bundle.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT, COUNTERPARTY_LIVE_DATABASES,
@@ -470,25 +471,38 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
     console.log(`    Fingerprint: ${verification.fingerprintConsistent ? '✓ consistent' : '✗ MISMATCH'}`);
     console.log(`    Overall:     ${verification.overall === 'valid' ? '✓ VALID' : '✗ ' + verification.overall.toUpperCase()}`);
 
-    // Step 7: Persist artifacts
+    // Step 7: Build verification kit
+    const kit = buildVerificationKit(report, keyPair.publicKeyPem);
+
+    // Step 8: Persist artifacts
     const outDir = join('.attestor', 'proofs', report.runId.slice(0, 8));
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, 'certificate.json'), JSON.stringify(report.certificate, null, 2));
     writeFileSync(join(outDir, 'public-key.pem'), keyPair.publicKeyPem);
-    writeFileSync(join(outDir, 'report-summary.json'), JSON.stringify({
-      runId: report.runId, decision: report.decision, scoring: report.scoring.decision,
-      warrant: report.warrant.status, escrow: report.escrow.state,
-      receipt: report.receipt?.receiptStatus, capsule: report.capsule?.authorityState,
-      auditEntries: report.audit.entries.length, chainIntact: report.audit.chainIntact,
-      liveProof: report.liveProof.mode,
-    }, null, 2));
+    if (kit) {
+      writeFileSync(join(outDir, 'kit.json'), JSON.stringify(kit, null, 2));
+      writeFileSync(join(outDir, 'verification-summary.json'), JSON.stringify(kit.verification, null, 2));
+    }
+    writeFileSync(join(outDir, 'bundle.json'), JSON.stringify(kit?.bundle ?? {}, null, 2));
 
     console.log(`\n  Artifacts saved to: ${outDir}/`);
-    console.log(`    certificate.json  — portable Ed25519-signed attestation certificate`);
-    console.log(`    public-key.pem    — signer public key for independent verification`);
-    console.log(`    report-summary.json — compact run summary`);
+    console.log(`    kit.json               — full verification kit (certificate + bundle + summary)`);
+    console.log(`    certificate.json       — portable Ed25519-signed attestation certificate`);
+    console.log(`    bundle.json            — authority bundle (full governance evidence)`);
+    console.log(`    verification-summary.json — multi-dimensional verification result`);
+    console.log(`    public-key.pem         — signer public key`);
     console.log(`\n  To verify independently:`);
+    console.log(`    npx tsx src/signing/verify-cli.ts ${outDir}/kit.json`);
     console.log(`    npx tsx src/signing/verify-cli.ts ${outDir}/certificate.json ${outDir}/public-key.pem`);
+
+    if (kit?.verification) {
+      console.log(`\n  Verification Summary:`);
+      console.log(`    Crypto:      ${kit.verification.cryptographic.valid ? '✓' : '✗'}`);
+      console.log(`    Authority:   ${kit.verification.authority.state}`);
+      console.log(`    Governance:  ${kit.verification.governanceSufficiency.sufficient ? 'sufficient' : 'INSUFFICIENT'}`);
+      console.log(`    Proof:       ${kit.verification.proofCompleteness.mode} (${kit.verification.proofCompleteness.gapCount} gaps)`);
+      console.log(`    Overall:     ${kit.verification.overall.toUpperCase()}`);
+    }
   } else {
     console.log(`\n  ✗ No certificate issued (signing key not provided or pipeline error)`);
   }

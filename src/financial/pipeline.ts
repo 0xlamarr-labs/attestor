@@ -398,18 +398,11 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
     report.receipt?.receiptStatus, report.receipt?.receiptId, report.evidenceChain.terminalHash,
     report.capsule?.capsuleId, report.capsule?.authorityState,
   );
-  // 5. Attestation (references FINAL manifest — single build, no rebuild needed)
+  // 5. Attestation (references FINAL manifest)
   report.attestation = buildAttestationPack(report);
   report.openLineageExport = buildOpenLineageExport(report);
+  // 6. Rebuild dossier so reviewer summary includes attestation + OpenLineage truth
   report.dossier = buildDecisionDossier(report);
-  report.manifest = buildRunManifest(
-    input.runId, decision, finalizedAudit, lineage, report.outputPack, report.dossier,
-    report.liveProof,
-    report.receipt?.receiptStatus, report.receipt?.receiptId, report.evidenceChain.terminalHash,
-    report.capsule?.capsuleId, report.capsule?.authorityState,
-  );
-  report.attestation = buildAttestationPack(report);
-  report.openLineageExport = buildOpenLineageExport(report);
 
   // 6. Portable attestation certificate (Ed25519, issued only when signing key is provided)
   if (input.signingKeyPair) {
