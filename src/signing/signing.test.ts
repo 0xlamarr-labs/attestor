@@ -252,6 +252,66 @@ async function runSigningTests(): Promise<number> {
     console.log(`    classify: operator=${classifyIdentitySource(false, false)}, oidc=${classifyIdentitySource(true, false)}, pki=${classifyIdentitySource(false, true)}`);
   }
 
+  // ═══ DOMAIN PACKS ═══
+  console.log('\n  [Domain Packs]');
+  {
+    const { DomainPackRegistry } = await import('../domains/domain-pack.js');
+    const { financeDomainPack } = await import('../domains/finance-pack.js');
+    const { healthcareDomainPack } = await import('../domains/healthcare-pack.js');
+
+    const registry = new DomainPackRegistry();
+
+    // Register both packs
+    registry.register(financeDomainPack);
+    registry.register(healthcareDomainPack);
+
+    assert(registry.has('finance'), 'DomainPack: finance registered');
+    assert(registry.has('healthcare'), 'DomainPack: healthcare registered');
+    assert(registry.list().length === 2, 'DomainPack: 2 packs registered');
+    passed += 3;
+
+    // Finance pack structure
+    const fin = registry.get('finance')!;
+    assert(fin.id === 'finance', 'DomainPack: finance id');
+    assert(fin.clauses.length === 5, 'DomainPack: finance has 5 clauses');
+    assert(fin.guardrails.length === 5, 'DomainPack: finance has 5 guardrails');
+    assert(fin.evidenceObligations.length === 5, 'DomainPack: finance has 5 evidence obligations');
+    assert(fin.clauses.every(c => c.domain === 'finance'), 'DomainPack: all finance clauses tagged');
+    passed += 5;
+
+    // Healthcare pack structure
+    const hc = registry.get('healthcare')!;
+    assert(hc.id === 'healthcare', 'DomainPack: healthcare id');
+    assert(hc.clauses.length === 5, 'DomainPack: healthcare has 5 clauses');
+    assert(hc.guardrails.length === 4, 'DomainPack: healthcare has 4 guardrails');
+    assert(hc.evidenceObligations.length === 4, 'DomainPack: healthcare has 4 evidence obligations');
+    assert(hc.clauses.every(c => c.domain === 'healthcare'), 'DomainPack: all healthcare clauses tagged');
+    passed += 5;
+
+    // Cross-domain: no overlap in clause IDs
+    const finClauseIds = new Set(fin.clauses.map(c => c.id));
+    const hcClauseIds = new Set(hc.clauses.map(c => c.id));
+    const overlap = [...finClauseIds].filter(id => hcClauseIds.has(id));
+    assert(overlap.length === 0, 'DomainPack: no clause ID overlap between domains');
+    passed += 1;
+
+    // Specific healthcare clauses
+    assert(hc.clauses.some(c => c.id === 'small_cell_suppression'), 'DomainPack: healthcare has small_cell_suppression');
+    assert(hc.clauses.some(c => c.id === 'patient_count_consistency'), 'DomainPack: healthcare has patient_count_consistency');
+    assert(hc.evidenceObligations.some(o => o.id === 'deidentification_proof'), 'DomainPack: healthcare requires deidentification_proof');
+    passed += 3;
+
+    // Duplicate registration fails
+    let dupFailed = false;
+    try { registry.register(financeDomainPack); } catch { dupFailed = true; }
+    assert(dupFailed, 'DomainPack: duplicate registration throws');
+    passed += 1;
+
+    console.log(`    finance: ${fin.clauses.length} clauses, ${fin.guardrails.length} guardrails`);
+    console.log(`    healthcare: ${hc.clauses.length} clauses, ${hc.guardrails.length} guardrails`);
+    console.log(`    cross-domain overlap: ${overlap.length}`);
+  }
+
   console.log(`\n  Signing Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }
