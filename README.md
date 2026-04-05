@@ -1,36 +1,121 @@
 # Attestor
 
-**Attested analytics runtime for bank-grade internal financial reporting.**
+**Governance and proof runtime for AI-assisted high-stakes workflows.**
 
-Attestor is a governance-and-proof runtime for financial analytical decisions. It separates generation from acceptance: models or operators propose candidate financial logic, and deterministic governance gates, authority artifacts, and cryptographically signed evidence decide what is accepted, held, or denied. Every decision produces portable, independently verifiable proof — no platform access required to check it.
+Attestor separates generation from acceptance. Models or operators can propose — but proposals are not authority. Deterministic governance gates, typed authority chains, reviewer-signed endorsements, and cryptographically signed evidence decide what is accepted, held, or denied. Every decision produces portable, independently verifiable proof. No platform access required to check it.
+
+The current reference implementation targets **bank-grade internal financial analytics**: treasury, risk, reconciliation, and regulatory-reporting workflows. The architecture generalizes to any domain where AI output is useful but cannot be accepted raw.
 
 **Models generate. Evidence decides. Proof is portable.**
 
+## The Core Principle
+
+Generation and acceptance are different acts. A model can generate a useful answer before it can be trusted to authorize that answer. The missing layer in most AI-assisted workflows is not better generation — it is **governed acceptance**.
+
+Attestor creates the acceptance layer:
+
+- **Bounded generation.** Typed contracts define what is allowed before anything runs.
+- **Deterministic controls.** SQL governance, execution guardrails, data contracts, and semantic clauses produce evidence independent of the generation step.
+- **Authority separation.** A warrant → escrow → receipt → capsule chain ensures no component — model or runtime — can approve its own output.
+- **Reviewer escalation.** Materiality-based escalation policies route high-stakes decisions to human reviewers with Ed25519-signed, run-bound endorsements.
+- **Evidence and audit trail.** Hash-linked audit chains, provenance records, and lineage preserve what happened and why.
+- **Portable verification.** Ed25519-signed certificates and 6-dimensional verification kits let anyone verify a decision with only a public key.
+
+This architecture works anywhere AI output needs governed acceptance before it becomes operational.
+
 ## Why This Exists
 
-AI-assisted financial analytics fail in four predictable ways. Attestor exists to prevent all four:
+AI adoption in high-stakes internal workflows is often blocked not because generated output is useless, but because there is no acceptable path from proposal to governed acceptance. The output might be good enough to act on — but there is no evidence trail, no reviewer authority, no proof mode, and no way for an outsider to verify the decision.
 
-- **Raw prompt execution.** Generation and acceptance collapse into one step. Attestor enforces typed contracts, SQL governance, and execution guardrails before anything runs.
-- **Authority collapse.** Model output is treated as its own approval authority. Attestor interposes an explicit warrant → escrow → receipt → capsule chain so no component can approve its own work.
-- **Unverifiable acceptance.** Teams cannot show what evidence justified a decision. Attestor produces a reviewer-facing dossier, hash-linked audit trail, and Ed25519-signed attestation certificate for every run.
-- **Runtime truth drift.** The repo or operator claims stronger guarantees than the runtime actually proved. Attestor labels every run with its real proof mode and explicit proof gaps — it will not claim live execution when it ran fixtures.
+Attestor exists to close that gap. Four failures recur across domains:
+
+- **Raw prompt execution.** Generation and acceptance collapse into one step. No governance gate exists.
+- **Authority collapse.** Model output is treated as its own approval. No separation between proposing and deciding.
+- **Unverifiable acceptance.** Teams cannot show what evidence justified a decision. Acceptance is invisible.
+- **Runtime truth drift.** The system claims stronger guarantees than it actually proved. Proof mode is implicit.
+
+Attestor addresses each one with a separate architectural control.
+
+## Where This Pattern Applies
+
+The Attestor pattern is relevant anywhere:
+
+- AI output is useful enough to be operationally valuable
+- but cannot be accepted raw — it needs contracts, controls, review, and evidence before it becomes authoritative
+
+This includes, in principle:
+
+- **Internal financial analytics and reporting** — the current reference implementation
+- **Internal risk and control workflows** — exception reviews, control-gap assessments, threshold breach analysis
+- **Regulated operations support** — audit-sensitive internal decisions with traceability requirements
+- **High-stakes internal analytical workflows** — where AI can propose but must not self-authorize
+
+The architecture is domain-general. The implementation in this repository is financial-first. Broader domain packs are not yet shipped — they are architectural possibility, not current repository truth.
+
+## Why Finance Is the First Implementation
+
+Finance is a hard proving ground. Silent errors are expensive. Auditability is not optional. Approval authority matters — the wrong person approving the wrong thing is a control failure, not just a quality problem. Regulatory frameworks expect traceable controls, evidence, and reviewer accountability.
+
+If the governance-and-proof architecture can work under these conditions — where acceptance must be explainable, replayable, and verifiable — it validates the core design under demanding requirements. Finance is the strongest proving ground for this pattern, not its permanent boundary.
+
+## What This Repository Implements Today
+
+The repository ships a complete governed financial analytics pipeline. This is the current beachhead:
+
+**Core governance runtime (financial analytics):**
+
+- Authority chain lifecycle: warrant → escrow → receipt → capsule
+- SQL governance with read/write safety, scope constraints, injection detection
+- Policy and least-privilege entitlement checks
+- Execution guardrails: row, cost, shape, and join-depth limits
+- Data contracts, control totals, and reconciliation break handling
+- 5 semantic clause types: `balance_identity`, `control_total`, `ratio_bound`, `sign_constraint`, `completeness_check`
+- 8-scorer deterministic cascade with priority short-circuit
+- Review policy with materiality-based escalation (low / medium / high)
+- Evidence chain, hash-linked audit trail, provenance, OpenLineage export
+- Filing readiness assessment with structured gap reporting
+
+**Portable proof and signing:**
+
+- Ed25519 attestation certificates binding authority + evidence + decision
+- 6-dimensional verification kit: cryptographic, structural, authority, governance, proof, reviewer endorsement
+- Independent verification CLI — certificate-only or full kit, no platform access required
+- Bundle proof carries execution provider and database context hash when backed by real PostgreSQL
+
+**Reviewer authority:**
+
+- Workflow-bound reviewer identity (name, role, identifier)
+- Ed25519-signed reviewer endorsements
+- Run-bound endorsement: signature covers runId + replayIdentity + evidenceChainTerminal
+- Kit-level binding check: mismatched endorsements are detected and rejected
+- Reviewer public key included in verification kit for independent outsider verification
+
+**Multi-query pipeline** (programmatic API + CLI demo):
+
+- N governed query units within a single reporting run
+- Per-unit governance, evidence, and decision preserved
+- Conservative worst-case aggregate decision
+- Per-unit blocker attribution and proof-mode aggregation
+- Portable proof artifacts: multi-query output pack, dossier, and manifest
+- CLI demo: `npx tsx src/financial/cli.ts multi-query`
 
 ## What Attestor Is
 
-Attestor is a **governance + proof runtime** for internal financial analytical decisions — the kind that appear in treasury, risk, reconciliation, regulatory reporting, and internal control workflows.
+Attestor is a **governance + proof runtime** for AI-assisted high-stakes analytical and operational workflows — where outputs need contracts, controls, reviewer authority, and verifiable evidence before acceptance.
 
-It governs AI-generated SQL before execution. It produces deterministic evidence that is separate from the generation step. It issues Ed25519-signed certificates that bind authority state, governance results, and execution evidence into a single portable proof. And it supports reviewer-signed endorsements that are cryptographically bound to the specific run they approved.
+It is not an AI model, an LLM orchestrator, or a generation engine. It is the acceptance layer: the part that sits between "the model produced an answer" and "the organization acts on it."
 
 Best fit today: internal banking, treasury, risk, and regulatory-reporting analytics where acceptance must be explainable, replayable, and verifiable.
 
-## What It Is Not
+## What Attestor Is Not
 
 - Not a customer-facing decision engine (underwriting, credit scoring, recommendations)
 - Not a filing or regulatory submission platform
 - Not an LLM orchestrator or prompt engineering framework
 - Not a generic BI tool, dashboard system, or enterprise workflow platform
 - Not a warehouse-scale distributed control plane (yet)
-- Not a claim that model output constitutes approval authority
+- Not a claim that AI output is universally trustworthy
+- Not a domain-agnostic enterprise control plane that is already complete — broader domain applicability is architectural truth, not shipped implementation
 
 ## How a Governed Run Works
 
@@ -71,6 +156,9 @@ npm run prove -- counterparty .attestor
 # Run a product proof with a separate reviewer key directory
 npm run prove -- counterparty .attestor --reviewer-key-dir ./reviewer-keys
 
+# Run a multi-query governed proof (fixed 3-unit demo)
+npx tsx src/financial/cli.ts multi-query
+
 # Verify a verification kit (certificate + bundle + reviewer endorsement)
 npm run verify:cert -- .attestor/proofs/<run>/kit.json
 
@@ -102,48 +190,18 @@ Every run is labeled with its actual proof mode. Attestor will not imply stronge
 
 When proof is incomplete, Attestor names the gaps explicitly. Each gap has a category (`upstream`, `execution`, `schema_snapshot`, `lineage`) and a description. Gaps appear in the dossier, verification summary, and filing readiness assessment. Missing live proof does not deny authority — it changes what can be truthfully claimed about the run.
 
-## What Is Implemented Today
+## Current Implementation Scope
 
-**Core governance runtime:**
+The current repository implements the governance-and-proof architecture for **financial analytics**. This is the most tested, most explicit, most complete domain in the repo.
 
-- Authority chain lifecycle: warrant → escrow → receipt → capsule
-- SQL governance with read/write safety, scope constraints, injection detection
-- Policy and least-privilege entitlement checks
-- Execution guardrails: row, cost, shape, and join-depth limits
-- Data contracts, control totals, and reconciliation break handling
-- 5 semantic clause types: `balance_identity`, `control_total`, `ratio_bound`, `sign_constraint`, `completeness_check`
-- 8-scorer deterministic cascade with priority short-circuit
-- Review policy with materiality-based escalation (low / medium / high)
-- Evidence chain, hash-linked audit trail, provenance, OpenLineage export
-- Filing readiness assessment with structured gap reporting
+The domain-general architecture (typed contracts → deterministic evidence → bounded review → authority closure → portable proof) can support other high-stakes internal workflows. That is architectural truth. It is not a claim that non-financial domain packs are already shipped.
 
-**Portable proof and signing:**
+To extend Attestor to a new domain, the required work includes: domain-specific contracts, domain-specific semantic clauses, domain-appropriate scoring logic, and domain-relevant evidence obligations. The governance runtime, authority chain, signing, and verification layers are domain-independent.
 
-- Ed25519 attestation certificates binding authority + evidence + decision
-- 6-dimensional verification kit: cryptographic, structural, authority, governance, proof, reviewer endorsement
-- Independent verification CLI (certificate-only or full kit, no platform access required)
-
-**Reviewer authority:**
-
-- Workflow-bound reviewer identity (name, role, identifier)
-- Ed25519-signed reviewer endorsements
-- Run-bound endorsement: signature covers runId + replayIdentity + evidenceChainTerminal
-- Kit-level binding check: mismatched endorsements are detected and rejected
-- Reviewer public key included in verification kit for independent outsider verification
-
-**Multi-query pipeline** (programmatic API + CLI demo):
-
-- N governed query units within a single reporting run
-- Per-unit governance, evidence, and decision preserved
-- Conservative worst-case aggregate decision
-- Per-unit blocker attribution and proof-mode aggregation
-- Portable proof artifacts: multi-query output pack, dossier, and manifest
-- CLI demo: `npx tsx src/financial/cli.ts multi-query`
-
-## What Is Optional / Bounded Today
+## Optional / Bounded Today
 
 **Bounded PostgreSQL proof path:**
-Optional read-only PostgreSQL connector for real-database execution evidence. Requires `npm install pg` + `ATTESTOR_PG_URL`. Includes predictive guardrail preflight (EXPLAIN-based risk assessment that can deny dangerous queries before they touch data). Schema allowlist enforcement when configured. The `prove` CLI explicitly reports whether execution used real PostgreSQL or fell back to fixtures, and why.
+Optional read-only PostgreSQL connector for real-database execution evidence. Requires `npm install pg` + `ATTESTOR_PG_URL`. Includes predictive guardrail preflight (EXPLAIN-based risk assessment that can deny dangerous queries before they touch data). Schema allowlist enforcement when configured. The `prove` CLI explicitly reports whether execution used real PostgreSQL or fell back to fixtures, and why. Doctor runs a bounded connectivity probe when PostgreSQL is configured.
 
 **Local single-process runtime:**
 Attestor runs as a local CLI or programmatic import. No API service layer, no distributed execution, no multi-tenant isolation. This is the current deployment boundary.
@@ -154,8 +212,10 @@ Reviewer endorsements are Ed25519-signed and run-bound. The `prove` path generat
 **Ephemeral and persistent key modes:**
 The `prove` path generates ephemeral signing and reviewer keys by default for local demonstration. Persistent keys can be loaded from a directory. No HSM, vault, or external key management integration exists yet.
 
-## What Is Not Yet Implemented
+## Not Yet Implemented
 
+- Generalized domain packs beyond finance (architectural possibility, not shipped)
+- Domain-specific semantic clause libraries for non-financial workflows
 - First real Postgres-backed outsider-verifiable proof run (the next operational milestone)
 - Differential evidence across multi-query units
 - Signing and reviewer authority at the multi-query level
@@ -204,13 +264,13 @@ Attestor includes an optional bounded PostgreSQL connector for real-database exe
 
 **Predictive guardrails:** Before execution, `EXPLAIN (FORMAT JSON)` runs a risk preflight. The system detects high row volume, excessive cost, sequential scans, and nested loops. Critical-risk queries are denied before they touch data — the pipeline falls back to fixture with the denial recorded in evidence.
 
-**What the evidence proves:** `executionContextHash` (SHA-256 of pg server version + schemas + sanitized URL) proves WHICH database environment was queried. `executionTimestamp` records WHEN.
+**What the evidence proves:** `executionContextHash` (SHA-256 of pg server version + schemas + sanitized URL) proves WHICH database environment was queried. `executionTimestamp` records WHEN. The authority bundle and verification kit carry `executionProvider` and `executionContextHash`, making a real-DB kit immediately distinguishable from a fixture kit.
 
 **What it does NOT prove:** Full schema snapshot, table-level content hash, or data-state attestation. Those would require `pg_dump` or logical replication snapshots, which are not yet implemented.
 
-**Operator path:** Run `npm run start -- doctor` to check PostgreSQL readiness. The `prove` CLI explicitly reports the proof source after every run: `REAL PostgreSQL execution (N rows, Xms)` or `offline fixture (reason)`.
+**Operator path:** Run `npm run start -- doctor` to check PostgreSQL readiness with a bounded connectivity probe. The `prove` CLI explicitly reports the proof source after every run: `REAL PostgreSQL execution (N rows, Xms)` or `offline fixture (reason)`.
 
-**Next milestone:** The first real Postgres-backed outsider-verifiable proof run. The governance, signing, and verification chain is complete. The remaining step is a configured PostgreSQL instance with real financial data.
+**Next milestone:** The first real Postgres-backed outsider-verifiable proof run. The governance, signing, and verification chain is complete. The remaining step is a configured PostgreSQL instance with real data.
 
 ## Regulatory Boundary
 

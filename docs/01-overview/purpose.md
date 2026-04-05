@@ -2,13 +2,13 @@
 
 ## What Attestor Is
 
-Attestor is a financial authority-and-evidence runtime for AI-mediated financial pipelines.
+Attestor is a governance-and-proof runtime for AI-assisted high-stakes workflows. It separates generation from acceptance: models or operators can propose, but deterministic checks, bounded review, reviewer-visible artifacts, and truthful runtime-proof records decide what is accepted, held, or denied.
 
-Models or operators can propose candidate financial logic. Deterministic checks, bounded review logic, reviewer-visible artifacts, and truthful runtime-proof records decide what is accepted, what remains held, and what is denied.
+The architecture is domain-general. The current repository implements one reference domain:
 
-The current repository implements one reference domain:
+- **Bank-grade internal financial analytics**: SQL governance, policy and entitlement checks, execution guardrails, data contracts, semantic clauses, provenance, review policy, authority artifacts, Ed25519-signed portable certificates, reviewer-signed endorsements, and truthful Live Proof with explicit proof gaps
 
-- **Financial data pipeline governance**: SQL governance, policy and entitlement checks, execution guardrails, data contracts, provenance, review policy, authority artifacts, and truthful Live Proof modeling for an offline-first runtime with a bounded local live hybrid slice
+Finance is the first and most mature implementation because it is a demanding proving ground — where silent errors are expensive, auditability is non-optional, and approval authority matters. The core pattern (typed contracts → deterministic evidence → bounded review → authority closure → portable proof) generalizes to other high-stakes internal workflows. Broader domain packs are not yet shipped.
 
 The architecture is organized around governance capabilities rather than UI or service layers:
 
@@ -22,7 +22,7 @@ The external interface is intentionally simple: request in, reviewable evidence 
 
 ## What Problem It Solves
 
-Attestor exists to prevent four common failures in AI-assisted financial workflows:
+Attestor exists to prevent four common failures in AI-assisted high-stakes workflows (demonstrated here in the financial domain):
 
 | Failure | Why it happens |
 |---|---|
@@ -42,11 +42,11 @@ Attestor answers each one with a separate control:
 
 ## What It Is Not
 
-- **Not a dashboard generator.** This repo is financial-only.
-- **Not a generic BI or SQL assistant.** Governance and authority are the point, not raw query convenience.
+- **Not a dashboard generator or BI tool.** Governance and authority are the point, not raw query convenience.
+- **Not an LLM orchestrator.** Attestor governs acceptance, not generation.
 - **Not automatic compliance certification.** It supports reviewability and control evidence; it does not certify compliance by itself.
-- **Not automatically live.** The committed repo remains primarily offline/reference with a bounded local live hybrid slice.
-- **Not an external trust service.** Attestation is repo-native today; PKI-backed trust registration is future work.
+- **Not a domain-agnostic enterprise control plane (yet).** The architecture generalizes; the current implementation is financial-first.
+- **Not an external trust service.** Attestation uses Ed25519 portable certificates today; PKI-backed trust registration is future work.
 
 ## Who This Is For
 

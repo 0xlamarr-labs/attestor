@@ -2,7 +2,7 @@
 
 Current repository-level architecture for Attestor as of April 2026.
 
-Attestor is a financial authority-and-evidence runtime with explicit reviewer-facing artifacts, a typed authority chain, and truthful runtime-proof semantics.
+Attestor is a governance-and-proof runtime for AI-assisted high-stakes workflows. It provides explicit reviewer-facing artifacts, a typed authority chain, and truthful runtime-proof semantics. The architecture is domain-general; the current implementation targets internal financial analytics.
 
 ---
 
