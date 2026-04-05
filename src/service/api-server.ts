@@ -118,7 +118,23 @@ app.post('/api/v1/pipeline/run', async (c) => {
     // ── Optional connector-backed execution ──
     let connectorExecution: any = null;
     let connectorProvider: string | null = null;
-    if (body.connector) {
+    let fullSchemaAttestation: any = null;
+
+    // Special case: 'postgres-prove' uses the full postgres-prove path with schema attestation
+    if (body.connector === 'postgres-prove') {
+      try {
+        const { isPostgresConfigured } = await import('../connectors/postgres.js');
+        const { runPostgresProve } = await import('../connectors/postgres-prove.js');
+        if (isPostgresConfigured()) {
+          const pgResult = await runPostgresProve(candidateSql);
+          if (pgResult.execution?.success) {
+            connectorExecution = pgResult.execution;
+            connectorProvider = 'postgres';
+            fullSchemaAttestation = pgResult.schemaAttestation;
+          }
+        }
+      } catch { /* non-fatal */ }
+    } else if (body.connector) {
       const connector = connectorRegistry.get(body.connector);
       if (!connector) {
         return c.json({ error: `Connector '${body.connector}' not registered. Available: ${connectorRegistry.listIds().join(', ')}` }, 404);
@@ -229,20 +245,24 @@ app.post('/api/v1/pipeline/run', async (c) => {
       caPublicKeyPem: sign ? pki.ca.keyPair.publicKeyPem : null,
       connectorUsed: connectorProvider,
       // Schema/data-state attestation
-      // Full attestation requires the postgres-prove path (information_schema + sentinels).
-      // Connector-routed paths provide execution context evidence only.
-      schemaAttestation: connectorExecution?.executionContextHash ? {
+      schemaAttestation: fullSchemaAttestation ? {
         present: true,
-        scope: connectorProvider === 'postgres' ? 'schema_attestation_summary' : 'execution_context_only',
+        scope: 'schema_attestation_full' as const,
+        executionContextHash: fullSchemaAttestation.executionContextHash,
+        provider: 'postgres',
+        schemaFingerprint: fullSchemaAttestation.schemaFingerprint,
+        sentinelFingerprint: fullSchemaAttestation.sentinelFingerprint,
+        tableNames: fullSchemaAttestation.tables,
+        attestationHash: fullSchemaAttestation.attestationHash,
+      } : connectorExecution?.executionContextHash ? {
+        present: true,
+        scope: 'execution_context_only' as const,
         executionContextHash: connectorExecution.executionContextHash,
         provider: connectorProvider,
-        // Schema attestation fields: only available via postgres-prove path (not connector-routed)
         schemaFingerprint: null,
         sentinelFingerprint: null,
         tableNames: null,
-        note: connectorProvider === 'postgres'
-          ? 'Full schema attestation captured in postgres-prove path (scripts/real-db-proof.ts). Connector-routed API does not yet capture full schema attestation.'
-          : `${connectorProvider} connector provides execution context only. Schema attestation requires PostgreSQL prove path.`,
+        attestationHash: null,
       } : null,
       // Tenant context (from middleware)
       tenantContext: (() => {

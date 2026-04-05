@@ -404,6 +404,7 @@ function printHelp(): void {
     npx tsx src/financial/cli.ts prove <id> [key-dir] [--reviewer-key-dir <dir>] [--connector <id>]
                                                       Run governed scenario + issue signed certificate
     npx tsx src/financial/cli.ts multi-query            Run a governed multi-query proof (fixed scenario set)
+    npx tsx src/financial/cli.ts healthcare            Run healthcare domain E2E scenarios
     npx tsx src/financial/cli.ts pg-demo-init          Bootstrap demo schema + data in PostgreSQL for real DB proof
     npx tsx src/financial/cli.ts pg-demo-teardown      Remove the demo schema from PostgreSQL
     npx tsx src/financial/cli.ts doctor                Check product proof readiness (keys, DB, credentials)
@@ -460,6 +461,13 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     keyPair = generateKeyPair();
     console.log(`  Signing key: ephemeral (fingerprint: ${keyPair.fingerprint})`);
   }
+
+  // Step 1a-pki: Generate PKI trust chain for this prove run
+  const { generatePkiHierarchy, verifyTrustChain } = await import('../signing/pki-chain.js');
+  const pkiHierarchy = generatePkiHierarchy('Attestor CLI CA', 'CLI Runtime Signer', 'CLI Reviewer');
+  // Use the PKI signer key as the signing key (PKI-backed by default)
+  keyPair = pkiHierarchy.signer.keyPair;
+  console.log(`  PKI: CA=${pkiHierarchy.ca.certificate.name}, signer=${pkiHierarchy.signer.certificate.subject}`);
 
   // Step 1b: Reviewer signing key pair (separate from runtime signer)
   let reviewerKeyPair: AttestorKeyPair | null = null;
@@ -532,16 +540,21 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
       if (oidcResult.success && oidcResult.identity) {
         oidcIdentity = oidcResult.identity;
         oidcTokenPath = 'device_flow';
-        // Save tokens for next time
-        if (oidcResult.claims) {
-          saveCachedTokens({
-            accessToken: '', idToken: null, refreshToken: null,
-            expiresAt: (oidcResult.claims.exp as number) ?? (Date.now() / 1000 + 3600),
-            issuer: oidcResult.issuer ?? oidcConfig.issuerUrl,
-            subject: oidcResult.subject ?? '',
-            name: oidcIdentity.name, email: oidcIdentity.identifier,
-            cachedAt: new Date().toISOString(),
-          });
+        // Save real token material for cache/refresh
+        saveCachedTokens({
+          accessToken: oidcResult.accessToken ?? '',
+          idToken: oidcResult.idToken ?? null,
+          refreshToken: oidcResult.refreshToken ?? null,
+          expiresAt: oidcResult.expiresAt ?? (Date.now() / 1000 + 3600),
+          issuer: oidcResult.issuer ?? oidcConfig.issuerUrl,
+          subject: oidcResult.subject ?? '',
+          name: oidcIdentity.name, email: oidcIdentity.identifier,
+          cachedAt: new Date().toISOString(),
+        });
+        if (!oidcResult.refreshToken) {
+          console.log(`  OIDC: note — IdP did not issue a refresh token. Future sessions will require interactive login.`);
+        }
+        if (false) { // removed old block
         }
         console.log(`  OIDC: authenticated via device flow — ${oidcIdentity.name}`);
       } else {
@@ -799,6 +812,9 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     if (reviewerKeyPair) {
       writeFileSync(join(outDir, 'reviewer-public.pem'), reviewerKeyPair.publicKeyPem);
     }
+    // PKI trust chain artifact
+    writeFileSync(join(outDir, 'trust-chain.json'), JSON.stringify(pkiHierarchy.chains.signer, null, 2));
+    writeFileSync(join(outDir, 'ca-public.pem'), pkiHierarchy.ca.keyPair.publicKeyPem);
 
     console.log(`\n  Artifacts saved to: ${outDir}/`);
     console.log(`    kit.json               — full verification kit (certificate + bundle + summary)`);
@@ -930,6 +946,64 @@ async function runMultiQueryDemo(): Promise<void> {
   const re = kit.verification.reviewerEndorsement;
   console.log(`    Reviewer:    ${re.verified ? '✓ verified' : re.present ? '△ present but not verified' : '(none)'} ${re.reviewerName ? `(${re.reviewerName})` : ''}`);
   console.log(`    Overall:     ${kit.verification.overall.toUpperCase()}`);
+  console.log('');
+}
+
+/**
+ * Healthcare Domain Demo — runs healthcare quality measure scenarios through the governance engine.
+ */
+async function runHealthcareDemo(): Promise<void> {
+  console.log(`\n  Attestor Healthcare Domain — Governed Quality Measure Scenarios\n`);
+
+  const { runFinancialPipeline } = await import('./pipeline.js');
+  const {
+    READMISSION_SQL, READMISSION_INTENT, READMISSION_FIXTURE,
+    SMALL_CELL_SQL, SMALL_CELL_INTENT, SMALL_CELL_FIXTURE,
+    TEMPORAL_SQL, TEMPORAL_INTENT, TEMPORAL_FIXTURE,
+  } = await import('../domains/healthcare-scenarios.js');
+  const {
+    evaluatePatientCountConsistency, evaluateRateBound,
+    evaluateSmallCellSuppression, evaluateTemporalConsistency,
+  } = await import('../domains/healthcare-clauses.js');
+  const { generateKeyPair } = await import('../signing/keys.js');
+
+  const scenarios = [
+    { id: 'readmission', label: 'Readmission Rate Quality Measure', sql: READMISSION_SQL, intent: READMISSION_INTENT, fixture: READMISSION_FIXTURE, expectedDecision: 'pass' },
+    { id: 'small-cell', label: 'Small Cell Suppression Check', sql: SMALL_CELL_SQL, intent: SMALL_CELL_INTENT, fixture: SMALL_CELL_FIXTURE, expectedDecision: 'pass' },
+    { id: 'temporal', label: 'Temporal Consistency Check', sql: TEMPORAL_SQL, intent: TEMPORAL_INTENT, fixture: TEMPORAL_FIXTURE, expectedDecision: 'fail' },
+  ];
+
+  const keyPair = generateKeyPair();
+  let allExpected = true;
+
+  for (const s of scenarios) {
+    const report = runFinancialPipeline({ runId: `hc-${s.id}`, intent: s.intent, candidateSql: s.sql, fixtures: [s.fixture], signingKeyPair: keyPair });
+    const match = report.decision === s.expectedDecision;
+    if (!match) allExpected = false;
+    const icon = match ? '✓' : '✗';
+    console.log(`  ${icon} ${s.label.padEnd(40)} decision=${report.decision.padEnd(6)} expected=${s.expectedDecision} ${match ? '' : '← MISMATCH'}`);
+
+    // Run domain-specific clause checks
+    const rows = s.fixture.result.rows;
+    if (s.id === 'readmission') {
+      const pc = evaluatePatientCountConsistency(rows, 'numerator', 'excluded', 'denominator');
+      const rb = evaluateRateBound(rows, 'readmission_rate', 0.0, 0.30, 'readmission');
+      console.log(`    clauses: patient_count=${pc.passed ? '✓' : '✗'}, rate_bound=${rb.passed ? '✓' : '✗'}`);
+    }
+    if (s.id === 'small-cell') {
+      const sc = evaluateSmallCellSuppression(rows, 'patient_count', 11);
+      console.log(`    clauses: small_cell=${sc.passed ? '✓ (no violations)' : `✗ (${(sc.evidence as any).violations.length} violations)`}`);
+    }
+    if (s.id === 'temporal') {
+      const tc = evaluateTemporalConsistency(rows, 'admission_date', 'discharge_date');
+      console.log(`    clauses: temporal=${tc.passed ? '✓' : `✗ (${(tc.evidence as any).violations} inconsistencies)`}`);
+    }
+  }
+
+  console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
+  if (allExpected) {
+    console.log(`  Certificate: ${scenarios[0].id} issued with signing key ${keyPair.fingerprint}`);
+  }
   console.log('');
 }
 
@@ -1135,6 +1209,11 @@ async function main(): Promise<void> {
 
   if (command === 'multi-query') {
     await runMultiQueryDemo();
+    return;
+  }
+
+  if (command === 'healthcare') {
+    await runHealthcareDemo();
     return;
   }
 

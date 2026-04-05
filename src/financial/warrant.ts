@@ -57,6 +57,7 @@ function buildEvidenceObligations(hasReport: boolean): EvidenceObligation[] {
     { id: 'snapshot_bound', description: 'Execution bound to a specific snapshot', fulfilled: false },
     { id: 'data_contracts_checked', description: 'Data contracts validated', fulfilled: false },
     { id: 'audit_chain_present', description: 'Audit trail present and intact', fulfilled: false },
+    { id: 'filing_readiness_assessed', description: 'Filing readiness assessed', fulfilled: false },
   ];
   if (hasReport) {
     obs.push({ id: 'provenance_checked', description: 'Report provenance verified', fulfilled: false });

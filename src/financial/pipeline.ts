@@ -428,6 +428,7 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
 
   // ── Filing Readiness ──
   report.filingReadiness = assessFilingReadiness(report);
+  fulfillWarrantObligation(warrant, 'filing_readiness_assessed');
 
   // ── Authority Escrow (progressive release before receipt) ──
   report.escrow = buildEscrow(

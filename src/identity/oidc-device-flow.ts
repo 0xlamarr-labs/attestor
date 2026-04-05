@@ -46,6 +46,11 @@ export interface OidcDeviceFlowResult {
   subject: string | null;
   /** How the user authenticated (MFA indicators). */
   authMethods: string[] | null;
+  /** Cacheable token material. */
+  accessToken: string | null;
+  idToken: string | null;
+  refreshToken: string | null;
+  expiresAt: number | null;
   /** Error message if flow failed. */
   error: string | null;
 }
@@ -130,6 +135,10 @@ export async function executeDeviceFlow(
       issuer: claims.iss ?? null,
       subject: sub as string | null,
       authMethods: amr,
+      accessToken: tokens.access_token ?? null,
+      idToken: tokens.id_token ?? null,
+      refreshToken: tokens.refresh_token ?? null,
+      expiresAt: typeof claims.exp === 'number' ? claims.exp : null,
       error: null,
     };
   } catch (err) {
@@ -141,6 +150,7 @@ function makeError(message: string): OidcDeviceFlowResult {
   return {
     success: false, identity: null, claims: null,
     issuer: null, subject: null, authMethods: null,
+    accessToken: null, idToken: null, refreshToken: null, expiresAt: null,
     error: message,
   };
 }
