@@ -499,6 +499,38 @@ export async function runFinancialTests(): Promise<number> {
 
     console.log(`    With identity: reviewer=${approvedReport.oversight.reviewerIdentity!.name}, role=${approvedReport.oversight.reviewerIdentity!.role}, decision=${approvedReport.decision}`);
     console.log(`    Without identity: reviewerIdentity=${noIdReport.oversight.reviewerIdentity}`);
+
+    // Test: Role normalization — identity role overrides approval.reviewerRole
+    const mismatchReport = runFinancialPipeline({
+      runId: 'reviewer-mismatch-test',
+      intent: { ...COUNTERPARTY_INTENT, materialityTier: 'high' as const },
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      approval: { status: 'approved', reviewerRole: 'old_role', reviewNote: 'OK', reviewerIdentity: { name: 'Bob Lee', role: 'compliance_officer', identifier: 'blee@bank.internal', signerFingerprint: null } },
+    });
+    ok(mismatchReport.oversight.reviewerRole === 'compliance_officer', 'Reviewer: identity role overrides approval.reviewerRole');
+    ok(mismatchReport.oversight.reviewerIdentity!.role === 'compliance_officer', 'Reviewer: identity role consistent');
+
+    // Test: Endorsement created when identity is provided
+    ok(mismatchReport.oversight.endorsement !== null, 'Endorsement: created when identity provided');
+    ok(mismatchReport.oversight.endorsement!.reviewer.name === 'Bob Lee', 'Endorsement: reviewer name');
+    ok(mismatchReport.oversight.endorsement!.endorsedDecision === 'approved', 'Endorsement: endorsed decision');
+    ok(mismatchReport.oversight.endorsement!.rationale === 'OK', 'Endorsement: rationale');
+    ok(mismatchReport.oversight.endorsement!.scope.includes('output_pack'), 'Endorsement: scope includes output_pack');
+    ok(mismatchReport.oversight.endorsement!.signature === null, 'Endorsement: unsigned (no Ed25519 yet)');
+
+    // Test: Endorsement in output pack
+    ok(mismatchReport.outputPack.oversight.endorsement !== null, 'Endorsement: present in output pack');
+    ok(mismatchReport.outputPack.oversight.endorsement!.reviewerName === 'Bob Lee', 'Endorsement: output pack reviewer name');
+    ok(mismatchReport.outputPack.oversight.endorsement!.signed === false, 'Endorsement: output pack unsigned');
+
+    // Test: No endorsement when no identity
+    ok(noIdReport.oversight.endorsement === null, 'Endorsement: null when no identity');
+
+    console.log(`    Role normalization: approval.role='old_role', identity.role='${mismatchReport.oversight.reviewerRole}' → identity wins`);
+    console.log(`    Endorsement: reviewer=${mismatchReport.oversight.endorsement!.reviewer.name}, decision=${mismatchReport.oversight.endorsement!.endorsedDecision}, signed=${mismatchReport.oversight.endorsement!.signature !== null}`);
   }
 
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);

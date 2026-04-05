@@ -587,20 +587,26 @@ async function runDoctor(): Promise<void> {
   console.log(`  ✓ SQLite (built-in)  Always available for fixture/local live proof`);
 
   console.log('');
-  console.log(`  Proof modes available:`);
-  console.log(`    ✓ offline_fixture   — always`);
-  console.log(`    ${hasOpenAI ? '✓' : '○'} live_model        — ${hasOpenAI ? 'ready' : 'needs OPENAI_API_KEY'}`);
-  console.log(`    ✓ live_runtime      — SQLite always available`);
-  console.log(`    ${pgReadiness.runnable ? '✓' : '○'} live_runtime (PG) — ${pgReadiness.runnable ? 'ready' : pgReadiness.configured ? 'needs: npm install pg' : 'needs: ATTESTOR_PG_URL + npm install pg'}`);
+  console.log(`  Proof modes:`);
+  console.log(`    ✓ offline_fixture        — always available (fixture data)`);
+  console.log(`    ${hasOpenAI ? '✓' : '○'} live_model             — ${hasOpenAI ? 'ready' : 'needs OPENAI_API_KEY'}`);
+  console.log(`    ✓ live_runtime (SQLite)  — built-in local execution`);
+  console.log(`    ${pgReadiness.runnable ? '✓' : '○'} live_runtime (Postgres) — ${pgReadiness.runnable ? 'ready for real DB proof' : 'not ready (see below)'}`);
 
   console.log('');
-  if (pgReadiness.runnable && hasKeyDir) {
-    console.log(`  ✓ Full product proof ready: run 'npm run prove -- counterparty .attestor'`);
+  console.log(`  Product proof readiness (outsider-verifiable, real DB):`);
+  const steps: string[] = [];
+  if (!hasKeyDir) steps.push('npm run keygen');
+  if (!pgReadiness.configured) steps.push('export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db');
+  if (!pgReadiness.driverInstalled) steps.push('npm install pg');
+
+  if (steps.length === 0 && hasKeyDir && pgReadiness.runnable) {
+    console.log(`    ✓ Ready — run: npm run prove -- counterparty .attestor`);
   } else {
-    console.log(`  Next steps for full product proof:`);
-    if (!hasKeyDir) console.log(`    1. npm run keygen`);
-    if (!pgReadiness.configured) console.log(`    ${!hasKeyDir ? '2' : '1'}. export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db`);
-    if (pgReadiness.configured && !pgReadiness.driverInstalled) console.log(`    ${!hasKeyDir ? '3' : '2'}. npm install pg`);
+    for (let i = 0; i < steps.length; i++) {
+      console.log(`    ${i + 1}. ${steps[i]}`);
+    }
+    console.log(`    Then: npm run prove -- counterparty .attestor`);
   }
   console.log('');
 }

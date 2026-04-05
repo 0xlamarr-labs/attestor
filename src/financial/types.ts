@@ -403,6 +403,28 @@ export interface ReviewerIdentity {
   signerFingerprint: string | null;
 }
 
+/**
+ * Reviewer endorsement — structured approval with identity binding.
+ *
+ * Goes beyond a plain status flag: captures WHO endorsed, WHEN, WHY,
+ * and the specific scope of what was reviewed.
+ * Future: Ed25519 signature by the reviewer over the endorsement body.
+ */
+export interface ReviewerEndorsement {
+  /** Endorsement timestamp. */
+  endorsedAt: string;
+  /** The reviewer who endorsed. */
+  reviewer: ReviewerIdentity;
+  /** What the reviewer endorsed: the decision they saw. */
+  endorsedDecision: string;
+  /** Free-text rationale from the reviewer. */
+  rationale: string;
+  /** What the reviewer examined (e.g., 'output_pack', 'dossier', 'full_report'). */
+  scope: string[];
+  /** Ed25519 signature over the endorsement body. Null until reviewer signing is implemented. */
+  signature: string | null;
+}
+
 export interface HumanOversight {
   /** Whether this run requires human approval based on materiality tier. */
   required: boolean;
@@ -418,6 +440,8 @@ export interface HumanOversight {
   decisionTimestamp?: string;
   /** Workflow-bound reviewer identity. Null when review is not required or reviewer identity is not provided. */
   reviewerIdentity?: ReviewerIdentity | null;
+  /** Structured reviewer endorsement. Null when review is not completed or endorsement is not provided. */
+  endorsement?: ReviewerEndorsement | null;
 }
 
 // ─── Lineage Evidence ────────────────────────────────────────────────────────
@@ -1166,6 +1190,7 @@ export interface PackOversight {
   reviewerRole: string | null;
   reviewNote: string | null;
   reviewerIdentity: ReviewerIdentity | null;
+  endorsement: { endorsedAt: string; endorsedDecision: string; reviewerName: string; reviewerRole: string; rationale: string; scope: string[]; signed: boolean } | null;
 }
 
 export interface PackAuditIntegrity {

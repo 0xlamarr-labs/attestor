@@ -79,9 +79,23 @@ export interface FinancialPipelineInput {
 function determineOversight(reviewRequired: boolean, reviewReason: string, intent: FinancialQueryIntent, approval?: FinancialPipelineInput['approval']): HumanOversight {
   const required = reviewRequired || (intent.materialityTier ?? 'medium') === 'high';
   const reason = reviewRequired ? reviewReason : (intent.materialityTier === 'high' ? 'High materiality tier' : 'Policy does not require review');
-  if (required && approval) return { required: true, reason, status: approval.status, reviewerRole: approval.reviewerRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString(), reviewerIdentity: approval.reviewerIdentity ?? null };
-  if (required) return { required: true, reason, status: 'pending', reviewerIdentity: null };
-  return { required: false, reason, status: 'not_required', reviewerIdentity: null };
+  if (required && approval) {
+    // Normalize: when reviewerIdentity exists, its role is authoritative
+    const identity = approval.reviewerIdentity ?? null;
+    const normalizedRole = identity?.role ?? approval.reviewerRole;
+    // Build endorsement from approval when identity is provided
+    const endorsement: import('./types.js').ReviewerEndorsement | null = identity ? {
+      endorsedAt: new Date().toISOString(),
+      reviewer: identity,
+      endorsedDecision: approval.status,
+      rationale: approval.reviewNote,
+      scope: ['output_pack', 'dossier'],
+      signature: null, // future: Ed25519 reviewer signing
+    } : null;
+    return { required: true, reason, status: approval.status, reviewerRole: normalizedRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString(), reviewerIdentity: identity, endorsement };
+  }
+  if (required) return { required: true, reason, status: 'pending', reviewerIdentity: null, endorsement: null };
+  return { required: false, reason, status: 'not_required', reviewerIdentity: null, endorsement: null };
 }
 
 function buildIndependenceProof(): IndependenceProof {

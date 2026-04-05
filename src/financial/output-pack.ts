@@ -113,6 +113,15 @@ export function buildOutputPack(report: FinancialRunReport): OutputPack {
       reviewerRole: report.oversight.reviewerRole ?? null,
       reviewNote: report.oversight.reviewNote ?? null,
       reviewerIdentity: report.oversight.reviewerIdentity ?? null,
+      endorsement: report.oversight.endorsement ? {
+        endorsedAt: report.oversight.endorsement.endorsedAt,
+        endorsedDecision: report.oversight.endorsement.endorsedDecision,
+        reviewerName: report.oversight.endorsement.reviewer.name,
+        reviewerRole: report.oversight.endorsement.reviewer.role,
+        rationale: report.oversight.endorsement.rationale,
+        scope: report.oversight.endorsement.scope,
+        signed: !!report.oversight.endorsement.signature,
+      } : null,
     },
 
     auditIntegrity: {
