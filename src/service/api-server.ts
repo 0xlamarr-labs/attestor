@@ -28,6 +28,7 @@ import { connectorRegistry } from '../connectors/connector-interface.js';
 import { snowflakeConnector } from '../connectors/snowflake-connector.js';
 import { filingRegistry } from '../filing/filing-adapter.js';
 import { xbrlUsGaapAdapter } from '../filing/xbrl-adapter.js';
+import { generatePkiHierarchy, verifyTrustChain, type TrustChain } from '../signing/pki-chain.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -42,6 +43,10 @@ if (!filingRegistry.has('xbrl-us-gaap-2024')) filingRegistry.register(xbrlUsGaap
 const app = new Hono();
 const startTime = Date.now();
 
+// Generate PKI hierarchy at server startup
+const pki = generatePkiHierarchy('Attestor API Root CA', 'API Runtime Signer', 'API Reviewer');
+const pkiReady = true;
+
 // ─── Health ─────────────────────────────────────────────────────────────────
 
 app.get('/api/v1/health', (c) => {
@@ -52,6 +57,13 @@ app.get('/api/v1/health', (c) => {
     domains: domainRegistry.listIds(),
     connectors: connectorRegistry.listIds(),
     filingAdapters: filingRegistry.list().map(a => a.id),
+    pki: {
+      ready: pkiReady,
+      caName: pki.ca.certificate.name,
+      caFingerprint: pki.ca.certificate.fingerprint,
+      signerSubject: pki.signer.certificate.subject,
+      reviewerSubject: pki.reviewer.certificate.subject,
+    },
     engine: 'attestor',
   });
 });
@@ -93,7 +105,8 @@ app.post('/api/v1/pipeline/run', async (c) => {
       return c.json({ error: 'candidateSql and intent are required' }, 400);
     }
 
-    const keyPair = sign ? generateKeyPair() : undefined;
+    // Use PKI-backed signer key pair when signing
+    const keyPair = sign ? pki.signer.keyPair : undefined;
 
     // ── OIDC-backed reviewer identity ──
     // If reviewerOidcToken is provided, verify it and derive reviewer identity.
@@ -123,7 +136,8 @@ app.post('/api/v1/pipeline/run', async (c) => {
 
     const identitySource = classifyIdentitySource(oidcVerified, false);
 
-    const reviewerKeyPair = (sign && reviewerIdentity) ? generateKeyPair() : undefined;
+    // Use PKI-backed reviewer key pair when reviewer is present
+    const reviewerKeyPair = (sign && reviewerIdentity) ? pki.reviewer.keyPair : undefined;
 
     const input: FinancialPipelineInput = {
       runId: `api-${Date.now().toString(36)}`,
@@ -169,6 +183,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       certificate: report.certificate ?? null,
       verification: kit?.verification ?? null,
       publicKeyPem: keyPair?.publicKeyPem ?? null,
+      trustChain: sign ? pki.chains.signer : null,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
     });

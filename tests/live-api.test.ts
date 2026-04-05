@@ -51,7 +51,10 @@ async function run() {
       ok(body.domains.includes('finance'), 'Health: finance domain registered');
       ok(body.domains.includes('healthcare'), 'Health: healthcare domain registered');
       ok(typeof body.uptime === 'number', 'Health: uptime is number');
-      console.log(`    status=${body.status}, version=${body.version}, domains=${body.domains.join(',')}, uptime=${body.uptime}s`);
+      ok(body.pki?.ready === true, 'Health: PKI ready');
+      ok(body.pki?.caName === 'Attestor API Root CA', 'Health: PKI CA name');
+      ok(typeof body.pki?.caFingerprint === 'string', 'Health: PKI CA fingerprint');
+      console.log(`    status=${body.status}, pki=${body.pki.caName} (${body.pki.caFingerprint}), domains=${body.domains.join(',')}, uptime=${body.uptime}s`);
     }
 
     // ═══ DOMAINS ENDPOINT ═══
@@ -138,7 +141,11 @@ async function run() {
       ok(body.publicKeyPem !== null, 'Pipeline(signed): public key returned');
       fullCert = body.certificate;
       savedPubKey = body.publicKeyPem;
-      console.log(`    cert=${fullCert.certificateId}, has full signing section: ${!!fullCert.signing}`);
+      ok(body.trustChain !== null, 'Pipeline(signed): trust chain present');
+      ok(body.trustChain.type === 'attestor.trust_chain.v1', 'Pipeline(signed): trust chain type');
+      ok(body.trustChain.ca?.type === 'attestor.ca_certificate.v1', 'Pipeline(signed): CA cert in chain');
+      ok(body.trustChain.leaf?.type === 'attestor.leaf_certificate.v1', 'Pipeline(signed): leaf cert in chain');
+      console.log(`    cert=${fullCert.certificateId}, chain: CA=${body.trustChain.ca.name}, leaf=${body.trustChain.leaf.subject}`);
     }
 
     // ═══ VERIFY ENDPOINT — real end-to-end certificate verification ═══
