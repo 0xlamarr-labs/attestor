@@ -485,6 +485,21 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     console.log(`  Reviewer key: ephemeral for local demo (fingerprint: ${reviewerKeyPair.fingerprint})`);
   }
 
+  // Step 1c: Optional OIDC-backed reviewer identity
+  let oidcIdentity: import('../financial/types.js').ReviewerIdentity | null = null;
+  const { isOidcConfigured, loadOidcConfig, executeDeviceFlow } = await import('../identity/oidc-device-flow.js');
+  if (isOidcConfigured()) {
+    const oidcConfig = loadOidcConfig()!;
+    console.log(`\n  OIDC: configured (${oidcConfig.issuerUrl})`);
+    const oidcResult = await executeDeviceFlow(oidcConfig);
+    if (oidcResult.success && oidcResult.identity) {
+      oidcIdentity = oidcResult.identity;
+      console.log(`  OIDC: reviewer identity verified — ${oidcIdentity.name} (${oidcIdentity.identifier})`);
+    } else {
+      console.log(`  OIDC: device flow failed — ${oidcResult.error}. Using ephemeral identity.`);
+    }
+  }
+
   // Step 2: Find scenario
   const scenario = SCENARIOS[scenarioId];
   if (!scenario) {
@@ -557,14 +572,20 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   // Reviewer approval: when reviewer key pair is available and the scenario needs review,
   // the prove path provides a reviewer endorsement. For low-materiality scenarios that don't
   // require review, reviewer endorsement is still attached to demonstrate the full chain.
+  // Use OIDC identity if available, otherwise fall back to ephemeral
+  const reviewerName = oidcIdentity?.name ?? (reviewerKeyMode === 'loaded' ? 'Loaded Reviewer' : 'Ephemeral Reviewer');
+  const reviewerRole = oidcIdentity?.role ?? 'attestor_operator';
+  const reviewerIdentifier = oidcIdentity?.identifier ?? `prove-cli:${reviewerKeyPair?.fingerprint}`;
+  const identitySourceLabel = oidcIdentity ? 'oidc_verified' : 'operator_asserted';
+
   const reviewerApproval: FinancialPipelineInput['approval'] = reviewerKeyPair ? {
     status: 'approved',
-    reviewerRole: 'attestor_operator',
-    reviewNote: `Product proof reviewer endorsement (${reviewerKeyMode} key)`,
+    reviewerRole,
+    reviewNote: `Product proof reviewer endorsement (${reviewerKeyMode} key, identity: ${identitySourceLabel})`,
     reviewerIdentity: {
-      name: reviewerKeyMode === 'loaded' ? 'Loaded Reviewer' : 'Ephemeral Reviewer',
-      role: 'attestor_operator',
-      identifier: `prove-cli:${reviewerKeyPair.fingerprint}`,
+      name: reviewerName,
+      role: reviewerRole,
+      identifier: reviewerIdentifier,
       signerFingerprint: null, // populated by pipeline signing
     },
     reviewerKeyPair,
