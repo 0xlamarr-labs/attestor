@@ -475,7 +475,9 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
     const kit = buildVerificationKit(report, keyPair.publicKeyPem);
 
     // Step 8: Persist artifacts
-    const outDir = join('.attestor', 'proofs', report.runId.slice(0, 8));
+    // Run-unique proof directory: scenario + timestamp + run ID prefix (no collision, no stale mixing)
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const outDir = join('.attestor', 'proofs', `${scenarioId}_${ts}_${report.runId.slice(0, 8)}`);
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, 'certificate.json'), JSON.stringify(report.certificate, null, 2));
     writeFileSync(join(outDir, 'public-key.pem'), keyPair.publicKeyPem);

@@ -9,7 +9,7 @@
  * - Schema allowlist enforcement on SQL references
  *
  * Evidence:
- * - schemaHash: SHA-256 of pg_catalog server version + current_schemas()
+ * - executionContextHash: SHA-256 of pg_catalog server version + current_schemas()
  *   (bounded proof of WHICH database state was queried, not full snapshot)
  * - executionTimestamp: ISO timestamp of execution (for replay correlation)
  *
@@ -41,8 +41,17 @@ export interface PostgresExecutionResult {
   columnTypes: string[];
   rows: Record<string, unknown>[];
   error: string | null;
-  /** Bounded schema evidence: hash of server version + current schemas. */
-  schemaHash: string | null;
+  /**
+   * Bounded execution context hash.
+   *
+   * What this IS: SHA-256 of (pg server version + current_schemas + sanitized connection URL).
+   * It proves WHICH database environment the query ran against at a bounded level.
+   *
+   * What this is NOT: a full schema snapshot, a table-level hash, or a data-state proof.
+   * It cannot prove the database content was unchanged between executions.
+   * Full schema/data attestation would require pg_dump or logical replication snapshot.
+   */
+  executionContextHash: string | null;
   /** ISO timestamp of execution. */
   executionTimestamp: string;
 }
@@ -60,6 +69,17 @@ export function validateReadOnlySql(sql: string): void {
   if (!/^\s*(SELECT|WITH)\b/i.test(stripped)) throw new Error(`Query must start with SELECT or WITH.`);
 }
 
+/**
+ * Enforce schema allowlist on SQL table references.
+ *
+ * When allowedSchemas is configured:
+ * - Fully qualified references (schema.table) must use an allowed schema
+ * - Unqualified references (bare table name) are REJECTED because they can
+ *   resolve through PostgreSQL search_path to any schema, bypassing the allowlist
+ *
+ * This is a safety-first design: require explicit schema qualification
+ * when an allowlist is active, even if it is less convenient.
+ */
 export function enforceAllowedSchemas(sql: string, allowedSchemas: string[]): void {
   if (allowedSchemas.length === 0) return;
   const allowed = new Set(allowedSchemas.map((s) => s.toLowerCase()));
@@ -70,7 +90,11 @@ export function enforceAllowedSchemas(sql: string, allowedSchemas: string[]): vo
     refs.push({ schema: match[1]?.toLowerCase() ?? null, table: match[2].toLowerCase() });
   }
   for (const ref of refs) {
-    if (ref.schema && !allowed.has(ref.schema)) {
+    if (ref.schema === null) {
+      // Unqualified table reference — cannot verify schema through search_path
+      throw new Error(`Unqualified table reference "${ref.table}" is not allowed when schema allowlist is active. Use fully qualified "schema.table" syntax. Allowed schemas: [${allowedSchemas.join(', ')}].`);
+    }
+    if (!allowed.has(ref.schema)) {
       throw new Error(`Schema "${ref.schema}" is not in allowedSchemas [${allowedSchemas.join(', ')}].`);
     }
   }
@@ -95,7 +119,7 @@ export async function executePostgresQuery(
     validateReadOnlySql(sql);
     if (config.allowedSchemas?.length) enforceAllowedSchemas(sql, config.allowedSchemas);
   } catch (err) {
-    return { success: false, durationMs: Date.now() - start, rowCount: 0, columns: [], columnTypes: [], rows: [], error: err instanceof Error ? err.message : String(err), schemaHash: null, executionTimestamp };
+    return { success: false, durationMs: Date.now() - start, rowCount: 0, columns: [], columnTypes: [], rows: [], error: err instanceof Error ? err.message : String(err), executionContextHash: null, executionTimestamp };
   }
 
   const timeoutMs = config.statementTimeoutMs ?? 10000;
@@ -109,7 +133,7 @@ export async function executePostgresQuery(
     const pg = await (Function('return import("pg")')() as Promise<any>);
     Client = pg.default?.Client ?? pg.Client;
   } catch {
-    return { success: false, durationMs: Date.now() - start, rowCount: 0, columns: [], columnTypes: [], rows: [], error: 'PostgreSQL driver not installed. Run: npm install pg', schemaHash: null, executionTimestamp };
+    return { success: false, durationMs: Date.now() - start, rowCount: 0, columns: [], columnTypes: [], rows: [], error: 'PostgreSQL driver not installed. Run: npm install pg', executionContextHash: null, executionTimestamp };
   }
 
   const client = new Client({ connectionString: config.connectionUrl });
@@ -122,7 +146,7 @@ export async function executePostgresQuery(
     const versionResult = await client.query('SELECT version(), current_schemas(false)::text AS schemas');
     const serverVersion = versionResult.rows[0]?.version ?? 'unknown';
     const currentSchemas = versionResult.rows[0]?.schemas ?? 'unknown';
-    const schemaHash = createHash('sha256').update(`${serverVersion}|${currentSchemas}|${config.connectionUrl.replace(/:[^@]*@/, ':***@')}`).digest('hex').slice(0, 16);
+    const executionContextHash = createHash('sha256').update(`${serverVersion}|${currentSchemas}|${config.connectionUrl.replace(/:[^@]*@/, ':***@')}`).digest('hex').slice(0, 16);
 
     const result = await client.query(boundedSql);
     await client.query('ROLLBACK');
@@ -132,10 +156,10 @@ export async function executePostgresQuery(
     // Rows as Record<string,unknown>[] (pg returns this natively)
     const rows: Record<string, unknown>[] = result.rows;
 
-    return { success: true, durationMs: Date.now() - start, rowCount: result.rowCount ?? rows.length, columns, columnTypes, rows, error: null, schemaHash, executionTimestamp };
+    return { success: true, durationMs: Date.now() - start, rowCount: result.rowCount ?? rows.length, columns, columnTypes, rows, error: null, executionContextHash, executionTimestamp };
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch { /* ignore */ }
-    return { success: false, durationMs: Date.now() - start, rowCount: 0, columns: [], columnTypes: [], rows: [], error: err instanceof Error ? err.message : String(err), schemaHash: null, executionTimestamp };
+    return { success: false, durationMs: Date.now() - start, rowCount: 0, columns: [], columnTypes: [], rows: [], error: err instanceof Error ? err.message : String(err), executionContextHash: null, executionTimestamp };
   } finally {
     try { await client.end(); } catch { /* ignore */ }
   }
@@ -145,6 +169,31 @@ export async function executePostgresQuery(
 
 export function isPostgresConfigured(): boolean {
   return !!process.env.ATTESTOR_PG_URL;
+}
+
+/**
+ * Check if the pg driver is installed (runtime, not build-time).
+ */
+export async function isPostgresDriverAvailable(): Promise<boolean> {
+  try {
+    await (Function('return import("pg")')() as Promise<any>);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Report PostgreSQL readiness status for CLI/diagnostics.
+ */
+export async function reportPostgresReadiness(): Promise<{ configured: boolean; driverInstalled: boolean; runnable: boolean; message: string }> {
+  const configured = isPostgresConfigured();
+  const driverInstalled = await isPostgresDriverAvailable();
+  const runnable = configured && driverInstalled;
+  const message = !configured ? 'ATTESTOR_PG_URL not set. PostgreSQL proof path inactive.'
+    : !driverInstalled ? 'ATTESTOR_PG_URL set but pg driver not installed. Run: npm install pg'
+      : 'PostgreSQL proof path ready.';
+  return { configured, driverInstalled, runnable, message };
 }
 
 export function loadPostgresConfig(): PostgresConfig | null {

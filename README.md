@@ -99,6 +99,37 @@ npm run verify:cert -- path/to/certificate.json path/to/public.pem
 
 This is Attestor's trust model upgrade from self-referential HMAC to independently verifiable Ed25519 attestation — the same signing primitive used by Sigstore, SLSA, and SSH.
 
+## Verification Kit
+
+A complete product-proof run (`attestor prove`) emits a verification kit:
+
+| Artifact | Purpose |
+|---|---|
+| `kit.json` | Self-contained verification package (certificate + bundle + summary) |
+| `certificate.json` | Portable Ed25519-signed attestation certificate |
+| `bundle.json` | Full authority bundle (governance evidence) |
+| `verification-summary.json` | 5-dimensional verification result |
+| `public-key.pem` | Signer public key for independent verification |
+
+The verify CLI checks 5 dimensions: cryptographic validity, structural validity, authority state, governance sufficiency, and proof completeness.
+
+## PostgreSQL Connector
+
+Attestor includes an optional PostgreSQL connector for real-database proof (`npm install pg` required).
+
+**Safety model:**
+- Read-only: `BEGIN TRANSACTION READ ONLY` enforced per-query
+- Timeout: `statement_timeout` set per-query
+- Row limit: `LIMIT` injected if not present
+- Write/stacked-query rejection before execution
+- Schema allowlist: when configured, **all table references must be fully qualified** (`schema.table`). Unqualified references are rejected because they can resolve through `search_path` to any schema.
+
+**What the execution evidence proves:**
+- `executionContextHash`: SHA-256 of (pg server version + current_schemas + sanitized connection URL). This proves WHICH database environment was queried, not the full database content.
+- `executionTimestamp`: ISO timestamp of when the query ran.
+
+**What it does NOT prove:** Full schema snapshot, table-level hash, or data-state attestation. Those would require `pg_dump` or logical replication snapshot, which is not yet implemented.
+
 ## Authority Chain
 
 Every financial operation follows a strict authority lifecycle:
@@ -291,17 +322,21 @@ npm run verify
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `OPENAI_API_KEY` | Optional | Enables the current live model and hybrid CLI exercise through OpenAI |
-| `ANTHROPIC_API_KEY` | Optional | Counted by live-readiness checks as an alternative model credential source |
+| `OPENAI_API_KEY` | Optional | Enables live model proof (AI-generated SQL) |
+| `ANTHROPIC_API_KEY` | Optional | Alternative model credential (counted by live readiness) |
+| `ATTESTOR_PG_URL` | Optional | PostgreSQL connection URL for real database proof (e.g., `postgres://user:pass@host:5432/db`) |
+| `ATTESTOR_PG_TIMEOUT_MS` | Optional | Query timeout in ms (default: 10000) |
+| `ATTESTOR_PG_MAX_ROWS` | Optional | Maximum result rows (default: 10000) |
+| `ATTESTOR_PG_ALLOWED_SCHEMAS` | Optional | Comma-separated schema allowlist (e.g., `public,analytics`) |
 
-Offline fixture mode and benchmarks work without any API key. The current live CLI path uses `OPENAI_API_KEY`; `ANTHROPIC_API_KEY` currently affects readiness truth rather than the shipped live exercise path. Database connectivity remains local SQLite only in the current repo.
+Offline fixture mode and benchmarks work without any API key or database. PostgreSQL proof requires installing the `pg` driver separately (`npm install pg`).
 
 ## Runtime Boundary
 
 Attestor is currently a **local, single-process, offline-first** runtime:
 
 - **Execution engine**: Node.js with built-in SQLite support (Node 22+)
-- **Database scope**: SQLite fixture databases only; no production warehouse connectors yet
+- **Database scope**: SQLite fixture databases + optional PostgreSQL read-only connector (requires `npm install pg`)
 - **Policy evaluation**: local, in-process; no external entitlement service
 - **Filing**: readiness assessment only; no actual regulatory submission adapter
 - **Proof surface**: offline fixtures, live model, live runtime, and hybrid truth modes
