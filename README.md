@@ -193,7 +193,7 @@ npm run verify:cert -- .attestor/proofs/<run>/certificate.json .attestor/proofs/
 # Generate a persistent signing key pair
 npm run keygen
 
-# Run all tests (457 tests)
+# Run all tests (490 tests)
 npm test
 
 # Full verification (typecheck + test + build)
@@ -237,7 +237,7 @@ Broader domain packs are architectural possibility. They are not shipped.
 
 ## Not Yet Implemented
 
-- Differential evidence across multi-query units
+- Schema fingerprinting and sentinel-based differential evidence (CDC integration)
 - Domain packs beyond finance
 - Warehouse-scale connectors (Snowflake, BigQuery, Databricks)
 - Filing or regulatory submission adapters
@@ -322,5 +322,5 @@ Fixture mode requires no API key or database.
 |---|---|
 | **Version** | 0.1.0 |
 | **Runtime** | Node.js 22+, TypeScript, local single-process |
-| **Tests** | 457 (425 financial + 32 signing) |
+| **Tests** | 490 (458 financial + 32 signing) |
 | **License** | Proprietary. All rights reserved. |
