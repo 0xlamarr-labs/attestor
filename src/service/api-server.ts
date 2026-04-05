@@ -214,6 +214,47 @@ app.post('/api/v1/verify', async (c) => {
   }
 });
 
+// ─── Filing Export ──────────────────────────────────────────────────────────
+
+app.post('/api/v1/filing/export', async (c) => {
+  try {
+    const { adapterId, runId, decision, certificateId, evidenceChainTerminal, rows, proofMode } = await c.req.json();
+    if (!adapterId || !runId || !rows) {
+      return c.json({ error: 'adapterId, runId, and rows are required' }, 400);
+    }
+
+    const adapter = filingRegistry.get(adapterId);
+    if (!adapter) {
+      return c.json({ error: `Filing adapter '${adapterId}' not registered. Available: ${filingRegistry.list().map(a => a.id).join(', ')}` }, 404);
+    }
+
+    // Build decision envelope from provided data
+    const { buildCounterpartyEnvelope } = await import('../filing/xbrl-adapter.js');
+    const envelope = buildCounterpartyEnvelope(
+      runId, decision ?? 'unknown', certificateId ?? null,
+      evidenceChainTerminal ?? '', rows, proofMode ?? 'unknown',
+    );
+
+    const mapping = adapter.mapToTaxonomy(envelope);
+    const pkg = adapter.generatePackage(mapping);
+    pkg.evidenceLink = { runId, certificateId: certificateId ?? null, evidenceChainTerminal: evidenceChainTerminal ?? '' };
+
+    return c.json({
+      adapterId: adapter.id,
+      format: adapter.format,
+      taxonomyVersion: adapter.taxonomyVersion,
+      mapping: {
+        mappedCount: mapping.mapped.length,
+        unmappedCount: mapping.unmapped.length,
+        coveragePercent: mapping.coveragePercent,
+      },
+      package: pkg,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
 // ─── Server Start/Stop ──────────────────────────────────────────────────────
 
 export function startServer(port: number = 3700): { port: number; close: () => void } {

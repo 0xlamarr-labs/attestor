@@ -178,6 +178,51 @@ async function run() {
       console.log(`    bad input rejected: ${(await badRes.json() as any).error}`);
     }
 
+    // ═══ FILING EXPORT ═══
+    console.log('\n  [POST /api/v1/filing/export — XBRL]');
+    {
+      const rows = [
+        { counterparty_name: 'Bank of Nova Scotia', exposure_usd: 250000000, credit_rating: 'AA-', sector: 'Banking' },
+        { counterparty_name: 'Deutsche Bank AG', exposure_usd: 200000000, credit_rating: 'A-', sector: 'Banking' },
+      ];
+      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adapterId: 'xbrl-us-gaap-2024',
+          runId: 'filing-test-1',
+          decision: 'pass',
+          certificateId: 'cert_test123',
+          evidenceChainTerminal: 'abc123',
+          rows,
+          proofMode: 'live_runtime',
+        }),
+      });
+      ok(res.status === 200, 'Filing: status 200');
+      const body = await res.json() as any;
+      ok(body.adapterId === 'xbrl-us-gaap-2024', 'Filing: adapter ID');
+      ok(body.format === 'xbrl', 'Filing: format = xbrl');
+      ok(body.taxonomyVersion === 'US-GAAP 2024', 'Filing: taxonomy version');
+      ok(body.mapping.mappedCount > 0, 'Filing: has mapped fields');
+      ok(body.mapping.coveragePercent > 50, 'Filing: coverage > 50%');
+      ok(body.package.content.facts.length > 0, 'Filing: package has facts');
+      ok(body.package.evidenceLink.runId === 'filing-test-1', 'Filing: evidence link runId');
+      ok(body.package.evidenceLink.certificateId === 'cert_test123', 'Filing: evidence link certId');
+      console.log(`    mapped=${body.mapping.mappedCount}, coverage=${body.mapping.coveragePercent}%, facts=${body.package.content.facts.length}`);
+    }
+
+    // ═══ FILING EXPORT — bad adapter ═══
+    console.log('\n  [POST /api/v1/filing/export — unknown adapter]');
+    {
+      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adapterId: 'nonexistent', runId: 'x', rows: [] }),
+      });
+      ok(res.status === 404, 'Filing(bad): status 404');
+      console.log(`    unknown adapter rejected`);
+    }
+
     // ═══ PIPELINE RUN — bad input ═══
     console.log('\n  [POST /api/v1/pipeline/run — missing fields]');
     {
