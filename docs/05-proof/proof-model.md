@@ -1,87 +1,111 @@
 # Proof Model
 
-Attestor treats proof mode as a first-class runtime truth artifact. Every run explicitly labels what was proved and what was not.
+Attestor treats proof as an explicit runtime truth artifact, not a side effect.
+
+Every governed run records what was actually observed, what was inferred, what was reviewed, and what a verifier can later check independently.
 
 ## Proof Modes
 
 | Mode | Meaning |
 |---|---|
-| `offline_fixture` | All inputs are pre-defined fixture data. No runtime observation. |
-| `mocked_model` | Model generation was mocked or synthetic. |
-| `live_model` | Real model generation (e.g., OpenAI GPT). |
-| `live_runtime` | Real database execution (SQLite or PostgreSQL). |
-| `hybrid` | Some components are live, others are fixture or mocked. |
+| `offline_fixture` | Predefined fixture data. No live observation. |
+| `mocked_model` | Synthetic or mocked model behavior. |
+| `live_model` | Real model generation. |
+| `live_runtime` | Real database execution. |
+| `hybrid` | Mixed live and fixture or mocked components. |
+
+The system does not imply stronger proof than the runtime actually produced.
 
 ## Live Proof
 
-Live Proof is a typed runtime-proof artifact that records:
+Live Proof records:
 
-- **Upstream evidence**: was model generation live or mocked? Which provider, model, latency?
-- **Execution evidence**: was query execution live or fixture? Which database, latency?
-- **Proof gaps**: what is missing for a stronger proof claim?
-- **Consistency**: do the claimed mode and the actual evidence agree?
-- **Replay identity**: deterministic fingerprint for replay-equivalence across runs
+- upstream model evidence
+- runtime execution evidence
+- explicit proof gaps
+- consistency between declared mode and observed evidence
+- replay identity for run equivalence
 
-## Live Readiness
+Missing live proof does not automatically deny authority. It constrains what can be truthfully claimed.
 
-Every run can produce a Live Readiness result that states:
+## Portable Proof
 
-- What proof modes are currently available
-- What remains blocked (missing API key, missing database, etc.)
-- What proof gaps still exist
-- What next step would increase confidence most
+Portable proof is the verifier-facing artifact layer.
 
-## Design Rules
+For mature paths, that means:
 
-- **Live Proof is not an authority gate by itself.** Missing live proof does not automatically deny authority. It changes what can be truthfully claimed about the run.
-- **Proof mode is explicit.** The system never implies stronger guarantees than the runtime actually proved.
-- **Proof gaps are named.** Each gap has a category (`upstream`, `execution`, `schema_snapshot`, `lineage`) and a description. Gaps are surfaced in the dossier, verification summary, and filing readiness assessment.
+- signed certificate
+- authority bundle
+- verification summary
+- reviewer endorsement material
+- public key material for independent verification
 
-## What Fixture Proof Demonstrates
+An outsider should not need platform access to verify a mature proof path.
 
-Fixture-based runs demonstrate the full governance and signing chain — authority lifecycle, deterministic scoring, review policy, endorsement signing, and portable certificate issuance — using pre-defined data. They do not prove that a real database was queried.
+## Single-Query Proof
 
-## What Real-Data Proof Requires
+Single-query proof is mature:
 
-Outsider-verifiable real-data proof requires:
+- Ed25519-signed certificate
+- verification kit
+- run-bound reviewer endorsement
+- real PostgreSQL-backed proof path
+- independent verification CLI
 
-1. A configured PostgreSQL instance (`ATTESTOR_PG_URL`)
-2. The `pg` driver installed (`npm install pg`)
-3. A signing key pair for certificate issuance
-4. Optionally, a reviewer key pair for reviewer-verifiable endorsement
+## Multi-Query Proof
 
-When all of these are present, the `prove` path can emit a verification kit backed by real database execution evidence, predictive guardrail preflight, and independently verifiable certificates.
+Multi-query proof is now signed at the run level.
 
-Use `npm run start -- doctor` to check readiness.
+Current multi-query artifact set:
 
-## Multi-Query Governed Proof
+- multi-query output pack
+- multi-query dossier
+- multi-query manifest
+- multi-query certificate
+- multi-query verification kit
+- multi-query reviewer endorsement
 
-Attestor supports multi-query reporting runs where N governed query units execute within a single run.
+What multi-query preserves:
 
-**How it works:**
+- per-unit decisions
+- per-unit evidence anchors
+- aggregate decision
+- aggregate proof mode
+- blocker attribution
+- run-level reviewer binding
 
-- Each query unit is a full governed pipeline execution with its own evidence chain, governance gates, and decision
-- The aggregate decision is conservative: any `block` or `fail` in any unit → the run-level decision reflects the worst case
-- Per-query traceability is preserved: each unit's decision, blockers, proof mode, and evidence chain terminal are available
-- Aggregate proof mode is the weakest across all units: if any unit is fixture-based while others are live, the aggregate is `hybrid`
-- Governance sufficiency requires all units to pass SQL governance, policy, and guardrails
+What multi-query still does not do:
 
-**Multi-query proof artifacts:**
+- differential evidence
+- DAG or dependency semantics
+- per-unit certificate issuance
+- cross-query state attestation
 
-A multi-query run can emit three portable artifacts:
+## Real PostgreSQL Proof
 
-- **Multi-Query Output Pack** (`attestor.multi_query_output_pack.v1`): machine-readable summary with per-unit governance, evidence terminals, scoring, and blocker attribution. Does NOT include full per-unit reports.
-- **Multi-Query Dossier** (`attestor.multi_query_dossier.v1`): reviewer-facing explanation with verdict, per-unit decision explanations, governance summary, and proof summary.
-- **Multi-Query Manifest** (`attestor.multi_query_manifest.v1`): minimal evidence anchor set with per-unit terminals and a deterministic manifest hash for replay verification.
+Real PostgreSQL proof is a working path in the repository.
 
-Run `npx tsx src/financial/cli.ts multi-query` to see a demo with 3 units and saved artifacts.
+The bounded proof story includes:
 
-**What multi-query does NOT yet do:**
+- read-only execution
+- predictive EXPLAIN-based preflight
+- schema allowlist enforcement
+- execution context hash
+- reproducible demo bootstrap
+- self-contained proof script
 
-- Differential evidence (proving what changed between queries)
-- Cross-query join or dependency semantics
-- DAG-based query ordering
-- Per-unit certificate issuance (certificates are per-run, not per-unit)
-- Signing or reviewer authority at the multi-query level
+What it still does not prove:
 
-This is a bounded first slice: one run, N independent units, one aggregate report with portable proof artifacts.
+- full schema snapshot
+- data-state attestation across time
+- table-level content hashing
+
+## Verification Surface
+
+The repository currently exposes verification through:
+
+- the CLI verification path
+- the HTTP `/api/v1/verify` route
+- kit and certificate verification scripts
+
+The mature verifier contract is: signed artifact + public key material -> independent verdict.

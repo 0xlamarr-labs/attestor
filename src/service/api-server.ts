@@ -70,6 +70,18 @@ app.get('/api/v1/domains', (c) => {
   return c.json({ domains });
 });
 
+app.get('/api/v1/connectors', async (c) => {
+  const connectors = await Promise.all(
+    connectorRegistry.list().map(async (connector) => ({
+      id: connector.id,
+      displayName: connector.displayName,
+      configured: connector.loadConfig() !== null,
+      available: await connector.isAvailable(),
+    })),
+  );
+  return c.json({ connectors });
+});
+
 // ─── Pipeline Run ───────────────────────────────────────────────────────────
 
 app.post('/api/v1/pipeline/run', async (c) => {
@@ -87,7 +99,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
     // If reviewerOidcToken is provided, verify it and derive reviewer identity.
     // If absent, fall back to operator-asserted identity (or no reviewer).
     let reviewerIdentity: ReviewerIdentity | undefined;
-    let identitySource: 'operator_asserted' | 'oidc_verified' | 'pki_bound' = 'operator_asserted';
+    let oidcVerified = false;
 
     if (body.reviewerOidcToken && body.oidcIssuer) {
       const oidcResult = await verifyOidcToken(body.reviewerOidcToken, {
@@ -96,7 +108,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       });
       if (oidcResult.verified && oidcResult.identity) {
         reviewerIdentity = oidcResult.identity;
-        identitySource = 'oidc_verified';
+        oidcVerified = true;
       } else {
         return c.json({ error: `OIDC token verification failed: ${oidcResult.error}`, identitySource: 'rejected' }, 401);
       }
@@ -107,8 +119,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
         identifier: body.reviewerIdentifier ?? 'api-caller',
         signerFingerprint: null,
       };
-      identitySource = 'operator_asserted';
     }
+
+    const identitySource = classifyIdentitySource(oidcVerified, false);
 
     const reviewerKeyPair = (sign && reviewerIdentity) ? generateKeyPair() : undefined;
 

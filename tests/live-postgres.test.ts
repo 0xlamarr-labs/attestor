@@ -13,26 +13,45 @@
 
 import { strict as assert } from 'node:assert';
 import EmbeddedPostgres from 'embedded-postgres';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 
 let passed = 0;
 function ok(condition: boolean, msg: string): void { assert(condition, msg); passed++; }
+
+async function reservePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Could not reserve a TCP port.'));
+        return;
+      }
+      const { port } = address;
+      server.close((err) => err ? reject(err) : resolve(port));
+    });
+  });
+}
 
 async function run() {
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE POSTGRESQL INTEGRATION TESTS — Real DB, Real SQL');
   console.log('══════════════════════════════════════════════════════════════\n');
 
-  const dataDir = join('.attestor', 'test-pg-data');
-  try { rmSync(dataDir, { recursive: true }); } catch {}
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync('.attestor', { recursive: true });
+  const dataDir = mkdtempSync(join('.attestor', 'test-pg-data-'));
+  const port = await reservePort();
 
   const pg = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: 'test_attestor',
     password: 'test_attestor',
-    port: 15433,
+    port,
     persistent: false,
     initdbFlags: ['--encoding=UTF8', '--locale=C'],
   });
@@ -43,9 +62,9 @@ async function run() {
     await pg.initialise();
     await pg.start();
     await pg.createDatabase('attestor_test');
-    console.log('  ✓ PostgreSQL 18.3 running on port 15433\n');
+    console.log(`  ✓ PostgreSQL 18.3 running on port ${port}\n`);
 
-    const pgUrl = 'postgres://test_attestor:test_attestor@localhost:15433/attestor_test';
+    const pgUrl = `postgres://test_attestor:test_attestor@localhost:${port}/attestor_test`;
     process.env.ATTESTOR_PG_URL = pgUrl;
     process.env.ATTESTOR_PG_ALLOWED_SCHEMAS = 'attestor_demo';
 
@@ -191,7 +210,7 @@ async function run() {
   } finally {
     await pg.stop();
     console.log('  PostgreSQL stopped.\n');
-    try { rmSync(dataDir, { recursive: true }); } catch {}
+    try { rmSync(dataDir, { recursive: true, force: true }); } catch {}
   }
 }
 

@@ -70,6 +70,19 @@ async function run() {
       console.log(`    finance: ${finance.clauseCount} clauses, healthcare: ${healthcare.clauseCount} clauses`);
     }
 
+    console.log('\n  [GET /api/v1/connectors]');
+    {
+      const res = await fetch(`${BASE}/api/v1/connectors`);
+      ok(res.status === 200, 'Connectors: status 200');
+      const body = await res.json() as any;
+      ok(Array.isArray(body.connectors), 'Connectors: connectors is array');
+      const snowflake = body.connectors.find((d: any) => d.id === 'snowflake');
+      ok(snowflake !== undefined, 'Connectors: snowflake found');
+      ok(typeof snowflake.configured === 'boolean', 'Connectors: configured boolean');
+      ok(typeof snowflake.available === 'boolean', 'Connectors: available boolean');
+      console.log(`    snowflake: configured=${snowflake.configured}, available=${snowflake.available}`);
+    }
+
     // ═══ PIPELINE RUN — unsigned ═══
     console.log('\n  [POST /api/v1/pipeline/run — unsigned]');
     {

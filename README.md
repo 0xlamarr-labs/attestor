@@ -1,326 +1,297 @@
 # Attestor
 
-**Governance and proof engine for AI-assisted high-stakes decisions.**
+**Governance and proof engine for AI-assisted high-stakes workflows.**
 
-AI output becomes economically useful before it becomes operationally admissible. Attestor closes that gap. It enforces governed acceptance — typed contracts, deterministic controls, authority separation, reviewer-bound endorsement, and cryptographically signed portable proof — so that AI-assisted outputs can enter consequence-bearing workflows without surrendering control, auditability, or verifiability.
+AI output becomes economically useful before it becomes operationally admissible. Attestor closes that gap. It governs the boundary between proposal and acceptance with typed contracts, deterministic controls, reviewer authority, and portable proof.
 
-Both single-query and multi-query governed proof paths are mature: Ed25519-signed certificates, verification kits, and run-bound reviewer endorsements are issued, portable, and independently verifiable at both levels.
-
-The reference implementation targets **bank-grade internal financial analytics**. The engine architecture is domain-independent.
+The repository's deepest implementation is financial: bank-grade internal reporting, treasury, risk, reconciliation, and regulatory analytics. The engine pattern is broader than finance. The current codebase is not.
 
 ## The Acceptance Problem
 
-Raw AI output is not admissible in high-consequence environments. Not because it is always wrong — but because there is no governed path from proposal to acceptance. No evidence trail. No authority separation. No reviewer record. No proof an outsider can check.
+Raw AI output is hard to admit into consequence-bearing workflows for four recurring reasons:
 
-Four failures recur wherever AI enters consequence-sensitive workflows:
+- Generation and acceptance collapse into one act.
+- Authority is implicit instead of explicit.
+- Evidence is scattered or absent.
+- The system implies stronger proof than it actually produced.
 
-**Raw execution.** Generation and acceptance collapse into one act. No governance gate separates proposing from deciding.
+Attestor addresses those failures with governed acceptance:
 
-**Authority collapse.** Model output is treated as its own approval. The boundary between generation and authorization disappears.
+- Typed contracts bound what is allowed before execution.
+- Deterministic controls produce evidence independent of generation.
+- Review policy and authority artifacts prevent self-approval.
+- Signed certificates and verification kits make acceptance portable.
 
-**Invisible acceptance.** The organization cannot show what evidence justified the decision. Acceptance is an event with no artifact.
+## Where This Engine Applies
 
-**Truth drift.** The system implies stronger guarantees than it actually proved. Proof mode is implicit or absent.
+The pattern matters wherever AI output is useful but cannot be accepted raw:
 
-These are not finance-specific failures. They appear in any workflow where AI-assisted output carries operational, regulatory, or reputational consequences.
+- Financial analytics and reporting
+- Risk and control operations
+- Healthcare analytics and quality review
+- Insurance and claims support
+- Industrial and supply-chain operations
+- Legal and compliance review
+- Public-sector and government decision support
 
-## What Attestor Does About It
+Those categories describe architectural fit, not shipped breadth. The repository currently ships finance as the reference implementation and a smaller healthcare pack as a second domain slice.
 
-Attestor interposes a governance and proof layer between generation and operational use:
+## Why Finance Is First
 
-**Typed contracts** bound what is permitted before anything executes.
-
-**Deterministic controls** — governance gates, execution guardrails, data contracts, semantic clauses — produce evidence independent of the generation step.
-
-**Authority separation** prevents any component from approving its own output. A warrant → escrow → receipt → capsule chain enforces monotonic authority closure.
-
-**Reviewer escalation** routes high-consequence decisions to human reviewers. Endorsements are Ed25519-signed and cryptographically bound to the specific run they approved.
-
-**Portable proof** makes governed acceptance verifiable by an outsider. Ed25519-signed certificates and 6-dimensional verification kits require only a public key to check — no platform access, no database, no API call.
-
-## Where Raw AI Is Not Admissible
-
-Attestor matters wherever AI output is economically useful but operationally inadmissible without governed acceptance. The conditions are:
-
-- The output has operational consequences.
-- Raw model output cannot be accepted on sight.
-- Acceptance requires controls, review, evidence, and later verification.
-- The workflow is audit-sensitive, regulatorily exposed, or reputationally consequential.
-
-Domains where these conditions hold:
-
-- **Financial analytics and reporting** — the current reference implementation
-- **Risk and control operations** — exception reviews, control-gap assessments, breach analysis
-- **Healthcare and life sciences** — internal analytical workflows where clinical or operational AI proposals require governed review
-- **Insurance and claims** — reserve estimation, claims-review support, audit-sensitive internal analytics
-- **Industrial and supply-chain operations** — safety-critical assessments, quality-control analytics, predictive maintenance decisions
-- **Legal and compliance** — document review support, contract analysis, regulatory-change impact assessment
-- **Public-sector and government** — decision-support analytics subject to audit, oversight, or freedom-of-information obligations
-
-The engine architecture is domain-independent. The repository ships finance. Broader domain implementations require domain-specific contracts, semantic clauses, and scoring logic. The governance engine, authority chain, signing, and verification layers do not change.
-
-These categories describe where the engine applies in principle. They are not a claim that domain packs are shipped.
-
-## Reference Implementation: Finance
-
-Finance is the hardest proving ground. Silent errors are expensive. Auditability is non-negotiable. Approval authority is a control requirement, not a convenience feature. Regulatory frameworks demand traceable evidence, reviewer accountability, and explainable acceptance.
-
-Attestor's financial reference implementation is the most tested, most explicit, and most complete domain in the repository. If the engine works here — where acceptance must be explainable, replayable, and verifiable under regulatory-grade constraints — it validates the architecture under demanding conditions.
+Finance is the hardest proving ground: silent errors are expensive, auditability is mandatory, reviewer authority matters, and control failures are legible. If the engine works there, the architecture has passed a demanding test.
 
 Finance is the proving ground. Not the ceiling.
 
 ## Proof Maturity Today
 
-Proof completeness varies by execution path. The repository does not blur this distinction.
+Attestor does not blur proof maturity across tracks.
 
-**Single-query governed proof** — mature:
-- Ed25519-signed attestation certificate binding authority + evidence + decision
-- 6-dimensional verification kit: cryptographic, structural, authority, governance, proof, reviewer endorsement
-- Run-bound reviewer endorsement with independent outsider verification
-- Independent verification CLI requiring only a public key
-- Real PostgreSQL execution evidence when database is configured
+**Single-query governed proof**
 
-**Multi-query governed proof** — signed:
-- Ed25519-signed multi-query attestation certificate (`attestor.certificate.multi_query.v1`)
-- Multi-query verification kit with certificate + manifest + verification summary
-- Portable artifacts: output pack, dossier, and manifest
-- Per-unit governance, evidence anchors, and decision preserved
-- Aggregate decision, proof mode, governance sufficiency, blocker attribution
-- Ed25519-signed run-bound multi-query reviewer endorsement with independent verification
+- Ed25519-signed certificates
+- 6-dimensional verification kits
+- Run-bound reviewer endorsements
+- Real PostgreSQL-backed proof path
+- Independent verification CLI
 
-**Real PostgreSQL proof** — achieved:
-- First real PostgreSQL-backed proof run completed (PostgreSQL 18.3, real execution, real evidence)
-- Bounded read-only connector with predictive guardrails (EXPLAIN-based preflight)
-- Reproducible demo bootstrap (`pg-demo-init`) and self-contained proof script (`scripts/real-db-proof.ts`)
-- Execution context hash and provider markers in bundle and kit
-- Operator path: doctor → probe → bootstrap → prove → verified kit
+**Multi-query governed proof**
 
-## What This Repository Implements
+- Multi-query pipeline with aggregate governance
+- Signed multi-query certificates
+- Multi-query verification kits
+- Run-bound multi-query reviewer endorsements
+- Portable output pack, dossier, and manifest
 
-**Governance engine (domain-independent):**
+**Real PostgreSQL proof**
 
-- Authority chain: warrant → escrow → receipt → capsule
+- Real bounded execution
+- Predictive guardrail preflight
+- Reproducible demo bootstrap
+- Self-contained proof script
+- Reviewer-verifiable proof artifacts
+
+## What Ships in This Repository
+
+**Engine core**
+
+- Authority chain: warrant -> escrow -> receipt -> capsule
 - Deterministic scorer cascade with priority short-circuit
-- Review policy with materiality-based escalation
-- Evidence chain, hash-linked audit trail, provenance
-- Ed25519 attestation certificates and verification kits (single-query)
-- Run-bound reviewer endorsement with outsider verification (single-query)
-- Multi-query governed pipeline with signed certificates and verification kits
+- Evidence chain, provenance, and hash-linked audit trail
+- Ed25519 signing and certificate verification
+- JSON-based PKI trust chain module
+- Reviewer identity, endorsement, and run binding
+- Single-query and multi-query certificate issuance
 
-**Financial domain (reference implementation):**
+**Reference financial implementation**
 
-- SQL governance: read/write safety, scope constraints, injection detection
-- Policy and least-privilege entitlement checks
-- Execution guardrails: row, cost, shape, join-depth limits
-- Data contracts, control totals, reconciliation break handling
-- 5 semantic clause types: `balance_identity`, `control_total`, `ratio_bound`, `sign_constraint`, `completeness_check`
+- SQL governance and entitlement checks
+- Execution guardrails
+- Data contracts and reconciliation logic
+- Five semantic clause types
 - Filing readiness assessment
-- OpenLineage-compatible lineage export
+- PostgreSQL proof path and demo bootstrap
+
+**Expansion modules already present**
+
+- Domain pack registry with `finance` and `healthcare`
+- Connector registry with PostgreSQL and Snowflake modules
+- Filing adapter registry with XBRL US-GAAP 2024 mapping
+- Bounded HTTP API server
+- OIDC reviewer identity verification on the API path
 
 ## What Attestor Is
 
-A governance and proof engine. The acceptance layer for AI-assisted high-stakes decisions.
+Attestor is the acceptance layer for AI-assisted high-stakes workflows.
 
-Attestor governs the boundary between proposal and operational use. It does not generate output. It does not orchestrate models. It enforces contracts, produces evidence, escalates review, closes authority, and issues portable proof.
-
-Current strongest implementation: internal banking, treasury, risk, and regulatory-reporting analytics.
+It does not generate the answer. It governs whether the answer may be accepted, how that acceptance is evidenced, who may endorse it, and what a third party can verify afterward.
 
 ## What Attestor Is Not
 
-- Not a financial chatbot or AI assistant
-- Not an LLM orchestrator or prompt engineering framework
+- Not a financial chatbot
+- Not an LLM orchestration framework
+- Not a BI dashboard
 - Not a customer-facing automated decision engine
-- Not a generic BI tool, dashboard, or visualization layer
-- Not a filing or regulatory submission platform
-- Not a generic "AI compliance" or "responsible AI" checklist
-- Not a cross-domain enterprise control plane that is already complete
-- Not proof that AI output is inherently trustworthy
+- Not a regulatory submission platform
+- Not a fully general enterprise control plane
+- Not proof that AI is inherently trustworthy
 
 ## How a Governed Run Works
 
 ```text
-Typed contract        What is this operation allowed to do?
-  → Governance        Is the proposal safe, scoped, and intent-aligned?
-  → Guardrails        Resource and shape limits enforced before execution
-  → Execution         Fixture, local live, or bounded real database
-  → Evidence          Data contracts, semantic clauses, audit chain
-  → Scoring           Deterministic scorers with priority short-circuit
-  → Review            Materiality-based escalation, reviewer endorsement
-  → Authority         Warrant → escrow → receipt → capsule
-  → Attestation       Ed25519-signed certificate + verification kit (single-query)
+proposal
+  -> typed contract
+  -> governance and guardrails
+  -> bounded execution
+  -> deterministic evidence
+  -> scoring and review
+  -> authority closure
+  -> portable proof
 ```
 
-Every run produces a decision (`pass` / `fail` / `block` / `pending_approval`), an authority chain, and a reviewer dossier. The single-query path additionally issues a portable signed certificate verifiable by anyone with the signer's public key.
+Every run yields a governed decision and evidence-bearing artifacts. Mature proof paths additionally yield signed certificates and verification kits.
 
 ## Quick Start
 
 ```bash
 npm install
 
-# List available scenarios (financial reference implementation)
+# List financial reference scenarios
 npm run list
 
-# Run a fixture scenario (no keys, no database required)
+# Fixture run (no keys, no database)
 npm run scenario -- counterparty
 
-# Check proof readiness (signing keys, database, credentials)
+# Check signing / model / database readiness
 npm run start -- doctor
 
-# Run a governed proof with signed certificate + reviewer-verifiable kit
+# Signed single-query proof
 npm run prove -- counterparty
 
-# Run with persistent signing keys
+# Signed single-query proof with persistent runtime keys
 npm run prove -- counterparty .attestor
 
-# Run with a separate reviewer key directory
+# Signed single-query proof with a separate reviewer key
 npm run prove -- counterparty .attestor --reviewer-key-dir ./reviewer-keys
 
-# Bootstrap demo PostgreSQL schema for real DB proof
-npx tsx src/financial/cli.ts pg-demo-init
-
-# Run the first real PostgreSQL-backed proof (self-contained, downloads PG automatically)
+# Reproducible real PostgreSQL-backed proof
 npx tsx scripts/real-db-proof.ts
 
-# Run a multi-query governed proof with signed certificate + kit
+# Multi-query signed proof
 npx tsx src/financial/cli.ts multi-query
 
-# Verify a verification kit (certificate + bundle + reviewer endorsement)
+# Verify a kit
 npm run verify:cert -- .attestor/proofs/<run>/kit.json
 
-# Verify a certificate alone (certificate + public key only)
+# Verify a certificate only
 npm run verify:cert -- .attestor/proofs/<run>/certificate.json .attestor/proofs/<run>/public-key.pem
 
-# Generate a persistent signing key pair
-npm run keygen
-
-# Run all tests (675 tests across 5 suites)
+# Core unit suites
 npm test
 
-# Full verification (typecheck + test + build)
+# Core verification gate
 npm run verify
+
+# Additional live / integration suites
+npx tsx tests/live-api.test.ts
+npx tsx tests/live-postgres.test.ts
+npx tsx tests/connectors-and-filing.test.ts
+npx tsx tests/live-snowflake.test.ts
 ```
 
-Fixture scenarios require no API key or database. PostgreSQL proof requires `npm install pg` + `ATTESTOR_PG_URL`. Live model proof requires `OPENAI_API_KEY`.
+Notes:
 
-## Proof Modes
+- `npm test` runs the core financial + signing suites.
+- `tests/live-snowflake.test.ts` is env-gated and opt-in.
+- `scripts/real-db-proof.ts` performs real PostgreSQL execution against an embedded instance and emits signed artifacts.
 
-Every run is labeled with its actual proof mode. Attestor does not imply stronger guarantees than the runtime proved.
+## Bounded Service Layer
 
-| Mode | Meaning |
-|---|---|
-| `offline_fixture` | Pre-defined fixture data. No live observation. |
-| `live_model` | Real model generation with fixture or local execution. |
-| `live_runtime` | Real database execution (SQLite or PostgreSQL). |
-| `hybrid` | Some components live, others fixture or mocked. |
+The repository now ships a real single-process Hono API server with:
 
-Incomplete proof is named, not hidden. Each gap has a category (`upstream`, `execution`, `schema_snapshot`, `lineage`) and a description. Missing live proof does not deny authority — it constrains what can be truthfully claimed about the run.
+- `GET /api/v1/health`
+- `GET /api/v1/domains`
+- `GET /api/v1/connectors`
+- `POST /api/v1/pipeline/run`
+- `POST /api/v1/verify`
 
-## Shipped vs Architectural Scope
+This is a bounded service layer, not a distributed control plane. There is no persistent job store, async orchestration, tenant isolation, or session management.
 
-The engine architecture — typed contracts → deterministic evidence → bounded review → authority closure → portable proof — is domain-independent.
+## Reviewer Authority
 
-The repository ships a complete implementation for financial analytics. That is the current beachhead: the most tested, most audited, most explicit domain.
+Reviewer authority is cryptographic, not cosmetic.
 
-Extending Attestor to a new domain requires domain-specific contracts, semantic clauses, and scoring logic. The governance engine, authority chain, signing, and verification layers are reusable without modification.
+- Endorsements can be Ed25519-signed.
+- Single-query endorsements bind to `runId + replayIdentity + evidenceChainTerminal`.
+- Multi-query endorsements bind to `runId + multiQueryHash`.
+- Replay across runs is detectable and rejected.
 
-Broader domain packs are architectural possibility. They are not shipped.
+Identity truth today:
 
-## Bounded Capabilities Today
+- Operator-asserted reviewer identity is supported everywhere.
+- OIDC-verified reviewer identity is supported on the API path.
+- Full enterprise IAM flow is not shipped.
 
-**PostgreSQL proof path.** Optional read-only connector with predictive guardrails, schema allowlist enforcement, and a reproducible demo bootstrap. Doctor provides step-by-step probe with remediation hints.
+## Connectors and Domain Breadth
 
-**Local runtime.** Single-process CLI or programmatic import. No API service layer, no distributed execution, no multi-tenant isolation.
+The repository is broader than finance in architecture, but not equally deep in every path.
 
-**Reviewer-signed proof.** Ed25519-signed and run-bound. Reviewer identity is operator-asserted, not enterprise-directory-bound (SSO/LDAP/AD).
+- Finance is the most complete domain and the reference implementation.
+- Healthcare is a pack-first second domain, not yet a full end-to-end scenario library.
+- PostgreSQL is the reference live execution connector.
+- Snowflake is a real connector module with env-gated live testing, but not yet a top-level `prove` flow.
+- XBRL US-GAAP 2024 is a real mapping/export adapter, but not yet wired into a full filing issuance workflow.
 
-**Key management.** Ephemeral keys by default. Persistent keys loadable from a directory. No HSM, vault, or external KMS.
+## PostgreSQL Product Proof
+
+Real PostgreSQL-backed proof is already part of the repository's working surface.
+
+- Bounded read-only execution
+- EXPLAIN-based predictive guardrails
+- Demo bootstrap via `pg-demo-init`
+- Self-contained proof run via `scripts/real-db-proof.ts`
+- Execution provider and execution-context evidence in bundle and kit
+
+What it does not prove yet:
+
+- Full schema snapshot attestation
+- Table-level content hashing
+- Data-state attestation across time
 
 ## Not Yet Implemented
 
-- Schema fingerprinting and sentinel-based differential evidence (CDC integration)
-- Domain packs beyond finance
-- Warehouse-scale connectors (Snowflake, BigQuery, Databricks)
-- Filing or regulatory submission adapters
-- Full OIDC login flow integration (device flow, token refresh, session management)
-- Integration of PKI trust chains into attestation certificate and verification kit issuance
-- Distributed control plane or API service layer
+- Differential evidence and schema/data-state attestation
+- Broader end-to-end domain implementations beyond finance
+- Top-level prove/service routing for non-PostgreSQL connectors
+- Filing-package issuance wired into pipeline or API flows
+- Full OIDC login flow, token lifecycle, and session management
+- PKI trust-chain integration into default certificate and kit issuance
+- Distributed control plane, async job orchestration, and multi-tenant persistence
 
 ## Output Artifacts
 
 | Artifact | Purpose |
 |---|---|
-| **Decision dossier** | Reviewer packet: readiness, breaks, policy, guardrails, authority, proof |
-| **Output pack** | Machine-readable run summary with oversight and evidence |
-| **Manifest** | Artifact inventory and run-anchor hashes |
-| **Attestation** | Canonical evidence pack with chain linkage |
-| **Certificate** | Ed25519-signed portable proof: authority + evidence + decision (single-query) |
-| **Verification kit** | Self-contained verifier-facing package: certificate + bundle + reviewer endorsement (single-query) |
-| **Audit trail** | Ordered event log with evidence hashes |
-| **Reviewer public key** | Ed25519 public key for independent endorsement verification |
-
-Artifacts are designed to agree with each other and to remain truthful about what the runtime actually proved.
-
-## Reviewer Authority
-
-Workflow-bound reviewer authority. Not a status flag — a cryptographic proof of who approved, what they approved, and which specific run they approved.
-
-**Identity** captures name, role, and identifier. **Endorsement** captures the decision, rationale, and review scope. When a reviewer key pair is available, the endorsement is **Ed25519-signed** and bound to `runId` + `replayIdentity` + `evidenceChainTerminal`.
-
-**Run binding** prevents cross-run replay. The verification kit checks binding equality — a valid endorsement from one run fails verification inside a different run's kit.
-
-**Boundary.** Reviewer identity is operator-asserted. Enterprise directory binding (SSO, LDAP, AD) is not yet shipped. The cryptographic chain is real. The organizational identity binding is not.
-
-## PostgreSQL Product Proof
-
-Real PostgreSQL-backed proof has been achieved. The first governed proof run against a real PostgreSQL instance (18.3) completed successfully with signed certificate, reviewer-verified kit, and execution context evidence.
-
-**Self-contained proof.** `npx tsx scripts/real-db-proof.ts` downloads an embedded PostgreSQL binary, starts it, bootstraps the demo schema, runs the full governed proof, and saves verified artifacts. Zero manual setup required.
-
-**Safety.** Read-only transactions. Statement timeout. Row limits. Write/stacked-query rejection. Schema allowlist enforcement.
-
-**Predictive guardrails.** EXPLAIN-based risk preflight. Critical-risk queries are denied before they touch data.
-
-**Demo bootstrap.** `pg-demo-init` seeds a deterministic `attestor_demo` schema for reproducible proof. Canonical demo SQL for the counterparty scenario.
-
-**Evidence.** `executionContextHash` anchors which database environment was queried. `executionProvider` and `hasDbContextEvidence` make a real-DB kit distinguishable from a fixture kit.
-
-**Boundary.** Does not prove schema snapshot, table-level content hash, or data-state attestation.
-
-## Regulatory Boundary
-
-Attestor maps to **control objectives** in DORA, BCBS 239, SR 11-7, EU AI Act, and SOX/ICFR. It does not certify compliance. Compliance remains the organization's responsibility. Applicability depends on deployment context.
-
-See [Regulatory alignment](docs/03-governance/regulatory-alignment.md).
+| `dossier` | Reviewer-facing decision packet |
+| `output pack` | Machine-readable run summary |
+| `manifest` | Artifact inventory and evidence anchors |
+| `attestation` | Canonical evidence pack |
+| `certificate` | Signed portable proof |
+| `verification kit` | Verifier-facing package |
+| `audit trail` | Ordered evidence log |
+| `reviewer-public.pem` | Reviewer verification material |
 
 ## Documentation
 
 | Document | Content |
 |---|---|
-| [Purpose and boundary](docs/01-overview/purpose.md) | Engine identity, problem definition, non-claims |
-| [System overview](docs/02-architecture/system-overview.md) | Engine architecture, financial reference shape, proof model |
-| [Regulatory alignment](docs/03-governance/regulatory-alignment.md) | Control mapping, framework-level boundaries |
-| [Authority model](docs/04-authority/authority-model.md) | Warrant → escrow → receipt → capsule lifecycle |
-| [Proof model](docs/05-proof/proof-model.md) | Proof modes, Live Proof, Live Readiness, multi-query proof |
-| [Signing and verification](docs/06-signing/signing-verification.md) | Ed25519 certificates, verification kit, reviewer endorsement |
-| [PostgreSQL and connectors](docs/07-connectors/postgres-connectors.md) | Safety model, predictive guardrails, demo bootstrap |
+| [Purpose and boundary](docs/01-overview/purpose.md) | Engine identity and non-claims |
+| [System overview](docs/02-architecture/system-overview.md) | Engine architecture and current boundaries |
+| [Regulatory alignment](docs/03-governance/regulatory-alignment.md) | Control-objective mapping |
+| [Authority model](docs/04-authority/authority-model.md) | Warrant -> escrow -> receipt -> capsule |
+| [Proof model](docs/05-proof/proof-model.md) | Proof modes, maturity, and multi-query proof |
+| [Signing and verification](docs/06-signing/signing-verification.md) | Certificates, kits, reviewer endorsements |
+| [PostgreSQL and connectors](docs/07-connectors/postgres-connectors.md) | PostgreSQL proof path and connector safety |
 
 ## Environment Variables
 
 | Variable | Purpose |
 |---|---|
-| `OPENAI_API_KEY` | Live model proof (AI-generated SQL) |
-| `ATTESTOR_PG_URL` | PostgreSQL connection URL for real database proof |
-| `ATTESTOR_PG_TIMEOUT_MS` | Query timeout in ms (default: 10000) |
-| `ATTESTOR_PG_MAX_ROWS` | Maximum result rows (default: 10000) |
-| `ATTESTOR_PG_ALLOWED_SCHEMAS` | Comma-separated schema allowlist |
-
-Fixture mode requires no API key or database.
+| `OPENAI_API_KEY` | Live model proof |
+| `ATTESTOR_PG_URL` | PostgreSQL connection URL |
+| `ATTESTOR_PG_TIMEOUT_MS` | PostgreSQL timeout override |
+| `ATTESTOR_PG_MAX_ROWS` | PostgreSQL row limit override |
+| `ATTESTOR_PG_ALLOWED_SCHEMAS` | PostgreSQL schema allowlist |
+| `SNOWFLAKE_ACCOUNT` | Snowflake live connector test |
+| `SNOWFLAKE_USERNAME` | Snowflake live connector test |
+| `SNOWFLAKE_PASSWORD` | Snowflake live connector test |
+| `SNOWFLAKE_WAREHOUSE` | Snowflake warehouse override |
 
 ## Project Status
 
-| | |
+| Field | Value |
 |---|---|
-| **Version** | 0.1.0 |
-| **Runtime** | Node.js 22+, TypeScript, local single-process |
-| **Tests** | 675 (458 financial + 84 signing + 32 live API + 43 live PG + 20 live Snowflake + 38 connector/filing) |
-| **License** | Proprietary. All rights reserved. |
+| Version | 0.1.0 |
+| Runtime | Node.js 22+, TypeScript, single-process CLI + bounded HTTP API |
+| Core verification gate | 542 tests (`npm test`: 458 financial + 84 signing) |
+| Additional suites | live API, live PostgreSQL, env-gated live Snowflake, connector/filing integration |
+| License | UNLICENSED / private |

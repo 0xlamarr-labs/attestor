@@ -13,8 +13,27 @@
  */
 
 import EmbeddedPostgres from 'embedded-postgres';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
-import { mkdirSync, existsSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+
+async function reservePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Could not reserve a TCP port.'));
+        return;
+      }
+      const { port } = address;
+      server.close((err) => err ? reject(err) : resolve(port));
+    });
+  });
+}
 
 async function main() {
   console.log('\n══════════════════════════════════════════════════════════════');
@@ -23,28 +42,50 @@ async function main() {
 
   // ── Step 1: Start embedded PostgreSQL ──
   console.log('  [1/7] Starting embedded PostgreSQL...');
-  const dataDir = join('.attestor', 'pg-data');
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync('.attestor', { recursive: true });
+  const dataDir = mkdtempSync(join('.attestor', 'pg-data-'));
+  const port = await reservePort();
 
   const pg = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: 'attestor',
     password: 'attestor',
-    port: 15432,
+    port,
     persistent: false,
     initdbFlags: ['--encoding=UTF8', '--locale=C'],
   });
 
+  let pgRunning = false;
+
+  async function cleanup(logStop: boolean = false): Promise<void> {
+    if (pgRunning) {
+      try {
+        await pg.stop();
+        if (logStop) console.log('  Embedded PostgreSQL stopped.\n');
+      } catch {
+        // ignore shutdown failures during cleanup
+      } finally {
+        pgRunning = false;
+      }
+    }
+    try {
+      rmSync(dataDir, { recursive: true, force: true });
+    } catch {
+      // ignore temp-dir cleanup failures
+    }
+  }
+
   try {
     await pg.initialise();
     await pg.start();
-    console.log('  ✓ Embedded PostgreSQL running on port 15432');
+    pgRunning = true;
+    console.log(`  ✓ Embedded PostgreSQL running on port ${port}`);
 
     // Create the database
     await pg.createDatabase('attestor_proof');
     console.log('  ✓ Database "attestor_proof" created');
 
-    const pgUrl = 'postgres://attestor:attestor@localhost:15432/attestor_proof';
+    const pgUrl = `postgres://attestor:attestor@localhost:${port}/attestor_proof`;
 
     // Set environment variables for child processes and current process
     process.env.ATTESTOR_PG_URL = pgUrl;
@@ -59,7 +100,7 @@ async function main() {
     }
     if (!probe.success) {
       console.error('\n  ✗ Probe failed. Cannot proceed.');
-      await pg.stop();
+      await cleanup();
       process.exit(1);
     }
     console.log(`  ✓ PostgreSQL verified: ${probe.serverVersion?.split(',')[0]}`);
@@ -78,7 +119,7 @@ async function main() {
     const bootstrap = await runDemoBootstrap();
     if (!bootstrap.success) {
       console.error(`\n  ✗ Bootstrap failed: ${bootstrap.message}`);
-      await pg.stop();
+      await cleanup();
       process.exit(1);
     }
     console.log(`  ✓ ${bootstrap.message}`);
@@ -99,7 +140,7 @@ async function main() {
 
     if (!pgProveResult.execution?.success) {
       console.error(`\n  ✗ PostgreSQL execution failed: ${pgProveResult.execution?.error ?? pgProveResult.skipReason}`);
-      await pg.stop();
+      await cleanup();
       process.exit(1);
     }
 
@@ -164,7 +205,7 @@ async function main() {
 
     if (!report.certificate) {
       console.error('  ✗ No certificate issued');
-      await pg.stop();
+      await cleanup();
       process.exit(1);
     }
 
@@ -179,7 +220,7 @@ async function main() {
     const kit = buildVerificationKit(report, signingKeyPair.publicKeyPem, reviewerKeyPair.publicKeyPem);
     if (!kit) {
       console.error('  ✗ Kit build failed');
-      await pg.stop();
+      await cleanup();
       process.exit(1);
     }
 
@@ -238,8 +279,7 @@ async function main() {
     console.log('══════════════════════════════════════════════════════════════\n');
 
     // ── Cleanup ──
-    await pg.stop();
-    console.log('  Embedded PostgreSQL stopped.\n');
+    await cleanup(true);
 
     // Exit truthfully: non-zero if governance failed
     if (report.decision !== 'pass') {
@@ -249,7 +289,7 @@ async function main() {
 
   } catch (err) {
     console.error('\n  ✗ Fatal error:', err instanceof Error ? err.message : String(err));
-    try { await pg.stop(); } catch { /* ignore */ }
+    await cleanup();
     process.exit(1);
   }
 }
