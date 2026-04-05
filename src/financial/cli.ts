@@ -490,7 +490,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     console.log(`    Proof will use offline fixture data.`);
     console.log(`    To enable: npm install pg\n`);
   } else {
-    console.log(`  PostgreSQL: ready — running real database proof path...`);
+    console.log(`  PostgreSQL: config present — attempting real database proof path...`);
     pgProveResult = await runPostgresProve(scenario.input.candidateSql);
     if (pgProveResult.attempted) {
       if (pgProveResult.predictiveGuardrail.performed) {
@@ -503,12 +503,14 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
         }
       }
       if (pgProveResult.execution?.success) {
-        console.log(`  Execution:  ✓ ${pgProveResult.execution.rowCount} rows in ${pgProveResult.execution.durationMs}ms (real PostgreSQL)`);
+        console.log(`  Execution:  ✓ REAL PostgreSQL — ${pgProveResult.execution.rowCount} rows in ${pgProveResult.execution.durationMs}ms`);
       } else if (pgProveResult.execution) {
-        console.log(`  Execution:  ✗ ${pgProveResult.execution.error}`);
+        console.log(`  Execution:  ✗ PostgreSQL execution failed: ${pgProveResult.execution.error}`);
+        console.log(`    Proof falls back to offline fixture data.`);
       }
     } else {
-      console.log(`  PostgreSQL: skipped — ${pgProveResult.skipReason}`);
+      console.log(`  PostgreSQL: attempt failed — ${pgProveResult.skipReason}`);
+      console.log(`    Proof falls back to offline fixture data.`);
     }
     console.log('');
   }
@@ -768,12 +770,18 @@ async function runDoctor(): Promise<void> {
     const probe = await runPostgresProbe();
     for (const step of probe.steps) {
       console.log(`    ${step.passed ? '✓' : '✗'} ${step.step.padEnd(14)} ${step.detail}`);
+      if (!step.passed && step.remediation) {
+        console.log(`      → ${step.remediation}`);
+      }
     }
     pgProbeOk = probe.success;
     if (probe.success) {
-      console.log(`    ✓ Probe passed — real PostgreSQL proof is operational`);
+      console.log(`\n    Readiness: configured ✓  reachable ✓  read-only safe ✓  ready for prove ✓`);
     } else {
-      console.log(`    ✗ Probe failed — ${probe.message}`);
+      // Find the first failed step for a targeted summary
+      const failedStep = probe.steps.find(s => !s.passed);
+      console.log(`\n    ✗ Probe failed at step: ${failedStep?.step ?? 'unknown'}`);
+      console.log(`    ${probe.message}`);
     }
   }
 

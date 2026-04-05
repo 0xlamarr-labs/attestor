@@ -867,8 +867,45 @@ export async function runFinancialTests(): Promise<number> {
     ok(probe.currentSchemas === null, 'PgProbe: no schemas');
     ok(probe.message.includes('ATTESTOR_PG_URL'), 'PgProbe: message mentions URL');
 
+    // Remediation hint present on config failure
+    ok(probe.steps[0].remediation !== null, 'PgProbe: config step has remediation hint');
+    ok(probe.steps[0].remediation!.includes('ATTESTOR_PG_URL'), 'PgProbe: remediation mentions ATTESTOR_PG_URL');
+
+    // Step names are specific — no generic 'query' step
+    for (const step of probe.steps) {
+      ok(step.step !== 'query', `PgProbe: no generic 'query' step (found: ${step.step})`);
+    }
+
+    // Passed steps have null remediation
+    const passedSteps = probe.steps.filter(s => s.passed);
+    for (const step of passedSteps) {
+      ok(step.remediation === null, `PgProbe: passed step '${step.step}' has null remediation`);
+    }
+
     console.log(`    attempted=${probe.attempted}, success=${probe.success}, steps=${probe.steps.length}`);
     console.log(`    message=${probe.message}`);
+    console.log(`    remediation=${probe.steps[0].remediation}`);
+  }
+
+  // ═══ POSTGRES PROBE — STEP NAME INTEGRITY ═══
+  console.log('\n  [Postgres Probe - Step Name Integrity]');
+  {
+    const { runPostgresProbe } = await import('../connectors/postgres.js');
+
+    // Even in the unconfigured case, the probe should only use known step names
+    const probe = await runPostgresProbe();
+    const KNOWN_STEPS = new Set(['config', 'driver', 'connect', 'version', 'schemas', 'readonly_txn']);
+    for (const step of probe.steps) {
+      ok(KNOWN_STEPS.has(step.step), `PgProbe: step name '${step.step}' is a known step`);
+    }
+
+    // The first failure should stop the probe — no steps after the first failure
+    const firstFailIdx = probe.steps.findIndex(s => !s.passed);
+    if (firstFailIdx >= 0) {
+      ok(firstFailIdx === probe.steps.length - 1, 'PgProbe: first failure is last step (probe stops on failure)');
+    }
+
+    console.log(`    known steps verified: ${probe.steps.map(s => s.step).join(', ')}`);
   }
 
   // ═══ BUNDLE PROOF TRUTH — FIXTURE PATH ═══

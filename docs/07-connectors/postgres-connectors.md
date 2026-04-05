@@ -91,6 +91,10 @@ When `ATTESTOR_PG_URL` and `pg` are both present, doctor runs a **bounded connec
 
 The probe is read-only and bounded. It does not inspect user tables, run EXPLAIN, or execute any user SQL.
 
+Each step has independent error handling — failures are attributed to the specific step that failed, not collapsed into a generic error. Failed steps include a **remediation hint** in the doctor output (e.g., check host/credentials for connect failures, check permissions for transaction failures).
+
+When the probe completes successfully, doctor reports: `configured ✓  reachable ✓  read-only safe ✓  ready for prove ✓`
+
 ## Artifact Evidence
 
 When a real PostgreSQL-backed proof run occurs, the authority bundle and verification kit carry additional evidence fields:

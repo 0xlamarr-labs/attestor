@@ -235,6 +235,8 @@ export interface PostgresProbeStep {
   step: string;
   passed: boolean;
   detail: string;
+  /** Operator-facing remediation hint when this step fails. Null when passed. */
+  remediation: string | null;
 }
 
 export async function runPostgresProbe(): Promise<PostgresProbeResult> {
@@ -246,57 +248,80 @@ export async function runPostgresProbe(): Promise<PostgresProbeResult> {
   // Step 1: Config
   const config = loadPostgresConfig();
   if (!config) {
-    steps.push({ step: 'config', passed: false, detail: 'ATTESTOR_PG_URL not set' });
+    steps.push({ step: 'config', passed: false, detail: 'ATTESTOR_PG_URL not set', remediation: 'Set ATTESTOR_PG_URL to a PostgreSQL connection URL (e.g., postgres://user:pass@host:5432/db)' });
     return { attempted: false, success: false, steps, serverVersion: null, currentSchemas: null, sanitizedUrl: null, message: 'ATTESTOR_PG_URL not set. Cannot probe.' };
   }
   sanitizedUrl = config.connectionUrl.replace(/:[^@]*@/, ':***@');
-  steps.push({ step: 'config', passed: true, detail: `URL configured: ${sanitizedUrl}` });
+  steps.push({ step: 'config', passed: true, detail: `URL configured: ${sanitizedUrl}`, remediation: null });
 
   // Step 2: Driver
   const driverOk = await isPostgresDriverAvailable();
   if (!driverOk) {
-    steps.push({ step: 'driver', passed: false, detail: 'pg driver not installed. Run: npm install pg' });
+    steps.push({ step: 'driver', passed: false, detail: 'pg driver not installed', remediation: 'Run: npm install pg' });
     return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: 'pg driver not installed.' };
   }
-  steps.push({ step: 'driver', passed: true, detail: 'pg driver available' });
+  steps.push({ step: 'driver', passed: true, detail: 'pg driver available', remediation: null });
 
-  // Step 3: Connect + version + schemas (bounded, read-only)
+  // Step 3: Load driver
   let Client: any;
   try {
     const pg = await (Function('return import("pg")')() as Promise<any>);
     Client = pg.default?.Client ?? pg.Client;
   } catch {
-    steps.push({ step: 'connect', passed: false, detail: 'Failed to load pg driver' });
+    steps.push({ step: 'connect', passed: false, detail: 'Failed to load pg driver module', remediation: 'Reinstall pg: npm install pg' });
     return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: 'Failed to load pg driver.' };
   }
 
+  // Step 4: Connect (separate try/catch for precise step attribution)
   const client = new Client({ connectionString: config.connectionUrl });
   try {
     await client.connect();
-    steps.push({ step: 'connect', passed: true, detail: 'Connection established' });
-
-    // Version
-    const vResult = await client.query('SELECT version()');
-    serverVersion = vResult.rows[0]?.version ?? null;
-    steps.push({ step: 'version', passed: !!serverVersion, detail: serverVersion ? `Server: ${serverVersion.split(',')[0]}` : 'Could not read version' });
-
-    // Schemas
-    const sResult = await client.query('SELECT current_schemas(false)::text AS schemas');
-    currentSchemas = sResult.rows[0]?.schemas ?? null;
-    steps.push({ step: 'schemas', passed: !!currentSchemas, detail: currentSchemas ? `Schemas: ${currentSchemas}` : 'Could not read schemas' });
-
-    // Read-only transaction
-    await client.query('BEGIN TRANSACTION READ ONLY');
-    await client.query('ROLLBACK');
-    steps.push({ step: 'readonly_txn', passed: true, detail: 'Read-only transaction works' });
-
-    await client.end();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    steps.push({ step: steps.length <= 2 ? 'connect' : 'query', passed: false, detail: msg });
-    try { await client.end(); } catch { /* ignore */ }
-    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: `Connection or query failed: ${msg}` };
+    steps.push({ step: 'connect', passed: false, detail: msg, remediation: 'Check: host reachable, port open, credentials correct, database exists. Verify ATTESTOR_PG_URL.' });
+    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: `Connection failed: ${msg}` };
   }
+  steps.push({ step: 'connect', passed: true, detail: 'Connection established', remediation: null });
+
+  // Step 5: Version (separate try/catch)
+  try {
+    const vResult = await client.query('SELECT version()');
+    serverVersion = vResult.rows[0]?.version ?? null;
+    if (!serverVersion) throw new Error('version() returned null');
+    steps.push({ step: 'version', passed: true, detail: `Server: ${serverVersion.split(',')[0]}`, remediation: null });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    steps.push({ step: 'version', passed: false, detail: msg, remediation: 'Check: user has permission to run SELECT version(). Database may require specific privileges.' });
+    try { await client.end(); } catch { /* ignore */ }
+    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: `Version check failed: ${msg}` };
+  }
+
+  // Step 6: Schemas (separate try/catch)
+  try {
+    const sResult = await client.query('SELECT current_schemas(false)::text AS schemas');
+    currentSchemas = sResult.rows[0]?.schemas ?? null;
+    if (!currentSchemas) throw new Error('current_schemas() returned null');
+    steps.push({ step: 'schemas', passed: true, detail: `Schemas: ${currentSchemas}`, remediation: null });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    steps.push({ step: 'schemas', passed: false, detail: msg, remediation: 'Check: schema search path is configured. User may lack schema-level permissions.' });
+    try { await client.end(); } catch { /* ignore */ }
+    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: `Schema check failed: ${msg}` };
+  }
+
+  // Step 7: Read-only transaction (separate try/catch)
+  try {
+    await client.query('BEGIN TRANSACTION READ ONLY');
+    await client.query('ROLLBACK');
+    steps.push({ step: 'readonly_txn', passed: true, detail: 'Read-only transaction works', remediation: null });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    steps.push({ step: 'readonly_txn', passed: false, detail: msg, remediation: 'Check: user has permission to begin read-only transactions. Database may restrict transaction modes.' });
+    try { await client.end(); } catch { /* ignore */ }
+    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: `Read-only transaction check failed: ${msg}` };
+  }
+
+  try { await client.end(); } catch { /* ignore */ }
 
   const allPassed = steps.every(s => s.passed);
   return {
