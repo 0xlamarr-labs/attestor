@@ -10,6 +10,7 @@
     "test": "tsx src/financial/financial.test.ts",
     "verify": "npm run typecheck && npm test && npm run build",
     "start": "tsx src/financial/cli.ts",
+    "list": "tsx src/financial/cli.ts list",
     "scenario": "tsx src/financial/cli.ts scenario",
     "benchmark": "tsx src/financial/cli.ts benchmark",
     "live": "tsx src/financial/cli.ts live-scenario"
@@ -24,7 +25,7 @@
     "tsx": "^4.19.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "license": "UNLICENSED",
   "private": true
