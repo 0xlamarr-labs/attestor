@@ -104,3 +104,42 @@ When a real PostgreSQL-backed proof run occurs, the authority bundle and verific
 - `proofCompleteness.hasDbContextEvidence`: true when execution context hash is present
 
 These fields make a real DB-backed kit immediately distinguishable from a fixture-based kit without digging into the full report.
+
+## Demo Bootstrap
+
+Attestor includes a bounded demo bootstrap that seeds a deterministic `attestor_demo` schema in PostgreSQL. This makes the first real DB proof run reproducible from the repo.
+
+```bash
+# 1. Configure PostgreSQL
+export ATTESTOR_PG_URL=postgres://user:pass@localhost:5432/mydb
+
+# 2. Install pg driver
+npm install pg
+
+# 3. Bootstrap demo schema (creates attestor_demo.* with deterministic data)
+npx tsx src/financial/cli.ts pg-demo-init
+
+# 4. Set schema allowlist to demo schema
+export ATTESTOR_PG_ALLOWED_SCHEMAS=attestor_demo
+
+# 5. Run real DB proof
+npm run prove -- counterparty
+
+# 6. (Optional) Remove demo schema
+npx tsx src/financial/cli.ts pg-demo-teardown
+```
+
+The bootstrap creates three tables matching the repo's fixture scenarios:
+
+| Table | Rows | Scenario |
+|---|---|---|
+| `attestor_demo.counterparty_exposures` | 6 | Counterparty exposure (expected: pass) |
+| `attestor_demo.liquidity_buffer` | 3 | Liquidity risk (expected: fail — negative value) |
+| `attestor_demo.position_reconciliation` | 3 | Reconciliation (expected: fail — variance sum mismatch) |
+
+**Important boundaries:**
+- The bootstrap is the ONLY write operation in Attestor's PostgreSQL integration
+- All writes are confined to the `attestor_demo` schema
+- The governed proof path remains strictly read-only
+- The command is idempotent (DROP IF EXISTS + CREATE)
+- This is for reproducible demo/proof setup, not normal runtime behavior

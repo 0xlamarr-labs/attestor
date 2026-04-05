@@ -908,6 +908,70 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    known steps verified: ${probe.steps.map(s => s.step).join(', ')}`);
   }
 
+  // ═══ POSTGRES DEMO BOOTSTRAP PLAN ═══
+  console.log('\n  [Postgres Demo Bootstrap Plan]');
+  {
+    const { getDemoBootstrapPlan, getDemoCounterpartySql, getDemoAllowedSchemas } = await import('../connectors/postgres-demo.js');
+
+    const plan = getDemoBootstrapPlan();
+
+    // Plan structure
+    ok(plan.schema === 'attestor_demo', 'DemoPlan: schema is attestor_demo');
+    ok(plan.tables.length === 3, 'DemoPlan: 3 tables');
+    ok(plan.tables[0].name === 'counterparty_exposures', 'DemoPlan: first table is counterparty_exposures');
+    ok(plan.tables[0].rowCount === 6, 'DemoPlan: counterparty has 6 rows');
+    ok(plan.tables[1].name === 'liquidity_buffer', 'DemoPlan: second table is liquidity_buffer');
+    ok(plan.tables[1].rowCount === 3, 'DemoPlan: liquidity has 3 rows');
+    ok(plan.tables[2].name === 'position_reconciliation', 'DemoPlan: third table is position_reconciliation');
+    ok(plan.tables[2].rowCount === 3, 'DemoPlan: reconciliation has 3 rows');
+
+    // SQL content
+    ok(plan.setupSql.includes('CREATE SCHEMA IF NOT EXISTS attestor_demo'), 'DemoPlan: setup creates schema');
+    ok(plan.setupSql.includes('counterparty_exposures'), 'DemoPlan: setup creates counterparty table');
+    ok(plan.setupSql.includes('liquidity_buffer'), 'DemoPlan: setup creates liquidity table');
+    ok(plan.setupSql.includes('position_reconciliation'), 'DemoPlan: setup creates recon table');
+    ok(plan.teardownSql.includes('DROP'), 'DemoPlan: teardown drops objects');
+
+    // Demo SQL rewrite
+    const demoSql = getDemoCounterpartySql();
+    ok(demoSql.includes('attestor_demo.counterparty_exposures'), 'DemoSQL: uses attestor_demo schema');
+    ok(!demoSql.includes('risk.'), 'DemoSQL: does NOT reference risk schema');
+
+    // Demo allowed schemas
+    const schemas = getDemoAllowedSchemas();
+    ok(schemas.length === 1, 'DemoSchemas: one allowed schema');
+    ok(schemas[0] === 'attestor_demo', 'DemoSchemas: attestor_demo');
+
+    // Columns match fixture expectations
+    const cpTable = plan.tables.find(t => t.name === 'counterparty_exposures')!;
+    ok(cpTable.columns.includes('counterparty_name'), 'DemoPlan: counterparty has counterparty_name');
+    ok(cpTable.columns.includes('exposure_usd'), 'DemoPlan: counterparty has exposure_usd');
+    ok(cpTable.columns.includes('reporting_date'), 'DemoPlan: counterparty has reporting_date');
+
+    console.log(`    schema=${plan.schema}, tables=${plan.tables.length}, totalRows=${plan.tables.reduce((s, t) => s + t.rowCount, 0)}`);
+    console.log(`    demoSql uses: ${demoSql.includes('attestor_demo') ? 'attestor_demo' : 'WRONG'}`);
+  }
+
+  // ═══ POSTGRES DEMO BOOTSTRAP — NO DB ═══
+  console.log('\n  [Postgres Demo Bootstrap - No DB]');
+  {
+    const { runDemoBootstrap, runDemoTeardown } = await import('../connectors/postgres-demo.js');
+
+    // Without ATTESTOR_PG_URL, bootstrap should fail gracefully
+    const result = await runDemoBootstrap();
+    ok(!result.success, 'DemoBootstrap: fails without ATTESTOR_PG_URL');
+    ok(result.message.includes('ATTESTOR_PG_URL'), 'DemoBootstrap: message mentions URL');
+    ok(result.tables.length === 0, 'DemoBootstrap: no tables created');
+    ok(result.executedSql === '', 'DemoBootstrap: no SQL executed');
+
+    // Teardown also fails gracefully
+    const teardown = await runDemoTeardown();
+    ok(!teardown.success, 'DemoTeardown: fails without ATTESTOR_PG_URL');
+
+    console.log(`    bootstrap: success=${result.success}, message=${result.message}`);
+    console.log(`    teardown: success=${teardown.success}`);
+  }
+
   // ═══ BUNDLE PROOF TRUTH — FIXTURE PATH ═══
   console.log('\n  [Bundle Proof Truth - Fixture]');
   {

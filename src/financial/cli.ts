@@ -389,6 +389,8 @@ function printHelp(): void {
     npx tsx src/financial/cli.ts prove <id> [key-dir] [--reviewer-key-dir <dir>]
                                                       Run governed scenario + issue signed certificate
     npx tsx src/financial/cli.ts multi-query            Run a governed multi-query proof (fixed scenario set)
+    npx tsx src/financial/cli.ts pg-demo-init          Bootstrap demo schema + data in PostgreSQL for real DB proof
+    npx tsx src/financial/cli.ts pg-demo-teardown      Remove the demo schema from PostgreSQL
     npx tsx src/financial/cli.ts doctor                Check product proof readiness (keys, DB, credentials)
     npx tsx src/financial/cli.ts benchmark             Run the full replay benchmark corpus
     npx tsx src/financial/cli.ts list                  List available scenarios
@@ -478,8 +480,19 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
 
   // Step 3: Check for PostgreSQL-backed execution
   let pgProveResult: Awaited<ReturnType<typeof runPostgresProve>> | null = null;
-  const { reportPostgresReadiness: checkPg } = await import('../connectors/postgres.js');
+  const { reportPostgresReadiness: checkPg, loadPostgresConfig: loadPgConf } = await import('../connectors/postgres.js');
   const pgReadiness = await checkPg();
+
+  // Detect demo schema mode: when ATTESTOR_PG_ALLOWED_SCHEMAS includes 'attestor_demo',
+  // rewrite SQL to use the demo schema instead of the fixture's original schema.
+  const pgConf = loadPgConf();
+  const usingDemoSchema = pgConf?.allowedSchemas?.includes('attestor_demo') ?? false;
+  let candidateSqlForPg = scenario.input.candidateSql;
+  if (usingDemoSchema) {
+    // Rewrite schema references: risk.* → attestor_demo.*
+    candidateSqlForPg = candidateSqlForPg.replace(/\brisk\./g, 'attestor_demo.');
+    console.log(`  Demo mode: rewriting SQL schema references (risk.* → attestor_demo.*)`);
+  }
 
   if (!pgReadiness.configured) {
     console.log(`  PostgreSQL: not configured (ATTESTOR_PG_URL not set)`);
@@ -491,7 +504,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     console.log(`    To enable: npm install pg\n`);
   } else {
     console.log(`  PostgreSQL: config present — attempting real database proof path...`);
-    pgProveResult = await runPostgresProve(scenario.input.candidateSql);
+    pgProveResult = await runPostgresProve(candidateSqlForPg);
     if (pgProveResult.attempted) {
       if (pgProveResult.predictiveGuardrail.performed) {
         console.log(`  Preflight:  ${pgProveResult.predictiveGuardrail.riskLevel} risk (${pgProveResult.predictiveGuardrail.recommendation})`);
@@ -534,12 +547,19 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
 
   // When reviewer key is available, force high materiality to trigger the review path.
   // This ensures the endorsement chain is exercised in the product proof.
-  const intentOverride = reviewerKeyPair
+  let intentOverride = reviewerKeyPair
     ? { ...scenario.input.intent, materialityTier: 'high' as const }
-    : scenario.input.intent;
+    : { ...scenario.input.intent };
+
+  // In demo mode, also override allowedSchemas so SQL governance accepts attestor_demo.*
+  if (usingDemoSchema) {
+    intentOverride = { ...intentOverride, allowedSchemas: ['attestor_demo'] };
+  }
 
   const pipelineInput: FinancialPipelineInput = {
     ...scenario.input,
+    // In demo mode, use rewritten SQL for governance and execution
+    candidateSql: usingDemoSchema ? candidateSqlForPg : scenario.input.candidateSql,
     intent: intentOverride,
     signingKeyPair: keyPair,
     // Inject reviewer approval (overrides scenario-level approval if any)
@@ -738,6 +758,67 @@ function runMultiQueryDemo(): void {
 }
 
 /**
+ * PostgreSQL Demo Bootstrap — seeds a deterministic demo schema for real DB proof.
+ *
+ * This is the ONLY write operation in Attestor's PostgreSQL integration.
+ * It creates an `attestor_demo` schema with tables matching the repo's
+ * fixture scenarios, so `prove counterparty` can run against real Postgres.
+ */
+async function runPgDemoInit(): Promise<void> {
+  const { runDemoBootstrap, getDemoBootstrapPlan, getDemoCounterpartySql, getDemoAllowedSchemas } = await import('../connectors/postgres-demo.js');
+
+  console.log(`\n  Attestor PostgreSQL Demo Bootstrap`);
+  console.log(`  This creates a demo schema with deterministic data for real DB proof.\n`);
+
+  const plan = getDemoBootstrapPlan();
+  console.log(`  Schema: ${plan.schema}`);
+  console.log(`  Tables:`);
+  for (const t of plan.tables) {
+    console.log(`    ${plan.schema}.${t.name.padEnd(30)} ${t.rowCount} rows  (${t.columns.join(', ')})`);
+  }
+  console.log('');
+
+  const result = await runDemoBootstrap();
+  if (result.success) {
+    console.log(`  ✓ ${result.message}`);
+    console.log('');
+    for (const [table, count] of Object.entries(result.rowCounts)) {
+      console.log(`    ${plan.schema}.${table}: ${count} rows`);
+    }
+    console.log('');
+    console.log(`  Next steps for real DB proof:`);
+    console.log(`    1. Set schema allowlist: export ATTESTOR_PG_ALLOWED_SCHEMAS=${getDemoAllowedSchemas().join(',')}`);
+    console.log(`    2. Run: npm run prove -- counterparty`);
+    console.log('');
+    console.log(`  The counterparty scenario SQL will be rewritten to use ${plan.schema}.*`);
+    console.log(`  when ATTESTOR_PG_ALLOWED_SCHEMAS includes '${plan.schema}'.`);
+    console.log('');
+    console.log(`  Important: This bootstrap is for demo/proof setup only.`);
+    console.log(`  The governed proof path remains strictly read-only.`);
+  } else {
+    console.log(`  ✗ ${result.message}`);
+  }
+  console.log('');
+}
+
+/**
+ * PostgreSQL Demo Teardown — removes the demo schema.
+ */
+async function runPgDemoTeardown(): Promise<void> {
+  const { runDemoTeardown } = await import('../connectors/postgres-demo.js');
+
+  console.log(`\n  Attestor PostgreSQL Demo Teardown\n`);
+
+  const result = await runDemoTeardown();
+  if (result.success) {
+    console.log(`  ✓ ${result.message}`);
+  } else {
+    console.log(`  ✗ ${result.message}`);
+  }
+  console.log('');
+}
+
+/**
  * Doctor — readiness check for real product proof.
  *
  * When Postgres is configured and the driver is available, runs a bounded
@@ -855,6 +936,16 @@ async function main(): Promise<void> {
 
   if (command === 'multi-query') {
     runMultiQueryDemo();
+    return;
+  }
+
+  if (command === 'pg-demo-init') {
+    await runPgDemoInit();
+    return;
+  }
+
+  if (command === 'pg-demo-teardown') {
+    await runPgDemoTeardown();
     return;
   }
 
