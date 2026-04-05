@@ -193,7 +193,7 @@ npm run verify:cert -- .attestor/proofs/<run>/certificate.json .attestor/proofs/
 # Generate a persistent signing key pair
 npm run keygen
 
-# Run all tests (542 tests)
+# Run all tests (542+ tests)
 npm test
 
 # Full verification (typecheck + test + build)
