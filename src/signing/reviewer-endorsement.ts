@@ -35,13 +35,14 @@ export function signReviewerEndorsement(
     signerFingerprint: reviewerKeyPair.fingerprint,
   };
 
-  // Build the body to sign (everything except signature)
+  // Build the body to sign (everything except signature — includes run binding)
   const body = {
     endorsedAt: endorsement.endorsedAt,
     reviewer: signedReviewer,
     endorsedDecision: endorsement.endorsedDecision,
     rationale: endorsement.rationale,
     scope: endorsement.scope,
+    runBinding: endorsement.runBinding,
   };
 
   const canonical = canonicalize(body);
@@ -70,13 +71,14 @@ export function verifyReviewerEndorsement(
   const derived = derivePublicKeyIdentity(reviewerPublicKeyPem);
   const fingerprintMatch = derived.fingerprint === endorsement.reviewer.signerFingerprint;
 
-  // Reconstruct signed body
+  // Reconstruct signed body (includes run binding)
   const body = {
     endorsedAt: endorsement.endorsedAt,
     reviewer: endorsement.reviewer,
     endorsedDecision: endorsement.endorsedDecision,
     rationale: endorsement.rationale,
     scope: endorsement.scope,
+    runBinding: endorsement.runBinding,
   };
 
   const canonical = canonicalize(body);

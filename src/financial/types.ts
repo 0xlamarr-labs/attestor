@@ -421,7 +421,13 @@ export interface ReviewerEndorsement {
   rationale: string;
   /** What the reviewer examined (e.g., 'output_pack', 'dossier', 'full_report'). */
   scope: string[];
-  /** Ed25519 signature over the endorsement body. Null until reviewer signing is implemented. */
+  /** Run-binding: the specific run this endorsement is bound to. Prevents replay across runs. */
+  runBinding: {
+    runId: string;
+    replayIdentity: string;
+    evidenceChainTerminal: string;
+  } | null;
+  /** Ed25519 signature over the endorsement body (including run binding). Null when unsigned. */
   signature: string | null;
 }
 

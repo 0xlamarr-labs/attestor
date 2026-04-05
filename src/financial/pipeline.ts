@@ -84,20 +84,17 @@ function determineOversight(reviewRequired: boolean, reviewReason: string, inten
     // Normalize: when reviewerIdentity exists, its role is authoritative
     const identity = approval.reviewerIdentity ?? null;
     const normalizedRole = identity?.role ?? approval.reviewerRole;
-    // Build endorsement from approval when identity is provided
+    // Build endorsement stub (run binding + signature populated AFTER evidence chain)
     const endorsement: import('./types.js').ReviewerEndorsement | null = identity ? {
       endorsedAt: new Date().toISOString(),
       reviewer: identity,
       endorsedDecision: approval.status,
       rationale: approval.reviewNote,
       scope: ['output_pack', 'dossier'],
-      signature: null, // future: Ed25519 reviewer signing
+      runBinding: null, // populated after evidence chain is built
+      signature: null,  // populated after run binding
     } : null;
-    // Sign endorsement if reviewer key pair is provided
-    const signedEndorsement = endorsement && approval.reviewerKeyPair
-      ? signReviewerEndorsement(endorsement, approval.reviewerKeyPair)
-      : endorsement;
-    return { required: true, reason, status: approval.status, reviewerRole: normalizedRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString(), reviewerIdentity: signedEndorsement?.reviewer ?? identity, endorsement: signedEndorsement };
+    return { required: true, reason, status: approval.status, reviewerRole: normalizedRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString(), reviewerIdentity: identity, endorsement };
   }
   if (required) return { required: true, reason, status: 'pending', reviewerIdentity: null, endorsement: null };
   return { required: false, reason, status: 'not_required', reviewerIdentity: null, endorsement: null };
@@ -441,6 +438,21 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
     reviewPolicy.rejected,
     breakReport.hardStops,
   );
+
+  // ── Bind + sign reviewer endorsement (now that evidence chain exists) ──
+  if (report.oversight.endorsement && report.oversight.endorsement.runBinding === null) {
+    report.oversight.endorsement.runBinding = {
+      runId: input.runId,
+      replayIdentity,
+      evidenceChainTerminal: report.evidenceChain.terminalHash,
+    };
+    // Sign the now-bound endorsement if reviewer key pair is available
+    if (input.approval?.reviewerKeyPair) {
+      report.oversight.endorsement = signReviewerEndorsement(report.oversight.endorsement, input.approval.reviewerKeyPair);
+      // Update reviewer identity with signer fingerprint
+      report.oversight.reviewerIdentity = report.oversight.endorsement.reviewer;
+    }
+  }
 
   // ── Runtime Artifacts (single coherent build cycle — no artifact drift) ──
   // 1. Receipt (needs warrant, escrow, evidence chain, filing readiness)

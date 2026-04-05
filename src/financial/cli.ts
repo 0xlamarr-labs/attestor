@@ -520,8 +520,8 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
     console.log(`    Fingerprint: ${verification.fingerprintConsistent ? '✓ consistent' : '✗ MISMATCH'}`);
     console.log(`    Overall:     ${verification.overall === 'valid' ? '✓ VALID' : '✗ ' + verification.overall.toUpperCase()}`);
 
-    // Step 7: Build verification kit
-    const kit = buildVerificationKit(report, keyPair.publicKeyPem);
+    // Step 7: Build verification kit (includes reviewer endorsement when present)
+    const kit = buildVerificationKit(report, keyPair.publicKeyPem, null);
 
     // Step 8: Persist artifacts
     // Run-unique proof directory: scenario + timestamp + run ID prefix (no collision, no stale mixing)

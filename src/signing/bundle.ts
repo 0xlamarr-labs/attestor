@@ -8,10 +8,11 @@
  * The kit is the portable proof.
  */
 
-import type { FinancialRunReport } from '../financial/types.js';
+import type { FinancialRunReport, ReviewerEndorsement } from '../financial/types.js';
 import type { AttestationCertificate } from './certificate.js';
 import type { CertificateVerification } from './certificate.js';
 import { verifyCertificate } from './certificate.js';
+import { verifyReviewerEndorsement } from './reviewer-endorsement.js';
 
 // ─── Authority Bundle ────────────────────────────────────────────────────────
 
@@ -47,7 +48,15 @@ export interface AuthorityBundle {
     review: {
       required: boolean;
       triggeredBy: string[];
-      endorsement: { endorsedAt: string; reviewerName: string; reviewerRole: string; endorsedDecision: string; signed: boolean } | null;
+      endorsement: {
+        endorsedAt: string;
+        reviewerName: string;
+        reviewerRole: string;
+        endorsedDecision: string;
+        signed: boolean;
+        runBinding: { runId: string; replayIdentity: string; evidenceChainTerminal: string } | null;
+        signerFingerprint: string | null;
+      } | null;
     };
   };
 
@@ -143,6 +152,8 @@ export function buildAuthorityBundle(report: FinancialRunReport): AuthorityBundl
           reviewerRole: report.oversight.endorsement.reviewer.role,
           endorsedDecision: report.oversight.endorsement.endorsedDecision,
           signed: !!report.oversight.endorsement.signature,
+          runBinding: report.oversight.endorsement.runBinding,
+          signerFingerprint: report.oversight.endorsement.reviewer.signerFingerprint ?? null,
         } : null,
       },
     },
@@ -170,6 +181,11 @@ export interface VerificationKit {
   bundle: AuthorityBundle;
   signerPublicKeyPem: string;
 
+  /** Reviewer endorsement material for independent verification (null when no endorsement). */
+  reviewerEndorsement: ReviewerEndorsement | null;
+  /** Reviewer's public key PEM for independent endorsement verification (null when unsigned). */
+  reviewerPublicKeyPem: string | null;
+
   verification: VerificationSummary;
 }
 
@@ -196,23 +212,41 @@ export interface VerificationSummary {
     executionLive: boolean;
     upstreamLive: boolean;
   };
+  /** Reviewer endorsement verification — is the run backed by verified human authority? */
+  reviewerEndorsement: {
+    /** Is a reviewer endorsement present in the bundle? */
+    present: boolean;
+    /** Is the endorsement cryptographically signed? */
+    signed: boolean;
+    /** Is the endorsement bound to this specific run (runId + evidenceChainTerminal)? */
+    boundToRun: boolean;
+    /** Does the signature verify against the provided reviewer public key? */
+    verified: boolean;
+    /** Reviewer name (when present). */
+    reviewerName: string | null;
+    /** Reviewer signer fingerprint (when signed). */
+    fingerprint: string | null;
+  };
   /** Overall verdict. */
   overall: 'verified' | 'signature_invalid' | 'governance_insufficient' | 'authority_incomplete' | 'proof_degraded';
 }
 
 /**
  * Build a verification kit from a report + certificate + public key.
+ * Optionally includes reviewer endorsement material for independent verification.
  */
 export function buildVerificationKit(
   report: FinancialRunReport,
   publicKeyPem: string,
+  reviewerPublicKeyPem?: string | null,
 ): VerificationKit | null {
   if (!report.certificate) return null;
 
   const bundle = buildAuthorityBundle(report);
   const cryptoResult = verifyCertificate(report.certificate, publicKeyPem);
 
-  const verification = buildVerificationSummary(report.certificate, bundle, cryptoResult);
+  const endorsement = report.oversight.endorsement ?? null;
+  const verification = buildVerificationSummary(report.certificate, bundle, cryptoResult, endorsement, reviewerPublicKeyPem ?? null);
 
   return {
     version: '1.0',
@@ -220,17 +254,22 @@ export function buildVerificationKit(
     certificate: report.certificate,
     bundle,
     signerPublicKeyPem: publicKeyPem,
+    reviewerEndorsement: endorsement,
+    reviewerPublicKeyPem: reviewerPublicKeyPem ?? null,
     verification,
   };
 }
 
 /**
  * Build a multi-dimensional verification summary.
+ * When reviewer endorsement + public key are provided, independently verifies the endorsement.
  */
 export function buildVerificationSummary(
   certificate: AttestationCertificate,
   bundle: AuthorityBundle,
   cryptoResult: CertificateVerification,
+  endorsement?: ReviewerEndorsement | null,
+  reviewerPublicKeyPem?: string | null,
 ): VerificationSummary {
   const cryptographic = {
     valid: cryptoResult.signatureValid && cryptoResult.fingerprintConsistent,
@@ -260,6 +299,25 @@ export function buildVerificationSummary(
   const proofGaps = bundle.proof.gapCategories;
   const proofMode = bundle.proof.mode;
 
+  // ── Reviewer endorsement verification (6th dimension) ──
+  const present = !!endorsement;
+  const signed = present && !!endorsement!.signature;
+  const boundToRun = present && !!endorsement!.runBinding && !!endorsement!.runBinding.runId;
+  let endorsementVerified = false;
+  if (signed && reviewerPublicKeyPem) {
+    const result = verifyReviewerEndorsement(endorsement!, reviewerPublicKeyPem);
+    endorsementVerified = result.valid && result.fingerprintMatch;
+  }
+
+  const reviewerEndorsementDim = {
+    present,
+    signed,
+    boundToRun,
+    verified: endorsementVerified,
+    reviewerName: endorsement?.reviewer.name ?? null,
+    fingerprint: endorsement?.reviewer.signerFingerprint ?? null,
+  };
+
   let overall: VerificationSummary['overall'];
   if (!cryptographic.valid) overall = 'signature_invalid';
   else if (!governanceSufficient) overall = 'governance_insufficient';
@@ -273,6 +331,7 @@ export function buildVerificationSummary(
     authority: { state: authorityState, warrantFulfilled, escrowReleased, receiptIssued },
     governanceSufficiency: { sufficient: governanceSufficient, sqlPass, policyPass, guardrailsPass, scoringDecision: bundle.governance.scoring.decision },
     proofCompleteness: { mode: proofMode, gapCount: proofGaps.length, gaps: proofGaps, executionLive: bundle.proof.executionLive, upstreamLive: bundle.proof.upstreamLive },
+    reviewerEndorsement: reviewerEndorsementDim,
     overall,
   };
 }

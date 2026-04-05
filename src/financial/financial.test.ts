@@ -579,6 +579,160 @@ export async function runFinancialTests(): Promise<number> {
     ok(signedReport.dossier.reviewPath.endorsement!.signed === true, 'Signed: dossier shows signed=true');
 
     console.log(`    Signed endorsement: reviewer=${signedReport.oversight.endorsement!.reviewer.name}, fingerprint=${signedReport.oversight.endorsement!.reviewer.signerFingerprint}, verified=${verifyResult.valid}`);
+
+    // ═══ RUN-BOUND ENDORSEMENT ═══
+    console.log('\n  [Run-Bound Endorsement]');
+
+    // Endorsement is bound to the specific run
+    ok(signedReport.oversight.endorsement!.runBinding !== null, 'RunBound: endorsement has runBinding');
+    ok(signedReport.oversight.endorsement!.runBinding!.runId === 'reviewer-signed-test', 'RunBound: bound to correct runId');
+    ok(signedReport.oversight.endorsement!.runBinding!.replayIdentity.length > 0, 'RunBound: replayIdentity populated');
+    ok(signedReport.oversight.endorsement!.runBinding!.evidenceChainTerminal.length > 0, 'RunBound: evidenceChainTerminal populated');
+
+    // Run binding matches evidence chain
+    ok(
+      signedReport.oversight.endorsement!.runBinding!.evidenceChainTerminal === signedReport.evidenceChain.terminalHash,
+      'RunBound: evidenceChainTerminal matches report evidence chain',
+    );
+
+    // Run binding matches replay identity
+    ok(
+      signedReport.oversight.endorsement!.runBinding!.replayIdentity === signedReport.replayMetadata.replayIdentity,
+      'RunBound: replayIdentity matches report replay metadata',
+    );
+
+    console.log(`    RunBinding: runId=${signedReport.oversight.endorsement!.runBinding!.runId}, terminal=${signedReport.oversight.endorsement!.runBinding!.evidenceChainTerminal.slice(0, 12)}...`);
+
+    // ═══ REPLAY REJECTION ═══
+    console.log('\n  [Replay Rejection]');
+
+    // Replay attack: take a valid signed endorsement and change the runBinding
+    const replayedEndorsement = {
+      ...signedReport.oversight.endorsement!,
+      runBinding: {
+        ...signedReport.oversight.endorsement!.runBinding!,
+        runId: 'different-run-id',
+      },
+    };
+    const replayVerify = verifyReviewerEndorsement(replayedEndorsement, reviewerKeyPair.publicKeyPem);
+    ok(!replayVerify.valid, 'Replay: changing runId breaks signature');
+
+    // Replay attack: change evidenceChainTerminal
+    const replayedEndorsement2 = {
+      ...signedReport.oversight.endorsement!,
+      runBinding: {
+        ...signedReport.oversight.endorsement!.runBinding!,
+        evidenceChainTerminal: 'aaaa' + signedReport.oversight.endorsement!.runBinding!.evidenceChainTerminal.slice(4),
+      },
+    };
+    const replayVerify2 = verifyReviewerEndorsement(replayedEndorsement2, reviewerKeyPair.publicKeyPem);
+    ok(!replayVerify2.valid, 'Replay: changing evidenceChainTerminal breaks signature');
+
+    // Replay attack: change replayIdentity
+    const replayedEndorsement3 = {
+      ...signedReport.oversight.endorsement!,
+      runBinding: {
+        ...signedReport.oversight.endorsement!.runBinding!,
+        replayIdentity: 'forged-replay-identity',
+      },
+    };
+    const replayVerify3 = verifyReviewerEndorsement(replayedEndorsement3, reviewerKeyPair.publicKeyPem);
+    ok(!replayVerify3.valid, 'Replay: changing replayIdentity breaks signature');
+
+    // Original still verifies (proves we didn't break anything with replay tests)
+    const reVerify = verifyReviewerEndorsement(signedReport.oversight.endorsement!, reviewerKeyPair.publicKeyPem);
+    ok(reVerify.valid, 'Replay: original endorsement still valid after replay tests');
+
+    console.log(`    Replay rejection: runId=${!replayVerify.valid}, terminal=${!replayVerify2.valid}, replay=${!replayVerify3.valid}`);
+
+    // ═══ KIT-LEVEL VERIFICATION ═══
+    console.log('\n  [Kit-Level Reviewer Verification]');
+
+    const { buildVerificationKit } = await import('../signing/bundle.js');
+    const { generateKeyPair: genCertKey } = await import('../signing/keys.js');
+    const certKeyPair = genCertKey();
+
+    // Run a signed pipeline with both certificate signing key and reviewer key
+    const kitReport = runFinancialPipeline({
+      runId: 'kit-reviewer-test',
+      intent: { ...COUNTERPARTY_INTENT, materialityTier: 'high' as const },
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      signingKeyPair: certKeyPair,
+      approval: {
+        status: 'approved',
+        reviewerRole: 'risk_officer',
+        reviewNote: 'Full review complete',
+        reviewerIdentity: { name: 'Jane Chen', role: 'risk_officer', identifier: 'jchen@bank.internal', signerFingerprint: null },
+        reviewerKeyPair,
+      },
+    });
+
+    ok(kitReport.certificate !== null, 'Kit: certificate issued');
+    ok(kitReport.oversight.endorsement !== null, 'Kit: endorsement present');
+    ok(kitReport.oversight.endorsement!.signature !== null, 'Kit: endorsement signed');
+    ok(kitReport.oversight.endorsement!.runBinding !== null, 'Kit: endorsement run-bound');
+
+    // Build verification kit with reviewer public key
+    const kit = buildVerificationKit(kitReport, certKeyPair.publicKeyPem, reviewerKeyPair.publicKeyPem);
+    ok(kit !== null, 'Kit: built successfully');
+
+    // Kit carries reviewer material
+    ok(kit!.reviewerEndorsement !== null, 'Kit: reviewerEndorsement present');
+    ok(kit!.reviewerPublicKeyPem === reviewerKeyPair.publicKeyPem, 'Kit: reviewerPublicKeyPem present');
+
+    // 6-dimensional verification summary
+    const v = kit!.verification;
+    ok(v.cryptographic.valid, 'Kit: certificate signature valid');
+    ok(v.structural.valid, 'Kit: structural valid');
+    ok(v.reviewerEndorsement.present, 'Kit: reviewer present');
+    ok(v.reviewerEndorsement.signed, 'Kit: reviewer signed');
+    ok(v.reviewerEndorsement.boundToRun, 'Kit: reviewer bound to run');
+    ok(v.reviewerEndorsement.verified, 'Kit: reviewer verified');
+    ok(v.reviewerEndorsement.reviewerName === 'Jane Chen', 'Kit: reviewer name in summary');
+    ok(v.reviewerEndorsement.fingerprint === reviewerKeyPair.fingerprint, 'Kit: reviewer fingerprint in summary');
+
+    console.log(`    Kit verification: present=${v.reviewerEndorsement.present}, signed=${v.reviewerEndorsement.signed}, bound=${v.reviewerEndorsement.boundToRun}, verified=${v.reviewerEndorsement.verified}`);
+
+    // Kit without reviewer key → not verified but present/signed/bound
+    const kitNoKey = buildVerificationKit(kitReport, certKeyPair.publicKeyPem, null);
+    ok(kitNoKey!.verification.reviewerEndorsement.present, 'Kit(noKey): present');
+    ok(kitNoKey!.verification.reviewerEndorsement.signed, 'Kit(noKey): signed');
+    ok(kitNoKey!.verification.reviewerEndorsement.boundToRun, 'Kit(noKey): bound');
+    ok(!kitNoKey!.verification.reviewerEndorsement.verified, 'Kit(noKey): NOT verified without key');
+
+    console.log(`    Without reviewer key: present=${kitNoKey!.verification.reviewerEndorsement.present}, verified=${kitNoKey!.verification.reviewerEndorsement.verified}`);
+
+    // Kit from run without endorsement → all false
+    const noEndorsementReport = runFinancialPipeline({
+      runId: 'kit-no-endorsement',
+      intent: COUNTERPARTY_INTENT,
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      signingKeyPair: certKeyPair,
+    });
+    const kitNoEndorsement = buildVerificationKit(noEndorsementReport, certKeyPair.publicKeyPem, null);
+    ok(!kitNoEndorsement!.verification.reviewerEndorsement.present, 'Kit(noEndorsement): not present');
+    ok(!kitNoEndorsement!.verification.reviewerEndorsement.signed, 'Kit(noEndorsement): not signed');
+    ok(!kitNoEndorsement!.verification.reviewerEndorsement.boundToRun, 'Kit(noEndorsement): not bound');
+    ok(!kitNoEndorsement!.verification.reviewerEndorsement.verified, 'Kit(noEndorsement): not verified');
+
+    console.log(`    No endorsement: present=${kitNoEndorsement!.verification.reviewerEndorsement.present}`);
+
+    // Bundle carries enriched endorsement (run binding + fingerprint)
+    const { buildAuthorityBundle } = await import('../signing/bundle.js');
+    const bundle = buildAuthorityBundle(kitReport);
+    ok(bundle.governance.review.endorsement !== null, 'Bundle: endorsement present');
+    ok(bundle.governance.review.endorsement!.signed === true, 'Bundle: endorsement signed');
+    ok(bundle.governance.review.endorsement!.runBinding !== null, 'Bundle: endorsement has runBinding');
+    ok(bundle.governance.review.endorsement!.runBinding!.runId === 'kit-reviewer-test', 'Bundle: correct runId');
+    ok(bundle.governance.review.endorsement!.signerFingerprint === reviewerKeyPair.fingerprint, 'Bundle: reviewer fingerprint');
+
+    console.log(`    Bundle endorsement: signed=${bundle.governance.review.endorsement!.signed}, runBinding=${bundle.governance.review.endorsement!.runBinding!.runId}, fingerprint=${bundle.governance.review.endorsement!.signerFingerprint}`);
   }
 
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);

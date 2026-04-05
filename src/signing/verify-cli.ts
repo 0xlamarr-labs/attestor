@@ -16,6 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { verifyCertificate, type AttestationCertificate } from './certificate.js';
 import { buildVerificationSummary, type VerificationKit, type AuthorityBundle } from './bundle.js';
+import { verifyReviewerEndorsement } from './reviewer-endorsement.js';
 import { derivePublicKeyIdentity } from './keys.js';
 
 function main(): void {
@@ -107,7 +108,11 @@ function verifyKit(kit: VerificationKit): void {
   console.log(`  Decision: ${kit.bundle.decision}`);
 
   const crypto = verifyCertificate(kit.certificate, kit.signerPublicKeyPem);
-  const summary = buildVerificationSummary(kit.certificate, kit.bundle, crypto);
+  const summary = buildVerificationSummary(
+    kit.certificate, kit.bundle, crypto,
+    kit.reviewerEndorsement ?? null,
+    kit.reviewerPublicKeyPem ?? null,
+  );
   printSummary(summary);
   process.exit(summary.overall === 'verified' ? 0 : 1);
 }
@@ -139,6 +144,16 @@ function printSummary(s: VerificationSummary): void {
   console.log(`    Upstream:    ${s.proofCompleteness.upstreamLive ? 'live' : 'fixture'}`);
   console.log(`    Execution:   ${s.proofCompleteness.executionLive ? 'live' : 'fixture'}`);
   console.log(`    Gaps:        ${s.proofCompleteness.gapCount > 0 ? s.proofCompleteness.gaps.join(', ') : 'none'}`);
+
+  console.log(`\n  ── Reviewer Endorsement ──`);
+  if (!s.reviewerEndorsement.present) {
+    console.log(`    (no endorsement)`);
+  } else {
+    console.log(`  ${icon(s.reviewerEndorsement.present)} Present:     yes (${s.reviewerEndorsement.reviewerName ?? 'unknown'})`);
+    console.log(`  ${icon(s.reviewerEndorsement.signed)} Signed:      ${s.reviewerEndorsement.signed ? 'yes' : 'no'}${s.reviewerEndorsement.fingerprint ? ` (${s.reviewerEndorsement.fingerprint})` : ''}`);
+    console.log(`  ${icon(s.reviewerEndorsement.boundToRun)} Run-bound:   ${s.reviewerEndorsement.boundToRun ? 'yes' : 'NO — replay risk'}`);
+    console.log(`  ${icon(s.reviewerEndorsement.verified)} Verified:    ${s.reviewerEndorsement.verified ? 'yes' : 'NO'}`);
+  }
 
   console.log(`\n  ══ Overall: ${s.overall.toUpperCase()} ══\n`);
 }
