@@ -58,13 +58,14 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
 
   // Step 2: Check if preflight denies execution
   if (preflight.recommendation === 'deny') {
+    // Execution was DENIED before it happened — no execution evidence exists
     return {
       attempted: true,
       config: { url: sanitizedUrl, timeoutMs: config.statementTimeoutMs ?? 10000, maxRows: config.maxRows ?? 10000, allowedSchemas: config.allowedSchemas ?? [] },
       predictiveGuardrail: preflight,
-      execution: { success: false, durationMs: 0, rowCount: 0, columns: [], columnTypes: [], rows: [], error: `Predictive guardrail denied execution: ${preflight.signals.map((s) => s.detail).join('; ')}`, schemaHash: '', provider: 'postgres' as const, executionContextHash: null },
+      execution: null, // truthful: no execution occurred
       postgresEvidence: { executionContextHash: null, executionTimestamp: null, provider: 'postgres' },
-      skipReason: 'Predictive guardrail denied execution',
+      skipReason: `Predictive guardrail denied execution: ${preflight.signals.filter((s) => s.severity === 'critical').map((s) => s.detail).join('; ')}`,
     };
   }
 

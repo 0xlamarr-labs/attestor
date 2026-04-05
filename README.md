@@ -431,8 +431,8 @@ Attestor is an **implemented financial reference runtime**, not yet a finished e
 
 ## What the Financial Implementation Does Not Yet Prove
 
-- live external warehouse execution against Snowflake, BigQuery, Databricks, or Postgres infrastructure
-- enterprise live-data proof against production systems
+- live warehouse-scale execution against Snowflake, BigQuery, or Databricks (optional bounded PostgreSQL path exists but enterprise-scale proof is not yet demonstrated)
+- enterprise production-grade live-data proof at scale
 - regulatory filing compliance or submission adapters
 - full enterprise identity, entitlement, and approval integration
 - external trust registration or PKI-backed signing

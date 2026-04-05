@@ -468,8 +468,8 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
   const pipelineInput: FinancialPipelineInput = {
     ...scenario.input,
     signingKeyPair: keyPair,
-    ...(pgProveResult?.attempted && pgProveResult.execution ? {
-      // Pass real Postgres execution evidence into the core pipeline
+    // Only pass Postgres execution when it ACTUALLY executed (not denied by preflight)
+    ...(pgProveResult?.attempted && pgProveResult.execution?.success && !pgProveResult.skipReason ? {
       externalExecution: pgProveResult.execution,
       liveProof: {
         collectedAt: new Date().toISOString(),
@@ -478,11 +478,14 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
           live: true,
           provider: 'postgres',
           mode: 'live_db' as const,
-          latencyMs: pgProveResult.execution?.durationMs ?? null,
+          latencyMs: pgProveResult.execution.durationMs ?? null,
         },
       },
       predictiveGuardrail: pgProveResult.predictiveGuardrail,
-    } : {}),
+    } : {
+      // Preflight-only or denied: pass guardrail result but NOT live execution evidence
+      ...(pgProveResult?.predictiveGuardrail ? { predictiveGuardrail: pgProveResult.predictiveGuardrail } : {}),
+    }),
   };
 
   const report = runFinancialPipeline(pipelineInput);

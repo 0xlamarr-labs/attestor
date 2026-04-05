@@ -287,6 +287,100 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    Summary length: ${summary.length} chars`);
   }
 
+  // ── Semantic Clause Evaluation ──
+  console.log('\n  [Semantic Clause Evaluation]');
+  {
+    const { evaluateSemanticClauses } = await import('./semantic-clauses.js');
+    const { SemanticClause, ExecutionEvidence } = await import('./types.js') as any;
+
+    // Mock execution evidence: counterparty exposure with known values
+    const execEvidence = {
+      success: true, durationMs: 12, rowCount: 3, error: null, schemaHash: 'test',
+      columns: ['counterparty', 'gross_long', 'gross_short', 'net_exposure', 'exposure_usd', 'concentration_pct'],
+      columnTypes: ['text', 'numeric', 'numeric', 'numeric', 'numeric', 'numeric'],
+      rows: [
+        { counterparty: 'JPM', gross_long: 1000000, gross_short: 400000, net_exposure: 600000, exposure_usd: 600000, concentration_pct: 0.15 },
+        { counterparty: 'GS', gross_long: 800000, gross_short: 300000, net_exposure: 500000, exposure_usd: 500000, concentration_pct: 0.12 },
+        { counterparty: 'MS', gross_long: 600000, gross_short: 200000, net_exposure: 400000, exposure_usd: 400000, concentration_pct: 0.10 },
+      ],
+    };
+
+    // Test 1: Balance identity passes (net = gross_long - gross_short)
+    const balanceClause = { id: 'SC-001', type: 'balance_identity' as const, description: 'Net exposure = gross long - gross short', expression: 'net_exposure = gross_long - gross_short', columns: ['net_exposure', 'gross_long', 'gross_short'], tolerance: 0.01, severity: 'hard' as const };
+    const balanceResult = evaluateSemanticClauses([balanceClause], execEvidence);
+    ok(balanceResult.performed, 'Semantic: balance identity evaluated');
+    ok(balanceResult.passCount === 1, 'Semantic: balance identity passes');
+    ok(balanceResult.hardFailCount === 0, 'Semantic: no hard failures');
+    passed += 3;
+
+    // Test 2: Control total passes (exposure_usd sums correctly)
+    const controlClause = { id: 'SC-002', type: 'control_total' as const, description: 'Total exposure reconciliation', expression: 'exposure_usd = sum(exposure_usd)', columns: ['exposure_usd'], tolerance: 0.01, severity: 'hard' as const };
+    const controlResult = evaluateSemanticClauses([controlClause], execEvidence);
+    ok(controlResult.performed, 'Semantic: control total evaluated');
+    ok(controlResult.passCount === 1, 'Semantic: control total passes');
+    passed += 2;
+
+    // Test 3: Sign constraint passes (all exposures non-negative)
+    const signClause = { id: 'SC-003', type: 'sign_constraint' as const, description: 'Exposures must be non-negative', expression: 'exposure_usd >= 0', columns: ['exposure_usd'], tolerance: 0, severity: 'hard' as const };
+    const signResult = evaluateSemanticClauses([signClause], execEvidence);
+    ok(signResult.passCount === 1, 'Semantic: sign constraint passes');
+    passed++;
+
+    // Test 4: Ratio bound passes (concentration < 100%)
+    const ratioClause = { id: 'SC-004', type: 'ratio_bound' as const, description: 'Concentration must be under 100%', expression: 'concentration_pct <= 1.0', columns: ['concentration_pct'], tolerance: 0, severity: 'soft' as const };
+    const ratioResult = evaluateSemanticClauses([ratioClause], execEvidence);
+    ok(ratioResult.passCount === 1, 'Semantic: ratio bound passes');
+    passed++;
+
+    // Test 5: Completeness check passes (no nulls)
+    const completenessClause = { id: 'SC-005', type: 'completeness_check' as const, description: 'All exposure fields populated', expression: 'non-null', columns: ['counterparty', 'exposure_usd', 'concentration_pct'], tolerance: 0, severity: 'hard' as const };
+    const completenessResult = evaluateSemanticClauses([completenessClause], execEvidence);
+    ok(completenessResult.passCount === 1, 'Semantic: completeness passes');
+    passed++;
+
+    // Test 6: Balance identity HARD FAIL (wrong net values)
+    const badExec = {
+      ...execEvidence,
+      rows: [
+        { counterparty: 'JPM', gross_long: 1000000, gross_short: 400000, net_exposure: 999999, exposure_usd: 600000, concentration_pct: 0.15 },
+        { counterparty: 'GS', gross_long: 800000, gross_short: 300000, net_exposure: 500000, exposure_usd: 500000, concentration_pct: 0.12 },
+      ],
+    };
+    const failResult = evaluateSemanticClauses([balanceClause], badExec);
+    ok(failResult.failCount === 1, 'Semantic: balance identity fails on wrong net');
+    ok(failResult.hardFailCount === 1, 'Semantic: balance hard failure counted');
+    ok(!failResult.evaluations[0].passed, 'Semantic: evaluation reports failure');
+    ok(failResult.evaluations[0].variance !== null && failResult.evaluations[0].variance > 0, 'Semantic: variance reported');
+    passed += 4;
+
+    // Test 7: Sign constraint HARD FAIL (negative exposure)
+    const negExec = {
+      ...execEvidence,
+      rows: [
+        { counterparty: 'JPM', gross_long: 1000000, gross_short: 400000, net_exposure: 600000, exposure_usd: -100, concentration_pct: 0.15 },
+      ],
+    };
+    const negResult = evaluateSemanticClauses([signClause], negExec);
+    ok(negResult.failCount === 1, 'Semantic: sign constraint fails on negative');
+    ok(negResult.hardFailCount === 1, 'Semantic: sign hard failure counted');
+    passed += 2;
+
+    // Test 8: Multiple clauses mixed results
+    const mixedResult = evaluateSemanticClauses([balanceClause, signClause, ratioClause], badExec);
+    ok(mixedResult.clauseCount === 3, 'Semantic: 3 clauses evaluated');
+    ok(mixedResult.passCount >= 1, 'Semantic: some clauses pass');
+    ok(mixedResult.failCount >= 1, 'Semantic: some clauses fail');
+    passed += 3;
+
+    // Test 9: No execution → not performed
+    const noExecResult = evaluateSemanticClauses([balanceClause], null);
+    ok(!noExecResult.performed, 'Semantic: null execution → not performed');
+    passed++;
+
+    console.log(`    Clauses: balance=${balanceResult.passCount === 1 ? '✓' : '✗'}, control=${controlResult.passCount === 1 ? '✓' : '✗'}, sign=${signResult.passCount === 1 ? '✓' : '✗'}, ratio=${ratioResult.passCount === 1 ? '✓' : '✗'}, complete=${completenessResult.passCount === 1 ? '✓' : '✗'}`);
+    console.log(`    Failures: balance_bad=${failResult.hardFailCount}, negative=${negResult.hardFailCount}, mixed=${mixedResult.failCount}/${mixedResult.clauseCount}`);
+  }
+
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }
