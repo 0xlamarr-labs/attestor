@@ -108,7 +108,10 @@ async function run() {
       ok(body.proofMode === 'offline_fixture', 'Pipeline(unsigned): proof=fixture');
       ok(body.auditChainIntact === true, 'Pipeline(unsigned): audit intact');
       ok(body.certificate === null, 'Pipeline(unsigned): no certificate (unsigned)');
-      console.log(`    decision=${body.decision}, scorers=${body.scoring.scorersRun}, proof=${body.proofMode}`);
+      // Tenant context (anonymous/default when no ATTESTOR_TENANT_KEYS)
+      ok(body.tenantContext !== undefined, 'Pipeline(unsigned): tenantContext present');
+      ok(body.tenantContext.tenantId === 'default', 'Pipeline(unsigned): tenant=default');
+      console.log(`    decision=${body.decision}, tenant=${body.tenantContext.tenantId}, proof=${body.proofMode}`);
     }
 
     // ═══ PIPELINE RUN — signed with certificate ═══

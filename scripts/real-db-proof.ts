@@ -245,6 +245,9 @@ async function main() {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, 'kit.json'), JSON.stringify(kit, null, 2));
     writeFileSync(join(outDir, 'certificate.json'), JSON.stringify(report.certificate, null, 2));
+    if (pgProveResult.schemaAttestation) {
+      writeFileSync(join(outDir, 'schema-attestation.json'), JSON.stringify(pgProveResult.schemaAttestation, null, 2));
+    }
     writeFileSync(join(outDir, 'public-key.pem'), signingKeyPair.publicKeyPem);
     writeFileSync(join(outDir, 'reviewer-public.pem'), reviewerKeyPair.publicKeyPem);
     writeFileSync(join(outDir, 'verification-summary.json'), JSON.stringify(kit.verification, null, 2));

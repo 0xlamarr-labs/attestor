@@ -485,18 +485,72 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     console.log(`  Reviewer key: ephemeral for local demo (fingerprint: ${reviewerKeyPair.fingerprint})`);
   }
 
-  // Step 1c: Optional OIDC-backed reviewer identity
+  // Step 1c: Optional OIDC-backed reviewer identity (cache-first)
   let oidcIdentity: import('../financial/types.js').ReviewerIdentity | null = null;
+  let oidcTokenPath: 'cached' | 'refreshed' | 'device_flow' | 'none' = 'none';
   const { isOidcConfigured, loadOidcConfig, executeDeviceFlow } = await import('../identity/oidc-device-flow.js');
+  const { loadCachedTokens, saveCachedTokens, isTokenExpired, isTokenExpiringSoon, refreshTokens } = await import('../identity/token-cache.js');
+
   if (isOidcConfigured()) {
     const oidcConfig = loadOidcConfig()!;
     console.log(`\n  OIDC: configured (${oidcConfig.issuerUrl})`);
-    const oidcResult = await executeDeviceFlow(oidcConfig);
-    if (oidcResult.success && oidcResult.identity) {
-      oidcIdentity = oidcResult.identity;
-      console.log(`  OIDC: reviewer identity verified — ${oidcIdentity.name} (${oidcIdentity.identifier})`);
-    } else {
-      console.log(`  OIDC: device flow failed — ${oidcResult.error}. Using ephemeral identity.`);
+
+    // 1. Try cached tokens first
+    const cached = loadCachedTokens();
+    if (cached && !isTokenExpired(cached)) {
+      oidcIdentity = { name: cached.name ?? 'Cached User', role: 'oidc_authenticated', identifier: cached.email ?? cached.subject, signerFingerprint: null };
+      oidcTokenPath = 'cached';
+      console.log(`  OIDC: using cached identity — ${oidcIdentity.name} (${oidcIdentity.identifier})`);
+
+      // 1b. Refresh if expiring soon
+      if (isTokenExpiringSoon(cached)) {
+        console.log(`  OIDC: token expiring soon, attempting refresh...`);
+        const refreshed = await refreshTokens(cached, oidcConfig.clientId);
+        if (refreshed) {
+          saveCachedTokens(refreshed);
+          oidcIdentity = { name: refreshed.name ?? cached.name ?? 'Refreshed User', role: 'oidc_authenticated', identifier: refreshed.email ?? refreshed.subject, signerFingerprint: null };
+          oidcTokenPath = 'refreshed';
+          console.log(`  OIDC: token refreshed successfully`);
+        }
+      }
+    } else if (cached && isTokenExpired(cached) && cached.refreshToken) {
+      // 2. Expired but has refresh token — try refresh
+      console.log(`  OIDC: cached token expired, attempting refresh...`);
+      const refreshed = await refreshTokens(cached, oidcConfig.clientId);
+      if (refreshed) {
+        saveCachedTokens(refreshed);
+        oidcIdentity = { name: refreshed.name ?? 'Refreshed User', role: 'oidc_authenticated', identifier: refreshed.email ?? refreshed.subject, signerFingerprint: null };
+        oidcTokenPath = 'refreshed';
+        console.log(`  OIDC: token refreshed — ${oidcIdentity.name}`);
+      }
+    }
+
+    // 3. Fall back to interactive device flow
+    if (!oidcIdentity) {
+      console.log(`  OIDC: no valid cached token, starting device flow...`);
+      const oidcResult = await executeDeviceFlow(oidcConfig);
+      if (oidcResult.success && oidcResult.identity) {
+        oidcIdentity = oidcResult.identity;
+        oidcTokenPath = 'device_flow';
+        // Save tokens for next time
+        if (oidcResult.claims) {
+          saveCachedTokens({
+            accessToken: '', idToken: null, refreshToken: null,
+            expiresAt: (oidcResult.claims.exp as number) ?? (Date.now() / 1000 + 3600),
+            issuer: oidcResult.issuer ?? oidcConfig.issuerUrl,
+            subject: oidcResult.subject ?? '',
+            name: oidcIdentity.name, email: oidcIdentity.identifier,
+            cachedAt: new Date().toISOString(),
+          });
+        }
+        console.log(`  OIDC: authenticated via device flow — ${oidcIdentity.name}`);
+      } else {
+        console.log(`  OIDC: device flow failed — ${oidcResult.error}. Using ephemeral identity.`);
+      }
+    }
+
+    if (oidcTokenPath !== 'none') {
+      console.log(`  OIDC token path: ${oidcTokenPath}`);
     }
   }
 

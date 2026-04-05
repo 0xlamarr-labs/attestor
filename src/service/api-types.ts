@@ -2,19 +2,20 @@
  * Attestor API Service Types
  *
  * Type definitions for the bounded HTTP API service layer.
- * The repository ships a real Hono server for synchronous governed runs,
- * certificate verification, and registry metadata endpoints.
- *
- * DESIGN:
- * - Request/response types for synchronous governed pipeline execution
- * - Optional bearer-token identity verification (OIDC first slice)
- * - Registry metadata for domains and connectors
- * - Certificate verification endpoint
+ * The repository ships a real Hono server with:
+ * - Synchronous and async governed pipeline execution
+ * - PKI-backed certificate issuance with trust chain
+ * - Certificate + chain verification with leaf binding
+ * - XBRL filing export
+ * - OIDC reviewer identity verification
+ * - Request-level tenant isolation middleware
+ * - Registry metadata for domains, connectors, and filing adapters
  *
  * BOUNDARY:
- * - Single-process local server, not a distributed control plane
- * - No persistent job store or async execution queue
- * - No multi-tenant storage or session management
+ * - Single-process local server with optional BullMQ async (REDIS_URL)
+ * - Request-level tenant isolation (not database-level)
+ * - In-process async fallback when Redis is not available
+ * - No persistent multi-tenant storage or full IAM
  */
 
 // Authentication

@@ -35,6 +35,7 @@ import { xbrlUsGaapAdapter, buildCounterpartyEnvelope } from '../filing/xbrl-ada
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
+import { tenantMiddleware, type TenantContext } from './tenant-isolation.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -48,6 +49,9 @@ if (!filingRegistry.has('xbrl-us-gaap-2024')) filingRegistry.register(xbrlUsGaap
 
 const app = new Hono();
 const startTime = Date.now();
+
+// Apply tenant isolation middleware to all API routes
+app.use('/api/*', tenantMiddleware());
 
 // Generate PKI hierarchy at server startup
 const pki = generatePkiHierarchy('Attestor API Root CA', 'API Runtime Signer', 'API Reviewer');
@@ -224,17 +228,30 @@ app.post('/api/v1/pipeline/run', async (c) => {
       trustChain: sign ? pki.chains.signer : null,
       caPublicKeyPem: sign ? pki.ca.keyPair.publicKeyPem : null,
       connectorUsed: connectorProvider,
-      // Schema/data-state attestation summary
-      // Full attestation when PostgreSQL prove path provides it; bounded summary for other connectors
+      // Schema/data-state attestation
+      // Full attestation requires the postgres-prove path (information_schema + sentinels).
+      // Connector-routed paths provide execution context evidence only.
       schemaAttestation: connectorExecution?.executionContextHash ? {
         present: true,
+        scope: connectorProvider === 'postgres' ? 'schema_attestation_summary' : 'execution_context_only',
         executionContextHash: connectorExecution.executionContextHash,
         provider: connectorProvider,
-        // Note: full schema fingerprint + sentinel data requires the postgres-prove path
-        // which captures SchemaAttestation via information_schema queries.
-        // The connector-routed path provides execution context evidence only.
-        scope: 'execution_context',
+        // Schema attestation fields: only available via postgres-prove path (not connector-routed)
+        schemaFingerprint: null,
+        sentinelFingerprint: null,
+        tableNames: null,
+        note: connectorProvider === 'postgres'
+          ? 'Full schema attestation captured in postgres-prove path (scripts/real-db-proof.ts). Connector-routed API does not yet capture full schema attestation.'
+          : `${connectorProvider} connector provides execution context only. Schema attestation requires PostgreSQL prove path.`,
       } : null,
+      // Tenant context (from middleware)
+      tenantContext: (() => {
+        try {
+          const tenantHeader = c.req.header('x-attestor-tenant-id');
+          const tenantSource = c.req.header('x-attestor-tenant-source');
+          return { tenantId: tenantHeader ?? 'default', source: tenantSource ?? 'anonymous' };
+        } catch { return { tenantId: 'default', source: 'anonymous' }; }
+      })(),
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
       // Auto-filing: when sign=true and filing adapter is available, include XBRL mapping summary

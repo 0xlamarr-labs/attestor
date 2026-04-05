@@ -103,8 +103,10 @@ export function tenantMiddleware() {
       return c.json({ error: 'Valid tenant API key required in Authorization header' }, 401);
     }
 
-    // Set tenant context on request (accessible via c.get('tenant'))
-    c.set('tenant', tenant ?? { tenantId: 'default', tenantName: 'anonymous', authenticatedAt: new Date().toISOString(), source: 'anonymous' as const });
+    // Propagate tenant context via internal headers (Hono-safe approach)
+    const resolved = tenant ?? { tenantId: 'default', tenantName: 'anonymous', authenticatedAt: new Date().toISOString(), source: 'anonymous' as const };
+    c.req.raw.headers.set('x-attestor-tenant-id', resolved.tenantId);
+    c.req.raw.headers.set('x-attestor-tenant-source', resolved.source);
     await next();
   };
 }
