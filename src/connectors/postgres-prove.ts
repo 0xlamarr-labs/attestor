@@ -11,6 +11,7 @@
 
 import { executePostgresQuery, loadPostgresConfig, isPostgresConfigured, reportPostgresReadiness, type PostgresConfig, type PostgresExecutionResult } from './postgres.js';
 import { runPredictivePreflight, type PredictiveGuardrailResult } from './predictive-guardrails.js';
+import { captureSchemaAttestation, type SchemaAttestation } from './schema-attestation.js';
 import type { ExecutionEvidence } from '../financial/types.js';
 
 export interface PostgresProveResult {
@@ -28,6 +29,8 @@ export interface PostgresProveResult {
     executionTimestamp: string | null;
     provider: string;
   };
+  /** Schema and data-state attestation (when execution succeeded). */
+  schemaAttestation: SchemaAttestation | null;
   /** Why Postgres was not used (if not attempted). */
   skipReason: string | null;
 }
@@ -46,6 +49,7 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
       predictiveGuardrail: { performed: false, riskLevel: 'low', signals: [], recommendation: 'proceed', plannerEvidence: null },
       execution: null,
       postgresEvidence: { executionContextHash: null, executionTimestamp: null, provider: 'postgres' },
+      schemaAttestation: null,
       skipReason: readiness.message,
     };
   }
@@ -65,14 +69,43 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
       predictiveGuardrail: preflight,
       execution: null, // truthful: no execution occurred
       postgresEvidence: { executionContextHash: null, executionTimestamp: null, provider: 'postgres' },
+      schemaAttestation: null,
       skipReason: `Predictive guardrail denied execution: ${preflight.signals.filter((s) => s.severity === 'critical').map((s) => s.detail).join('; ')}`,
     };
   }
 
-  // Step 3: Execute query
+  // Step 3: Capture schema attestation BEFORE query execution
+  let schemaAttestation: SchemaAttestation | null = null;
+  try {
+    const pg = await (Function('return import("pg")')() as Promise<any>);
+    const PgClient = pg.default?.Client ?? pg.Client;
+    const attestClient = new PgClient({ connectionString: config.connectionUrl });
+    await attestClient.connect();
+    await attestClient.query('BEGIN TRANSACTION READ ONLY');
+
+    // Extract schema and table names from SQL (bounded: look for schema.table patterns)
+    const tableRefs = [...sql.matchAll(/\b(\w+)\.(\w+)\b/g)].map(m => ({ schema: m[1], table: m[2] }));
+    const schemaName = tableRefs[0]?.schema ?? 'public';
+    const tableNames = [...new Set(tableRefs.map(r => r.table))];
+
+    if (tableNames.length > 0) {
+      schemaAttestation = await captureSchemaAttestation(attestClient, schemaName, tableNames, null);
+    }
+    await attestClient.query('ROLLBACK');
+    await attestClient.end();
+  } catch {
+    // Schema attestation is best-effort — don't fail the query if it can't be captured
+  }
+
+  // Step 4: Execute query
   const pgResult = await executePostgresQuery(sql, config);
 
-  // Step 4: Convert to ExecutionEvidence with truthful evidence separation
+  // Update attestation with execution context hash
+  if (schemaAttestation && pgResult.executionContextHash) {
+    schemaAttestation.executionContextHash = pgResult.executionContextHash;
+  }
+
+  // Step 5: Convert to ExecutionEvidence with truthful evidence separation
   // schemaHash = hash of result columns+types (what the query RETURNED)
   // executionContextHash = hash of database environment (where it RAN)
   const { createHash } = await import('node:crypto');
@@ -102,6 +135,7 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
       executionTimestamp: pgResult.executionTimestamp,
       provider: 'postgres',
     },
+    schemaAttestation,
     skipReason: null,
   };
 }
