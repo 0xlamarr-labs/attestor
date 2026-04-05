@@ -2,61 +2,68 @@
 
 ## What Attestor Is
 
-Attestor is a governance and proof engine for AI-assisted high-stakes workflows. It separates generation from acceptance: models or operators can propose, but deterministic controls, bounded review, reviewer-visible artifacts, and truthful runtime-proof records decide what is accepted, held, or denied. Every decision produces portable, independently verifiable proof.
+Attestor is a governance and proof engine for AI-assisted high-stakes decisions. It enforces governed acceptance: the boundary between a model's proposal and the organization's operational use of that proposal.
 
-The engine architecture is domain-general. The current repository implements one reference domain:
+No component — model or runtime — can approve its own output. Typed contracts bound what is permitted. Deterministic controls produce evidence independent of the generation step. Authority separation prevents self-approval. Reviewer escalation routes consequence-bearing decisions to human authority. Portable proof makes governed acceptance verifiable by an outsider.
 
-- **Bank-grade internal financial analytics**: SQL governance, policy and entitlement checks, execution guardrails, data contracts, semantic clauses, provenance, review policy, authority artifacts, Ed25519-signed portable certificates, reviewer-signed endorsements, and truthful Live Proof with explicit proof gaps
+The engine architecture is domain-independent. The current repository implements one reference domain:
 
-Finance is the first and most mature implementation because it is a demanding proving ground — where silent errors are expensive, auditability is non-optional, and approval authority matters. The core engine pattern (typed contracts → deterministic evidence → bounded review → authority closure → portable proof) generalizes to other high-stakes internal workflows. Broader domain implementations are not yet shipped.
+- **Bank-grade internal financial analytics**: SQL governance, execution guardrails, data contracts, semantic clauses, authority chain, Ed25519-signed portable certificates, run-bound reviewer endorsements, and truthful proof with explicit gaps
 
-The architecture is organized around governance capabilities rather than UI or service layers:
+Finance is the first implementation because it is the hardest proving ground — where silent errors are expensive, auditability is non-negotiable, and approval authority is a control requirement. The core engine pattern (typed contracts → deterministic evidence → bounded review → authority closure → portable proof) generalizes to any consequence-sensitive workflow. Broader domain packs are not yet shipped.
 
-- **Domain contracts**: typed contracts, warrant bindings, and execution obligations define scope and boundaries before execution begins
-- **Deterministic evidence**: governance gates, data contracts, control totals, audit-chain hashing, report validation, runtime proof summaries
-- **Bounded scoring and review**: deterministic scorer cascade, review policy, escalation rules, and reviewer-facing evidence
-- **Authority artifacts**: warrant → escrow → receipt → capsule chain for monotonic authority composition
-- **Live Proof**: truthful runtime-proof record distinguishing offline, mocked, live-model, live-runtime, and hybrid runs with explicit proof gaps
+The architecture is organized around governance capabilities:
 
-The external interface is intentionally simple: request in, reviewable evidence plus authority decision out.
+- **Domain contracts**: typed constraints and execution obligations that bound allowed behavior before execution
+- **Deterministic evidence**: governance gates, data contracts, control totals, audit-chain hashing, runtime proof
+- **Bounded scoring and review**: deterministic scorer cascade, escalation rules, reviewer-facing evidence
+- **Authority artifacts**: warrant → escrow → receipt → capsule chain for monotonic authority closure
+- **Portable proof**: Ed25519-signed certificates, 6-dimensional verification kits, run-bound reviewer endorsements (single-query path)
+- **Live Proof**: truthful runtime-proof record distinguishing offline, mocked, live-model, live-runtime, and hybrid runs with explicit gaps
 
-## What Problem It Solves
+## The Problem
 
-In many industries, AI becomes useful before it becomes admissible. Generated output may be good enough to act on — but there is no evidence trail, no reviewer authority, no proof mode, and no way for an outsider to verify the decision.
+AI output becomes economically useful before it becomes operationally admissible. Generated output may be good enough to act on — but there is no governed path from proposal to acceptance.
 
-Attestor exists to prevent four common failures in AI-assisted high-stakes workflows:
+Four failures recur wherever AI enters consequence-sensitive workflows:
 
-| Failure | Why it happens |
+| Failure | What breaks |
 |---|---|
-| **Raw execution** | Generation and acceptance collapse into one step |
-| **Authority collapse** | Model output is treated as its own approval authority |
-| **Unverifiable acceptance** | The system cannot show what evidence justified the decision |
-| **Runtime truth drift** | The system claims stronger guarantees than the runtime actually proved |
+| **Raw execution** | Generation and acceptance collapse into one act |
+| **Authority collapse** | Model output is treated as its own approval |
+| **Invisible acceptance** | No artifact shows what evidence justified the decision |
+| **Truth drift** | The system implies stronger proof than the runtime actually produced |
 
-Attestor addresses each one with a separate architectural control:
+Attestor addresses each with a separate architectural control:
 
 | Failure | Attestor response |
 |---|---|
-| Raw execution | Typed contracts, governance gates, and execution guardrails before execution |
-| Authority collapse | Deterministic evidence, review policy, scorer cascade, and explicit authority chain |
-| Unverifiable acceptance | Dossier, output pack, manifest, attestation, audit trail, and lineage artifacts |
-| Runtime truth drift | Live Proof, Live Readiness, proof gaps, and reviewer-visible runtime summaries |
-
-These failures are not finance-specific. They appear wherever AI is introduced into decision workflows that carry operational, regulatory, or reputational consequences.
+| Raw execution | Typed contracts, governance gates, execution guardrails before execution |
+| Authority collapse | Deterministic evidence, scorer cascade, reviewer escalation, explicit authority chain |
+| Invisible acceptance | Dossier, output pack, manifest, attestation, audit trail, lineage |
+| Truth drift | Live Proof, explicit proof gaps, verifier-facing runtime summaries |
 
 ## What It Is Not
 
 - **Not a financial chatbot or AI assistant.** Attestor governs acceptance, not generation.
 - **Not an LLM orchestrator.** It sits after generation, not before it.
-- **Not a generic BI tool or dashboard.** Governance and authority are the point, not visualization or query convenience.
-- **Not a generic "AI compliance" or "responsible AI" suite.** It is a governance engine, not a policy catalog or ethics checklist.
-- **Not a customer-facing automated decision engine.** It governs internal analytical workflows, not customer-facing underwriting or credit scoring.
-- **Not automatic compliance certification.** It supports control evidence; it does not certify compliance by itself.
-- **Not a cross-domain enterprise control plane (yet).** The engine architecture generalizes; the current implementation is financial-first. Broader domain packs are not shipped.
-- **Not an external trust service.** Attestation uses Ed25519 portable certificates today; PKI-backed trust registration is future work.
+- **Not a dashboard, BI tool, or visualization layer.** Governance and authority are the point.
+- **Not a generic "AI compliance" or "responsible AI" checklist.** It is a control-bearing execution layer, not a policy catalog.
+- **Not a customer-facing automated decision engine.** It governs internal analytical workflows.
+- **Not a filing or regulatory submission platform.**
+- **Not a cross-domain enterprise control plane that is already complete.** The engine generalizes. The current implementation is financial.
+- **Not proof that AI output is inherently trustworthy.** Attestor makes AI-assisted output *governable*, not *trustworthy by default*.
+
+## Proof Maturity
+
+The single-query governed proof path is mature: signed certificates, 6-dimensional verification kits, and run-bound reviewer endorsements are issued, portable, and independently verifiable.
+
+The multi-query path ships a first-slice portable artifact layer (output pack, dossier, manifest) with per-unit and aggregate truth. It does not yet carry signed certificates, verification kits, or reviewer-endorsement completeness.
+
+Real PostgreSQL proof is operational: bounded read-only execution, predictive guardrails, reproducible demo bootstrap, and execution context evidence in the bundle and kit.
 
 ## Who This Is For
 
-- **Builders** of AI-assisted internal workflows that need evidence, replayability, and explicit acceptance semantics — in finance, risk, operations, healthcare analytics, insurance, or any audit-sensitive environment
-- **Reviewers and control functions** who need to answer what was authorized, what was held, what was denied, and what actually happened at runtime
-- **Teams introducing AI** into high-stakes internal processes where raw model output is useful but not yet admissible without governed acceptance
+- **Builders** of AI-assisted internal workflows where acceptance must be explainable, evidence-bearing, and verifiable — in finance, risk, operations, healthcare analytics, insurance, or any audit-sensitive environment
+- **Reviewers and control functions** who need to answer: what was authorized, what was held, what was denied, and what the runtime actually proved
+- **Teams introducing AI** into consequence-sensitive internal processes where governed acceptance is the prerequisite for operational use
