@@ -972,6 +972,44 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    teardown: success=${teardown.success}`);
   }
 
+  // ═══ DEMO SQL CANONICAL ALIGNMENT ═══
+  console.log('\n  [Demo SQL Canonical Alignment]');
+  {
+    const { getDemoCounterpartySql, getDemoAllowedSchemas, getDemoBootstrapPlan } = await import('../connectors/postgres-demo.js');
+
+    const demoSql = getDemoCounterpartySql();
+    const plan = getDemoBootstrapPlan();
+
+    // The canonical demo SQL must reference the same table that the bootstrap creates
+    ok(demoSql.includes(`${plan.schema}.counterparty_exposures`), 'DemoAlign: SQL references bootstrapped table');
+
+    // The canonical demo SQL must select the same columns the fixture expects
+    const counterpartyIntent = COUNTERPARTY_INTENT;
+    for (const col of counterpartyIntent.expectedColumns) {
+      ok(demoSql.includes(col.name), `DemoAlign: SQL selects expected column '${col.name}'`);
+    }
+
+    // The demo SQL must use the demo schema exclusively — no risk.* references
+    ok(!demoSql.includes('risk.'), 'DemoAlign: no risk.* in canonical demo SQL');
+
+    // The demo allowed schemas must match the bootstrap plan schema
+    const allowedSchemas = getDemoAllowedSchemas();
+    ok(allowedSchemas[0] === plan.schema, 'DemoAlign: allowed schema matches plan schema');
+
+    // The bootstrap SQL must create all tables referenced by demo SQL helpers
+    ok(plan.setupSql.includes(`${plan.schema}.counterparty_exposures`), 'DemoAlign: bootstrap creates the table demo SQL uses');
+
+    // The reporting_date filter in demo SQL matches the seeded data
+    ok(demoSql.includes("'2026-03-28'"), 'DemoAlign: demo SQL filters on seeded reporting_date');
+    ok(plan.setupSql.includes("'2026-03-28'"), 'DemoAlign: bootstrap seeds matching reporting_date');
+
+    // Canonical demo SQL is not empty and is well-formed
+    ok(demoSql.startsWith('SELECT'), 'DemoAlign: canonical SQL starts with SELECT');
+    ok(demoSql.includes('ORDER BY'), 'DemoAlign: canonical SQL has ORDER BY');
+
+    console.log(`    Canonical SQL aligned: table=${plan.schema}.counterparty_exposures, columns=${counterpartyIntent.expectedColumns.length} checked, dates match`);
+  }
+
   // ═══ BUNDLE PROOF TRUTH — FIXTURE PATH ═══
   console.log('\n  [Bundle Proof Truth - Fixture]');
   {

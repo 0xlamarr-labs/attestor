@@ -484,14 +484,24 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   const pgReadiness = await checkPg();
 
   // Detect demo schema mode: when ATTESTOR_PG_ALLOWED_SCHEMAS includes 'attestor_demo',
-  // rewrite SQL to use the demo schema instead of the fixture's original schema.
+  // use canonical demo SQL from the bootstrap module instead of regex rewriting.
   const pgConf = loadPgConf();
   const usingDemoSchema = pgConf?.allowedSchemas?.includes('attestor_demo') ?? false;
   let candidateSqlForPg = scenario.input.candidateSql;
+  let demoSource: 'canonical' | 'rewrite' | 'none' = 'none';
   if (usingDemoSchema) {
-    // Rewrite schema references: risk.* → attestor_demo.*
-    candidateSqlForPg = candidateSqlForPg.replace(/\brisk\./g, 'attestor_demo.');
-    console.log(`  Demo mode: rewriting SQL schema references (risk.* → attestor_demo.*)`);
+    const { getDemoCounterpartySql } = await import('../connectors/postgres-demo.js');
+    if (scenarioId === 'counterparty') {
+      // Use the canonical demo SQL — single source of truth for demo-schema queries
+      candidateSqlForPg = getDemoCounterpartySql();
+      demoSource = 'canonical';
+      console.log(`  Demo mode: using canonical demo SQL for '${scenarioId}' (attestor_demo schema)`);
+    } else {
+      // No canonical helper for this scenario yet — fall back to schema rewriting
+      candidateSqlForPg = candidateSqlForPg.replace(/\brisk\./g, 'attestor_demo.');
+      demoSource = 'rewrite';
+      console.log(`  Demo mode: rewriting SQL schema references for '${scenarioId}' (risk.* → attestor_demo.*)`);
+    }
   }
 
   if (!pgReadiness.configured) {
@@ -600,7 +610,11 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   const wasRealPg = pgProveResult?.attempted && pgProveResult.execution?.success;
   const wasDenied = pgProveResult?.attempted && pgProveResult.predictiveGuardrail?.recommendation === 'deny';
   if (wasRealPg) {
-    console.log(`  Source:   REAL PostgreSQL execution (${pgProveResult!.execution!.rowCount} rows, ${pgProveResult!.execution!.durationMs}ms)`);
+    const demoLabel = usingDemoSchema ? ' (seeded demo data)' : '';
+    console.log(`  Source:   REAL PostgreSQL execution (${pgProveResult!.execution!.rowCount} rows, ${pgProveResult!.execution!.durationMs}ms)${demoLabel}`);
+    if (usingDemoSchema) {
+      console.log(`  Schema:   attestor_demo (repo-native demo bootstrap, SQL source: ${demoSource})`);
+    }
     if (pgProveResult!.postgresEvidence?.executionContextHash) {
       console.log(`  Context:  ${pgProveResult!.postgresEvidence.executionContextHash} (db environment hash)`);
     }
@@ -876,24 +890,40 @@ async function runDoctor(): Promise<void> {
   console.log(`    ✓ live_runtime (SQLite)  — built-in local execution`);
   console.log(`    ${pgProbeOk ? '✓' : pgReadiness.runnable ? '△' : '○'} live_runtime (Postgres) — ${pgProbeOk ? 'verified and operational' : pgReadiness.runnable ? 'driver+URL present but probe not passed' : 'not ready'}`);
 
+  // ── Repo-native demo proof path ──
   console.log('');
-  console.log(`  Product proof readiness (outsider-verifiable, real DB):`);
-  const steps: string[] = [];
-  if (!hasKeyDir) steps.push('npm run keygen');
-  if (!pgReadiness.configured) steps.push('export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db');
-  if (!pgReadiness.driverInstalled) steps.push('npm install pg');
-  if (pgReadiness.runnable && !pgProbeOk) steps.push('Fix PostgreSQL connectivity (see probe results above)');
+  console.log(`  ── Repo-Native Demo Proof Path ──`);
+  console.log(`  The fastest way to a real PostgreSQL-backed proof from this repo:`);
 
-  if (steps.length === 0 && hasKeyDir && pgProbeOk) {
-    console.log(`    ✓ Ready — run: npm run prove -- counterparty .attestor`);
-  } else if (steps.length === 0 && hasKeyDir && pgReadiness.runnable) {
-    console.log(`    △ Almost ready — PostgreSQL probe did not pass. Check connection.`);
-    console.log(`    Then: npm run prove -- counterparty .attestor`);
-  } else {
-    for (let i = 0; i < steps.length; i++) {
-      console.log(`    ${i + 1}. ${steps[i]}`);
+  const demoSteps: string[] = [];
+  if (!pgReadiness.configured) demoSteps.push('export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db');
+  if (!pgReadiness.driverInstalled) demoSteps.push('npm install pg');
+  if (pgReadiness.runnable && !pgProbeOk) demoSteps.push('Fix PostgreSQL connectivity (see probe results above)');
+  if (!hasKeyDir) demoSteps.push('npm run keygen');
+
+  if (pgProbeOk) {
+    // DB is reachable — show the demo sequence directly
+    demoSteps.push('npx tsx src/financial/cli.ts pg-demo-init');
+    demoSteps.push('export ATTESTOR_PG_ALLOWED_SCHEMAS=attestor_demo');
+    if (hasKeyDir) {
+      demoSteps.push('npm run prove -- counterparty .attestor');
+    } else {
+      demoSteps.push('npm run prove -- counterparty');
     }
-    console.log(`    Then: npm run prove -- counterparty .attestor`);
+    for (let i = 0; i < demoSteps.length; i++) {
+      console.log(`    ${i + 1}. ${demoSteps[i]}`);
+    }
+    console.log('');
+    console.log(`  This seeds a deterministic attestor_demo schema, then runs a real`);
+    console.log(`  PostgreSQL-backed governed proof with signed certificate and kit.`);
+  } else {
+    // Prerequisites not met
+    for (let i = 0; i < demoSteps.length; i++) {
+      console.log(`    ${i + 1}. ${demoSteps[i]}`);
+    }
+    console.log(`    Then: npx tsx src/financial/cli.ts pg-demo-init`);
+    console.log(`           export ATTESTOR_PG_ALLOWED_SCHEMAS=attestor_demo`);
+    console.log(`           npm run prove -- counterparty`);
   }
   console.log('');
 }
