@@ -105,6 +105,30 @@ app.post('/api/v1/pipeline/run', async (c) => {
       return c.json({ error: 'candidateSql and intent are required' }, 400);
     }
 
+    // ── Optional connector-backed execution ──
+    let connectorExecution: any = null;
+    let connectorProvider: string | null = null;
+    if (body.connector) {
+      const connector = connectorRegistry.get(body.connector);
+      if (!connector) {
+        return c.json({ error: `Connector '${body.connector}' not registered. Available: ${connectorRegistry.listIds().join(', ')}` }, 404);
+      }
+      const connConfig = connector.loadConfig();
+      if (!connConfig) {
+        return c.json({ error: `Connector '${body.connector}' not configured (env vars missing)` }, 400);
+      }
+      try {
+        const result = await connector.execute(candidateSql, connConfig);
+        if (result.success) {
+          connectorExecution = result;
+          connectorProvider = result.provider;
+        }
+      } catch (err: any) {
+        // Connector execution failure is not fatal — fall back to fixture
+        connectorExecution = null;
+      }
+    }
+
     // Use PKI-backed signer key pair when signing
     const keyPair = sign ? pki.signer.keyPair : undefined;
 
@@ -147,6 +171,14 @@ app.post('/api/v1/pipeline/run', async (c) => {
       generatedReport: body.generatedReport,
       reportContract: body.reportContract,
       signingKeyPair: keyPair,
+      // Connector-backed execution evidence
+      ...(connectorExecution ? {
+        externalExecution: connectorExecution,
+        liveProof: {
+          collectedAt: new Date().toISOString(),
+          execution: { live: true, provider: connectorProvider!, mode: 'live_db' as const, latencyMs: connectorExecution.durationMs ?? null },
+        },
+      } : {}),
       ...(reviewerIdentity && reviewerKeyPair ? {
         approval: {
           status: 'approved' as const,
@@ -184,6 +216,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       verification: kit?.verification ?? null,
       publicKeyPem: keyPair?.publicKeyPem ?? null,
       trustChain: sign ? pki.chains.signer : null,
+      connectorUsed: connectorProvider,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
     });
