@@ -64,7 +64,7 @@ INSERT INTO ${DEMO_SCHEMA}.liquidity_buffer (asset_class, liquidity_value, days_
   ('Corporate Bonds',   -50000000, 180, false, '2026-03-28'),
   ('Cash',              200000000,   0, false, '2026-03-28');
 
--- Position Reconciliation (matches RECON_SQL scenario — variance sum ≠ 0)
+-- Position Reconciliation (matches RECON_SQL scenario -- variance sum != 0)
 DROP TABLE IF EXISTS ${DEMO_SCHEMA}.position_reconciliation;
 CREATE TABLE ${DEMO_SCHEMA}.position_reconciliation (
   account_id TEXT NOT NULL,
