@@ -362,3 +362,106 @@ export function renderMultiQuerySummary(report: MultiQueryRunReport): string {
 
   return lines.join('\n');
 }
+
+// ─── Multi-Query Verification Kit ───────────────────────────────────────────
+
+import {
+  issueMultiQueryCertificate,
+  verifyMultiQueryCertificate,
+  type MultiQueryCertificate,
+} from '../signing/multi-query-certificate.js';
+import type { AttestorKeyPair } from '../signing/keys.js';
+
+export interface MultiQueryVerificationKit {
+  version: '1.0';
+  type: 'attestor.verification_kit.multi_query.v1';
+
+  certificate: MultiQueryCertificate;
+  manifest: MultiQueryManifest;
+  signerPublicKeyPem: string;
+
+  verification: MultiQueryVerificationSummary;
+}
+
+export interface MultiQueryVerificationSummary {
+  /** Certificate signature validity. */
+  cryptographic: { valid: boolean; algorithm: string; fingerprint: string };
+  /** Certificate schema validity. */
+  structural: { valid: boolean; version: string; type: string };
+  /** Aggregate governance. */
+  governanceSufficiency: {
+    sufficient: boolean;
+    sqlPassCount: number;
+    policyPassCount: number;
+    guardrailsPassCount: number;
+    totalUnits: number;
+  };
+  /** Aggregate proof. */
+  proofCompleteness: {
+    aggregateMode: string;
+    allUnitsLive: boolean;
+    hasProofGaps: boolean;
+  };
+  /** Per-unit truth preserved. */
+  unitCount: number;
+  /** Aggregate decision. */
+  aggregateDecision: string;
+  /** Overall verdict. */
+  overall: 'verified' | 'signature_invalid' | 'governance_insufficient' | 'proof_degraded';
+}
+
+/**
+ * Build a multi-query verification kit: certificate + manifest + verification summary.
+ * This is the multi-query equivalent of the single-query buildVerificationKit.
+ */
+export function buildMultiQueryVerificationKit(
+  report: MultiQueryRunReport,
+  keyPair: AttestorKeyPair,
+): MultiQueryVerificationKit {
+  const certificate = issueMultiQueryCertificate(report, keyPair);
+  const manifest = buildMultiQueryManifest(report);
+  const cryptoResult = verifyMultiQueryCertificate(certificate, keyPair.publicKeyPem);
+
+  const cryptographic = {
+    valid: cryptoResult.signatureValid && cryptoResult.fingerprintConsistent,
+    algorithm: 'ed25519',
+    fingerprint: keyPair.fingerprint,
+  };
+
+  const structural = {
+    valid: cryptoResult.schemaValid,
+    version: certificate.version,
+    type: certificate.type,
+  };
+
+  const governanceSufficiency = report.governanceSufficiency;
+
+  const proofCompleteness = {
+    aggregateMode: report.aggregateProofMode,
+    allUnitsLive: report.allUnitsLive,
+    hasProofGaps: report.hasProofGaps,
+  };
+
+  let overall: MultiQueryVerificationSummary['overall'];
+  if (!cryptographic.valid) overall = 'signature_invalid';
+  else if (!governanceSufficiency.sufficient) overall = 'governance_insufficient';
+  else if (report.hasProofGaps || report.aggregateProofMode === 'offline_fixture') overall = 'proof_degraded';
+  else overall = 'verified';
+
+  return {
+    version: '1.0',
+    type: 'attestor.verification_kit.multi_query.v1',
+    certificate,
+    manifest,
+    signerPublicKeyPem: keyPair.publicKeyPem,
+    verification: {
+      cryptographic,
+      structural,
+      governanceSufficiency,
+      proofCompleteness,
+      unitCount: report.unitCount,
+      aggregateDecision: report.aggregateDecision,
+      overall,
+    },
+  };
+}

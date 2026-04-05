@@ -1364,6 +1364,99 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    All pass: decision=${pack.aggregate.decision}, verdict="${dossier.verdict}"`);
   }
 
+  // ═══ MULTI-QUERY SIGNED CERTIFICATE ═══
+  console.log('\n  [Multi-Query Signed Certificate]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+    const { buildMultiQueryVerificationKit } = await import('./multi-query-proof.js');
+    const { issueMultiQueryCertificate, verifyMultiQueryCertificate } = await import('../signing/multi-query-certificate.js');
+    const { generateKeyPair } = await import('../signing/keys.js');
+
+    const keyPair = generateKeyPair();
+
+    // Mixed run: pass + block + fail
+    const mqReport = runMultiQueryPipeline('mq-cert-test', [
+      { unitId: 'cp', label: 'Counterparty', input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT } },
+      { unitId: 'unsafe', label: 'Unsafe SQL', input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: UNSAFE_SQL_WRITE, fixtures: [] } },
+      { unitId: 'recon', label: 'Recon', input: { runId: 'x', intent: RECON_INTENT, candidateSql: RECON_SQL, fixtures: [RECON_FIXTURE] } },
+    ]);
+
+    // Issue certificate
+    const cert = issueMultiQueryCertificate(mqReport, keyPair);
+    ok(cert.type === 'attestor.certificate.multi_query.v1', 'MQCert: correct type');
+    ok(cert.certificateId.startsWith('mqcert_'), 'MQCert: ID prefix');
+    ok(cert.runId === 'mq-cert-test', 'MQCert: runId preserved');
+    ok(cert.aggregateDecision === 'block', 'MQCert: aggregate=block');
+    ok(cert.unitCount === 3, 'MQCert: 3 units');
+    ok(cert.unitAnchors.length === 3, 'MQCert: 3 unit anchors');
+    ok(cert.unitAnchors[0].unitId === 'cp', 'MQCert: first anchor = cp');
+    ok(cert.unitAnchors[1].unitId === 'unsafe', 'MQCert: second anchor = unsafe');
+    ok(cert.signing.algorithm === 'ed25519', 'MQCert: ed25519 algorithm');
+    ok(cert.signing.fingerprint === keyPair.fingerprint, 'MQCert: fingerprint matches');
+    ok(cert.signing.signature.length === 128, 'MQCert: 64-byte signature');
+    ok(cert.evidence.multiQueryHash === mqReport.multiQueryHash, 'MQCert: multiQueryHash matches');
+
+    // Verify certificate
+    const verifyResult = verifyMultiQueryCertificate(cert, keyPair.publicKeyPem);
+    ok(verifyResult.signatureValid, 'MQCert: signature valid');
+    ok(verifyResult.fingerprintConsistent, 'MQCert: fingerprint consistent');
+    ok(verifyResult.schemaValid, 'MQCert: schema valid');
+    ok(verifyResult.overall === 'valid', 'MQCert: overall valid');
+
+    // Tamper detection
+    const tampered = { ...cert, aggregateDecision: 'pass' };
+    const tamperResult = verifyMultiQueryCertificate(tampered as any, keyPair.publicKeyPem);
+    ok(!tamperResult.signatureValid, 'MQCert: tampered cert fails verification');
+
+    // Wrong key
+    const wrongKey = generateKeyPair();
+    const wrongResult = verifyMultiQueryCertificate(cert, wrongKey.publicKeyPem);
+    ok(!wrongResult.signatureValid, 'MQCert: wrong key fails verification');
+
+    console.log(`    cert=${cert.certificateId}, units=${cert.unitCount}, verified=${verifyResult.overall}, tamper=${!tamperResult.signatureValid}, wrongKey=${!wrongResult.signatureValid}`);
+  }
+
+  // ═══ MULTI-QUERY VERIFICATION KIT ═══
+  console.log('\n  [Multi-Query Verification Kit]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+    const { buildMultiQueryVerificationKit } = await import('./multi-query-proof.js');
+    const { generateKeyPair } = await import('../signing/keys.js');
+
+    const keyPair = generateKeyPair();
+
+    // All-pass scenario
+    const mqPass = runMultiQueryPipeline('mq-kit-pass', [
+      { unitId: 'cp', label: 'Counterparty', input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT } },
+    ]);
+
+    const kit = buildMultiQueryVerificationKit(mqPass, keyPair);
+    ok(kit.type === 'attestor.verification_kit.multi_query.v1', 'MQKit: correct type');
+    ok(kit.certificate.type === 'attestor.certificate.multi_query.v1', 'MQKit: certificate type');
+    ok(kit.manifest.type === 'attestor.multi_query_manifest.v1', 'MQKit: manifest type');
+    ok(kit.signerPublicKeyPem === keyPair.publicKeyPem, 'MQKit: public key preserved');
+
+    // Verification summary
+    ok(kit.verification.cryptographic.valid, 'MQKit: crypto valid');
+    ok(kit.verification.structural.valid, 'MQKit: structural valid');
+    ok(kit.verification.governanceSufficiency.sufficient, 'MQKit: governance sufficient');
+    ok(kit.verification.unitCount === 1, 'MQKit: 1 unit');
+    ok(kit.verification.aggregateDecision === 'pass', 'MQKit: aggregate=pass');
+    ok(kit.verification.overall === 'proof_degraded', 'MQKit: offline fixture = proof_degraded');
+
+    // Mixed scenario → governance_insufficient
+    const mqMixed = runMultiQueryPipeline('mq-kit-mixed', [
+      { unitId: 'cp', label: 'Counterparty', input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT } },
+      { unitId: 'unsafe', label: 'Unsafe', input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: UNSAFE_SQL_WRITE, fixtures: [] } },
+    ]);
+    const kitMixed = buildMultiQueryVerificationKit(mqMixed, keyPair);
+    ok(!kitMixed.verification.governanceSufficiency.sufficient, 'MQKit(mixed): governance insufficient');
+    ok(kitMixed.verification.overall === 'governance_insufficient', 'MQKit(mixed): overall=governance_insufficient');
+    ok(kitMixed.verification.cryptographic.valid, 'MQKit(mixed): crypto still valid');
+
+    console.log(`    pass: overall=${kit.verification.overall}, mixed: overall=${kitMixed.verification.overall}`);
+  }
+
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }

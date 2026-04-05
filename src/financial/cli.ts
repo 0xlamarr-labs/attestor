@@ -45,7 +45,7 @@ import { buildVerificationKit } from '../signing/bundle.js';
 import { runPostgresProve } from '../connectors/postgres-prove.js';
 import { isPostgresConfigured } from '../connectors/postgres.js';
 import { runMultiQueryPipeline, type MultiQueryUnit } from './multi-query-pipeline.js';
-import { buildMultiQueryOutputPack, buildMultiQueryDossier, buildMultiQueryManifest, renderMultiQuerySummary } from './multi-query-proof.js';
+import { buildMultiQueryOutputPack, buildMultiQueryDossier, buildMultiQueryManifest, buildMultiQueryVerificationKit, renderMultiQuerySummary } from './multi-query-proof.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT, COUNTERPARTY_LIVE_DATABASES,
@@ -724,14 +724,10 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
 }
 
 /**
- * Multi-Query Demo — bounded multi-query governed proof with artifact emission.
- *
- * Uses a fixed scenario set to demonstrate the full multi-query artifact chain:
- * output pack, dossier, and manifest. This is a first slice — no CLI scenario
- * selection, no signing, no reviewer authority at the multi-query level yet.
+ * Multi-Query Demo — governed multi-query proof with signed certificate and verification kit.
  */
 function runMultiQueryDemo(): void {
-  console.log(`\n  Attestor Multi-Query — Governed Multi-Query Proof (first slice)`);
+  console.log(`\n  Attestor Multi-Query — Governed Multi-Query Signed Proof`);
   console.log('');
 
   const units: MultiQueryUnit[] = [
@@ -758,10 +754,17 @@ function runMultiQueryDemo(): void {
   // Display summary
   console.log(renderMultiQuerySummary(report));
 
-  // Build proof artifacts
+  // Signing key
+  const keyPair = generateKeyPair();
+  console.log(`\n  Signing key: ephemeral (${keyPair.fingerprint})`);
+
+  // Build proof artifacts — including signed certificate and verification kit
   const outputPack = buildMultiQueryOutputPack(report);
   const dossier = buildMultiQueryDossier(report);
-  const manifest = buildMultiQueryManifest(report);
+  const kit = buildMultiQueryVerificationKit(report, keyPair);
+
+  console.log(`  Certificate: ${kit.certificate.certificateId}`);
+  console.log(`  Kit overall: ${kit.verification.overall.toUpperCase()}`);
 
   // Persist
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -769,20 +772,26 @@ function runMultiQueryDemo(): void {
   mkdirSync(outDir, { recursive: true });
   writeFileSync(join(outDir, 'output-pack.json'), JSON.stringify(outputPack, null, 2));
   writeFileSync(join(outDir, 'dossier.json'), JSON.stringify(dossier, null, 2));
-  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+  writeFileSync(join(outDir, 'kit.json'), JSON.stringify(kit, null, 2));
+  writeFileSync(join(outDir, 'certificate.json'), JSON.stringify(kit.certificate, null, 2));
+  writeFileSync(join(outDir, 'public-key.pem'), keyPair.publicKeyPem);
+  writeFileSync(join(outDir, 'verification-summary.json'), JSON.stringify(kit.verification, null, 2));
 
   console.log(`\n  Artifacts saved to: ${outDir}/`);
-  console.log(`    output-pack.json  — machine-readable multi-query output pack`);
-  console.log(`    dossier.json      — reviewer-facing multi-query decision dossier`);
-  console.log(`    manifest.json     — evidence anchor manifest with per-unit terminals`);
+  console.log(`    kit.json                — multi-query verification kit (certificate + manifest + summary)`);
+  console.log(`    certificate.json        — Ed25519-signed multi-query attestation certificate`);
+  console.log(`    output-pack.json        — machine-readable multi-query output pack`);
+  console.log(`    dossier.json            — reviewer-facing multi-query decision dossier`);
+  console.log(`    public-key.pem          — signer public key`);
+  console.log(`    verification-summary.json — multi-query verification result`);
 
-  console.log(`\n  Dossier verdict: ${dossier.verdict}`);
-  console.log(`  Governance: ${dossier.governanceSummary}`);
-  console.log(`  Proof: ${dossier.proofSummary}`);
-  console.log(`  Manifest: ${manifest.manifestHash.slice(0, 16)}...`);
-
-  console.log(`\n  Note: This is a first slice. No per-unit certificates, no signing,`);
-  console.log(`  no reviewer authority, and no differential evidence at the multi-query level.`);
+  console.log(`\n  Verification Summary:`);
+  console.log(`    Crypto:      ${kit.verification.cryptographic.valid ? '✓' : '✗'} (${kit.verification.cryptographic.algorithm})`);
+  console.log(`    Governance:  ${kit.verification.governanceSufficiency.sufficient ? 'sufficient' : 'INSUFFICIENT'}`);
+  console.log(`    Proof:       ${kit.verification.proofCompleteness.aggregateMode}`);
+  console.log(`    Units:       ${kit.verification.unitCount}`);
+  console.log(`    Decision:    ${kit.verification.aggregateDecision}`);
+  console.log(`    Overall:     ${kit.verification.overall.toUpperCase()}`);
   console.log('');
 }
 

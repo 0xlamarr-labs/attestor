@@ -4,7 +4,7 @@
 
 AI output becomes economically useful before it becomes operationally admissible. Attestor closes that gap. It enforces governed acceptance — typed contracts, deterministic controls, authority separation, reviewer-bound endorsement, and cryptographically signed portable proof — so that AI-assisted outputs can enter consequence-bearing workflows without surrendering control, auditability, or verifiability.
 
-The single-query governed proof path is mature: Ed25519-signed certificates, 6-dimensional verification kits, and run-bound reviewer endorsements are issued, portable, and independently verifiable. The multi-query path ships a first-slice portable artifact layer — per-unit and aggregate truth preserved — but does not yet carry the same signed certificate and kit completeness. That boundary is precise and intentional.
+The single-query governed proof path is mature: Ed25519-signed certificates, 6-dimensional verification kits, and run-bound reviewer endorsements are issued, portable, and independently verifiable. The multi-query path now carries Ed25519-signed certificates and verification kits with per-unit evidence anchors. Reviewer endorsement at the multi-query level is not yet shipped.
 
 The reference implementation targets **bank-grade internal financial analytics**. The engine architecture is domain-independent.
 
@@ -80,11 +80,13 @@ Proof completeness varies by execution path. The repository does not blur this d
 - Independent verification CLI requiring only a public key
 - Real PostgreSQL execution evidence when database is configured
 
-**Multi-query governed proof** — first slice:
-- Portable artifacts: multi-query output pack, dossier, and manifest
-- Per-unit governance, evidence, and decision preserved
+**Multi-query governed proof** — signed:
+- Ed25519-signed multi-query attestation certificate (`attestor.certificate.multi_query.v1`)
+- Multi-query verification kit with certificate + manifest + verification summary
+- Portable artifacts: output pack, dossier, and manifest
+- Per-unit governance, evidence anchors, and decision preserved
 - Aggregate decision, proof mode, governance sufficiency, blocker attribution
-- Not yet at signed certificate / verification kit / reviewer-endorsement completeness
+- Not yet at reviewer-endorsement completeness at the multi-query level
 
 **Real PostgreSQL proof** — achieved:
 - First real PostgreSQL-backed proof run completed (PostgreSQL 18.3, real execution, real evidence)
@@ -103,7 +105,7 @@ Proof completeness varies by execution path. The repository does not blur this d
 - Evidence chain, hash-linked audit trail, provenance
 - Ed25519 attestation certificates and verification kits (single-query)
 - Run-bound reviewer endorsement with outsider verification (single-query)
-- Multi-query governed pipeline with portable proof artifacts
+- Multi-query governed pipeline with signed certificates and verification kits
 
 **Financial domain (reference implementation):**
 
@@ -179,7 +181,7 @@ npx tsx src/financial/cli.ts pg-demo-init
 # Run the first real PostgreSQL-backed proof (self-contained, downloads PG automatically)
 npx tsx scripts/real-db-proof.ts
 
-# Run a multi-query governed proof (fixed 3-unit demo, first-slice artifacts)
+# Run a multi-query governed proof with signed certificate + kit
 npx tsx src/financial/cli.ts multi-query
 
 # Verify a verification kit (certificate + bundle + reviewer endorsement)
@@ -191,7 +193,7 @@ npm run verify:cert -- .attestor/proofs/<run>/certificate.json .attestor/proofs/
 # Generate a persistent signing key pair
 npm run keygen
 
-# Run all tests (399 tests)
+# Run all tests (430 tests)
 npm test
 
 # Full verification (typecheck + test + build)
@@ -235,10 +237,9 @@ Broader domain packs are architectural possibility. They are not shipped.
 
 ## Not Yet Implemented
 
-- Domain packs beyond finance
-- Signed certificates and verification kits for multi-query runs
-- Reviewer authority at the multi-query level
+- Reviewer authority at the multi-query level (run-bound multi-query endorsement)
 - Differential evidence across multi-query units
+- Domain packs beyond finance
 - Warehouse-scale connectors (Snowflake, BigQuery, Databricks)
 - Filing or regulatory submission adapters
 - Enterprise IAM / SSO / LDAP integration
@@ -322,5 +323,5 @@ Fixture mode requires no API key or database.
 |---|---|
 | **Version** | 0.1.0 |
 | **Runtime** | Node.js 22+, TypeScript, local single-process |
-| **Tests** | 399 (367 financial + 32 signing) |
+| **Tests** | 430 (398 financial + 32 signing) |
 | **License** | Proprietary. All rights reserved. |
