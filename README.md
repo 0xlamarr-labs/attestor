@@ -193,7 +193,7 @@ npm run verify:cert -- .attestor/proofs/<run>/certificate.json .attestor/proofs/
 # Generate a persistent signing key pair
 npm run keygen
 
-# Run all tests (542+ tests)
+# Run all tests (675 tests across 5 suites)
 npm test
 
 # Full verification (typecheck + test + build)
@@ -322,5 +322,5 @@ Fixture mode requires no API key or database.
 |---|---|
 | **Version** | 0.1.0 |
 | **Runtime** | Node.js 22+, TypeScript, local single-process |
-| **Tests** | 542 (458 financial + 84 signing) |
+| **Tests** | 675 (458 financial + 84 signing + 32 live API + 43 live PG + 20 live Snowflake + 38 connector/filing) |
 | **License** | Proprietary. All rights reserved. |
