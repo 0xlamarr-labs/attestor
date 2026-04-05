@@ -205,7 +205,21 @@ The repository now ships a real single-process Hono API server with:
 - `POST /api/v1/verify`
 - `POST /api/v1/filing/export`
 
-This is a bounded service layer, not a distributed control plane. Async submission/status now exists as a real first slice, but the service default is still an in-process backend, not a persistent Redis-backed deployment. There is no tenant isolation, long-term job store, or full session management.
+This is a bounded service layer, not a distributed control plane.
+
+Current service capabilities:
+- Async submission/status with truthful backend mode (`bullmq` when `REDIS_URL` set, `in_process` otherwise)
+- Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` (enforced when configured, anonymous/default when not)
+- PKI-backed signing with certificate-to-leaf chain verification
+- XBRL filing export auto-summary in signed pipeline responses
+- OIDC reviewer identity verification on the API path
+- Connector routing (e.g., `connector: 'snowflake'` in pipeline/run)
+
+Current service boundaries:
+- Single-process local server
+- In-process async fallback when Redis is not available
+- Request-level tenant identification, not database-level isolation
+- No persistent multi-tenant storage, long-term job store, or full session management
 
 ## Reviewer Authority
 
@@ -220,18 +234,19 @@ Identity truth today:
 
 - Operator-asserted reviewer identity is supported everywhere.
 - OIDC-verified reviewer identity is supported on the API path.
-- OIDC device-flow identity bootstrap is available in the CLI proof path when configured.
-- Full enterprise IAM flow is not shipped.
+- CLI prove path supports OIDC device flow with local token cache (cached → refresh → interactive fallback).
+- Token lifecycle: local file-based cache with expiry checking and refresh-token support.
+- Full enterprise IAM/session management is not shipped.
 
 ## Connectors and Domain Breadth
 
 The repository is broader than finance in architecture, but not equally deep in every path.
 
 - Finance is the most complete domain and the reference implementation.
-- Healthcare is a pack-first second domain, not yet a full end-to-end scenario library.
-- PostgreSQL is the reference live execution connector.
-- Snowflake is a real connector module with env-gated live testing and API connector routing, but not yet a top-level CLI `prove` flow.
-- XBRL US-GAAP 2024 is a real mapping/export adapter with API export, but not yet wired into full authority closure by default.
+- Healthcare has a domain pack, real clause evaluators, and a governed E2E scenario library (readmission rates, small cell suppression, temporal consistency).
+- PostgreSQL is the reference live execution connector with schema/data-state attestation.
+- Snowflake is a real connector module with env-gated live testing, API connector routing, and CLI `prove --connector snowflake` support.
+- XBRL US-GAAP 2024 is a real mapping/export adapter with API export and auto-summary in signed pipeline responses.
 
 ## PostgreSQL Product Proof
 
@@ -242,23 +257,25 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 - Demo bootstrap via `pg-demo-init`
 - Self-contained proof run via `scripts/real-db-proof.ts`
 - Execution provider and execution-context evidence in bundle and kit
-- Schema/data-state attestation capture in `runPostgresProve()`
+- Schema/data-state attestation: schema fingerprint, sentinel data, attestation hash in the Postgres prove path
+- API response distinguishes `schema_attestation_summary` vs `execution_context_only` scope
 
 What it does not prove yet:
 
-- Full verifier-facing schema-attestation surfacing across every service path
+- Full verifier-facing schema attestation surfaced uniformly across every API connector path
 - Table-level content hashing
 - Historical data-state attestation comparison across time
 
 ## Not Yet Implemented
 
-- Broader end-to-end domain implementations beyond finance
-- Top-level CLI prove routing for non-PostgreSQL connectors
-- Filing-package issuance wired into authority closure by default
-- Full OIDC login flow, token lifecycle, and session management
-- PKI trust-chain binding as the default verifier path across all CLI and kit flows
-- Redis-backed async service mode as the default API backend
-- Distributed control plane and multi-tenant persistence
+- Broader fully productized domain surfaces beyond finance (healthcare is a real E2E first slice, not a full production path)
+- Filing issuance wired into authority closure by default (XBRL auto-summary exists; full filing-package issuance in the authority chain is not yet default)
+- Full enterprise OIDC/IAM session lifecycle (local token cache + refresh exists; enterprise session management does not)
+- PKI trust-chain as the default verifier path across all CLI and kit flows (PKI verify exists on the API path and CLI; it is not yet the default everywhere)
+- Redis-backed async as the default API backend (BullMQ path exists; in-process is the default without REDIS_URL)
+- Database-level multi-tenant isolation (request-level tenant middleware exists; persistent tenant-specific storage does not)
+- Full verifier-facing schema attestation across every service path (Postgres prove path captures it; API connector paths surface execution-context evidence only)
+- Distributed service control plane
 
 ## Output Artifacts
 
@@ -298,6 +315,10 @@ What it does not prove yet:
 | `SNOWFLAKE_USERNAME` | Snowflake live connector test |
 | `SNOWFLAKE_PASSWORD` | Snowflake live connector test |
 | `SNOWFLAKE_WAREHOUSE` | Snowflake warehouse override |
+| `OIDC_ISSUER_URL` | OIDC identity provider URL for reviewer identity |
+| `OIDC_CLIENT_ID` | OIDC client ID for device flow |
+| `ATTESTOR_TENANT_KEYS` | Tenant API keys (`key:id:name,...`) for request-level isolation |
+| `REDIS_URL` | Redis URL for BullMQ async backend |
 
 ## Project Status
 
@@ -306,6 +327,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, single-process CLI + bounded HTTP API |
 | Core verification gate | 554 tests (`npm test`: 458 financial + 96 signing) |
-| Expanded verification surface | 716 executed checks across `verify` + live API + live PostgreSQL + connector/filing suites, plus env-gated live Snowflake when configured |
+| Expanded verification surface | 748 tests across 6 suites: 554 unit + 96 live API + 43 live PostgreSQL + 38 connector/filing + 17 healthcare E2E, plus env-gated live Snowflake |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

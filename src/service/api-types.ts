@@ -67,6 +67,18 @@ export interface PipelineResponse {
   identitySource?: 'operator_asserted' | 'oidc_verified' | 'pki_bound';
   /** Reviewer name when present. */
   reviewerName?: string | null;
+  /** PKI trust chain when signing was requested. */
+  trustChain?: Record<string, unknown> | null;
+  /** CA public key PEM for chain verification. */
+  caPublicKeyPem?: string | null;
+  /** Tenant context from request-level isolation. */
+  tenantContext?: { tenantId: string; source: string };
+  /** Schema attestation summary when available. */
+  schemaAttestation?: SchemaAttestationSummary | null;
+  /** Connector used for execution. */
+  connectorUsed?: string | null;
+  /** Filing export auto-summary when sign=true and XBRL adapter is available. */
+  filingExport?: { adapterId: string; coveragePercent: number; mappedCount: number } | null;
   /** Error message when the run failed. */
   error?: string;
   /** Execution metadata. */
@@ -75,6 +87,16 @@ export interface PipelineResponse {
     proofMode: string;
     unitCount?: number;
   };
+}
+
+export interface SchemaAttestationSummary {
+  present: boolean;
+  scope: 'schema_attestation_summary' | 'execution_context_only';
+  executionContextHash: string | null;
+  provider: string | null;
+  schemaFingerprint?: string | null;
+  sentinelFingerprint?: string | null;
+  tableNames?: string[] | null;
 }
 
 // Health / Status
@@ -86,7 +108,33 @@ export interface ServiceHealth {
   domains: string[];
   connectors: string[];
   filingAdapters?: string[];
-  proofModes: string[];
+  pki?: { ready: boolean; caName: string; caFingerprint: string; signerSubject: string; reviewerSubject: string };
+}
+
+export interface VerifyResponse {
+  signatureValid: boolean;
+  fingerprintConsistent: boolean;
+  schemaValid: boolean;
+  overall: 'valid' | 'invalid' | 'schema_error';
+  explanation: string;
+  chainVerification?: {
+    caValid: boolean;
+    leafValid: boolean;
+    chainIntact: boolean;
+    issuerMatch: boolean;
+    leafMatchesCertificateKey: boolean;
+    leafMatchesCertificateFingerprint: boolean;
+    pkiBound: boolean;
+    overall: string;
+    caName: string | null;
+    leafSubject: string | null;
+  } | null;
+  trustBinding?: {
+    certificateSignature: boolean;
+    chainValid: boolean;
+    certificateBoundToLeaf: boolean;
+    pkiVerified: boolean;
+  };
 }
 
 export interface ConnectorSummary {
@@ -99,20 +147,24 @@ export interface ConnectorSummary {
 // Route Definitions
 
 /**
- * API route contract - what the bounded service exposes today.
+ * API route contract — current shipped surface.
  *
- * POST /api/v1/pipeline/run     - execute a governed pipeline
- * GET  /api/v1/pipeline/:id     - future async status path
- * GET  /api/v1/health           - service health check
- * GET  /api/v1/domains          - list registered domain packs
- * GET  /api/v1/connectors       - list registered database connectors
- * POST /api/v1/verify           - verify a certificate or kit
+ * POST /api/v1/pipeline/run        — synchronous governed pipeline execution
+ * POST /api/v1/pipeline/run-async  — async job submission (returns jobId)
+ * GET  /api/v1/pipeline/status/:id — async job status and result
+ * POST /api/v1/verify              — certificate + PKI chain verification
+ * POST /api/v1/filing/export       — XBRL taxonomy mapping export
+ * GET  /api/v1/health              — service health + PKI + registries
+ * GET  /api/v1/domains             — registered domain packs
+ * GET  /api/v1/connectors          — registered database connectors
  */
 export const API_ROUTES = {
   PIPELINE_RUN: '/api/v1/pipeline/run',
-  PIPELINE_STATUS: '/api/v1/pipeline/:id',
+  PIPELINE_RUN_ASYNC: '/api/v1/pipeline/run-async',
+  PIPELINE_STATUS: '/api/v1/pipeline/status/:jobId',
+  VERIFY: '/api/v1/verify',
+  FILING_EXPORT: '/api/v1/filing/export',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',
   CONNECTORS: '/api/v1/connectors',
-  VERIFY: '/api/v1/verify',
 } as const;
