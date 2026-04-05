@@ -385,6 +385,24 @@ export interface AuditTrail {
 /** Whether human approval is required, completed, or not applicable. */
 export type ApprovalStatus = 'not_required' | 'pending' | 'approved' | 'rejected';
 
+/**
+ * Reviewer identity — binds approval to a specific reviewer, not just a role.
+ *
+ * This is the first step toward workflow-bound reviewer authority:
+ * the system knows WHO approved, not just THAT it was approved.
+ * Future: Ed25519-signed reviewer endorsement (reviewer signs the approval).
+ */
+export interface ReviewerIdentity {
+  /** Reviewer's display name (e.g., 'Jane Chen'). */
+  name: string;
+  /** Reviewer's organizational role (e.g., 'risk_officer'). */
+  role: string;
+  /** Reviewer's unique identifier (e.g., employee ID, email). */
+  identifier: string;
+  /** Ed25519 public key fingerprint, if the reviewer has a signing key. Null if unsigned. */
+  signerFingerprint: string | null;
+}
+
 export interface HumanOversight {
   /** Whether this run requires human approval based on materiality tier. */
   required: boolean;
@@ -398,6 +416,8 @@ export interface HumanOversight {
   reviewNote?: string;
   /** ISO timestamp of the approval/rejection decision. */
   decisionTimestamp?: string;
+  /** Workflow-bound reviewer identity. Null when review is not required or reviewer identity is not provided. */
+  reviewerIdentity?: ReviewerIdentity | null;
 }
 
 // ─── Lineage Evidence ────────────────────────────────────────────────────────
@@ -1145,6 +1165,7 @@ export interface PackOversight {
   status: string;
   reviewerRole: string | null;
   reviewNote: string | null;
+  reviewerIdentity: ReviewerIdentity | null;
 }
 
 export interface PackAuditIntegrity {
@@ -1215,6 +1236,7 @@ export interface DossierReviewPath {
   outcome: 'not_required' | 'pending' | 'approved' | 'rejected';
   reviewerRole: string | null;
   reviewNote: string | null;
+  reviewerIdentity: ReviewerIdentity | null;
 }
 
 // ─── Financial Run Report ────────────────────────────────────────────────────

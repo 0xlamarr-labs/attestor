@@ -385,6 +385,7 @@ function printHelp(): void {
     npx tsx src/financial/cli.ts scenario <id>         Run a named fixture scenario
     npx tsx src/financial/cli.ts live-scenario <id>    Run a bounded local live scenario
     npx tsx src/financial/cli.ts prove <id> [key-dir]  Run governed scenario + issue signed certificate
+    npx tsx src/financial/cli.ts doctor                Check product proof readiness (keys, DB, credentials)
     npx tsx src/financial/cli.ts benchmark             Run the full replay benchmark corpus
     npx tsx src/financial/cli.ts list                  List available scenarios
 
@@ -560,6 +561,50 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
   console.log('');
 }
 
+/**
+ * Doctor — readiness check for real product proof.
+ */
+async function runDoctor(): Promise<void> {
+  const { reportPostgresReadiness, isPostgresConfigured } = await import('../connectors/postgres.js');
+  const { existsSync } = await import('node:fs');
+
+  console.log(`\n  Attestor Doctor — Product Proof Readiness`);
+  console.log('');
+
+  // Signing
+  const hasKeyDir = existsSync('.attestor/private.pem');
+  console.log(`  ${hasKeyDir ? '✓' : '○'} Signing key pair  ${hasKeyDir ? '.attestor/private.pem found' : 'Not found — run: npm run keygen'}`);
+
+  // Model credentials
+  const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  console.log(`  ${hasOpenAI ? '✓' : '○'} OpenAI API key    ${hasOpenAI ? 'Set' : 'Not set — needed for live model proof'}`);
+
+  // PostgreSQL
+  const pgReadiness = await reportPostgresReadiness();
+  console.log(`  ${pgReadiness.runnable ? '✓' : pgReadiness.configured ? '△' : '○'} PostgreSQL         ${pgReadiness.message}`);
+
+  // SQLite
+  console.log(`  ✓ SQLite (built-in)  Always available for fixture/local live proof`);
+
+  console.log('');
+  console.log(`  Proof modes available:`);
+  console.log(`    ✓ offline_fixture   — always`);
+  console.log(`    ${hasOpenAI ? '✓' : '○'} live_model        — ${hasOpenAI ? 'ready' : 'needs OPENAI_API_KEY'}`);
+  console.log(`    ✓ live_runtime      — SQLite always available`);
+  console.log(`    ${pgReadiness.runnable ? '✓' : '○'} live_runtime (PG) — ${pgReadiness.runnable ? 'ready' : pgReadiness.configured ? 'needs: npm install pg' : 'needs: ATTESTOR_PG_URL + npm install pg'}`);
+
+  console.log('');
+  if (pgReadiness.runnable && hasKeyDir) {
+    console.log(`  ✓ Full product proof ready: run 'npm run prove -- counterparty .attestor'`);
+  } else {
+    console.log(`  Next steps for full product proof:`);
+    if (!hasKeyDir) console.log(`    1. npm run keygen`);
+    if (!pgReadiness.configured) console.log(`    ${!hasKeyDir ? '2' : '1'}. export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db`);
+    if (pgReadiness.configured && !pgReadiness.driverInstalled) console.log(`    ${!hasKeyDir ? '3' : '2'}. npm install pg`);
+  }
+  console.log('');
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
@@ -581,6 +626,11 @@ async function main(): Promise<void> {
 
   if (command === 'prove' && args[1]) {
     await runProductProof(args[1], args[2]);
+    return;
+  }
+
+  if (command === 'doctor') {
+    await runDoctor();
     return;
   }
 

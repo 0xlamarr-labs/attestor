@@ -444,6 +444,63 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    No-clause scenario: decision=${noClauseReport.decision}, clauses=${noClauseReport.semanticClauses}`);
   }
 
+  // ── Workflow-Bound Reviewer Identity ──
+  console.log('\n  [Workflow-Bound Reviewer Identity]');
+  {
+    const { runFinancialPipeline } = await import('./pipeline.js');
+    const { COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE, COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT } = await import('./fixtures/scenarios.js');
+
+    // Scenario: Approved run with reviewer identity
+    const reviewerIdentity = {
+      name: 'Jane Chen',
+      role: 'risk_officer',
+      identifier: 'jchen@bank.internal',
+      signerFingerprint: null, // not yet Ed25519-signed
+    };
+    const approvedReport = runFinancialPipeline({
+      runId: 'reviewer-id-test',
+      intent: { ...COUNTERPARTY_INTENT, materialityTier: 'high' as const },
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      approval: { status: 'approved', reviewerRole: 'risk_officer', reviewNote: 'Exposure within limits', reviewerIdentity },
+    });
+
+    // Reviewer identity propagates
+    ok(approvedReport.oversight.reviewerIdentity !== null, 'Reviewer: identity present in oversight');
+    ok(approvedReport.oversight.reviewerIdentity!.name === 'Jane Chen', 'Reviewer: name preserved');
+    ok(approvedReport.oversight.reviewerIdentity!.role === 'risk_officer', 'Reviewer: role preserved');
+    ok(approvedReport.oversight.reviewerIdentity!.identifier === 'jchen@bank.internal', 'Reviewer: identifier preserved');
+    ok(approvedReport.oversight.reviewerIdentity!.signerFingerprint === null, 'Reviewer: unsigned (no fingerprint yet)');
+
+    // Decision should be approved (not pending) since approval was provided
+    ok(approvedReport.decision === 'pass', 'Reviewer: approved high-materiality → decision pass');
+
+    // Reviewer identity in output pack
+    ok(approvedReport.outputPack.oversight.reviewerIdentity !== null, 'Reviewer: identity in output pack');
+    ok(approvedReport.outputPack.oversight.reviewerIdentity!.name === 'Jane Chen', 'Reviewer: output pack name');
+
+    // Reviewer identity in dossier
+    ok(approvedReport.dossier.reviewPath.reviewerIdentity !== null, 'Reviewer: identity in dossier');
+    ok(approvedReport.dossier.reviewPath.reviewerIdentity!.identifier === 'jchen@bank.internal', 'Reviewer: dossier identifier');
+
+    // Without reviewer identity — null
+    const noIdReport = runFinancialPipeline({
+      runId: 'reviewer-noid-test',
+      intent: { ...COUNTERPARTY_INTENT, materialityTier: 'high' as const },
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      approval: { status: 'approved', reviewerRole: 'risk_officer', reviewNote: 'OK' },
+    });
+    ok(noIdReport.oversight.reviewerIdentity === null, 'Reviewer: no identity when not provided');
+
+    console.log(`    With identity: reviewer=${approvedReport.oversight.reviewerIdentity!.name}, role=${approvedReport.oversight.reviewerIdentity!.role}, decision=${approvedReport.decision}`);
+    console.log(`    Without identity: reviewerIdentity=${noIdReport.oversight.reviewerIdentity}`);
+  }
+
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }

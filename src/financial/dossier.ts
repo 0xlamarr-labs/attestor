@@ -67,6 +67,7 @@ export function buildDecisionDossier(report: FinancialRunReport): DecisionDossie
     outcome: report.reviewPolicy.rejected ? 'rejected' : report.reviewPolicy.approved ? 'approved' : report.reviewPolicy.required ? 'pending' : 'not_required',
     reviewerRole: report.oversight.reviewerRole ?? null,
     reviewNote: report.oversight.reviewNote ?? null,
+    reviewerIdentity: report.oversight.reviewerIdentity ?? null,
   };
 
   const unresolvedRisks: string[] = [];

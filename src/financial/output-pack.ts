@@ -112,6 +112,7 @@ export function buildOutputPack(report: FinancialRunReport): OutputPack {
       status: report.oversight.status,
       reviewerRole: report.oversight.reviewerRole ?? null,
       reviewNote: report.oversight.reviewNote ?? null,
+      reviewerIdentity: report.oversight.reviewerIdentity ?? null,
     },
 
     auditIntegrity: {

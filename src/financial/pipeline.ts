@@ -63,7 +63,7 @@ export interface FinancialPipelineInput {
   liveExecution?: SqliteLiveExecutionConfig;
   generatedReport?: GeneratedReport;
   reportContract?: ReportContract;
-  approval?: { status: 'approved' | 'rejected'; reviewerRole: string; reviewNote: string };
+  approval?: { status: 'approved' | 'rejected'; reviewerRole: string; reviewNote: string; reviewerIdentity?: import('./types.js').ReviewerIdentity };
   /** Pre-computed execution evidence from an external connector (e.g., Postgres). Takes priority over fixture/SQLite. */
   externalExecution?: import('./types.js').ExecutionEvidence;
   /** Optional runtime observation for future live integrations. Defaults to truthful offline fixture proof. */
@@ -79,9 +79,9 @@ export interface FinancialPipelineInput {
 function determineOversight(reviewRequired: boolean, reviewReason: string, intent: FinancialQueryIntent, approval?: FinancialPipelineInput['approval']): HumanOversight {
   const required = reviewRequired || (intent.materialityTier ?? 'medium') === 'high';
   const reason = reviewRequired ? reviewReason : (intent.materialityTier === 'high' ? 'High materiality tier' : 'Policy does not require review');
-  if (required && approval) return { required: true, reason, status: approval.status, reviewerRole: approval.reviewerRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString() };
-  if (required) return { required: true, reason, status: 'pending' };
-  return { required: false, reason, status: 'not_required' };
+  if (required && approval) return { required: true, reason, status: approval.status, reviewerRole: approval.reviewerRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString(), reviewerIdentity: approval.reviewerIdentity ?? null };
+  if (required) return { required: true, reason, status: 'pending', reviewerIdentity: null };
+  return { required: false, reason, status: 'not_required', reviewerIdentity: null };
 }
 
 function buildIndependenceProof(): IndependenceProof {
