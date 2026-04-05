@@ -29,6 +29,7 @@
     "jose": "^6.2.2",
     "openai": "^4.77.3",
     "pg": "^8.20.0",
+    "snowflake-sdk": "^2.3.6",
     "typescript": "^5.7.3"
   },
   "devDependencies": {
