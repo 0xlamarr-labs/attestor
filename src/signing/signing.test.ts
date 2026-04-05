@@ -141,6 +141,77 @@ async function runSigningTests(): Promise<number> {
   passed += 2;
   console.log('    Tamper detection + wrong-key rejection: correct');
 
+  // ═══ PKI TRUST CHAIN ═══
+  console.log('\n  [PKI Trust Chain]');
+  {
+    const { createCaCertificate, issueLeafCertificate, buildTrustChain, verifyTrustChain, generatePkiHierarchy } = await import('./pki-chain.js');
+
+    // Generate full PKI hierarchy
+    const pki = generatePkiHierarchy('Test CA', 'Test Signer', 'Test Reviewer');
+
+    // CA certificate
+    assert(pki.ca.certificate.type === 'attestor.ca_certificate.v1', 'PKI: CA type correct');
+    assert(pki.ca.certificate.isCA === true, 'PKI: CA flag set');
+    assert(pki.ca.certificate.name === 'Test CA', 'PKI: CA name');
+    assert(pki.ca.certificate.fingerprint === pki.ca.keyPair.fingerprint, 'PKI: CA fingerprint matches key');
+    passed += 4;
+
+    // Leaf certificates
+    assert(pki.signer.certificate.type === 'attestor.leaf_certificate.v1', 'PKI: signer leaf type');
+    assert(pki.signer.certificate.subject === 'Test Signer', 'PKI: signer subject');
+    assert(pki.signer.certificate.role === 'runtime_signer', 'PKI: signer role');
+    assert(pki.signer.certificate.issuerFingerprint === pki.ca.certificate.fingerprint, 'PKI: signer issued by CA');
+    assert(pki.reviewer.certificate.role === 'reviewer', 'PKI: reviewer role');
+    assert(pki.reviewer.certificate.issuerFingerprint === pki.ca.certificate.fingerprint, 'PKI: reviewer issued by CA');
+    passed += 6;
+
+    // Verify signer chain
+    const signerVerify = verifyTrustChain(pki.chains.signer, pki.ca.keyPair.publicKeyPem);
+    assert(signerVerify.caValid, 'PKI: CA self-signature valid');
+    assert(signerVerify.leafValid, 'PKI: signer leaf signature valid');
+    assert(signerVerify.chainIntact, 'PKI: signer chain intact');
+    assert(signerVerify.issuerMatch, 'PKI: signer issuer matches CA');
+    assert(!signerVerify.caExpired, 'PKI: CA not expired');
+    assert(!signerVerify.leafExpired, 'PKI: leaf not expired');
+    assert(signerVerify.overall === 'valid', 'PKI: signer chain overall valid');
+    passed += 7;
+
+    // Verify reviewer chain
+    const reviewerVerify = verifyTrustChain(pki.chains.reviewer, pki.ca.keyPair.publicKeyPem);
+    assert(reviewerVerify.overall === 'valid', 'PKI: reviewer chain valid');
+    passed += 1;
+
+    // Wrong CA key fails verification
+    const wrongCa = generateKeyPair();
+    const wrongVerify = verifyTrustChain(pki.chains.signer, wrongCa.publicKeyPem);
+    assert(!wrongVerify.caValid, 'PKI: wrong CA key fails CA verification');
+    assert(!wrongVerify.leafValid, 'PKI: wrong CA key fails leaf verification');
+    assert(wrongVerify.overall === 'invalid', 'PKI: wrong CA → invalid');
+    passed += 3;
+
+    // Tamper detection: modify leaf subject
+    const tamperedChain = {
+      ...pki.chains.signer,
+      leaf: { ...pki.chains.signer.leaf, subject: 'TAMPERED' },
+    };
+    const tamperResult = verifyTrustChain(tamperedChain, pki.ca.keyPair.publicKeyPem);
+    assert(!tamperResult.leafValid, 'PKI: tampered leaf fails verification');
+    assert(tamperResult.overall === 'invalid', 'PKI: tampered chain invalid');
+    passed += 2;
+
+    // Tamper detection: modify CA name
+    const tamperedCaChain = {
+      ...pki.chains.signer,
+      ca: { ...pki.chains.signer.ca, name: 'FAKE CA' },
+    };
+    const caResult = verifyTrustChain(tamperedCaChain, pki.ca.keyPair.publicKeyPem);
+    assert(!caResult.caValid, 'PKI: tampered CA fails self-signature');
+    passed += 1;
+
+    console.log(`    PKI: CA=${pki.ca.certificate.name}, signer=${signerVerify.overall}, reviewer=${reviewerVerify.overall}`);
+    console.log(`    Tamper: leaf=${!tamperResult.leafValid}, ca=${!caResult.caValid}, wrongKey=${wrongVerify.overall}`);
+  }
+
   console.log(`\n  Signing Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }
