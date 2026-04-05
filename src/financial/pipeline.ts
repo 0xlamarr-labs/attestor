@@ -24,6 +24,7 @@ import {
   type FixtureQueryMapping,
   type SqliteLiveExecutionConfig,
 } from './execution.js';
+import type { PostgresConfig, PostgresExecutionResult } from '../connectors/postgres.js';
 import { validateDataContracts } from './data-contracts.js';
 import { validateReport } from './report-validation.js';
 import { buildLineageEvidence } from './lineage.js';
@@ -62,10 +63,14 @@ export interface FinancialPipelineInput {
   generatedReport?: GeneratedReport;
   reportContract?: ReportContract;
   approval?: { status: 'approved' | 'rejected'; reviewerRole: string; reviewNote: string };
+  /** Optional PostgreSQL live execution config. Takes priority over SQLite when present. */
+  postgresExecution?: PostgresConfig;
   /** Optional runtime observation for future live integrations. Defaults to truthful offline fixture proof. */
   liveProof?: LiveProofInput;
   /** Optional Ed25519 signing key pair for portable attestation certificate issuance. */
   signingKeyPair?: import('../signing/keys.js').AttestorKeyPair;
+  /** Optional predictive guardrail preflight result (for Postgres-backed runs). */
+  predictiveGuardrail?: import('../connectors/predictive-guardrails.js').PredictiveGuardrailResult;
 }
 
 function determineOversight(reviewRequired: boolean, reviewReason: string, intent: FinancialQueryIntent, approval?: FinancialPipelineInput['approval']): HumanOversight {

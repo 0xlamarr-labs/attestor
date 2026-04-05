@@ -130,6 +130,23 @@ Attestor includes an optional PostgreSQL connector for real-database proof (`npm
 
 **What it does NOT prove:** Full schema snapshot, table-level hash, or data-state attestation. Those would require `pg_dump` or logical replication snapshot, which is not yet implemented.
 
+## Predictive Guardrails
+
+When PostgreSQL is configured, Attestor runs a **predictive guardrail preflight** before execution using `EXPLAIN (FORMAT JSON)`.
+
+**Risk signals detected:**
+- High/critical row volume estimates (>100K / >1M rows)
+- High/critical query cost estimates
+- Excessive sequential scans (>2)
+- Excessive nested loops (>3)
+
+**Actions:**
+- `proceed`: low risk, execute normally
+- `warn`: moderate risk, execute but flag in evidence
+- `deny`: critical risk, refuse execution before it happens
+
+This is Attestor's proactive governance layer — the system can refuse a dangerous query before it touches data, not just after it fails.
+
 ## Authority Chain
 
 Every financial operation follows a strict authority lifecycle:

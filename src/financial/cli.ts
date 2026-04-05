@@ -27,6 +27,8 @@ import type { FinancialRunReport, LiveProofInput } from './types.js';
 import { generateKeyPair, loadPrivateKey, loadPublicKey, derivePublicKeyIdentity, type AttestorKeyPair } from '../signing/keys.js';
 import { verifyCertificate } from '../signing/certificate.js';
 import { buildVerificationKit } from '../signing/bundle.js';
+import { runPostgresProve } from '../connectors/postgres-prove.js';
+import { isPostgresConfigured } from '../connectors/postgres.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT, COUNTERPARTY_LIVE_DATABASES,
@@ -439,10 +441,47 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
   }
   console.log(`  Intent: ${scenario.description}\n`);
 
-  // Step 3: Run governed pipeline with signing
+  // Step 3: Check for PostgreSQL-backed execution
+  let pgProveResult: Awaited<ReturnType<typeof runPostgresProve>> | null = null;
+  if (isPostgresConfigured()) {
+    console.log(`  PostgreSQL: configured — running real database proof path...`);
+    pgProveResult = await runPostgresProve(scenario.input.candidateSql);
+    if (pgProveResult.attempted) {
+      if (pgProveResult.predictiveGuardrail.performed) {
+        console.log(`  Preflight:  ${pgProveResult.predictiveGuardrail.riskLevel} risk (${pgProveResult.predictiveGuardrail.recommendation})`);
+        for (const sig of pgProveResult.predictiveGuardrail.signals) {
+          console.log(`    ${sig.severity === 'critical' ? '✗' : '⚠'} ${sig.signal}: ${sig.detail}`);
+        }
+      }
+      if (pgProveResult.execution?.success) {
+        console.log(`  Execution:  ✓ ${pgProveResult.execution.rowCount} rows in ${pgProveResult.execution.durationMs}ms`);
+      } else if (pgProveResult.execution) {
+        console.log(`  Execution:  ✗ ${pgProveResult.execution.error}`);
+      }
+    } else {
+      console.log(`  PostgreSQL: skipped — ${pgProveResult.skipReason}`);
+    }
+    console.log('');
+  }
+
+  // Step 4: Run governed pipeline with signing (+ Postgres evidence if available)
   const pipelineInput: FinancialPipelineInput = {
     ...scenario.input,
     signingKeyPair: keyPair,
+    ...(pgProveResult?.attempted && pgProveResult.execution ? {
+      // Override fixtures with real Postgres execution
+      liveProof: {
+        collectedAt: new Date().toISOString(),
+        upstream: scenario.input.liveProof?.upstream,
+        execution: {
+          live: true,
+          provider: 'postgres',
+          mode: 'live_db' as const,
+          latencyMs: pgProveResult.execution?.durationMs ?? null,
+        },
+      },
+      predictiveGuardrail: pgProveResult.predictiveGuardrail,
+    } : {}),
   };
 
   const report = runFinancialPipeline(pipelineInput);
@@ -457,7 +496,12 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
   console.log(`  Audit:    ${report.audit.entries.length} entries, chain ${report.audit.chainIntact ? 'intact' : 'BROKEN'}`);
   console.log(`  Live:     ${report.liveProof.mode}`);
 
-  // Step 5: Certificate truth
+  // Step 5: Predictive guardrail truth
+  if (pgProveResult?.predictiveGuardrail?.performed) {
+    console.log(`  Preflight: ${pgProveResult.predictiveGuardrail.riskLevel} (${pgProveResult.predictiveGuardrail.signals.length} signals)`);
+  }
+
+  // Step 6: Certificate truth
   if (report.certificate) {
     console.log(`\n  ✓ Certificate issued: ${report.certificate.certificateId}`);
     console.log(`    Algorithm:   ${report.certificate.signing.algorithm}`);
