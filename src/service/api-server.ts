@@ -31,7 +31,7 @@ import type { ReviewerIdentity } from '../financial/types.js';
 import { connectorRegistry } from '../connectors/connector-interface.js';
 import { snowflakeConnector } from '../connectors/snowflake-connector.js';
 import { filingRegistry } from '../filing/filing-adapter.js';
-import { xbrlUsGaapAdapter } from '../filing/xbrl-adapter.js';
+import { xbrlUsGaapAdapter, buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
@@ -237,6 +237,19 @@ app.post('/api/v1/pipeline/run', async (c) => {
       } : null,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
+      // Auto-filing: when sign=true and filing adapter is available, include XBRL mapping summary
+      filingExport: (sign && report.certificate) ? (() => {
+        try {
+          const adapter = filingRegistry.get('xbrl-us-gaap-2024');
+          if (!adapter) return null;
+          const envelope = buildCounterpartyEnvelope(
+            report.runId, report.decision, report.certificate?.certificateId ?? null,
+            report.evidenceChain?.terminalHash ?? '', report.execution?.rows ?? [], report.liveProof.mode,
+          );
+          const mapping = adapter.mapToTaxonomy(envelope);
+          return { adapterId: adapter.id, coveragePercent: mapping.coveragePercent, mappedCount: mapping.mapped.length };
+        } catch { return null; }
+      })() : null,
     });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);

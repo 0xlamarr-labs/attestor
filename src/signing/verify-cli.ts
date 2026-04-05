@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs';
 import { verifyCertificate, type AttestationCertificate } from './certificate.js';
 import { buildVerificationSummary, type VerificationKit, type AuthorityBundle } from './bundle.js';
 import { verifyReviewerEndorsement } from './reviewer-endorsement.js';
+import { verifyTrustChain, type TrustChain } from './pki-chain.js';
 import { derivePublicKeyIdentity } from './keys.js';
 
 function main(): void {
@@ -114,6 +115,22 @@ function verifyKit(kit: VerificationKit): void {
     kit.reviewerPublicKeyPem ?? null,
   );
   printSummary(summary);
+
+  // PKI trust chain verification (if chain material is embedded in the kit)
+  const kitAny = kit as any;
+  if (kitAny.trustChain && kitAny.caPublicKeyPem) {
+    console.log(`\n  ── PKI Trust Chain ──`);
+    const chainResult = verifyTrustChain(kitAny.trustChain, kitAny.caPublicKeyPem);
+    const signerIdentity = derivePublicKeyIdentity(kit.signerPublicKeyPem);
+    const leafBound = kitAny.trustChain.leaf?.subjectFingerprint === signerIdentity.fingerprint;
+
+    console.log(`  ${chainResult.caValid ? '✓' : '✗'} CA:          ${chainResult.caValid ? 'valid' : 'INVALID'} (${kitAny.trustChain.ca?.name ?? 'unknown'})`);
+    console.log(`  ${chainResult.leafValid ? '✓' : '✗'} Leaf:        ${chainResult.leafValid ? 'valid' : 'INVALID'} (${kitAny.trustChain.leaf?.subject ?? 'unknown'})`);
+    console.log(`  ${chainResult.chainIntact ? '✓' : '✗'} Chain:       ${chainResult.chainIntact ? 'intact' : 'BROKEN'}`);
+    console.log(`  ${leafBound ? '✓' : '✗'} Cert bound:  ${leafBound ? 'certificate matches leaf' : 'MISMATCH'}`);
+    console.log(`  ${chainResult.overall === 'valid' && leafBound ? '✓' : '✗'} PKI:         ${chainResult.overall === 'valid' && leafBound ? 'VERIFIED' : chainResult.overall}`);
+  }
+
   process.exit(summary.overall === 'verified' ? 0 : 1);
 }
 
