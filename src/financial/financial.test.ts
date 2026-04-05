@@ -969,6 +969,154 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    Single unit: aggregate=${mqSingle.aggregateDecision}, sufficient=${mqSingle.governanceSufficiency.sufficient}`);
   }
 
+  // ═══ MULTI-QUERY PROOF ARTIFACTS ═══
+  console.log('\n  [Multi-Query Proof Artifacts]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+    const { buildMultiQueryOutputPack, buildMultiQueryDossier, buildMultiQueryManifest, renderMultiQuerySummary } = await import('./multi-query-proof.js');
+
+    // Mixed run: pass + fail + block
+    const mqReport = runMultiQueryPipeline('mq-proof-test', [
+      {
+        unitId: 'counterparty',
+        label: 'Counterparty exposure',
+        input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT },
+      },
+      {
+        unitId: 'unsafe',
+        label: 'Unsafe write attempt',
+        input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: UNSAFE_SQL_WRITE, fixtures: [] },
+      },
+      {
+        unitId: 'recon',
+        label: 'Reconciliation check',
+        input: { runId: 'x', intent: RECON_INTENT, candidateSql: RECON_SQL, fixtures: [RECON_FIXTURE] },
+      },
+    ]);
+
+    // ── Output Pack ──
+    const pack = buildMultiQueryOutputPack(mqReport);
+    ok(pack.version === '1.0', 'MQPack: version 1.0');
+    ok(pack.type === 'attestor.multi_query_output_pack.v1', 'MQPack: correct type');
+    ok(pack.runId === 'mq-proof-test', 'MQPack: runId preserved');
+    ok(pack.unitCount === 3, 'MQPack: 3 units');
+    ok(pack.aggregate.decision === 'block', 'MQPack: aggregate=block');
+    ok(pack.aggregate.proofMode === 'offline_fixture', 'MQPack: proof=offline_fixture');
+    ok(!pack.aggregate.allUnitsLive, 'MQPack: not all live');
+    ok(pack.aggregate.allAuditChainsIntact, 'MQPack: audit intact');
+
+    // Per-unit summaries preserved
+    ok(pack.units.length === 3, 'MQPack: 3 unit summaries');
+    ok(pack.units[0].unitId === 'counterparty', 'MQPack: unit 0 = counterparty');
+    ok(pack.units[0].decision === 'pass', 'MQPack: counterparty passes');
+    ok(pack.units[1].unitId === 'unsafe', 'MQPack: unit 1 = unsafe');
+    ok(pack.units[1].decision === 'block', 'MQPack: unsafe blocks');
+    ok(pack.units[2].unitId === 'recon', 'MQPack: unit 2 = recon');
+
+    // Per-unit evidence chain terminals in pack (portable anchors)
+    ok(pack.units[0].evidenceChainTerminal.length > 0, 'MQPack: unit 0 has terminal');
+    ok(pack.units[1].evidenceChainTerminal.length > 0, 'MQPack: unit 1 has terminal');
+    ok(pack.units[0].evidenceChainTerminal !== pack.units[1].evidenceChainTerminal, 'MQPack: distinct terminals');
+
+    // Per-unit governance
+    ok(pack.units[0].governance.sqlPass, 'MQPack: counterparty SQL pass');
+    ok(!pack.units[1].governance.sqlPass, 'MQPack: unsafe SQL fail');
+
+    // Pack-level blocker attribution
+    ok(pack.blockers.length > 0, 'MQPack: has blockers');
+    ok(pack.blockers.some(b => b.unitId === 'unsafe'), 'MQPack: blocker attributed to unsafe');
+
+    // Pack-level evidence
+    ok(pack.evidence.multiQueryHash.length === 32, 'MQPack: hash present');
+    ok(pack.evidence.totalAuditEntries > 0, 'MQPack: audit entries');
+
+    // Unit summaries do NOT contain full reports (portability check)
+    const unitKeys = Object.keys(pack.units[0]);
+    ok(!unitKeys.includes('report'), 'MQPack: unit summary does NOT contain full report');
+
+    console.log(`    OutputPack: type=${pack.type}, units=${pack.unitCount}, decision=${pack.aggregate.decision}`);
+
+    // ── Dossier ──
+    const dossier = buildMultiQueryDossier(mqReport);
+    ok(dossier.version === '1.0', 'MQDossier: version 1.0');
+    ok(dossier.type === 'attestor.multi_query_dossier.v1', 'MQDossier: correct type');
+    ok(dossier.runId === 'mq-proof-test', 'MQDossier: runId');
+    ok(dossier.aggregateDecision === 'block', 'MQDossier: aggregate=block');
+    ok(dossier.verdict.includes('BLOCK'), 'MQDossier: verdict mentions BLOCK');
+
+    // Per-unit entries with explanations
+    ok(dossier.unitEntries.length === 3, 'MQDossier: 3 entries');
+    ok(dossier.unitEntries[0].decision === 'pass', 'MQDossier: counterparty pass');
+    ok(dossier.unitEntries[0].explanation.includes('pass'), 'MQDossier: pass explanation');
+    ok(dossier.unitEntries[1].decision === 'block', 'MQDossier: unsafe block');
+    ok(dossier.unitEntries[1].explanation.includes('lock'), 'MQDossier: block explanation');
+
+    // Dossier summaries
+    ok(dossier.governanceSummary.length > 0, 'MQDossier: governance summary');
+    ok(dossier.proofSummary.length > 0, 'MQDossier: proof summary');
+
+    // Blocker attribution in dossier
+    ok(dossier.blockers.some(b => b.unitId === 'unsafe'), 'MQDossier: blocker attributed');
+
+    console.log(`    Dossier: verdict="${dossier.verdict}"`);
+
+    // ── Manifest ──
+    const manifest = buildMultiQueryManifest(mqReport);
+    ok(manifest.version === '1.0', 'MQManifest: version 1.0');
+    ok(manifest.type === 'attestor.multi_query_manifest.v1', 'MQManifest: correct type');
+    ok(manifest.runId === 'mq-proof-test', 'MQManifest: runId');
+    ok(manifest.unitCount === 3, 'MQManifest: 3 units');
+    ok(manifest.multiQueryHash === mqReport.multiQueryHash, 'MQManifest: multiQueryHash matches');
+    ok(manifest.manifestHash.length === 32, 'MQManifest: manifestHash present');
+
+    // Unit anchors
+    ok(manifest.unitAnchors.length === 3, 'MQManifest: 3 anchors');
+    ok(manifest.unitAnchors[0].unitId === 'counterparty', 'MQManifest: anchor 0 = counterparty');
+    ok(manifest.unitAnchors[0].evidenceChainTerminal === pack.units[0].evidenceChainTerminal, 'MQManifest: anchor terminal matches pack');
+
+    // Manifest hash is deterministic: same report → same hash
+    const manifest2 = buildMultiQueryManifest(mqReport);
+    ok(manifest.manifestHash === manifest2.manifestHash, 'MQManifest: deterministic hash');
+
+    console.log(`    Manifest: hash=${manifest.manifestHash.slice(0, 16)}..., anchors=${manifest.unitAnchors.length}`);
+
+    // ── Render Summary ──
+    const summary = renderMultiQuerySummary(mqReport);
+    ok(summary.includes('mq-proof-test'), 'MQRender: contains runId');
+    ok(summary.includes('BLOCK'), 'MQRender: shows aggregate decision');
+    ok(summary.includes('counterparty'), 'MQRender: shows counterparty');
+    ok(summary.includes('unsafe'), 'MQRender: shows unsafe');
+    ok(summary.includes('multiQueryHash'), 'MQRender: shows hash');
+
+    console.log(`    Render: ${summary.split('\n').length} lines`);
+  }
+
+  // ═══ MULTI-QUERY PROOF: ALL PASS ═══
+  console.log('\n  [Multi-Query Proof: All Pass]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+    const { buildMultiQueryOutputPack, buildMultiQueryDossier } = await import('./multi-query-proof.js');
+
+    const mqAllPass = runMultiQueryPipeline('mq-proof-allpass', [
+      {
+        unitId: 'cp1',
+        label: 'Counterparty 1',
+        input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT },
+      },
+    ]);
+
+    const pack = buildMultiQueryOutputPack(mqAllPass);
+    const dossier = buildMultiQueryDossier(mqAllPass);
+
+    ok(pack.aggregate.decision === 'pass', 'MQAllPass: pack decision=pass');
+    ok(pack.governanceSufficiency.sufficient, 'MQAllPass: governance sufficient');
+    ok(pack.blockers.length === 0, 'MQAllPass: no blockers');
+    ok(dossier.verdict.includes('PASS'), 'MQAllPass: dossier verdict PASS');
+    ok(dossier.governanceSummary.includes('passed'), 'MQAllPass: governance summary confirms pass');
+
+    console.log(`    All pass: decision=${pack.aggregate.decision}, verdict="${dossier.verdict}"`);
+  }
+
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }

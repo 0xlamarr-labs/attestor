@@ -80,7 +80,7 @@ npm run verify:cert -- .attestor/proofs/<run>/certificate.json .attestor/proofs/
 # Generate a persistent signing key pair
 npm run keygen
 
-# Run all tests (276 tests)
+# Run all tests (333 tests)
 npm test
 
 # Full verification (typecheck + test + build)
@@ -131,12 +131,14 @@ When proof is incomplete, Attestor names the gaps explicitly. Each gap has a cat
 - Kit-level binding check: mismatched endorsements are detected and rejected
 - Reviewer public key included in verification kit for independent outsider verification
 
-**Multi-query pipeline** (programmatic API, not yet CLI-exposed):
+**Multi-query pipeline** (programmatic API + CLI demo):
 
 - N governed query units within a single reporting run
 - Per-unit governance, evidence, and decision preserved
 - Conservative worst-case aggregate decision
 - Per-unit blocker attribution and proof-mode aggregation
+- Portable proof artifacts: multi-query output pack, dossier, and manifest
+- CLI demo: `npx tsx src/financial/cli.ts multi-query`
 
 ## What Is Optional / Bounded Today
 
@@ -156,13 +158,14 @@ The `prove` path generates ephemeral signing and reviewer keys by default for lo
 
 - First real Postgres-backed outsider-verifiable proof run (the next operational milestone)
 - Differential evidence across multi-query units
+- Signing and reviewer authority at the multi-query level
 - Warehouse-scale connectors (Snowflake, BigQuery, Databricks)
 - Filing or regulatory submission adapters
 - Enterprise IAM / SSO / LDAP approval integration
 - PKI-backed or CA-chained signing
 - Distributed control plane or API service layer
 - Multi-tenant entitlement service
-- CLI-exposed multi-query pipeline
+- Per-unit certificate issuance
 
 ## Output Artifacts
 
@@ -247,5 +250,5 @@ Offline fixture mode works without any API key or database.
 |---|---|
 | **Version** | 0.1.0 |
 | **Runtime** | Node.js 22+, TypeScript, local single-process |
-| **Tests** | 276 (244 financial + 32 signing) |
+| **Tests** | 333 (301 financial + 32 signing) |
 | **License** | Proprietary. All rights reserved. |

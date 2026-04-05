@@ -29,6 +29,8 @@ import { verifyCertificate } from '../signing/certificate.js';
 import { buildVerificationKit } from '../signing/bundle.js';
 import { runPostgresProve } from '../connectors/postgres-prove.js';
 import { isPostgresConfigured } from '../connectors/postgres.js';
+import { runMultiQueryPipeline, type MultiQueryUnit } from './multi-query-pipeline.js';
+import { buildMultiQueryOutputPack, buildMultiQueryDossier, buildMultiQueryManifest, renderMultiQuerySummary } from './multi-query-proof.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT, COUNTERPARTY_LIVE_DATABASES,
@@ -386,6 +388,7 @@ function printHelp(): void {
     npx tsx src/financial/cli.ts live-scenario <id>    Run a bounded local live scenario
     npx tsx src/financial/cli.ts prove <id> [key-dir] [--reviewer-key-dir <dir>]
                                                       Run governed scenario + issue signed certificate
+    npx tsx src/financial/cli.ts multi-query            Run a governed multi-query proof (fixed scenario set)
     npx tsx src/financial/cli.ts doctor                Check product proof readiness (keys, DB, credentials)
     npx tsx src/financial/cli.ts benchmark             Run the full replay benchmark corpus
     npx tsx src/financial/cli.ts list                  List available scenarios
@@ -667,6 +670,69 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
 }
 
 /**
+ * Multi-Query Demo — bounded multi-query governed proof with artifact emission.
+ *
+ * Uses a fixed scenario set to demonstrate the full multi-query artifact chain:
+ * output pack, dossier, and manifest. This is a first slice — no CLI scenario
+ * selection, no signing, no reviewer authority at the multi-query level yet.
+ */
+function runMultiQueryDemo(): void {
+  console.log(`\n  Attestor Multi-Query — Governed Multi-Query Proof (first slice)`);
+  console.log('');
+
+  const units: MultiQueryUnit[] = [
+    {
+      unitId: 'counterparty',
+      label: 'Counterparty exposure summary',
+      input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT },
+    },
+    {
+      unitId: 'liquidity',
+      label: 'Liquidity risk assessment',
+      input: { runId: 'x', intent: LIQUIDITY_INTENT, candidateSql: LIQUIDITY_SQL, fixtures: [LIQUIDITY_FIXTURE] },
+    },
+    {
+      unitId: 'recon',
+      label: 'Reconciliation variance check',
+      input: { runId: 'x', intent: RECON_INTENT, candidateSql: RECON_SQL, fixtures: [RECON_FIXTURE] },
+    },
+  ];
+
+  const runId = `mq-demo-${Date.now().toString(36)}`;
+  const report = runMultiQueryPipeline(runId, units);
+
+  // Display summary
+  console.log(renderMultiQuerySummary(report));
+
+  // Build proof artifacts
+  const outputPack = buildMultiQueryOutputPack(report);
+  const dossier = buildMultiQueryDossier(report);
+  const manifest = buildMultiQueryManifest(report);
+
+  // Persist
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const outDir = join('.attestor', 'multi-query', `${runId}_${ts}`);
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, 'output-pack.json'), JSON.stringify(outputPack, null, 2));
+  writeFileSync(join(outDir, 'dossier.json'), JSON.stringify(dossier, null, 2));
+  writeFileSync(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+  console.log(`\n  Artifacts saved to: ${outDir}/`);
+  console.log(`    output-pack.json  — machine-readable multi-query output pack`);
+  console.log(`    dossier.json      — reviewer-facing multi-query decision dossier`);
+  console.log(`    manifest.json     — evidence anchor manifest with per-unit terminals`);
+
+  console.log(`\n  Dossier verdict: ${dossier.verdict}`);
+  console.log(`  Governance: ${dossier.governanceSummary}`);
+  console.log(`  Proof: ${dossier.proofSummary}`);
+  console.log(`  Manifest: ${manifest.manifestHash.slice(0, 16)}...`);
+
+  console.log(`\n  Note: This is a first slice. No per-unit certificates, no signing,`);
+  console.log(`  no reviewer authority, and no differential evidence at the multi-query level.`);
+  console.log('');
+}
+
+/**
  * Doctor — readiness check for real product proof.
  */
 async function runDoctor(): Promise<void> {
@@ -749,6 +815,11 @@ async function main(): Promise<void> {
       }
     }
     await runProductProof(scenarioArg, keyDirArg, reviewerKeyDirArg);
+    return;
+  }
+
+  if (command === 'multi-query') {
+    runMultiQueryDemo();
     return;
   }
 

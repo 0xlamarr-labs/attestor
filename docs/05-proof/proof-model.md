@@ -66,11 +66,22 @@ Attestor supports multi-query reporting runs where N governed query units execut
 - Aggregate proof mode is the weakest across all units: if any unit is fixture-based while others are live, the aggregate is `hybrid`
 - Governance sufficiency requires all units to pass SQL governance, policy, and guardrails
 
+**Multi-query proof artifacts:**
+
+A multi-query run can emit three portable artifacts:
+
+- **Multi-Query Output Pack** (`attestor.multi_query_output_pack.v1`): machine-readable summary with per-unit governance, evidence terminals, scoring, and blocker attribution. Does NOT include full per-unit reports.
+- **Multi-Query Dossier** (`attestor.multi_query_dossier.v1`): reviewer-facing explanation with verdict, per-unit decision explanations, governance summary, and proof summary.
+- **Multi-Query Manifest** (`attestor.multi_query_manifest.v1`): minimal evidence anchor set with per-unit terminals and a deterministic manifest hash for replay verification.
+
+Run `npx tsx src/financial/cli.ts multi-query` to see a demo with 3 units and saved artifacts.
+
 **What multi-query does NOT yet do:**
 
 - Differential evidence (proving what changed between queries)
 - Cross-query join or dependency semantics
 - DAG-based query ordering
 - Per-unit certificate issuance (certificates are per-run, not per-unit)
+- Signing or reviewer authority at the multi-query level
 
-This is a bounded first slice: one run, N independent units, one aggregate report.
+This is a bounded first slice: one run, N independent units, one aggregate report with portable proof artifacts.
