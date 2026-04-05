@@ -14,6 +14,21 @@
 
 import 'dotenv/config';
 
+// ─── Shell-aware operator guidance ──────────────────────────────────────────
+
+/** Format an environment variable assignment for the current shell. */
+function envSet(name: string, value: string): string {
+  if (process.platform === 'win32') {
+    return `$env:${name}='${value}'`;
+  }
+  return `export ${name}=${value}`;
+}
+
+/** Shell name for operator context. */
+function shellName(): string {
+  return process.platform === 'win32' ? 'PowerShell' : 'bash/zsh';
+}
+
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -507,7 +522,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   if (!pgReadiness.configured) {
     console.log(`  PostgreSQL: not configured (ATTESTOR_PG_URL not set)`);
     console.log(`    Proof will use offline fixture data.`);
-    console.log(`    For real DB proof: export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db\n`);
+    console.log(`    For real DB proof: ${envSet('ATTESTOR_PG_URL', 'postgres://user:pass@host:5432/db')}\n`);
   } else if (!pgReadiness.driverInstalled) {
     console.log(`  PostgreSQL: URL configured but pg driver not installed`);
     console.log(`    Proof will use offline fixture data.`);
@@ -568,7 +583,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
 
   const pipelineInput: FinancialPipelineInput = {
     ...scenario.input,
-    // In demo mode, use rewritten SQL for governance and execution
+    // In demo mode, use canonical demo SQL (or schema-rewritten fallback) for governance and execution
     candidateSql: usingDemoSchema ? candidateSqlForPg : scenario.input.candidateSql,
     intent: intentOverride,
     signingKeyPair: keyPair,
@@ -800,12 +815,13 @@ async function runPgDemoInit(): Promise<void> {
       console.log(`    ${plan.schema}.${table}: ${count} rows`);
     }
     console.log('');
-    console.log(`  Next steps for real DB proof:`);
-    console.log(`    1. Set schema allowlist: export ATTESTOR_PG_ALLOWED_SCHEMAS=${getDemoAllowedSchemas().join(',')}`);
-    console.log(`    2. Run: npm run prove -- counterparty`);
+    console.log(`  Next steps (${shellName()}):`);
+    console.log(`    1. ${envSet('ATTESTOR_PG_ALLOWED_SCHEMAS', getDemoAllowedSchemas().join(','))}`);
+    console.log(`    2. npm run prove -- counterparty`);
     console.log('');
-    console.log(`  The counterparty scenario SQL will be rewritten to use ${plan.schema}.*`);
-    console.log(`  when ATTESTOR_PG_ALLOWED_SCHEMAS includes '${plan.schema}'.`);
+    console.log(`  When ATTESTOR_PG_ALLOWED_SCHEMAS includes '${plan.schema}', the counterparty`);
+    console.log(`  scenario uses canonical demo SQL from the bootstrap module (not regex rewriting).`);
+    console.log(`  Other scenarios without a dedicated demo helper fall back to schema rewriting.`);
     console.log('');
     console.log(`  Important: This bootstrap is for demo/proof setup only.`);
     console.log(`  The governed proof path remains strictly read-only.`);
@@ -896,34 +912,37 @@ async function runDoctor(): Promise<void> {
   console.log(`  The fastest way to a real PostgreSQL-backed proof from this repo:`);
 
   const demoSteps: string[] = [];
-  if (!pgReadiness.configured) demoSteps.push('export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db');
+  if (!pgReadiness.configured) demoSteps.push(envSet('ATTESTOR_PG_URL', 'postgres://user:pass@host:5432/db'));
   if (!pgReadiness.driverInstalled) demoSteps.push('npm install pg');
   if (pgReadiness.runnable && !pgProbeOk) demoSteps.push('Fix PostgreSQL connectivity (see probe results above)');
   if (!hasKeyDir) demoSteps.push('npm run keygen');
 
   if (pgProbeOk) {
-    // DB is reachable — show the demo sequence directly
+    // DB is reachable — show the exact demo sequence
     demoSteps.push('npx tsx src/financial/cli.ts pg-demo-init');
-    demoSteps.push('export ATTESTOR_PG_ALLOWED_SCHEMAS=attestor_demo');
+    demoSteps.push(envSet('ATTESTOR_PG_ALLOWED_SCHEMAS', 'attestor_demo'));
     if (hasKeyDir) {
       demoSteps.push('npm run prove -- counterparty .attestor');
     } else {
       demoSteps.push('npm run prove -- counterparty');
     }
+    console.log(`  Commands for ${shellName()}:`);
     for (let i = 0; i < demoSteps.length; i++) {
       console.log(`    ${i + 1}. ${demoSteps[i]}`);
     }
     console.log('');
     console.log(`  This seeds a deterministic attestor_demo schema, then runs a real`);
     console.log(`  PostgreSQL-backed governed proof with signed certificate and kit.`);
+    console.log(`  (Seeded demo data — not external production data.)`);
   } else {
     // Prerequisites not met
     for (let i = 0; i < demoSteps.length; i++) {
       console.log(`    ${i + 1}. ${demoSteps[i]}`);
     }
-    console.log(`    Then: npx tsx src/financial/cli.ts pg-demo-init`);
-    console.log(`           export ATTESTOR_PG_ALLOWED_SCHEMAS=attestor_demo`);
-    console.log(`           npm run prove -- counterparty`);
+    console.log(`    Then:`);
+    console.log(`      npx tsx src/financial/cli.ts pg-demo-init`);
+    console.log(`      ${envSet('ATTESTOR_PG_ALLOWED_SCHEMAS', 'attestor_demo')}`);
+    console.log(`      npm run prove -- counterparty`);
   }
   console.log('');
 }

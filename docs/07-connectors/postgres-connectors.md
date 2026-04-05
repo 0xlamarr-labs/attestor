@@ -109,25 +109,27 @@ These fields make a real DB-backed kit immediately distinguishable from a fixtur
 
 Attestor includes a bounded demo bootstrap that seeds a deterministic `attestor_demo` schema in PostgreSQL. This makes the first real DB proof run reproducible from the repo.
 
+**Bash / macOS / Linux:**
 ```bash
-# 1. Configure PostgreSQL
 export ATTESTOR_PG_URL=postgres://user:pass@localhost:5432/mydb
-
-# 2. Install pg driver
 npm install pg
-
-# 3. Bootstrap demo schema (creates attestor_demo.* with deterministic data)
 npx tsx src/financial/cli.ts pg-demo-init
-
-# 4. Set schema allowlist to demo schema
 export ATTESTOR_PG_ALLOWED_SCHEMAS=attestor_demo
-
-# 5. Run real DB proof
 npm run prove -- counterparty
-
-# 6. (Optional) Remove demo schema
-npx tsx src/financial/cli.ts pg-demo-teardown
 ```
+
+**PowerShell (Windows):**
+```powershell
+$env:ATTESTOR_PG_URL='postgres://user:pass@localhost:5432/mydb'
+npm install pg
+npx tsx src/financial/cli.ts pg-demo-init
+$env:ATTESTOR_PG_ALLOWED_SCHEMAS='attestor_demo'
+npm run prove -- counterparty
+```
+
+**Teardown (optional):** `npx tsx src/financial/cli.ts pg-demo-teardown`
+
+The `doctor` and `pg-demo-init` commands detect your shell environment and print copy-paste-ready instructions.
 
 The bootstrap creates three tables matching the repo's fixture scenarios:
 
