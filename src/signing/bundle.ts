@@ -44,7 +44,11 @@ export interface AuthorityBundle {
     guardrails: { result: string; checksRun: number };
     dataContracts: { result: string; checksRun: number; failedCount: number } | null;
     scoring: { decision: string; scorersRun: number; passCount: number; failCount: number; warnCount: number };
-    review: { required: boolean; triggeredBy: string[] };
+    review: {
+      required: boolean;
+      triggeredBy: string[];
+      endorsement: { endorsedAt: string; reviewerName: string; reviewerRole: string; endorsedDecision: string; signed: boolean } | null;
+    };
   };
 
   proof: {
@@ -133,6 +137,13 @@ export function buildAuthorityBundle(report: FinancialRunReport): AuthorityBundl
       review: {
         required: report.reviewPolicy.required,
         triggeredBy: report.reviewPolicy.triggeredBy,
+        endorsement: report.oversight.endorsement ? {
+          endorsedAt: report.oversight.endorsement.endorsedAt,
+          reviewerName: report.oversight.endorsement.reviewer.name,
+          reviewerRole: report.oversight.endorsement.reviewer.role,
+          endorsedDecision: report.oversight.endorsement.endorsedDecision,
+          signed: !!report.oversight.endorsement.signature,
+        } : null,
       },
     },
     proof: {

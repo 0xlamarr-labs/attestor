@@ -531,6 +531,54 @@ export async function runFinancialTests(): Promise<number> {
 
     console.log(`    Role normalization: approval.role='old_role', identity.role='${mismatchReport.oversight.reviewerRole}' → identity wins`);
     console.log(`    Endorsement: reviewer=${mismatchReport.oversight.endorsement!.reviewer.name}, decision=${mismatchReport.oversight.endorsement!.endorsedDecision}, signed=${mismatchReport.oversight.endorsement!.signature !== null}`);
+
+    // Test: Endorsement in dossier review path
+    ok(mismatchReport.dossier.reviewPath.endorsement !== null, 'Dossier: endorsement present in review path');
+    ok(mismatchReport.dossier.reviewPath.endorsement!.reviewerName === 'Bob Lee', 'Dossier: endorsement reviewer name');
+    ok(mismatchReport.dossier.reviewPath.endorsement!.signed === false, 'Dossier: endorsement unsigned');
+
+    // Test: Reviewer-signed endorsement with Ed25519
+    const { generateKeyPair: genReviewerKey } = await import('../signing/keys.js');
+    const { verifyReviewerEndorsement } = await import('../signing/reviewer-endorsement.js');
+    const reviewerKeyPair = genReviewerKey();
+
+    const signedReport = runFinancialPipeline({
+      runId: 'reviewer-signed-test',
+      intent: { ...COUNTERPARTY_INTENT, materialityTier: 'high' as const },
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      approval: {
+        status: 'approved',
+        reviewerRole: 'risk_officer',
+        reviewNote: 'Exposure within approved limits',
+        reviewerIdentity: { name: 'Alice Park', role: 'risk_officer', identifier: 'apark@bank.internal', signerFingerprint: null },
+        reviewerKeyPair,
+      },
+    });
+
+    // Endorsement is signed
+    ok(signedReport.oversight.endorsement !== null, 'Signed: endorsement exists');
+    ok(signedReport.oversight.endorsement!.signature !== null, 'Signed: endorsement has signature');
+    ok(signedReport.oversight.endorsement!.signature!.length === 128, 'Signed: signature is 64 bytes (128 hex)');
+    ok(signedReport.oversight.endorsement!.reviewer.signerFingerprint === reviewerKeyPair.fingerprint, 'Signed: reviewer fingerprint set');
+
+    // Verify the endorsement independently
+    const verifyResult = verifyReviewerEndorsement(signedReport.oversight.endorsement!, reviewerKeyPair.publicKeyPem);
+    ok(verifyResult.valid, 'Signed: endorsement signature valid');
+    ok(verifyResult.fingerprintMatch, 'Signed: fingerprint matches');
+
+    // Tamper detection
+    const tampered = { ...signedReport.oversight.endorsement!, rationale: 'TAMPERED' };
+    const tamperVerify = verifyReviewerEndorsement(tampered, reviewerKeyPair.publicKeyPem);
+    ok(!tamperVerify.valid, 'Signed: tampered endorsement fails verification');
+
+    // Endorsement surfaced as signed in artifacts
+    ok(signedReport.outputPack.oversight.endorsement!.signed === true, 'Signed: output pack shows signed=true');
+    ok(signedReport.dossier.reviewPath.endorsement!.signed === true, 'Signed: dossier shows signed=true');
+
+    console.log(`    Signed endorsement: reviewer=${signedReport.oversight.endorsement!.reviewer.name}, fingerprint=${signedReport.oversight.endorsement!.reviewer.signerFingerprint}, verified=${verifyResult.valid}`);
   }
 
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);

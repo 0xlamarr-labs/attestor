@@ -90,7 +90,7 @@ function verifyCertificateStandalone(cert: AttestationCertificate, publicKeyPem:
       guardrails: { result: cert.governance.guardrails, checksRun: 0 },
       dataContracts: { result: cert.governance.dataContracts, checksRun: 0, failedCount: 0 },
       scoring: { decision: cert.decision, scorersRun: cert.governance.scorersRun, passCount: 0, failCount: 0, warnCount: 0 },
-      review: { required: cert.governance.reviewRequired, triggeredBy: [] },
+      review: { required: cert.governance.reviewRequired, triggeredBy: [], endorsement: null },
     },
     proof: { mode: cert.liveProof.mode, upstreamLive: cert.liveProof.upstreamLive, executionLive: cert.liveProof.executionLive, consistent: cert.liveProof.consistent, gapCategories: [] },
     filing: { status: 'unknown', blockingGapCount: 0 },

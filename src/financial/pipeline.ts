@@ -41,6 +41,7 @@ import { buildAttestationPack } from './attestation.js';
 import { buildOpenLineageExport } from './openlineage.js';
 import { evaluateSemanticClauses } from './semantic-clauses.js';
 import { issueCertificate, type CertificateInput } from '../signing/certificate.js';
+import { signReviewerEndorsement } from '../signing/reviewer-endorsement.js';
 import { issueReceipt } from './receipt.js';
 import { buildEscrow } from './escrow.js';
 import { buildDecisionCapsule } from './capsule.js';
@@ -63,7 +64,7 @@ export interface FinancialPipelineInput {
   liveExecution?: SqliteLiveExecutionConfig;
   generatedReport?: GeneratedReport;
   reportContract?: ReportContract;
-  approval?: { status: 'approved' | 'rejected'; reviewerRole: string; reviewNote: string; reviewerIdentity?: import('./types.js').ReviewerIdentity };
+  approval?: { status: 'approved' | 'rejected'; reviewerRole: string; reviewNote: string; reviewerIdentity?: import('./types.js').ReviewerIdentity; reviewerKeyPair?: import('../signing/keys.js').AttestorKeyPair };
   /** Pre-computed execution evidence from an external connector (e.g., Postgres). Takes priority over fixture/SQLite. */
   externalExecution?: import('./types.js').ExecutionEvidence;
   /** Optional runtime observation for future live integrations. Defaults to truthful offline fixture proof. */
@@ -92,7 +93,11 @@ function determineOversight(reviewRequired: boolean, reviewReason: string, inten
       scope: ['output_pack', 'dossier'],
       signature: null, // future: Ed25519 reviewer signing
     } : null;
-    return { required: true, reason, status: approval.status, reviewerRole: normalizedRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString(), reviewerIdentity: identity, endorsement };
+    // Sign endorsement if reviewer key pair is provided
+    const signedEndorsement = endorsement && approval.reviewerKeyPair
+      ? signReviewerEndorsement(endorsement, approval.reviewerKeyPair)
+      : endorsement;
+    return { required: true, reason, status: approval.status, reviewerRole: normalizedRole, reviewNote: approval.reviewNote, decisionTimestamp: new Date().toISOString(), reviewerIdentity: signedEndorsement?.reviewer ?? identity, endorsement: signedEndorsement };
   }
   if (required) return { required: true, reason, status: 'pending', reviewerIdentity: null, endorsement: null };
   return { required: false, reason, status: 'not_required', reviewerIdentity: null, endorsement: null };

@@ -61,6 +61,7 @@ export function buildDecisionDossier(report: FinancialRunReport): DecisionDossie
     }
   }
 
+  const endorsement = report.oversight.endorsement;
   const reviewPath: DossierReviewPath = {
     required: report.reviewPolicy.required,
     triggers: report.reviewPolicy.triggeredBy,
@@ -68,6 +69,13 @@ export function buildDecisionDossier(report: FinancialRunReport): DecisionDossie
     reviewerRole: report.oversight.reviewerRole ?? null,
     reviewNote: report.oversight.reviewNote ?? null,
     reviewerIdentity: report.oversight.reviewerIdentity ?? null,
+    endorsement: endorsement ? {
+      endorsedAt: endorsement.endorsedAt,
+      endorsedDecision: endorsement.endorsedDecision,
+      reviewerName: endorsement.reviewer.name,
+      rationale: endorsement.rationale,
+      signed: !!endorsement.signature,
+    } : null,
   };
 
   const unresolvedRisks: string[] = [];

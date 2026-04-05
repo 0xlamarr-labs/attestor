@@ -1262,6 +1262,8 @@ export interface DossierReviewPath {
   reviewerRole: string | null;
   reviewNote: string | null;
   reviewerIdentity: ReviewerIdentity | null;
+  /** Structured endorsement summary. Null when no endorsement. */
+  endorsement: { endorsedAt: string; endorsedDecision: string; reviewerName: string; rationale: string; signed: boolean } | null;
 }
 
 // ─── Financial Run Report ────────────────────────────────────────────────────
