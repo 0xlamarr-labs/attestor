@@ -21,9 +21,11 @@
     "keygen": "tsx -e \"import{generateKeyPair,saveKeyPair}from'./src/signing/keys.js';const kp=generateKeyPair();saveKeyPair(kp,'.attestor/private.pem','.attestor/public.pem');console.log('Key pair generated:',kp.fingerprint)\""
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.12",
     "@types/node": "^22.0.0",
     "dotenv": "^17.0.0",
     "embedded-postgres": "^18.3.0-beta.16",
+    "hono": "^4.12.10",
     "jose": "^6.2.2",
     "openai": "^4.77.3",
     "pg": "^8.20.0",
