@@ -579,6 +579,9 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   const wasDenied = pgProveResult?.attempted && pgProveResult.predictiveGuardrail?.recommendation === 'deny';
   if (wasRealPg) {
     console.log(`  Source:   REAL PostgreSQL execution (${pgProveResult!.execution!.rowCount} rows, ${pgProveResult!.execution!.durationMs}ms)`);
+    if (pgProveResult!.postgresEvidence?.executionContextHash) {
+      console.log(`  Context:  ${pgProveResult!.postgresEvidence.executionContextHash} (db environment hash)`);
+    }
   } else if (wasDenied) {
     console.log(`  Source:   offline fixture (PostgreSQL preflight DENIED execution)`);
   } else if (pgReadiness.configured && !pgReadiness.driverInstalled) {
@@ -734,9 +737,12 @@ function runMultiQueryDemo(): void {
 
 /**
  * Doctor — readiness check for real product proof.
+ *
+ * When Postgres is configured and the driver is available, runs a bounded
+ * connectivity probe (SELECT version(), current_schemas, read-only txn).
  */
 async function runDoctor(): Promise<void> {
-  const { reportPostgresReadiness, isPostgresConfigured } = await import('../connectors/postgres.js');
+  const { reportPostgresReadiness, isPostgresConfigured, runPostgresProbe } = await import('../connectors/postgres.js');
   const { existsSync } = await import('node:fs');
 
   console.log(`\n  Attestor Doctor — Product Proof Readiness`);
@@ -750,19 +756,36 @@ async function runDoctor(): Promise<void> {
   const hasOpenAI = !!process.env.OPENAI_API_KEY;
   console.log(`  ${hasOpenAI ? '✓' : '○'} OpenAI API key    ${hasOpenAI ? 'Set' : 'Not set — needed for live model proof'}`);
 
-  // PostgreSQL
+  // PostgreSQL — surface readiness
   const pgReadiness = await reportPostgresReadiness();
   console.log(`  ${pgReadiness.runnable ? '✓' : pgReadiness.configured ? '△' : '○'} PostgreSQL         ${pgReadiness.message}`);
 
+  // Deep Postgres probe when both URL and driver are present
+  let pgProbeOk = false;
+  if (pgReadiness.runnable) {
+    console.log('');
+    console.log(`  ── PostgreSQL Proof Probe ──`);
+    const probe = await runPostgresProbe();
+    for (const step of probe.steps) {
+      console.log(`    ${step.passed ? '✓' : '✗'} ${step.step.padEnd(14)} ${step.detail}`);
+    }
+    pgProbeOk = probe.success;
+    if (probe.success) {
+      console.log(`    ✓ Probe passed — real PostgreSQL proof is operational`);
+    } else {
+      console.log(`    ✗ Probe failed — ${probe.message}`);
+    }
+  }
+
   // SQLite
-  console.log(`  ✓ SQLite (built-in)  Always available for fixture/local live proof`);
+  console.log(`\n  ✓ SQLite (built-in)  Always available for fixture/local live proof`);
 
   console.log('');
   console.log(`  Proof modes:`);
   console.log(`    ✓ offline_fixture        — always available (fixture data)`);
   console.log(`    ${hasOpenAI ? '✓' : '○'} live_model             — ${hasOpenAI ? 'ready' : 'needs OPENAI_API_KEY'}`);
   console.log(`    ✓ live_runtime (SQLite)  — built-in local execution`);
-  console.log(`    ${pgReadiness.runnable ? '✓' : '○'} live_runtime (Postgres) — ${pgReadiness.runnable ? 'ready for real DB proof' : 'not ready (see below)'}`);
+  console.log(`    ${pgProbeOk ? '✓' : pgReadiness.runnable ? '△' : '○'} live_runtime (Postgres) — ${pgProbeOk ? 'verified and operational' : pgReadiness.runnable ? 'driver+URL present but probe not passed' : 'not ready'}`);
 
   console.log('');
   console.log(`  Product proof readiness (outsider-verifiable, real DB):`);
@@ -770,9 +793,13 @@ async function runDoctor(): Promise<void> {
   if (!hasKeyDir) steps.push('npm run keygen');
   if (!pgReadiness.configured) steps.push('export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db');
   if (!pgReadiness.driverInstalled) steps.push('npm install pg');
+  if (pgReadiness.runnable && !pgProbeOk) steps.push('Fix PostgreSQL connectivity (see probe results above)');
 
-  if (steps.length === 0 && hasKeyDir && pgReadiness.runnable) {
+  if (steps.length === 0 && hasKeyDir && pgProbeOk) {
     console.log(`    ✓ Ready — run: npm run prove -- counterparty .attestor`);
+  } else if (steps.length === 0 && hasKeyDir && pgReadiness.runnable) {
+    console.log(`    △ Almost ready — PostgreSQL probe did not pass. Check connection.`);
+    console.log(`    Then: npm run prove -- counterparty .attestor`);
   } else {
     for (let i = 0; i < steps.length; i++) {
       console.log(`    ${i + 1}. ${steps[i]}`);

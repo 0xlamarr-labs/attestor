@@ -93,7 +93,7 @@ function verifyCertificateStandalone(cert: AttestationCertificate, publicKeyPem:
       scoring: { decision: cert.decision, scorersRun: cert.governance.scorersRun, passCount: 0, failCount: 0, warnCount: 0 },
       review: { required: cert.governance.reviewRequired, triggeredBy: [], endorsement: null },
     },
-    proof: { mode: cert.liveProof.mode, upstreamLive: cert.liveProof.upstreamLive, executionLive: cert.liveProof.executionLive, consistent: cert.liveProof.consistent, gapCategories: [] },
+    proof: { mode: cert.liveProof.mode, upstreamLive: cert.liveProof.upstreamLive, executionLive: cert.liveProof.executionLive, executionProvider: null, executionContextHash: null, consistent: cert.liveProof.consistent, gapCategories: [] },
     filing: { status: 'unknown', blockingGapCount: 0 },
   };
 
@@ -142,7 +142,10 @@ function printSummary(s: VerificationSummary): void {
   console.log(`\n  ── Proof Completeness ──`);
   console.log(`    Mode:        ${s.proofCompleteness.mode}`);
   console.log(`    Upstream:    ${s.proofCompleteness.upstreamLive ? 'live' : 'fixture'}`);
-  console.log(`    Execution:   ${s.proofCompleteness.executionLive ? 'live' : 'fixture'}`);
+  console.log(`    Execution:   ${s.proofCompleteness.executionLive ? 'live' : 'fixture'}${s.proofCompleteness.executionProvider ? ` (${s.proofCompleteness.executionProvider})` : ''}`);
+  if (s.proofCompleteness.hasDbContextEvidence) {
+    console.log(`    DB context:  ✓ execution context hash present`);
+  }
   console.log(`    Gaps:        ${s.proofCompleteness.gapCount > 0 ? s.proofCompleteness.gaps.join(', ') : 'none'}`);
 
   console.log(`\n  ── Reviewer Endorsement ──`);

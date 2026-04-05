@@ -66,6 +66,10 @@ export interface AuthorityBundle {
     mode: string;
     upstreamLive: boolean;
     executionLive: boolean;
+    /** Execution provider when live (e.g., 'postgres', 'sqlite'). Null for fixture. */
+    executionProvider: string | null;
+    /** Execution context hash when live DB execution occurred. Null for fixture/SQLite. */
+    executionContextHash: string | null;
     consistent: boolean;
     gapCategories: string[];
   };
@@ -164,6 +168,8 @@ export function buildAuthorityBundle(report: FinancialRunReport): AuthorityBundl
       mode: report.liveProof.mode,
       upstreamLive: report.liveProof.upstream.live,
       executionLive: report.liveProof.execution.live,
+      executionProvider: report.liveProof.execution.provider ?? null,
+      executionContextHash: report.execution?.executionContextHash ?? null,
       consistent: report.liveProof.consistent ?? false,
       gapCategories: report.liveProof.gaps.map((g) => g.category),
     },
@@ -214,6 +220,10 @@ export interface VerificationSummary {
     gaps: string[];
     executionLive: boolean;
     upstreamLive: boolean;
+    /** Execution provider when live (e.g., 'postgres'). Null for fixture. */
+    executionProvider: string | null;
+    /** Whether database context evidence exists (executionContextHash present). */
+    hasDbContextEvidence: boolean;
   };
   /** Reviewer endorsement verification — is the run backed by verified human authority? */
   reviewerEndorsement: {
@@ -346,7 +356,7 @@ export function buildVerificationSummary(
     structural,
     authority: { state: authorityState, warrantFulfilled, escrowReleased, receiptIssued },
     governanceSufficiency: { sufficient: governanceSufficient, sqlPass, policyPass, guardrailsPass, scoringDecision: bundle.governance.scoring.decision },
-    proofCompleteness: { mode: proofMode, gapCount: proofGaps.length, gaps: proofGaps, executionLive: bundle.proof.executionLive, upstreamLive: bundle.proof.upstreamLive },
+    proofCompleteness: { mode: proofMode, gapCount: proofGaps.length, gaps: proofGaps, executionLive: bundle.proof.executionLive, upstreamLive: bundle.proof.upstreamLive, executionProvider: bundle.proof.executionProvider, hasDbContextEvidence: !!bundle.proof.executionContextHash },
     reviewerEndorsement: reviewerEndorsementDim,
     overall,
   };

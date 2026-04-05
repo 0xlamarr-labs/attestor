@@ -853,6 +853,61 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    configured=${readiness.configured}, runnable=${readiness.runnable}, message=${readiness.message}`);
   }
 
+  // ═══ POSTGRES PROBE (no DB configured) ═══
+  console.log('\n  [Postgres Probe - Unconfigured]');
+  {
+    const { runPostgresProbe } = await import('../connectors/postgres.js');
+
+    const probe = await runPostgresProbe();
+    ok(!probe.attempted || !probe.success, 'PgProbe: fails when not configured');
+    ok(probe.steps.length > 0, 'PgProbe: has at least one step');
+    ok(probe.steps[0].step === 'config', 'PgProbe: first step is config');
+    ok(!probe.steps[0].passed, 'PgProbe: config step fails');
+    ok(probe.serverVersion === null, 'PgProbe: no server version');
+    ok(probe.currentSchemas === null, 'PgProbe: no schemas');
+    ok(probe.message.includes('ATTESTOR_PG_URL'), 'PgProbe: message mentions URL');
+
+    console.log(`    attempted=${probe.attempted}, success=${probe.success}, steps=${probe.steps.length}`);
+    console.log(`    message=${probe.message}`);
+  }
+
+  // ═══ BUNDLE PROOF TRUTH — FIXTURE PATH ═══
+  console.log('\n  [Bundle Proof Truth - Fixture]');
+  {
+    const { buildAuthorityBundle, buildVerificationKit } = await import('../signing/bundle.js');
+    const { generateKeyPair } = await import('../signing/keys.js');
+    const kp = generateKeyPair();
+
+    // Run a fixture-only pipeline with signing
+    const fixtureReport = runFinancialPipeline({
+      runId: 'proof-truth-fixture',
+      intent: COUNTERPARTY_INTENT,
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      signingKeyPair: kp,
+    });
+
+    const bundle = buildAuthorityBundle(fixtureReport);
+
+    // Fixture run: provider and context hash should be null
+    ok(bundle.proof.executionProvider === null, 'BundleTruth: fixture provider is null');
+    ok(bundle.proof.executionContextHash === null, 'BundleTruth: fixture contextHash is null');
+    ok(!bundle.proof.executionLive, 'BundleTruth: fixture execution not live');
+    ok(bundle.proof.mode === 'offline_fixture', 'BundleTruth: fixture mode');
+
+    // Kit verification summary reflects fixture
+    const kit = buildVerificationKit(fixtureReport, kp.publicKeyPem);
+    ok(kit !== null, 'BundleTruth: kit built');
+    ok(kit!.verification.proofCompleteness.executionProvider === null, 'BundleTruth: kit provider null');
+    ok(!kit!.verification.proofCompleteness.hasDbContextEvidence, 'BundleTruth: kit no DB context');
+    ok(kit!.verification.overall === 'proof_degraded', 'BundleTruth: fixture kit is proof_degraded');
+
+    console.log(`    mode=${bundle.proof.mode}, provider=${bundle.proof.executionProvider}, contextHash=${bundle.proof.executionContextHash}`);
+    console.log(`    kit: provider=${kit!.verification.proofCompleteness.executionProvider}, dbContext=${kit!.verification.proofCompleteness.hasDbContextEvidence}, overall=${kit!.verification.overall}`);
+  }
+
   // ═══ MULTI-QUERY PIPELINE ═══
   console.log('\n  [Multi-Query Pipeline]');
   {

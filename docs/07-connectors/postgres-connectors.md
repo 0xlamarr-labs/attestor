@@ -76,4 +76,27 @@ Clauses are defined in the query intent, evaluated against actual execution resu
 npm run start -- doctor
 ```
 
-The doctor command checks: signing key pair, OpenAI API key, PostgreSQL connectivity, and reports which proof modes are ready.
+The doctor command checks signing key pair, OpenAI API key, and PostgreSQL readiness.
+
+When `ATTESTOR_PG_URL` and `pg` are both present, doctor runs a **bounded connectivity probe**:
+
+| Step | What it checks |
+|---|---|
+| `config` | `ATTESTOR_PG_URL` is set |
+| `driver` | `pg` driver is importable |
+| `connect` | Connection opens successfully |
+| `version` | `SELECT version()` returns server version |
+| `schemas` | `current_schemas(false)` returns schema context |
+| `readonly_txn` | `BEGIN TRANSACTION READ ONLY` / `ROLLBACK` works |
+
+The probe is read-only and bounded. It does not inspect user tables, run EXPLAIN, or execute any user SQL.
+
+## Artifact Evidence
+
+When a real PostgreSQL-backed proof run occurs, the authority bundle and verification kit carry additional evidence fields:
+
+- `proof.executionProvider`: `'postgres'` (vs null for fixture)
+- `proof.executionContextHash`: SHA-256 of (server version + schemas + sanitized URL)
+- `proofCompleteness.hasDbContextEvidence`: true when execution context hash is present
+
+These fields make a real DB-backed kit immediately distinguishable from a fixture-based kit without digging into the full report.

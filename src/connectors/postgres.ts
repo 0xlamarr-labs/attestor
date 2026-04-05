@@ -196,6 +196,120 @@ export async function reportPostgresReadiness(): Promise<{ configured: boolean; 
   return { configured, driverInstalled, runnable, message };
 }
 
+// ─── Proof Readiness Probe ──────────────────────────────────────────────────
+
+/**
+ * Bounded connectivity and capability probe for Postgres proof readiness.
+ *
+ * What this checks (all read-only, safe):
+ * 1. pg driver availability
+ * 2. Connection can open
+ * 3. SELECT version() succeeds
+ * 4. current_schemas() observable
+ * 5. Read-only transaction works
+ *
+ * What this does NOT do:
+ * - Inspect user tables or data
+ * - Run EXPLAIN
+ * - Execute any user SQL
+ * - Modify anything
+ */
+export interface PostgresProbeResult {
+  /** Whether the probe was attempted at all. */
+  attempted: boolean;
+  /** Whether all probe steps passed. */
+  success: boolean;
+  /** Step-by-step results. */
+  steps: PostgresProbeStep[];
+  /** Database server version (when available). */
+  serverVersion: string | null;
+  /** Current schemas (when available). */
+  currentSchemas: string | null;
+  /** Sanitized connection URL. */
+  sanitizedUrl: string | null;
+  /** Overall message for operator. */
+  message: string;
+}
+
+export interface PostgresProbeStep {
+  step: string;
+  passed: boolean;
+  detail: string;
+}
+
+export async function runPostgresProbe(): Promise<PostgresProbeResult> {
+  const steps: PostgresProbeStep[] = [];
+  let serverVersion: string | null = null;
+  let currentSchemas: string | null = null;
+  let sanitizedUrl: string | null = null;
+
+  // Step 1: Config
+  const config = loadPostgresConfig();
+  if (!config) {
+    steps.push({ step: 'config', passed: false, detail: 'ATTESTOR_PG_URL not set' });
+    return { attempted: false, success: false, steps, serverVersion: null, currentSchemas: null, sanitizedUrl: null, message: 'ATTESTOR_PG_URL not set. Cannot probe.' };
+  }
+  sanitizedUrl = config.connectionUrl.replace(/:[^@]*@/, ':***@');
+  steps.push({ step: 'config', passed: true, detail: `URL configured: ${sanitizedUrl}` });
+
+  // Step 2: Driver
+  const driverOk = await isPostgresDriverAvailable();
+  if (!driverOk) {
+    steps.push({ step: 'driver', passed: false, detail: 'pg driver not installed. Run: npm install pg' });
+    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: 'pg driver not installed.' };
+  }
+  steps.push({ step: 'driver', passed: true, detail: 'pg driver available' });
+
+  // Step 3: Connect + version + schemas (bounded, read-only)
+  let Client: any;
+  try {
+    const pg = await (Function('return import("pg")')() as Promise<any>);
+    Client = pg.default?.Client ?? pg.Client;
+  } catch {
+    steps.push({ step: 'connect', passed: false, detail: 'Failed to load pg driver' });
+    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: 'Failed to load pg driver.' };
+  }
+
+  const client = new Client({ connectionString: config.connectionUrl });
+  try {
+    await client.connect();
+    steps.push({ step: 'connect', passed: true, detail: 'Connection established' });
+
+    // Version
+    const vResult = await client.query('SELECT version()');
+    serverVersion = vResult.rows[0]?.version ?? null;
+    steps.push({ step: 'version', passed: !!serverVersion, detail: serverVersion ? `Server: ${serverVersion.split(',')[0]}` : 'Could not read version' });
+
+    // Schemas
+    const sResult = await client.query('SELECT current_schemas(false)::text AS schemas');
+    currentSchemas = sResult.rows[0]?.schemas ?? null;
+    steps.push({ step: 'schemas', passed: !!currentSchemas, detail: currentSchemas ? `Schemas: ${currentSchemas}` : 'Could not read schemas' });
+
+    // Read-only transaction
+    await client.query('BEGIN TRANSACTION READ ONLY');
+    await client.query('ROLLBACK');
+    steps.push({ step: 'readonly_txn', passed: true, detail: 'Read-only transaction works' });
+
+    await client.end();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    steps.push({ step: steps.length <= 2 ? 'connect' : 'query', passed: false, detail: msg });
+    try { await client.end(); } catch { /* ignore */ }
+    return { attempted: true, success: false, steps, serverVersion, currentSchemas, sanitizedUrl, message: `Connection or query failed: ${msg}` };
+  }
+
+  const allPassed = steps.every(s => s.passed);
+  return {
+    attempted: true,
+    success: allPassed,
+    steps,
+    serverVersion,
+    currentSchemas,
+    sanitizedUrl,
+    message: allPassed ? 'PostgreSQL proof path fully verified. Ready for real DB proof.' : 'Some probe steps failed.',
+  };
+}
+
 export function loadPostgresConfig(): PostgresConfig | null {
   const url = process.env.ATTESTOR_PG_URL;
   if (!url) return null;
