@@ -1243,6 +1243,8 @@ export interface FinancialRunReport {
   liveProof: LiveProof;
   liveReadiness: LiveReadinessResult | null;
   openLineageExport: import('./openlineage.js').OpenLineageExport | null;
+  /** Ed25519-signed portable attestation certificate. Null if no signing key was provided. */
+  certificate: import('../signing/certificate.js').AttestationCertificate | null;
   /** Final disposition. */
   decision: FinancialDecision;
 }

@@ -38,6 +38,7 @@ import { buildBreakReport } from './break-report.js';
 import { assessFilingReadiness } from './filing-readiness.js';
 import { buildAttestationPack } from './attestation.js';
 import { buildOpenLineageExport } from './openlineage.js';
+import { issueCertificate, type CertificateInput } from '../signing/certificate.js';
 import { issueReceipt } from './receipt.js';
 import { buildEscrow } from './escrow.js';
 import { buildDecisionCapsule } from './capsule.js';
@@ -63,6 +64,8 @@ export interface FinancialPipelineInput {
   approval?: { status: 'approved' | 'rejected'; reviewerRole: string; reviewNote: string };
   /** Optional runtime observation for future live integrations. Defaults to truthful offline fixture proof. */
   liveProof?: LiveProofInput;
+  /** Optional Ed25519 signing key pair for portable attestation certificate issuance. */
+  signingKeyPair?: import('../signing/keys.js').AttestorKeyPair;
 }
 
 function determineOversight(reviewRequired: boolean, reviewReason: string, intent: FinancialQueryIntent, approval?: FinancialPipelineInput['approval']): HumanOversight {
@@ -363,6 +366,7 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
     liveProof,
     liveReadiness,
     openLineageExport: null,
+    certificate: null,
     decision,
   };
 
@@ -406,6 +410,42 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
   );
   report.attestation = buildAttestationPack(report);
   report.openLineageExport = buildOpenLineageExport(report);
+
+  // 6. Portable attestation certificate (Ed25519, issued only when signing key is provided)
+  if (input.signingKeyPair) {
+    const certInput: CertificateInput = {
+      runIdentity: replayIdentity,
+      decision: report.decision,
+      decisionSummary: `${report.scoring.scorersRun} scorers: ${report.scoring.decision}. Authority: ${report.capsule?.authorityState ?? 'unknown'}.`,
+      warrant: {
+        status: report.warrant.status,
+        obligationsFulfilled: report.warrant.evidenceObligations.filter((o: any) => o.fulfilled).length,
+        obligationsTotal: report.warrant.evidenceObligations.length,
+      },
+      escrow: { state: report.escrow.state },
+      receipt: { status: report.receipt?.receiptStatus ?? 'not_issued' },
+      capsule: { authority: report.capsule?.authorityState ?? 'unknown' },
+      evidenceChainRoot: report.evidenceChain.rootHash,
+      evidenceChainTerminal: report.evidenceChain.terminalHash,
+      auditChainIntact: report.audit.chainIntact,
+      auditEntryCount: report.audit.entries.length,
+      sqlHash: report.sqlGovernance.sqlHash,
+      snapshotHash: report.snapshot.snapshotHash,
+      sqlGovernance: report.sqlGovernance.result as 'pass' | 'fail',
+      policy: report.policyResult.result as 'pass' | 'fail',
+      guardrails: report.guardrailResult.result as 'pass' | 'fail',
+      dataContracts: (report.dataContract?.result ?? 'skip') as 'pass' | 'fail' | 'warn' | 'skip',
+      scorersRun: report.scoring.scorersRun,
+      reviewRequired: report.reviewPolicy.required,
+      liveProofMode: report.liveProof.mode,
+      upstreamLive: report.liveProof.upstream.live,
+      executionLive: report.liveProof.execution.live,
+      liveProofConsistent: report.liveProof.consistent ?? false,
+    };
+    report.certificate = issueCertificate(certInput, input.signingKeyPair);
+  } else {
+    report.certificate = null;
+  }
 
   return report;
 }

@@ -271,6 +271,9 @@ npm run list
 # Run a named fixture scenario
 npm run scenario -- counterparty
 
+# Run a governed scenario with signed certificate (product proof)
+npx tsx src/financial/cli.ts prove counterparty
+
 # Run the replay benchmark corpus
 npm run benchmark
 

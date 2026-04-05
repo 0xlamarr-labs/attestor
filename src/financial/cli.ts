@@ -24,6 +24,8 @@ import { renderPackSummary } from './output-pack.js';
 import { executeSqliteQuery, materializeSqliteFixtureDatabases, type SqliteSchemaBinding } from './execution.js';
 import { governSql } from './sql-governance.js';
 import type { FinancialRunReport, LiveProofInput } from './types.js';
+import { generateKeyPair, loadPrivateKey, loadPublicKey, derivePublicKeyIdentity, type AttestorKeyPair } from '../signing/keys.js';
+import { verifyCertificate } from '../signing/certificate.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT, COUNTERPARTY_LIVE_DATABASES,
@@ -379,6 +381,7 @@ function printHelp(): void {
   Usage:
     npx tsx src/financial/cli.ts scenario <id>         Run a named fixture scenario
     npx tsx src/financial/cli.ts live-scenario <id>    Run a bounded local live scenario
+    npx tsx src/financial/cli.ts prove <id> [key-dir]  Run governed scenario + issue signed certificate
     npx tsx src/financial/cli.ts benchmark             Run the full replay benchmark corpus
     npx tsx src/financial/cli.ts list                  List available scenarios
 
@@ -391,6 +394,106 @@ ${Object.entries(LIVE_SCENARIOS).map(([id, definition]) => `    ${id.padEnd(20)}
   Fixture scenarios remain offline/fixture-based.
   Live scenarios are bounded local hybrid exercises: model-generated SQL + local SQLite execution + persisted reviewer artifacts.
   `);
+}
+
+/**
+ * Product Proof — the end-to-end attested analytics demonstration.
+ *
+ * 1. Generates or loads signing key pair
+ * 2. Runs a governed financial scenario (fixture or live)
+ * 3. Issues a signed Ed25519 attestation certificate
+ * 4. Verifies the certificate independently
+ * 5. Persists all artifacts including the certificate
+ *
+ * Usage: attestor prove <scenario-id> [key-dir]
+ */
+async function runProductProof(scenarioId: string, keyDir?: string): Promise<void> {
+  console.log(`\n  Attestor Product Proof — Attested Analytics Demonstration`);
+  console.log(`  Scenario: ${scenarioId}`);
+
+  // Step 1: Signing key pair
+  let keyPair: AttestorKeyPair;
+  if (keyDir) {
+    try {
+      const privateKeyPem = loadPrivateKey(join(keyDir, 'private.pem'));
+      const publicKeyPem = loadPublicKey(join(keyDir, 'public.pem'));
+      const identity = derivePublicKeyIdentity(publicKeyPem);
+      keyPair = { privateKeyPem, publicKeyPem, ...identity };
+      console.log(`  Signing key: loaded from ${keyDir} (fingerprint: ${keyPair.fingerprint})`);
+    } catch {
+      console.log(`  Key directory ${keyDir} not found. Generating ephemeral key pair...`);
+      keyPair = generateKeyPair();
+      console.log(`  Signing key: ephemeral (fingerprint: ${keyPair.fingerprint})`);
+    }
+  } else {
+    keyPair = generateKeyPair();
+    console.log(`  Signing key: ephemeral (fingerprint: ${keyPair.fingerprint})`);
+  }
+
+  // Step 2: Find scenario
+  const scenario = SCENARIOS[scenarioId];
+  if (!scenario) {
+    console.error(`  Unknown scenario: ${scenarioId}. Use 'list' to see available scenarios.`);
+    process.exit(1);
+  }
+  console.log(`  Intent: ${scenario.description}\n`);
+
+  // Step 3: Run governed pipeline with signing
+  const pipelineInput: FinancialPipelineInput = {
+    ...scenario.input,
+    signingKeyPair: keyPair,
+  };
+
+  const report = runFinancialPipeline(pipelineInput);
+
+  // Step 4: Display result
+  console.log(`  Decision: ${report.decision.toUpperCase()}`);
+  console.log(`  Scorers:  ${report.scoring.scorersRun} ran`);
+  console.log(`  Warrant:  ${report.warrant.status} (${report.warrant.evidenceObligations.filter((o: any) => o.fulfilled).length}/${report.warrant.evidenceObligations.length} obligations)`);
+  console.log(`  Escrow:   ${report.escrow.state}`);
+  console.log(`  Receipt:  ${report.receipt?.receiptStatus ?? 'not issued'}`);
+  console.log(`  Capsule:  ${report.capsule?.authorityState ?? 'none'}`);
+  console.log(`  Audit:    ${report.audit.entries.length} entries, chain ${report.audit.chainIntact ? 'intact' : 'BROKEN'}`);
+  console.log(`  Live:     ${report.liveProof.mode}`);
+
+  // Step 5: Certificate truth
+  if (report.certificate) {
+    console.log(`\n  ✓ Certificate issued: ${report.certificate.certificateId}`);
+    console.log(`    Algorithm:   ${report.certificate.signing.algorithm}`);
+    console.log(`    Signer:      ${report.certificate.signing.fingerprint}`);
+    console.log(`    Decision:    ${report.certificate.decision}`);
+
+    // Step 6: Independent verification (proves the certificate is self-verifying)
+    const verification = verifyCertificate(report.certificate, keyPair.publicKeyPem);
+    console.log(`\n  Independent Verification:`);
+    console.log(`    Signature:   ${verification.signatureValid ? '✓ valid' : '✗ INVALID'}`);
+    console.log(`    Fingerprint: ${verification.fingerprintConsistent ? '✓ consistent' : '✗ MISMATCH'}`);
+    console.log(`    Overall:     ${verification.overall === 'valid' ? '✓ VALID' : '✗ ' + verification.overall.toUpperCase()}`);
+
+    // Step 7: Persist artifacts
+    const outDir = join('.attestor', 'proofs', report.runId.slice(0, 8));
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(join(outDir, 'certificate.json'), JSON.stringify(report.certificate, null, 2));
+    writeFileSync(join(outDir, 'public-key.pem'), keyPair.publicKeyPem);
+    writeFileSync(join(outDir, 'report-summary.json'), JSON.stringify({
+      runId: report.runId, decision: report.decision, scoring: report.scoring.decision,
+      warrant: report.warrant.status, escrow: report.escrow.state,
+      receipt: report.receipt?.receiptStatus, capsule: report.capsule?.authorityState,
+      auditEntries: report.audit.entries.length, chainIntact: report.audit.chainIntact,
+      liveProof: report.liveProof.mode,
+    }, null, 2));
+
+    console.log(`\n  Artifacts saved to: ${outDir}/`);
+    console.log(`    certificate.json  — portable Ed25519-signed attestation certificate`);
+    console.log(`    public-key.pem    — signer public key for independent verification`);
+    console.log(`    report-summary.json — compact run summary`);
+    console.log(`\n  To verify independently:`);
+    console.log(`    npx tsx src/signing/verify-cli.ts ${outDir}/certificate.json ${outDir}/public-key.pem`);
+  } else {
+    console.log(`\n  ✗ No certificate issued (signing key not provided or pipeline error)`);
+  }
+
+  console.log('');
 }
 
 async function main(): Promise<void> {
@@ -409,6 +512,11 @@ async function main(): Promise<void> {
 
   if (command === 'benchmark') {
     runBenchmark();
+    return;
+  }
+
+  if (command === 'prove' && args[1]) {
+    await runProductProof(args[1], args[2]);
     return;
   }
 
