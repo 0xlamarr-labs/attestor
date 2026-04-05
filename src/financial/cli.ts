@@ -401,7 +401,7 @@ function printHelp(): void {
   Usage:
     npx tsx src/financial/cli.ts scenario <id>         Run a named fixture scenario
     npx tsx src/financial/cli.ts live-scenario <id>    Run a bounded local live scenario
-    npx tsx src/financial/cli.ts prove <id> [key-dir] [--reviewer-key-dir <dir>]
+    npx tsx src/financial/cli.ts prove <id> [key-dir] [--reviewer-key-dir <dir>] [--connector <id>]
                                                       Run governed scenario + issue signed certificate
     npx tsx src/financial/cli.ts multi-query            Run a governed multi-query proof (fixed scenario set)
     npx tsx src/financial/cli.ts pg-demo-init          Bootstrap demo schema + data in PostgreSQL for real DB proof
@@ -438,7 +438,7 @@ ${Object.entries(LIVE_SCENARIOS).map(([id, definition]) => `    ${id.padEnd(20)}
  *   --reviewer-key-dir <dir>  Load reviewer key from <dir>/reviewer-private.pem + reviewer-public.pem
  *   When absent: generates ephemeral reviewer key for local proof demonstration
  */
-async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyDir?: string): Promise<void> {
+async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyDir?: string, connectorId?: string): Promise<void> {
   console.log(`\n  Attestor Product Proof — Attested Analytics Demonstration`);
   console.log(`  Scenario: ${scenarioId}`);
 
@@ -508,7 +508,44 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   }
   console.log(`  Intent: ${scenario.description}\n`);
 
-  // Step 3: Check for PostgreSQL-backed execution
+  // Step 3a: Check for explicit connector (e.g., --connector snowflake)
+  let connectorExecution: any = null;
+  let connectorProvider: string | null = null;
+  if (connectorId) {
+    const { connectorRegistry } = await import('../connectors/connector-interface.js');
+    const { snowflakeConnector } = await import('../connectors/snowflake-connector.js');
+    if (!connectorRegistry.has('snowflake')) connectorRegistry.register(snowflakeConnector);
+
+    const connector = connectorRegistry.get(connectorId);
+    if (!connector) {
+      console.log(`  Connector '${connectorId}' not found. Available: ${connectorRegistry.listIds().join(', ')}`);
+    } else {
+      const connConfig = connector.loadConfig();
+      if (!connConfig) {
+        console.log(`  Connector '${connectorId}': not configured (env vars missing)`);
+      } else {
+        console.log(`  Connector: ${connector.displayName} — attempting execution...`);
+        try {
+          const result = await connector.execute(scenario.input.candidateSql, connConfig);
+          if (result.success) {
+            connectorExecution = result;
+            connectorProvider = result.provider;
+            console.log(`  Execution: ✓ ${result.provider} — ${result.rowCount} rows in ${result.durationMs}ms`);
+            if (result.executionContextHash) {
+              console.log(`  Context:   ${result.executionContextHash}`);
+            }
+          } else {
+            console.log(`  Execution: ✗ ${result.error}`);
+          }
+        } catch (err: any) {
+          console.log(`  Execution: ✗ ${err.message}`);
+        }
+        console.log('');
+      }
+    }
+  }
+
+  // Step 3b: Check for PostgreSQL-backed execution (only if no explicit connector)
   let pgProveResult: Awaited<ReturnType<typeof runPostgresProve>> | null = null;
   const { reportPostgresReadiness: checkPg, loadPostgresConfig: loadPgConf } = await import('../connectors/postgres.js');
   const pgReadiness = await checkPg();
@@ -610,8 +647,16 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     signingKeyPair: keyPair,
     // Inject reviewer approval (overrides scenario-level approval if any)
     ...(reviewerApproval ? { approval: reviewerApproval } : {}),
+    // Connector-routed execution (e.g., Snowflake)
+    ...(connectorExecution ? {
+      externalExecution: connectorExecution,
+      liveProof: {
+        collectedAt: new Date().toISOString(),
+        execution: { live: true, provider: connectorProvider!, mode: 'live_db' as const, latencyMs: connectorExecution.durationMs ?? null },
+      },
+    } : {}),
     // Only pass Postgres execution when it ACTUALLY executed (not denied by preflight)
-    ...(pgProveResult?.attempted && pgProveResult.execution?.success && !pgProveResult.skipReason ? {
+    ...(!connectorExecution && pgProveResult?.attempted && pgProveResult.execution?.success && !pgProveResult.skipReason ? {
       externalExecution: pgProveResult.execution,
       liveProof: {
         collectedAt: new Date().toISOString(),
@@ -1020,14 +1065,17 @@ async function main(): Promise<void> {
     const scenarioArg = proveArgs[0];
     let keyDirArg: string | undefined;
     let reviewerKeyDirArg: string | undefined;
+    let connectorArg: string | undefined;
     for (let i = 1; i < proveArgs.length; i++) {
       if (proveArgs[i] === '--reviewer-key-dir' && proveArgs[i + 1]) {
         reviewerKeyDirArg = proveArgs[++i];
+      } else if (proveArgs[i] === '--connector' && proveArgs[i + 1]) {
+        connectorArg = proveArgs[++i];
       } else if (!keyDirArg) {
         keyDirArg = proveArgs[i];
       }
     }
-    await runProductProof(scenarioArg, keyDirArg, reviewerKeyDirArg);
+    await runProductProof(scenarioArg, keyDirArg, reviewerKeyDirArg, connectorArg);
     return;
   }
 
