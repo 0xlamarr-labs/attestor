@@ -72,6 +72,32 @@ Attestor's control model is not a flat validator list. It is a stack of distinct
 | **Review policy** | Escalation and approval discipline | pre-score and post-score review triggers, approval/rejection/pending states |
 | **Authority artifacts** | Monotonic acceptance closure | warrant -> escrow -> receipt -> capsule |
 | **Reviewer artifacts** | Human-review and audit packaging | output pack, dossier, manifest, attestation, lineage export |
+| **Portable attestation** | Independently verifiable output certificate | Ed25519-signed certificate binding authority + evidence + decision |
+
+## Portable Attestation Certificates
+
+Attestor can issue **Ed25519-signed attestation certificates** — portable JSON documents that bind the full authority chain, evidence anchors, governance results, and live proof into a single cryptographically signed artifact.
+
+**What a certificate proves:**
+- WHO signed (Ed25519 public key identity + fingerprint)
+- WHAT was decided (pass/fail/block with decision summary)
+- HOW it was governed (SQL governance, policy, guardrails, data contracts, scorers)
+- WHAT evidence exists (evidence chain root/terminal, audit chain integrity, SQL hash, snapshot hash)
+- WHETHER execution was live or fixture-based (live proof mode + consistency)
+
+**Verification requires only the certificate JSON + the signer's public key. No platform access, no database, no API call.**
+
+```bash
+# Generate a signing key pair
+npm run keygen
+
+# Issue certificates during pipeline execution (automatic when key is configured)
+
+# Verify a certificate independently
+npm run verify:cert -- path/to/certificate.json path/to/public.pem
+```
+
+This is Attestor's trust model upgrade from self-referential HMAC to independently verifiable Ed25519 attestation — the same signing primitive used by Sigstore, SLSA, and SSH.
 
 ## Authority Chain
 

@@ -7,13 +7,17 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/financial/financial.test.ts",
+    "test": "tsx src/financial/financial.test.ts && tsx src/signing/signing.test.ts",
+    "test:financial": "tsx src/financial/financial.test.ts",
+    "test:signing": "tsx src/signing/signing.test.ts",
     "verify": "npm run typecheck && npm test && npm run build",
     "start": "tsx src/financial/cli.ts",
     "list": "tsx src/financial/cli.ts list",
     "scenario": "tsx src/financial/cli.ts scenario",
     "benchmark": "tsx src/financial/cli.ts benchmark",
-    "live": "tsx src/financial/cli.ts live-scenario"
+    "live": "tsx src/financial/cli.ts live-scenario",
+    "verify:cert": "tsx src/signing/verify-cli.ts",
+    "keygen": "tsx -e \"import{generateKeyPair,saveKeyPair}from'./src/signing/keys.js';const kp=generateKeyPair();saveKeyPair(kp,'.attestor/private.pem','.attestor/public.pem');console.log('Key pair generated:',kp.fingerprint)\""
   },
   "dependencies": {
     "@types/node": "^22.0.0",
