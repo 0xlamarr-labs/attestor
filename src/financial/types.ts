@@ -6,8 +6,8 @@
  * structured report verification with provenance, audit evidence,
  * and human oversight semantics.
  *
- * One of Attestor's two reference domains (frontend and financial).
- * Frontend is the more mature domain; financial is an offline reference implementation.
+ * Attestor's authority-and-evidence runtime for governed financial pipelines.
+ * Provides warrant → escrow → receipt → capsule lifecycle, SQL governance, and live proof.
  */
 
 // ─── Materiality / Risk Tier ─────────────────────────────────────────────────

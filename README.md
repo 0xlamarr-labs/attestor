@@ -136,12 +136,35 @@ src/
 - Evidence dossier and output pack assembly
 - CLI with scenario/benchmark/live modes
 
+## Environment Variables
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | For live proof mode only | OpenAI API key for LLM-based live proof verification |
+
+Offline fixture mode and benchmarks work without any API key.
+
+## Runtime Boundary
+
+Attestor is currently a **local, single-process, offline-first** runtime:
+
+- **Execution engine**: Node.js with built-in SQLite (experimental, Node 22+)
+- **Database scope**: SQLite fixture databases only — no production database connectors
+- **Policy evaluation**: Local, in-process — no external entitlement service
+- **Filing**: Readiness assessment only — no actual regulatory submission
+- **Live Proof**: Supports offline fixtures, live model (LLM), and live runtime (SQLite) modes
+- **Deployment**: CLI or programmatic import — no server/API surface
+
+This is a reference implementation demonstrating the authority-and-evidence governance model. Production deployment would require database connectors, entitlement service integration, and filing submission adapters.
+
 ## What Is NOT Claimed Today
 
 - No production database connectors (SQLite only for bounded live execution)
 - No regulatory filing submission (readiness assessment only)
 - No multi-tenant entitlement service (local policy evaluation only)
 - No distributed execution (single-process runtime)
+- No REST/gRPC API surface (CLI and programmatic import only)
+- No authentication/authorization layer (assumed external)
 
 ## License
 
