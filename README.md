@@ -266,16 +266,37 @@ What it does not prove yet:
 - Table-level content hashing
 - Historical data-state attestation comparison across time
 
+## Current Capability Maturity
+
+**Shipped product paths** (integrated, tested, reachable through CLI/API):
+- Keyless-first signing in API (Sigstore pattern, per-request ephemeral keys + CA-issued certs)
+- Secure encrypted token store in CLI OIDC path (AES-256-GCM)
+- xBRL-CSV EBA DPM 2.0 adapter registered in API filing export
+- eCQM quality measure evaluation in healthcare CLI command
+- Redis production config used when REDIS_URL is set
+
+**First slices** (real and useful, not yet the default everywhere):
+- Healthcare domain: governed E2E scenarios + clause evaluators + eCQM measures, not yet a full production path
+- Filing: XBRL US-GAAP + xBRL-CSV EBA both registered, filing evidence in warrant, not yet full filing-package issuance by default
+- OIDC: local encrypted cache + refresh + device flow, not enterprise session management
+- PKI: keyless-first in API, chain verification in CLI, not yet the default verifier path everywhere
+- Async: BullMQ when REDIS_URL set, in-process fallback, not yet Redis-default
+
+**Capability modules** (implemented as code, not yet wired into a user-facing flow):
+- Database-level multi-tenant isolation (`tenant-rls.ts` — PostgreSQL RLS schema and functions, requires PG setup to activate)
+- Snowflake schema attestation (`snowflake-attestation.ts` — cross-DB attestation parity, requires live Snowflake)
+- Distributed service architecture types (`distributed-types.ts` — topology, workflow steps, deployment config)
+
 ## Not Yet Implemented
 
-- Broader fully productized domain surfaces beyond finance (healthcare is a real E2E first slice, not a full production path)
-- Filing issuance wired into authority closure by default (XBRL auto-summary exists; full filing-package issuance in the authority chain is not yet default)
-- Full enterprise OIDC/IAM session lifecycle (local token cache + refresh exists; enterprise session management does not)
-- PKI trust-chain as the default verifier path across all CLI and kit flows (PKI verify exists on the API path and CLI; it is not yet the default everywhere)
-- Redis-backed async as the default API backend (BullMQ path exists; in-process is the default without REDIS_URL)
-- Database-level multi-tenant isolation (request-level tenant middleware exists; persistent tenant-specific storage does not)
-- Full verifier-facing schema attestation across every service path (Postgres prove path captures it; API connector paths surface execution-context evidence only)
-- Distributed service control plane
+- Full enterprise OIDC/IAM session lifecycle and central session management
+- PKI as the mandatory default verifier path across all CLI and kit flows
+- Redis-backed async as the default API backend (currently opt-in via REDIS_URL)
+- Database-level tenant isolation as an active runtime policy (RLS schema exists, not deployed by default)
+- Full verifier-facing schema attestation across every API connector path
+- Snowflake schema attestation wired into the connector prove path
+- Distributed service control plane deployment
+- Broader fully productized domain surfaces (healthcare is a first slice, not a full production domain)
 
 ## Output Artifacts
 

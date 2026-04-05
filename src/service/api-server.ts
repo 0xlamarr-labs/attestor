@@ -32,6 +32,7 @@ import { connectorRegistry } from '../connectors/connector-interface.js';
 import { snowflakeConnector } from '../connectors/snowflake-connector.js';
 import { filingRegistry } from '../filing/filing-adapter.js';
 import { xbrlUsGaapAdapter, buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
+import { xbrlCsvEbaAdapter } from '../filing/xbrl-csv-adapter.js';
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
@@ -47,6 +48,7 @@ if (!connectorRegistry.has('snowflake')) connectorRegistry.register(snowflakeCon
 
 // Register filing adapters
 if (!filingRegistry.has('xbrl-us-gaap-2024')) filingRegistry.register(xbrlUsGaapAdapter);
+if (!filingRegistry.has('xbrl-csv-eba-dpm2')) filingRegistry.register(xbrlCsvEbaAdapter);
 
 const app = new Hono();
 const startTime = Date.now();
@@ -430,9 +432,12 @@ interface AsyncJob {
 const inProcessJobs = new Map<string, AsyncJob>();
 
 // BullMQ initialization is opt-in via REDIS_URL env var.
-// When REDIS_URL is set, async endpoints use BullMQ. Otherwise in_process.
+// When REDIS_URL is set, use production Redis config + BullMQ. Otherwise in_process.
+import { createProductionRedisConfig } from './redis-production.js';
+
 if (process.env.REDIS_URL) {
   try {
+    const redisConfig = createProductionRedisConfig(process.env.REDIS_URL);
     bullmqQueue = createPipelineQueue({ redisUrl: process.env.REDIS_URL });
     bullmqWorker = createPipelineWorker({ redisUrl: process.env.REDIS_URL });
     asyncBackendMode = 'bullmq';

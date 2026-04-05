@@ -498,13 +498,29 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   let oidcTokenPath: 'cached' | 'refreshed' | 'device_flow' | 'none' = 'none';
   const { isOidcConfigured, loadOidcConfig, executeDeviceFlow } = await import('../identity/oidc-device-flow.js');
   const { loadCachedTokens, saveCachedTokens, isTokenExpired, isTokenExpiringSoon, refreshTokens } = await import('../identity/token-cache.js');
+  const { encryptAndStore, loadAndDecrypt } = await import('../identity/secure-token-store.js');
+  // Use encrypted store when available, fall back to plain cache
+  const useSecureStore = true;
+  const loadTokens = () => {
+    if (useSecureStore) {
+      const secure = loadAndDecrypt();
+      if (secure) return { ...secure, cachedAt: secure.storedAt ?? '' } as any;
+    }
+    return loadCachedTokens();
+  };
+  const saveTokens = (tokens: any) => {
+    saveCachedTokens(tokens); // plain backup
+    if (useSecureStore) {
+      encryptAndStore({ ...tokens, storedAt: tokens.cachedAt ?? new Date().toISOString() });
+    }
+  };
 
   if (isOidcConfigured()) {
     const oidcConfig = loadOidcConfig()!;
     console.log(`\n  OIDC: configured (${oidcConfig.issuerUrl})`);
 
     // 1. Try cached tokens first
-    const cached = loadCachedTokens();
+    const cached = loadTokens();
     if (cached && !isTokenExpired(cached)) {
       oidcIdentity = { name: cached.name ?? 'Cached User', role: 'oidc_authenticated', identifier: cached.email ?? cached.subject, signerFingerprint: null };
       oidcTokenPath = 'cached';
@@ -515,7 +531,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
         console.log(`  OIDC: token expiring soon, attempting refresh...`);
         const refreshed = await refreshTokens(cached, oidcConfig.clientId);
         if (refreshed) {
-          saveCachedTokens(refreshed);
+          saveTokens(refreshed);
           oidcIdentity = { name: refreshed.name ?? cached.name ?? 'Refreshed User', role: 'oidc_authenticated', identifier: refreshed.email ?? refreshed.subject, signerFingerprint: null };
           oidcTokenPath = 'refreshed';
           console.log(`  OIDC: token refreshed successfully`);
@@ -526,7 +542,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
       console.log(`  OIDC: cached token expired, attempting refresh...`);
       const refreshed = await refreshTokens(cached, oidcConfig.clientId);
       if (refreshed) {
-        saveCachedTokens(refreshed);
+        saveTokens(refreshed);
         oidcIdentity = { name: refreshed.name ?? 'Refreshed User', role: 'oidc_authenticated', identifier: refreshed.email ?? refreshed.subject, signerFingerprint: null };
         oidcTokenPath = 'refreshed';
         console.log(`  OIDC: token refreshed — ${oidcIdentity.name}`);
@@ -541,7 +557,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
         oidcIdentity = oidcResult.identity;
         oidcTokenPath = 'device_flow';
         // Save real token material for cache/refresh
-        saveCachedTokens({
+        saveTokens({
           accessToken: oidcResult.accessToken ?? '',
           idToken: oidcResult.idToken ?? null,
           refreshToken: oidcResult.refreshToken ?? null,
@@ -998,6 +1014,22 @@ async function runHealthcareDemo(): Promise<void> {
       const tc = evaluateTemporalConsistency(rows, 'admission_date', 'discharge_date');
       console.log(`    clauses: temporal=${tc.passed ? '✓' : `✗ (${(tc.evidence as any).violations} inconsistencies)`}`);
     }
+  }
+
+  // eCQM measure evaluation
+  const { evaluateMeasure, CMS_READMISSION_MEASURE } = await import('../domains/healthcare-measures.js');
+  const measureResult = evaluateMeasure(CMS_READMISSION_MEASURE, {
+    initial_population: 350,
+    denominator: 300,
+    denominator_exclusion: 50,
+    numerator: 36,
+    numerator_exclusion: 0,
+  });
+  console.log(`\n  eCQM Measure: ${measureResult.title}`);
+  console.log(`    Rate: ${measureResult.rate !== null ? (measureResult.rate * 100).toFixed(1) + '%' : 'N/A'}`);
+  console.log(`    Performance: ${measureResult.performanceMet ? '✓ met' : '✗ not met'}`);
+  for (const gc of measureResult.governanceChecks) {
+    console.log(`    ${gc.passed ? '✓' : '✗'} ${gc.description}`);
   }
 
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
