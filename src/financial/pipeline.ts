@@ -24,7 +24,7 @@ import {
   type FixtureQueryMapping,
   type SqliteLiveExecutionConfig,
 } from './execution.js';
-import type { PostgresConfig, PostgresExecutionResult } from '../connectors/postgres.js';
+// Postgres execution is provided via externalExecution (pre-computed by connectors/postgres-prove.ts)
 import { validateDataContracts } from './data-contracts.js';
 import { validateReport } from './report-validation.js';
 import { buildLineageEvidence } from './lineage.js';
@@ -39,6 +39,7 @@ import { buildBreakReport } from './break-report.js';
 import { assessFilingReadiness } from './filing-readiness.js';
 import { buildAttestationPack } from './attestation.js';
 import { buildOpenLineageExport } from './openlineage.js';
+import { evaluateSemanticClauses } from './semantic-clauses.js';
 import { issueCertificate, type CertificateInput } from '../signing/certificate.js';
 import { issueReceipt } from './receipt.js';
 import { buildEscrow } from './escrow.js';
@@ -63,14 +64,16 @@ export interface FinancialPipelineInput {
   generatedReport?: GeneratedReport;
   reportContract?: ReportContract;
   approval?: { status: 'approved' | 'rejected'; reviewerRole: string; reviewNote: string };
-  /** Optional PostgreSQL live execution config. Takes priority over SQLite when present. */
-  postgresExecution?: PostgresConfig;
+  /** Pre-computed execution evidence from an external connector (e.g., Postgres). Takes priority over fixture/SQLite. */
+  externalExecution?: import('./types.js').ExecutionEvidence;
   /** Optional runtime observation for future live integrations. Defaults to truthful offline fixture proof. */
   liveProof?: LiveProofInput;
   /** Optional Ed25519 signing key pair for portable attestation certificate issuance. */
   signingKeyPair?: import('../signing/keys.js').AttestorKeyPair;
-  /** Optional predictive guardrail preflight result (for Postgres-backed runs). */
+  /** Predictive guardrail preflight result. Null for fixture/SQLite. */
   predictiveGuardrail?: import('../connectors/predictive-guardrails.js').PredictiveGuardrailResult;
+  /** Semantic clauses to evaluate against execution results. */
+  semanticClauses?: import('./types.js').SemanticClause[];
 }
 
 function determineOversight(reviewRequired: boolean, reviewReason: string, intent: FinancialQueryIntent, approval?: FinancialPipelineInput['approval']): HumanOversight {
@@ -147,24 +150,34 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
   });
 
   // ── Snapshot Identity ──
+  const hasExternalExecution = !!input.externalExecution;
   const liveSnapshot = input.liveExecution ? computeSqliteSnapshot(input.liveExecution.bindings) : null;
-  const snapshot: SnapshotIdentity = input.liveExecution
+  const snapshot: SnapshotIdentity = hasExternalExecution
     ? {
         snapshotId: `snap_${input.runId}`,
-        snapshotHash: liveSnapshot!.snapshotHash,
-        version: 'sqlite-live-v1',
+        snapshotHash: input.externalExecution!.executionContextHash ?? input.externalExecution!.schemaHash,
+        version: `${input.externalExecution!.provider ?? 'external'}-live-v1`,
         fixtureCount: 0,
         sourceKind: 'live_db',
-        sourceCount: liveSnapshot!.sourceCount,
+        sourceCount: 1,
       }
-    : {
-        snapshotId: `snap_${input.runId}`,
-        snapshotHash: h(JSON.stringify(input.fixtures.map((f) => ({ hash: f.sqlHash, desc: f.description })))),
-        version: 'fixture-v1',
-        fixtureCount: input.fixtures.length,
-        sourceKind: 'fixture',
-        sourceCount: input.fixtures.length,
-      };
+    : input.liveExecution
+      ? {
+          snapshotId: `snap_${input.runId}`,
+          snapshotHash: liveSnapshot!.snapshotHash,
+          version: 'sqlite-live-v1',
+          fixtureCount: 0,
+          sourceKind: 'live_db',
+          sourceCount: liveSnapshot!.sourceCount,
+        }
+      : {
+          snapshotId: `snap_${input.runId}`,
+          snapshotHash: h(JSON.stringify(input.fixtures.map((f) => ({ hash: f.sqlHash, desc: f.description })))),
+          version: 'fixture-v1',
+          fixtureCount: input.fixtures.length,
+          sourceKind: 'fixture',
+          sourceCount: input.fixtures.length,
+        };
 
   // ── WARRANT ISSUANCE (before execution) ──
   const warrant = issueWarrant(
@@ -186,13 +199,19 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
     if (snapViolation) recordWarrantViolation(warrant, snapViolation);
   }
   if (warrant.status === 'active') {
-    execution = timed('execution', () =>
-      input.liveExecution
-        ? executeSqliteQuery(input.candidateSql, input.liveExecution)
-        : executeFixtureQuery(input.candidateSql, input.fixtures),
-    );
+    if (hasExternalExecution) {
+      // Use pre-computed external execution (e.g., Postgres)
+      execution = input.externalExecution!;
+    } else {
+      execution = timed('execution', () =>
+        input.liveExecution
+          ? executeSqliteQuery(input.candidateSql, input.liveExecution)
+          : executeFixtureQuery(input.candidateSql, input.fixtures),
+      );
+    }
     appendAuditEntry(audit, 'execution', execution.success ? 'success' : 'failure', 'execution', {
       success: execution.success, rowCount: execution.rowCount, schemaHash: execution.schemaHash,
+      provider: execution.provider ?? (input.liveExecution ? 'sqlite' : 'fixture'),
     });
   }
 
@@ -213,6 +232,16 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
     if (dataContract.checks.some((c) => c.check.startsWith('control_total') || c.check.startsWith('sum_equals'))) {
       fulfillWarrantObligation(warrant, 'reconciliation_checked');
     }
+  }
+
+  // ── Semantic Clauses ──
+  const semanticClauseResult = input.semanticClauses?.length
+    ? evaluateSemanticClauses(input.semanticClauses, execution)
+    : null;
+  if (semanticClauseResult?.performed) {
+    appendAuditEntry(audit, 'semantic_clauses', semanticClauseResult.hardFailCount > 0 ? 'hard_failure' : semanticClauseResult.failCount > 0 ? 'soft_failure' : 'pass', 'validation', {
+      clauseCount: semanticClauseResult.clauseCount, passCount: semanticClauseResult.passCount, failCount: semanticClauseResult.failCount,
+    });
   }
 
   // ── Report Validation ──
@@ -372,6 +401,8 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
     liveReadiness,
     openLineageExport: null,
     certificate: null,
+    predictiveGuardrail: input.predictiveGuardrail ?? null,
+    semanticClauses: semanticClauseResult,
     decision,
   };
 

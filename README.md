@@ -147,6 +147,22 @@ When PostgreSQL is configured, Attestor runs a **predictive guardrail preflight*
 
 This is Attestor's proactive governance layer — the system can refuse a dangerous query before it touches data, not just after it fails.
 
+## Semantic Clauses
+
+Attestor supports **machine-checkable analytical obligations** — semantic clauses that define what the NUMBERS must satisfy, not just what the QUERY must look like.
+
+**Clause types:**
+- `balance_identity`: net = gross_long - gross_short (additive identity must hold)
+- `control_total`: total must equal sum of parts (reconciliation)
+- `ratio_bound`: ratio must be within acceptable range
+- `sign_constraint`: column values must satisfy sign rules (non-negative, positive)
+- `completeness_check`: required columns must have no nulls
+
+**How they work:**
+Clauses are defined in the query intent, evaluated against actual execution results, and reported in the authority evidence. Hard failures block acceptance; soft failures produce warnings.
+
+This is the start of semantic analytical governance: the system verifies that financial outputs satisfy their mathematical obligations, not just their schema obligations.
+
 ## Authority Chain
 
 Every financial operation follows a strict authority lifecycle:
@@ -353,7 +369,7 @@ Offline fixture mode and benchmarks work without any API key or database. Postgr
 Attestor is currently a **local, single-process, offline-first** runtime:
 
 - **Execution engine**: Node.js with built-in SQLite support (Node 22+)
-- **Database scope**: SQLite fixture databases + optional PostgreSQL read-only connector (requires `npm install pg`)
+- **Database scope**: SQLite fixture databases + optional bounded PostgreSQL read-only execution (requires `npm install pg` + `ATTESTOR_PG_URL`). PostgreSQL path includes predictive guardrails (EXPLAIN-based preflight).
 - **Policy evaluation**: local, in-process; no external entitlement service
 - **Filing**: readiness assessment only; no actual regulatory submission adapter
 - **Proof surface**: offline fixtures, live model, live runtime, and hybrid truth modes

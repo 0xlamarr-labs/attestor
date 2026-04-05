@@ -469,7 +469,8 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
     ...scenario.input,
     signingKeyPair: keyPair,
     ...(pgProveResult?.attempted && pgProveResult.execution ? {
-      // Override fixtures with real Postgres execution
+      // Pass real Postgres execution evidence into the core pipeline
+      externalExecution: pgProveResult.execution,
       liveProof: {
         collectedAt: new Date().toISOString(),
         upstream: scenario.input.liveProof?.upstream,
