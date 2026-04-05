@@ -33,6 +33,7 @@ import { snowflakeConnector } from '../connectors/snowflake-connector.js';
 import { filingRegistry } from '../filing/filing-adapter.js';
 import { xbrlUsGaapAdapter, buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
+import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
 import { tenantMiddleware, type TenantContext } from './tenant-isolation.js';
@@ -53,9 +54,17 @@ const startTime = Date.now();
 // Apply tenant isolation middleware to all API routes
 app.use('/api/*', tenantMiddleware());
 
-// Generate PKI hierarchy at server startup
-const pki = generatePkiHierarchy('Attestor API Root CA', 'API Runtime Signer', 'API Reviewer');
+// PKI hierarchy (startup-time, for health/metadata)
+const pki = generatePkiHierarchy('Attestor Keyless CA', 'API Runtime Signer', 'API Reviewer');
 const pkiReady = true;
+
+// Keyless signer: per-request ephemeral keys with CA-issued short-lived certs (Sigstore pattern)
+function createRequestSigners(identitySource: string, reviewerName?: string) {
+  return createKeylessSignerPair(
+    { subject: 'API Runtime Signer', source: identitySource === 'oidc_verified' ? 'oidc_verified' : 'ephemeral', identifier: 'api-keyless' },
+    reviewerName ? { subject: reviewerName, source: identitySource === 'oidc_verified' ? 'oidc_verified' : 'operator_asserted', identifier: reviewerName } : undefined,
+  );
+}
 
 // ─── Health ─────────────────────────────────────────────────────────────────
 
@@ -155,8 +164,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       }
     }
 
-    // Use PKI-backed signer key pair when signing
-    const keyPair = sign ? pki.signer.keyPair : undefined;
+    // Keyless signer created after identity resolution (below)
 
     // ── OIDC-backed reviewer identity ──
     // If reviewerOidcToken is provided, verify it and derive reviewer identity.
@@ -186,8 +194,10 @@ app.post('/api/v1/pipeline/run', async (c) => {
 
     const identitySource = classifyIdentitySource(oidcVerified, false);
 
-    // Use PKI-backed reviewer key pair when reviewer is present
-    const reviewerKeyPair = (sign && reviewerIdentity) ? pki.reviewer.keyPair : undefined;
+    // Keyless-first: per-request ephemeral keys with CA-issued short-lived certs
+    const keylessPair = sign ? createRequestSigners(identitySource, reviewerIdentity?.name) : null;
+    const keyPair = keylessPair?.signer.signingKeyPair;
+    const reviewerKeyPair = (sign && reviewerIdentity && keylessPair) ? keylessPair.reviewer.signingKeyPair : undefined;
 
     const input: FinancialPipelineInput = {
       runId: `api-${Date.now().toString(36)}`,
@@ -241,8 +251,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
       certificate: report.certificate ?? null,
       verification: kit?.verification ?? null,
       publicKeyPem: keyPair?.publicKeyPem ?? null,
-      trustChain: sign ? pki.chains.signer : null,
-      caPublicKeyPem: sign ? pki.ca.keyPair.publicKeyPem : null,
+      trustChain: keylessPair?.signer.trustChain ?? null,
+      caPublicKeyPem: keylessPair?.signer.caPublicKeyPem ?? null,
+      signingMode: sign ? 'keyless' : null,
       connectorUsed: connectorProvider,
       // Schema/data-state attestation
       schemaAttestation: fullSchemaAttestation ? {
@@ -462,7 +473,8 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
     setImmediate(async () => {
       job.status = 'running';
       try {
-        const keyPair = sign ? pki.signer.keyPair : undefined;
+        const asyncSigners = sign ? createRequestSigners('ephemeral') : null;
+        const keyPair = asyncSigners?.signer.signingKeyPair;
         const input: FinancialPipelineInput = {
           runId: `async-${jobId}`, intent, candidateSql,
           fixtures: body.fixtures ?? [],
@@ -482,8 +494,8 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
           certificate: report.certificate ?? null,
           verification: kit?.verification ?? null,
           publicKeyPem: keyPair?.publicKeyPem ?? null,
-          trustChain: sign ? pki.chains.signer : null,
-          caPublicKeyPem: sign ? pki.ca.keyPair.publicKeyPem : null,
+          trustChain: asyncSigners?.signer.trustChain ?? null,
+          caPublicKeyPem: asyncSigners?.signer.caPublicKeyPem ?? null,
         };
         job.status = 'completed';
         job.completedAt = new Date().toISOString();

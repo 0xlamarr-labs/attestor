@@ -52,7 +52,7 @@ async function run() {
       ok(body.domains.includes('healthcare'), 'Health: healthcare domain registered');
       ok(typeof body.uptime === 'number', 'Health: uptime is number');
       ok(body.pki?.ready === true, 'Health: PKI ready');
-      ok(body.pki?.caName === 'Attestor API Root CA', 'Health: PKI CA name');
+      ok(body.pki?.caName === 'Attestor Keyless CA', 'Health: PKI CA name');
       ok(typeof body.pki?.caFingerprint === 'string', 'Health: PKI CA fingerprint');
       console.log(`    status=${body.status}, pki=${body.pki.caName} (${body.pki.caFingerprint}), domains=${body.domains.join(',')}, uptime=${body.uptime}s`);
     }
@@ -258,7 +258,7 @@ async function run() {
       ok(pv.chainVerification.leafValid === true, 'PKI-Verify: leaf valid');
       ok(pv.chainVerification.caExpired === false, 'PKI-Verify: CA not expired');
       ok(pv.chainVerification.leafExpired === false, 'PKI-Verify: leaf not expired');
-      ok(pv.chainVerification.caName === 'Attestor API Root CA', 'PKI-Verify: CA name');
+      ok(pv.chainVerification.caName === 'Attestor Keyless CA', 'PKI-Verify: CA name');
       // Certificate-to-leaf binding
       ok(pv.chainVerification.leafMatchesCertificateKey === true, 'PKI-Verify: leaf matches cert key');
       ok(pv.chainVerification.pkiBound === true, 'PKI-Verify: PKI bound');
