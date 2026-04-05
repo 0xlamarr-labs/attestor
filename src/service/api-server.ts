@@ -1,14 +1,18 @@
 /**
  * Attestor HTTP API Server — Real Hono-based service layer.
  *
- * Wraps the governance engine in a real HTTP API:
- * - POST /api/v1/pipeline/run — execute a governed pipeline
- * - GET  /api/v1/health — service health check
- * - GET  /api/v1/domains — list registered domain packs
- * - POST /api/v1/verify — verify a certificate
+ * Endpoints:
+ * - POST /api/v1/pipeline/run       — synchronous governed pipeline execution
+ * - POST /api/v1/pipeline/run-async  — async job submission (returns jobId)
+ * - GET  /api/v1/pipeline/status/:id — async job status/result
+ * - POST /api/v1/verify              — certificate + PKI chain verification
+ * - POST /api/v1/filing/export       — XBRL taxonomy mapping export
+ * - GET  /api/v1/health              — service health + PKI + registries
+ * - GET  /api/v1/domains             — registered domain packs
+ * - GET  /api/v1/connectors          — registered database connectors
  *
- * This is a real server, not a mock. It binds to a port and accepts
- * real HTTP requests. Integration tests hit it over the network.
+ * This is a real server. It binds to a port and accepts real HTTP requests.
+ * Integration tests hit it over the network.
  */
 
 import { Hono } from 'hono';
@@ -216,7 +220,13 @@ app.post('/api/v1/pipeline/run', async (c) => {
       verification: kit?.verification ?? null,
       publicKeyPem: keyPair?.publicKeyPem ?? null,
       trustChain: sign ? pki.chains.signer : null,
+      caPublicKeyPem: sign ? pki.ca.keyPair.publicKeyPem : null,
       connectorUsed: connectorProvider,
+      // Schema attestation summary (when real DB execution with attestation capture)
+      schemaAttestation: connectorExecution?.executionContextHash ? {
+        executionContextHash: connectorExecution.executionContextHash,
+        provider: connectorProvider,
+      } : null,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
     });
@@ -229,18 +239,41 @@ app.post('/api/v1/pipeline/run', async (c) => {
 
 app.post('/api/v1/verify', async (c) => {
   try {
-    const { certificate, publicKeyPem } = await c.req.json();
+    const body = await c.req.json();
+    const { certificate, publicKeyPem, trustChain, caPublicKeyPem } = body;
     if (!certificate || !publicKeyPem) {
       return c.json({ error: 'certificate and publicKeyPem are required' }, 400);
     }
 
-    const result = verifyCertificate(certificate, publicKeyPem);
+    // 1. Verify certificate signature
+    const certResult = verifyCertificate(certificate, publicKeyPem);
+
+    // 2. Verify PKI trust chain if provided
+    // Chain verification uses the CA's public key (not the signer's)
+    let chainVerification = null;
+    if (trustChain && trustChain.ca && trustChain.leaf && caPublicKeyPem) {
+      const chainResult = verifyTrustChain(trustChain, caPublicKeyPem);
+      chainVerification = {
+        caValid: chainResult.caValid,
+        leafValid: chainResult.leafValid,
+        chainIntact: chainResult.chainIntact,
+        issuerMatch: chainResult.issuerMatch,
+        caExpired: chainResult.caExpired,
+        leafExpired: chainResult.leafExpired,
+        overall: chainResult.overall,
+        caName: trustChain.ca.name ?? null,
+        leafSubject: trustChain.leaf.subject ?? null,
+      };
+    }
+
     return c.json({
-      signatureValid: result.signatureValid,
-      fingerprintConsistent: result.fingerprintConsistent,
-      schemaValid: result.schemaValid,
-      overall: result.overall,
-      explanation: result.explanation,
+      signatureValid: certResult.signatureValid,
+      fingerprintConsistent: certResult.fingerprintConsistent,
+      schemaValid: certResult.schemaValid,
+      overall: certResult.overall,
+      explanation: certResult.explanation,
+      // PKI trust chain verification (when chain material is provided)
+      chainVerification,
     });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
@@ -286,6 +319,88 @@ app.post('/api/v1/filing/export', async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
+});
+
+// ─── Async Pipeline (in-process job store for bounded first slice) ───────────
+
+interface AsyncJob {
+  id: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  submittedAt: string;
+  completedAt: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+}
+
+const jobStore = new Map<string, AsyncJob>();
+
+app.post('/api/v1/pipeline/run-async', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { candidateSql, intent, sign } = body;
+    if (!candidateSql || !intent) {
+      return c.json({ error: 'candidateSql and intent are required' }, 400);
+    }
+
+    const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const job: AsyncJob = { id: jobId, status: 'queued', submittedAt: new Date().toISOString(), completedAt: null, result: null, error: null };
+    jobStore.set(jobId, job);
+
+    // Execute asynchronously (in-process worker for bounded first slice)
+    setImmediate(async () => {
+      job.status = 'running';
+      try {
+        const keyPair = sign ? pki.signer.keyPair : undefined;
+        const input: FinancialPipelineInput = {
+          runId: `async-${jobId}`,
+          intent, candidateSql,
+          fixtures: body.fixtures ?? [],
+          generatedReport: body.generatedReport,
+          reportContract: body.reportContract,
+          signingKeyPair: keyPair,
+        };
+        const report = runFinancialPipeline(input);
+        let kit = null;
+        if (keyPair && report.certificate) {
+          kit = buildVerificationKit(report, keyPair.publicKeyPem);
+        }
+        job.result = {
+          runId: report.runId, decision: report.decision,
+          proofMode: report.liveProof.mode,
+          certificateId: report.certificate?.certificateId ?? null,
+          certificate: report.certificate ?? null,
+          verification: kit?.verification ?? null,
+          publicKeyPem: keyPair?.publicKeyPem ?? null,
+          trustChain: sign ? pki.chains.signer : null,
+          caPublicKeyPem: sign ? pki.ca.keyPair.publicKeyPem : null,
+        };
+        job.status = 'completed';
+        job.completedAt = new Date().toISOString();
+      } catch (err: any) {
+        job.status = 'failed';
+        job.error = err.message ?? String(err);
+        job.completedAt = new Date().toISOString();
+      }
+    });
+
+    return c.json({ jobId, status: 'queued', submittedAt: job.submittedAt }, 202);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+app.get('/api/v1/pipeline/status/:jobId', (c) => {
+  const jobId = c.req.param('jobId');
+  const job = jobStore.get(jobId);
+  if (!job) return c.json({ error: 'Job not found' }, 404);
+  return c.json({
+    jobId: job.id,
+    status: job.status,
+    submittedAt: job.submittedAt,
+    completedAt: job.completedAt,
+    result: job.result,
+    error: job.error,
+  });
 });
 
 // ─── Server Start/Stop ──────────────────────────────────────────────────────

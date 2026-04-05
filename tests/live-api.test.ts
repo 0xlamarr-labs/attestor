@@ -223,6 +223,91 @@ async function run() {
       console.log(`    unknown adapter rejected`);
     }
 
+    // ═══ ISSUE → VERIFY WITH PKI CHAIN (E2E closed loop) ═══
+    console.log('\n  [Issue → Verify with PKI Chain — E2E]');
+    {
+      // Run a fresh pipeline to get cert + chain + key from the SAME run
+      const freshRun = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateSql: COUNTERPARTY_SQL, intent: COUNTERPARTY_INTENT, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT, sign: true }),
+      });
+      const freshBody = await freshRun.json() as any;
+
+      // Now verify with the same run's cert + key + chain + CA key
+      const verifyRes = await fetch(`${BASE}/api/v1/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          certificate: freshBody.certificate,
+          publicKeyPem: freshBody.publicKeyPem,
+          trustChain: freshBody.trustChain,
+          caPublicKeyPem: freshBody.caPublicKeyPem,
+        }),
+      });
+      ok(verifyRes.status === 200, 'PKI-Verify: status 200');
+      const pv = await verifyRes.json() as any;
+      ok(pv.signatureValid === true, 'PKI-Verify: signature valid');
+      ok(pv.overall === 'valid', 'PKI-Verify: cert overall valid');
+      ok(pv.chainVerification !== null, 'PKI-Verify: chain verification present');
+      ok(pv.chainVerification.chainIntact === true, 'PKI-Verify: chain intact');
+      ok(pv.chainVerification.caValid === true, 'PKI-Verify: CA valid');
+      ok(pv.chainVerification.leafValid === true, 'PKI-Verify: leaf valid');
+      ok(pv.chainVerification.caExpired === false, 'PKI-Verify: CA not expired');
+      ok(pv.chainVerification.leafExpired === false, 'PKI-Verify: leaf not expired');
+      ok(pv.chainVerification.caName === 'Attestor API Root CA', 'PKI-Verify: CA name');
+      console.log(`    cert=${pv.overall}, chain=${pv.chainVerification.overall}, ca=${pv.chainVerification.caName}`);
+    }
+
+    // ═══ ASYNC PIPELINE ═══
+    console.log('\n  [POST /api/v1/pipeline/run-async — submit]');
+    let asyncJobId: string;
+    {
+      const res = await fetch(`${BASE}/api/v1/pipeline/run-async`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: true,
+        }),
+      });
+      ok(res.status === 202, 'Async: submit returns 202');
+      const body = await res.json() as any;
+      ok(body.jobId !== undefined, 'Async: jobId returned');
+      ok(body.status === 'queued', 'Async: status=queued');
+      asyncJobId = body.jobId;
+      console.log(`    jobId=${asyncJobId}, status=${body.status}`);
+    }
+
+    // Poll for completion
+    console.log('\n  [GET /api/v1/pipeline/status/:jobId — poll]');
+    {
+      // Wait a moment for the async job to complete
+      await new Promise(r => setTimeout(r, 2000));
+      const res = await fetch(`${BASE}/api/v1/pipeline/status/${asyncJobId}`);
+      ok(res.status === 200, 'Async: status endpoint 200');
+      const body = await res.json() as any;
+      ok(body.status === 'completed', 'Async: job completed');
+      ok(body.result !== null, 'Async: result present');
+      ok(body.result.decision === 'pass', 'Async: decision=pass');
+      ok(body.result.certificateId !== null, 'Async: certificate issued');
+      ok(body.result.certificate !== null, 'Async: full cert in result');
+      ok(body.result.trustChain !== null, 'Async: trust chain in result');
+      console.log(`    status=${body.status}, decision=${body.result.decision}, cert=${body.result.certificateId}`);
+    }
+
+    // Status for non-existent job
+    console.log('\n  [GET /api/v1/pipeline/status/nonexistent]');
+    {
+      const res = await fetch(`${BASE}/api/v1/pipeline/status/nonexistent`);
+      ok(res.status === 404, 'Async: unknown job = 404');
+      console.log(`    unknown job rejected`);
+    }
+
     // ═══ PIPELINE RUN — bad input ═══
     console.log('\n  [POST /api/v1/pipeline/run — missing fields]');
     {
