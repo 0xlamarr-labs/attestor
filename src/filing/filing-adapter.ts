@@ -142,6 +142,10 @@ export class FilingAdapterRegistry {
     return this.adapters.get(id);
   }
 
+  has(id: string): boolean {
+    return this.adapters.has(id);
+  }
+
   list(): FilingAdapter[] {
     return [...this.adapters.values()];
   }

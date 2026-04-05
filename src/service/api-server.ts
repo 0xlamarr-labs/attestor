@@ -20,11 +20,24 @@ import { buildVerificationKit } from '../signing/bundle.js';
 import { domainRegistry } from '../domains/domain-pack.js';
 import { financeDomainPack } from '../domains/finance-pack.js';
 import { healthcareDomainPack } from '../domains/healthcare-pack.js';
+import { verifyOidcToken, classifyIdentitySource } from '../identity/oidc-identity.js';
 import type { FinancialPipelineInput } from '../financial/pipeline.js';
+import type { ReviewerIdentity } from '../financial/types.js';
+
+import { connectorRegistry } from '../connectors/connector-interface.js';
+import { snowflakeConnector } from '../connectors/snowflake-connector.js';
+import { filingRegistry } from '../filing/filing-adapter.js';
+import { xbrlUsGaapAdapter } from '../filing/xbrl-adapter.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
 if (!domainRegistry.has('healthcare')) domainRegistry.register(healthcareDomainPack);
+
+// Register connectors
+if (!connectorRegistry.has('snowflake')) connectorRegistry.register(snowflakeConnector);
+
+// Register filing adapters
+if (!filingRegistry.has('xbrl-us-gaap-2024')) filingRegistry.register(xbrlUsGaapAdapter);
 
 const app = new Hono();
 const startTime = Date.now();
@@ -37,6 +50,8 @@ app.get('/api/v1/health', (c) => {
     version: '0.1.0',
     uptime: Math.floor((Date.now() - startTime) / 1000),
     domains: domainRegistry.listIds(),
+    connectors: connectorRegistry.listIds(),
+    filingAdapters: filingRegistry.list().map(a => a.id),
     engine: 'attestor',
   });
 });
@@ -68,6 +83,35 @@ app.post('/api/v1/pipeline/run', async (c) => {
 
     const keyPair = sign ? generateKeyPair() : undefined;
 
+    // ── OIDC-backed reviewer identity ──
+    // If reviewerOidcToken is provided, verify it and derive reviewer identity.
+    // If absent, fall back to operator-asserted identity (or no reviewer).
+    let reviewerIdentity: ReviewerIdentity | undefined;
+    let identitySource: 'operator_asserted' | 'oidc_verified' | 'pki_bound' = 'operator_asserted';
+
+    if (body.reviewerOidcToken && body.oidcIssuer) {
+      const oidcResult = await verifyOidcToken(body.reviewerOidcToken, {
+        issuer: body.oidcIssuer,
+        audience: body.oidcAudience,
+      });
+      if (oidcResult.verified && oidcResult.identity) {
+        reviewerIdentity = oidcResult.identity;
+        identitySource = 'oidc_verified';
+      } else {
+        return c.json({ error: `OIDC token verification failed: ${oidcResult.error}`, identitySource: 'rejected' }, 401);
+      }
+    } else if (body.reviewerName) {
+      reviewerIdentity = {
+        name: body.reviewerName,
+        role: body.reviewerRole ?? 'operator',
+        identifier: body.reviewerIdentifier ?? 'api-caller',
+        signerFingerprint: null,
+      };
+      identitySource = 'operator_asserted';
+    }
+
+    const reviewerKeyPair = (sign && reviewerIdentity) ? generateKeyPair() : undefined;
+
     const input: FinancialPipelineInput = {
       runId: `api-${Date.now().toString(36)}`,
       intent,
@@ -76,6 +120,15 @@ app.post('/api/v1/pipeline/run', async (c) => {
       generatedReport: body.generatedReport,
       reportContract: body.reportContract,
       signingKeyPair: keyPair,
+      ...(reviewerIdentity && reviewerKeyPair ? {
+        approval: {
+          status: 'approved' as const,
+          reviewerRole: reviewerIdentity.role,
+          reviewNote: `API reviewer (${identitySource})`,
+          reviewerIdentity,
+          reviewerKeyPair,
+        },
+      } : {}),
     };
 
     const report = runFinancialPipeline(input);
@@ -99,14 +152,12 @@ app.post('/api/v1/pipeline/run', async (c) => {
       proofMode: report.liveProof.mode,
       auditEntries: report.audit.entries.length,
       auditChainIntact: report.audit.chainIntact,
-      certificate: report.certificate ? {
-        id: report.certificate.certificateId,
-        decision: report.certificate.decision,
-        algorithm: report.certificate.signing.algorithm,
-        fingerprint: report.certificate.signing.fingerprint,
-      } : null,
+      // Full certificate for independent verification
+      certificate: report.certificate ?? null,
       verification: kit?.verification ?? null,
       publicKeyPem: keyPair?.publicKeyPem ?? null,
+      identitySource,
+      reviewerName: reviewerIdentity?.name ?? null,
     });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);

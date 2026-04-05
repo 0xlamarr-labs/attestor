@@ -211,9 +211,21 @@ async function main() {
     console.log(`    reviewer-public.pem     — reviewer signer public key`);
     console.log(`    verification-summary.json — 6-dimensional verification result`);
 
-    // ── Final Summary ──
+    // ── Final Summary — TRUTHFUL ──
+    const isFullPass = report.decision === 'pass' && v.overall === 'verified';
+    const isProofDegraded = v.overall === 'proof_degraded';
+    const isAuthorityComplete = v.authority.state === 'authorized';
+
     console.log('\n══════════════════════════════════════════════════════════════');
-    console.log('  FIRST REAL POSTGRESQL-BACKED PROOF RUN — COMPLETE');
+    if (isFullPass) {
+      console.log('  REAL POSTGRESQL-BACKED PROOF RUN — FULLY VERIFIED');
+    } else if (isProofDegraded && report.decision === 'pass') {
+      console.log('  REAL POSTGRESQL-BACKED PROOF RUN — PASS (proof degraded: no live upstream model)');
+    } else if (report.decision === 'pass' && !isAuthorityComplete) {
+      console.log('  REAL POSTGRESQL-BACKED PROOF RUN — PASS (authority closure pending)');
+    } else {
+      console.log(`  REAL POSTGRESQL-BACKED PROOF RUN — ${report.decision.toUpperCase()} (${v.overall})`);
+    }
     console.log('══════════════════════════════════════════════════════════════');
     console.log(`  Database:    embedded PostgreSQL (${probe.serverVersion?.split(',')[0]})`);
     console.log(`  Execution:   REAL — ${pgProveResult.execution.rowCount} rows, ${pgProveResult.execution.durationMs}ms`);
@@ -228,6 +240,12 @@ async function main() {
     // ── Cleanup ──
     await pg.stop();
     console.log('  Embedded PostgreSQL stopped.\n');
+
+    // Exit truthfully: non-zero if governance failed
+    if (report.decision !== 'pass') {
+      console.log(`  Exit 1: governance decision was ${report.decision}, not pass.\n`);
+      process.exit(1);
+    }
 
   } catch (err) {
     console.error('\n  ✗ Fatal error:', err instanceof Error ? err.message : String(err));

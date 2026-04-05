@@ -4,3 +4,6 @@ dist/
 *.tsbuildinfo
 .attestor/
 *.pem
+snowflake.log
+.attestor/
+*.log

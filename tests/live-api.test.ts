@@ -97,7 +97,7 @@ async function run() {
 
     // ═══ PIPELINE RUN — signed with certificate ═══
     console.log('\n  [POST /api/v1/pipeline/run — signed]');
-    let savedCert: any = null;
+    let fullCert: any = null;
     let savedPubKey: string = '';
     {
       const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
@@ -116,44 +116,46 @@ async function run() {
       const body = await res.json() as any;
       ok(body.decision === 'pass', 'Pipeline(signed): decision=pass');
       ok(body.certificate !== null, 'Pipeline(signed): certificate present');
-      ok(body.certificate.algorithm === 'ed25519', 'Pipeline(signed): ed25519');
-      ok(body.certificate.id.startsWith('cert_'), 'Pipeline(signed): cert ID prefix');
+      ok(body.certificate.type === 'attestor.certificate.v1', 'Pipeline(signed): full cert type');
+      ok(body.certificate.signing?.algorithm === 'ed25519', 'Pipeline(signed): ed25519');
+      ok(body.certificate.certificateId?.startsWith('cert_'), 'Pipeline(signed): cert ID');
+      ok(body.certificate.signing?.signature?.length === 128, 'Pipeline(signed): 64-byte signature');
       ok(body.verification !== null, 'Pipeline(signed): verification present');
       ok(body.verification.cryptographic.valid === true, 'Pipeline(signed): crypto valid');
       ok(body.publicKeyPem !== null, 'Pipeline(signed): public key returned');
-      savedCert = body;
+      fullCert = body.certificate;
       savedPubKey = body.publicKeyPem;
-      console.log(`    cert=${body.certificate.id}, crypto=${body.verification.cryptographic.valid}, overall=${body.verification.overall}`);
+      console.log(`    cert=${fullCert.certificateId}, has full signing section: ${!!fullCert.signing}`);
     }
 
-    // ═══ VERIFY ENDPOINT — with the certificate from the pipeline run ═══
-    console.log('\n  [POST /api/v1/verify — real certificate]');
+    // ═══ VERIFY ENDPOINT — real end-to-end certificate verification ═══
+    console.log('\n  [POST /api/v1/verify — REAL certificate E2E]');
     {
-      // First we need the full certificate — run the pipeline again to get it
-      const runRes = await fetch(`${BASE}/api/v1/pipeline/run`, {
+      // Use the FULL certificate from the pipeline run
+      const verifyRes = await fetch(`${BASE}/api/v1/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          candidateSql: COUNTERPARTY_SQL,
-          intent: COUNTERPARTY_INTENT,
-          fixtures: [COUNTERPARTY_FIXTURE],
-          generatedReport: COUNTERPARTY_REPORT,
-          reportContract: COUNTERPARTY_REPORT_CONTRACT,
-          sign: true,
-        }),
+        body: JSON.stringify({ certificate: fullCert, publicKeyPem: savedPubKey }),
       });
-      // Note: the pipeline/run endpoint returns a summary, not the full cert.
-      // The verify endpoint needs the full certificate object.
-      // For now, test with invalid input to verify error handling
-      const verifyRes = await fetch(`${BASE}/api/v1/verify`, {
+      ok(verifyRes.status === 200, 'Verify(real): status 200');
+      const v = await verifyRes.json() as any;
+      ok(v.signatureValid === true, 'Verify(real): signature VALID');
+      ok(v.fingerprintConsistent === true, 'Verify(real): fingerprint consistent');
+      ok(v.schemaValid === true, 'Verify(real): schema valid');
+      ok(v.overall === 'valid', 'Verify(real): overall = valid');
+      console.log(`    sig=${v.signatureValid}, fp=${v.fingerprintConsistent}, overall=${v.overall}`);
+    }
+
+    // ═══ VERIFY ENDPOINT — bad input ═══
+    console.log('\n  [POST /api/v1/verify — bad input]');
+    {
+      const badRes = await fetch(`${BASE}/api/v1/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ certificate: null, publicKeyPem: null }),
       });
-      ok(verifyRes.status === 400, 'Verify(bad): status 400');
-      const verifyBody = await verifyRes.json() as any;
-      ok(verifyBody.error !== undefined, 'Verify(bad): error message present');
-      console.log(`    bad input handled: ${verifyBody.error}`);
+      ok(badRes.status === 400, 'Verify(bad): status 400');
+      console.log(`    bad input rejected: ${(await badRes.json() as any).error}`);
     }
 
     // ═══ PIPELINE RUN — bad input ═══

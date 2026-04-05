@@ -153,8 +153,27 @@ export async function executePostgresQuery(
 
     const columns: string[] = result.fields.map((f: any) => f.name);
     const columnTypes: string[] = result.fields.map((f: any) => `oid:${f.dataTypeID}`);
-    // Rows as Record<string,unknown>[] (pg returns this natively)
-    const rows: Record<string, unknown>[] = result.rows;
+
+    // Normalize PostgreSQL NUMERIC/INT/FLOAT types to JS numbers.
+    // pg returns NUMERIC as string to avoid precision loss — but downstream
+    // governance layers (data-contracts, report-validation) expect JS numbers.
+    // OIDs: 20=int8, 21=int2, 23=int4, 700=float4, 701=float8, 1700=numeric
+    const numericOids = new Set([20, 21, 23, 700, 701, 1700]);
+    const numericColumns = new Set(
+      result.fields.filter((f: any) => numericOids.has(f.dataTypeID)).map((f: any) => f.name)
+    );
+    const rows: Record<string, unknown>[] = result.rows.map((row: any) => {
+      const normalized: Record<string, unknown> = {};
+      for (const col of columns) {
+        const val = row[col];
+        if (numericColumns.has(col) && val !== null && val !== undefined) {
+          normalized[col] = Number(val);
+        } else {
+          normalized[col] = val;
+        }
+      }
+      return normalized;
+    });
 
     return { success: true, durationMs: Date.now() - start, rowCount: result.rowCount ?? rows.length, columns, columnTypes, rows, error: null, executionContextHash, executionTimestamp };
   } catch (err) {
