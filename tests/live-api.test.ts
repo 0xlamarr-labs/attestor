@@ -256,7 +256,44 @@ async function run() {
       ok(pv.chainVerification.caExpired === false, 'PKI-Verify: CA not expired');
       ok(pv.chainVerification.leafExpired === false, 'PKI-Verify: leaf not expired');
       ok(pv.chainVerification.caName === 'Attestor API Root CA', 'PKI-Verify: CA name');
-      console.log(`    cert=${pv.overall}, chain=${pv.chainVerification.overall}, ca=${pv.chainVerification.caName}`);
+      // Certificate-to-leaf binding
+      ok(pv.chainVerification.leafMatchesCertificateKey === true, 'PKI-Verify: leaf matches cert key');
+      ok(pv.chainVerification.pkiBound === true, 'PKI-Verify: PKI bound');
+      // Trust binding summary
+      ok(pv.trustBinding !== undefined, 'PKI-Verify: trustBinding present');
+      ok(pv.trustBinding.certificateSignature === true, 'PKI-Verify: cert sig in binding');
+      ok(pv.trustBinding.chainValid === true, 'PKI-Verify: chain valid in binding');
+      ok(pv.trustBinding.certificateBoundToLeaf === true, 'PKI-Verify: bound to leaf');
+      ok(pv.trustBinding.pkiVerified === true, 'PKI-Verify: fully PKI verified');
+      console.log(`    cert=${pv.overall}, chain=${pv.chainVerification.overall}, bound=${pv.chainVerification.pkiBound}, pkiVerified=${pv.trustBinding.pkiVerified}`);
+    }
+
+    // ═══ PKI LEAF MISMATCH DETECTION ═══
+    console.log('\n  [PKI Verify — Leaf Mismatch]');
+    {
+      // Issue a cert from one run, but submit a DIFFERENT run's trust chain
+      const run1 = await (await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidateSql: COUNTERPARTY_SQL, intent: COUNTERPARTY_INTENT, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT, sign: true }),
+      })).json() as any;
+
+      // Generate a different key pair's identity to simulate mismatch
+      // Use run1's cert but a fabricated publicKeyPem that doesn't match the chain leaf
+      const mismatchRes = await fetch(`${BASE}/api/v1/verify`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          certificate: run1.certificate,
+          publicKeyPem: run1.publicKeyPem,
+          trustChain: { ...run1.trustChain, leaf: { ...run1.trustChain.leaf, subjectFingerprint: 'aaaa_fake_fingerprint' } },
+          caPublicKeyPem: run1.caPublicKeyPem,
+        }),
+      });
+      const mm = await mismatchRes.json() as any;
+      ok(mm.chainVerification.leafMatchesCertificateKey === false || mm.chainVerification.leafMatchesCertificateFingerprint === false, 'PKI-Mismatch: leaf binding fails');
+      ok(mm.chainVerification.pkiBound === false, 'PKI-Mismatch: NOT PKI bound');
+      ok(mm.trustBinding.certificateBoundToLeaf === false, 'PKI-Mismatch: binding reports unbound');
+      ok(mm.trustBinding.pkiVerified === false, 'PKI-Mismatch: NOT PKI verified');
+      console.log(`    mismatch detected: pkiBound=${mm.chainVerification.pkiBound}, pkiVerified=${mm.trustBinding.pkiVerified}`);
     }
 
     // ═══ ASYNC PIPELINE ═══
@@ -279,8 +316,9 @@ async function run() {
       const body = await res.json() as any;
       ok(body.jobId !== undefined, 'Async: jobId returned');
       ok(body.status === 'queued', 'Async: status=queued');
+      ok(body.backendMode === 'in_process' || body.backendMode === 'bullmq', 'Async: backendMode truthful');
       asyncJobId = body.jobId;
-      console.log(`    jobId=${asyncJobId}, status=${body.status}`);
+      console.log(`    jobId=${asyncJobId}, status=${body.status}, backend=${body.backendMode}`);
     }
 
     // Poll for completion
@@ -292,12 +330,13 @@ async function run() {
       ok(res.status === 200, 'Async: status endpoint 200');
       const body = await res.json() as any;
       ok(body.status === 'completed', 'Async: job completed');
+      ok(body.backendMode === 'in_process' || body.backendMode === 'bullmq', 'Async: status shows backendMode');
       ok(body.result !== null, 'Async: result present');
       ok(body.result.decision === 'pass', 'Async: decision=pass');
       ok(body.result.certificateId !== null, 'Async: certificate issued');
       ok(body.result.certificate !== null, 'Async: full cert in result');
       ok(body.result.trustChain !== null, 'Async: trust chain in result');
-      console.log(`    status=${body.status}, decision=${body.result.decision}, cert=${body.result.certificateId}`);
+      console.log(`    status=${body.status}, backend=${body.backendMode}, decision=${body.result.decision}, cert=${body.result.certificateId}`);
     }
 
     // Status for non-existent job

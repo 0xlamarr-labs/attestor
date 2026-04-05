@@ -145,6 +145,10 @@ async function main() {
     }
 
     console.log(`  ✓ REAL PostgreSQL execution: ${pgProveResult.execution.rowCount} rows in ${pgProveResult.execution.durationMs}ms`);
+    if (pgProveResult.schemaAttestation) {
+      const sa = pgProveResult.schemaAttestation;
+      console.log(`  ✓ Schema attestation: fingerprint=${sa.schemaFingerprint.slice(0, 16)}..., tables=${sa.tables.join(',')}, sentinels=${sa.sentinels.length}`);
+    }
     if (pgProveResult.predictiveGuardrail.performed) {
       console.log(`  ✓ Predictive guardrail: ${pgProveResult.predictiveGuardrail.riskLevel} risk (${pgProveResult.predictiveGuardrail.recommendation})`);
     }

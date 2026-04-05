@@ -32,7 +32,9 @@ import { connectorRegistry } from '../connectors/connector-interface.js';
 import { snowflakeConnector } from '../connectors/snowflake-connector.js';
 import { filingRegistry } from '../filing/filing-adapter.js';
 import { xbrlUsGaapAdapter } from '../filing/xbrl-adapter.js';
-import { generatePkiHierarchy, verifyTrustChain, type TrustChain } from '../signing/pki-chain.js';
+import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
+import { derivePublicKeyIdentity } from '../signing/keys.js';
+import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -222,10 +224,16 @@ app.post('/api/v1/pipeline/run', async (c) => {
       trustChain: sign ? pki.chains.signer : null,
       caPublicKeyPem: sign ? pki.ca.keyPair.publicKeyPem : null,
       connectorUsed: connectorProvider,
-      // Schema attestation summary (when real DB execution with attestation capture)
+      // Schema/data-state attestation summary
+      // Full attestation when PostgreSQL prove path provides it; bounded summary for other connectors
       schemaAttestation: connectorExecution?.executionContextHash ? {
+        present: true,
         executionContextHash: connectorExecution.executionContextHash,
         provider: connectorProvider,
+        // Note: full schema fingerprint + sentinel data requires the postgres-prove path
+        // which captures SchemaAttestation via information_schema queries.
+        // The connector-routed path provides execution context evidence only.
+        scope: 'execution_context',
       } : null,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
@@ -249,10 +257,19 @@ app.post('/api/v1/verify', async (c) => {
     const certResult = verifyCertificate(certificate, publicKeyPem);
 
     // 2. Verify PKI trust chain if provided
-    // Chain verification uses the CA's public key (not the signer's)
     let chainVerification = null;
+    let pkiBound = false;
     if (trustChain && trustChain.ca && trustChain.leaf && caPublicKeyPem) {
       const chainResult = verifyTrustChain(trustChain, caPublicKeyPem);
+
+      // 3. CRITICAL: Bind certificate to chain leaf
+      // The leaf's subject key must be the same key that signed the certificate
+      const signerIdentity = derivePublicKeyIdentity(publicKeyPem);
+      const leafMatchesCertificateKey = trustChain.leaf.subjectFingerprint === signerIdentity.fingerprint;
+      const leafMatchesCertificateFingerprint = certificate.signing?.fingerprint === trustChain.leaf.subjectFingerprint;
+
+      pkiBound = chainResult.chainIntact && leafMatchesCertificateKey && leafMatchesCertificateFingerprint;
+
       chainVerification = {
         caValid: chainResult.caValid,
         leafValid: chainResult.leafValid,
@@ -260,11 +277,23 @@ app.post('/api/v1/verify', async (c) => {
         issuerMatch: chainResult.issuerMatch,
         caExpired: chainResult.caExpired,
         leafExpired: chainResult.leafExpired,
+        // Certificate-to-leaf binding
+        leafMatchesCertificateKey,
+        leafMatchesCertificateFingerprint,
+        pkiBound,
         overall: chainResult.overall,
         caName: trustChain.ca.name ?? null,
         leafSubject: trustChain.leaf.subject ?? null,
       };
     }
+
+    // 4. Structured verification scope summary
+    const trustBinding = {
+      certificateSignature: certResult.signatureValid && certResult.fingerprintConsistent,
+      chainValid: chainVerification?.chainIntact ?? false,
+      certificateBoundToLeaf: pkiBound,
+      pkiVerified: certResult.overall === 'valid' && pkiBound,
+    };
 
     return c.json({
       signatureValid: certResult.signatureValid,
@@ -272,8 +301,8 @@ app.post('/api/v1/verify', async (c) => {
       schemaValid: certResult.schemaValid,
       overall: certResult.overall,
       explanation: certResult.explanation,
-      // PKI trust chain verification (when chain material is provided)
       chainVerification,
+      trustBinding,
     });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
@@ -321,8 +350,14 @@ app.post('/api/v1/filing/export', async (c) => {
   }
 });
 
-// ─── Async Pipeline (in-process job store for bounded first slice) ───────────
+// ─── Async Pipeline — BullMQ with truthful in-process fallback ──────────────
 
+// Detect async backend at startup
+let asyncBackendMode: 'bullmq' | 'in_process' = 'in_process';
+let bullmqQueue: Awaited<ReturnType<typeof createPipelineQueue>> | null = null;
+let bullmqWorker: Awaited<ReturnType<typeof createPipelineWorker>> | null = null;
+
+// In-process fallback store
 interface AsyncJob {
   id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
@@ -331,8 +366,19 @@ interface AsyncJob {
   result: Record<string, unknown> | null;
   error: string | null;
 }
+const inProcessJobs = new Map<string, AsyncJob>();
 
-const jobStore = new Map<string, AsyncJob>();
+// BullMQ initialization is opt-in via REDIS_URL env var.
+// When REDIS_URL is set, async endpoints use BullMQ. Otherwise in_process.
+if (process.env.REDIS_URL) {
+  try {
+    bullmqQueue = createPipelineQueue({ redisUrl: process.env.REDIS_URL });
+    bullmqWorker = createPipelineWorker({ redisUrl: process.env.REDIS_URL });
+    asyncBackendMode = 'bullmq';
+  } catch {
+    // Redis init failed — stay in_process
+  }
+}
 
 app.post('/api/v1/pipeline/run-async', async (c) => {
   try {
@@ -342,18 +388,33 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       return c.json({ error: 'candidateSql and intent are required' }, 400);
     }
 
-    const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const job: AsyncJob = { id: jobId, status: 'queued', submittedAt: new Date().toISOString(), completedAt: null, result: null, error: null };
-    jobStore.set(jobId, job);
+    const submittedAt = new Date().toISOString();
 
-    // Execute asynchronously (in-process worker for bounded first slice)
+    if (asyncBackendMode === 'bullmq' && bullmqQueue) {
+      // BullMQ path
+      const input: FinancialPipelineInput = {
+        runId: `async-bullmq-${Date.now().toString(36)}`,
+        intent, candidateSql,
+        fixtures: body.fixtures ?? [],
+        generatedReport: body.generatedReport,
+        reportContract: body.reportContract,
+        signingKeyPair: sign ? pki.signer.keyPair : undefined,
+      };
+      const { jobId } = await submitPipelineJob(bullmqQueue, input, sign);
+      return c.json({ jobId, status: 'queued', backendMode: 'bullmq', submittedAt }, 202);
+    }
+
+    // In-process fallback (explicit about mode)
+    const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const job: AsyncJob = { id: jobId, status: 'queued', submittedAt, completedAt: null, result: null, error: null };
+    inProcessJobs.set(jobId, job);
+
     setImmediate(async () => {
       job.status = 'running';
       try {
         const keyPair = sign ? pki.signer.keyPair : undefined;
         const input: FinancialPipelineInput = {
-          runId: `async-${jobId}`,
-          intent, candidateSql,
+          runId: `async-${jobId}`, intent, candidateSql,
           fixtures: body.fixtures ?? [],
           generatedReport: body.generatedReport,
           reportContract: body.reportContract,
@@ -383,18 +444,29 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       }
     });
 
-    return c.json({ jobId, status: 'queued', submittedAt: job.submittedAt }, 202);
+    return c.json({ jobId, status: 'queued', backendMode: 'in_process', submittedAt }, 202);
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
 
-app.get('/api/v1/pipeline/status/:jobId', (c) => {
+app.get('/api/v1/pipeline/status/:jobId', async (c) => {
   const jobId = c.req.param('jobId');
-  const job = jobStore.get(jobId);
+
+  // Try BullMQ first
+  if (asyncBackendMode === 'bullmq' && bullmqQueue) {
+    const bmStatus = await getJobStatus(bullmqQueue, jobId);
+    if (bmStatus.status !== 'not_found') {
+      return c.json({ jobId, backendMode: 'bullmq', ...bmStatus });
+    }
+  }
+
+  // In-process fallback
+  const job = inProcessJobs.get(jobId);
   if (!job) return c.json({ error: 'Job not found' }, 404);
   return c.json({
     jobId: job.id,
+    backendMode: 'in_process',
     status: job.status,
     submittedAt: job.submittedAt,
     completedAt: job.completedAt,
