@@ -48,6 +48,18 @@ export function buildDecisionDossier(report: FinancialRunReport): DecisionDossie
       blockers.push({ source: 'warrant', reason: v });
     }
   }
+  // Predictive guardrail deny → explicit blocker
+  if (report.predictiveGuardrail?.recommendation === 'deny') {
+    const reasons = report.predictiveGuardrail.signals.filter((s) => s.severity === 'critical').map((s) => s.detail);
+    blockers.push({ source: 'predictive_guardrail', reason: `Pre-execution risk too high: ${reasons.join('; ') || 'critical risk signals'}` });
+  }
+  // Semantic clause hard failures → explicit blockers
+  if (report.semanticClauses?.hardFailCount && report.semanticClauses.hardFailCount > 0) {
+    const hardFails = report.semanticClauses.evaluations.filter((e) => !e.passed && e.clause.severity === 'hard');
+    for (const f of hardFails) {
+      blockers.push({ source: `semantic_clause.${f.clause.id}`, reason: `${f.clause.type}: ${f.explanation}` });
+    }
+  }
 
   const reviewPath: DossierReviewPath = {
     required: report.reviewPolicy.required,

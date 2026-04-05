@@ -62,7 +62,7 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
       attempted: true,
       config: { url: sanitizedUrl, timeoutMs: config.statementTimeoutMs ?? 10000, maxRows: config.maxRows ?? 10000, allowedSchemas: config.allowedSchemas ?? [] },
       predictiveGuardrail: preflight,
-      execution: { success: false, durationMs: 0, rowCount: 0, columns: [], columnTypes: [], rows: [], error: `Predictive guardrail denied execution: ${preflight.signals.map((s) => s.detail).join('; ')}`, schemaHash: '' },
+      execution: { success: false, durationMs: 0, rowCount: 0, columns: [], columnTypes: [], rows: [], error: `Predictive guardrail denied execution: ${preflight.signals.map((s) => s.detail).join('; ')}`, schemaHash: '', provider: 'postgres' as const, executionContextHash: null },
       postgresEvidence: { executionContextHash: null, executionTimestamp: null, provider: 'postgres' },
       skipReason: 'Predictive guardrail denied execution',
     };
@@ -71,7 +71,13 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
   // Step 3: Execute query
   const pgResult = await executePostgresQuery(sql, config);
 
-  // Step 4: Convert to ExecutionEvidence
+  // Step 4: Convert to ExecutionEvidence with truthful evidence separation
+  // schemaHash = hash of result columns+types (what the query RETURNED)
+  // executionContextHash = hash of database environment (where it RAN)
+  const { createHash } = await import('node:crypto');
+  const resultSchemaHash = pgResult.success
+    ? createHash('sha256').update(JSON.stringify({ columns: pgResult.columns, types: pgResult.columnTypes })).digest('hex').slice(0, 16)
+    : '';
   const execution: ExecutionEvidence = {
     success: pgResult.success,
     durationMs: pgResult.durationMs,
@@ -80,7 +86,9 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
     columnTypes: pgResult.columnTypes,
     rows: pgResult.rows,
     error: pgResult.error,
-    schemaHash: pgResult.executionContextHash ?? '',
+    schemaHash: resultSchemaHash,
+    provider: 'postgres',
+    executionContextHash: pgResult.executionContextHash,
   };
 
   return {

@@ -238,7 +238,7 @@ financial query contract
   -> Live Readiness assessment
 ```
 
-The current repo centers this runtime on offline/reference exercises plus a bounded local live hybrid slice using model-generated SQL and local SQLite execution.
+The current repo centers this runtime on offline/reference exercises, a bounded local SQLite live slice, and an optional bounded PostgreSQL read-only proof path with predictive guardrails.
 
 ## Controls and Regulatory Relevance
 
@@ -391,7 +391,7 @@ Attestor is an **implemented financial reference runtime**, not yet a finished e
 
 ### Current limitations
 
-- live proof is bounded to local SQLite for the committed live slice
+- live proof supports SQLite (built-in local) and optional bounded PostgreSQL (requires `npm install pg` + `ATTESTOR_PG_URL`). Warehouse-scale live proof is not yet shipped.
 - attestation remains repo-native and is not yet externally verifiable through PKI-backed signatures
 - review approvals are modeled in the runtime but not yet identity-bound to enterprise approval systems
 - regulatory alignment is informative and control-oriented, not clause-complete compliance automation
