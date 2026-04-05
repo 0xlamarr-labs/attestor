@@ -21,7 +21,22 @@ Attestor includes an optional PostgreSQL connector for real-database proof and a
 | `executionContextHash` | SHA-256 of (pg server version + current_schemas + sanitized connection URL). Proves WHICH database environment was queried. |
 | `executionTimestamp` | ISO timestamp of when the query ran. |
 
-**What it does NOT prove:** Full schema snapshot, table-level hash, or data-state attestation. Those would require `pg_dump` or logical replication snapshot, which is not yet implemented.
+### Schema/Data-State Attestation
+
+The PostgreSQL prove helper now captures a bounded schema/data-state attestation before governed execution.
+
+What exists today:
+
+- schema/table discovery from bounded SQL parsing
+- schema fingerprint capture
+- sentinel/data-state fingerprint capture
+- execution-context binding inside the Postgres prove flow
+
+What is still not uniform across every surface:
+
+- full verifier-facing schema-attestation material in every API/kit response
+- historical attestation comparison across time
+- full table-content hashing or snapshot export
 
 ## Predictive Guardrails
 
@@ -104,6 +119,8 @@ When a real PostgreSQL-backed proof run occurs, the authority bundle and verific
 - `proofCompleteness.hasDbContextEvidence`: true when execution context hash is present
 
 These fields make a real DB-backed kit immediately distinguishable from a fixture-based kit without digging into the full report.
+
+The deeper `schemaAttestation` object is currently captured inside the Postgres prove flow and the self-contained proof script. Service/API surfaces still expose a smaller summary rather than the full attestation object.
 
 ## Demo Bootstrap
 

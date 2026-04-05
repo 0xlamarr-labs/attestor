@@ -29,16 +29,18 @@ The repository currently contains:
 - signed single-query and multi-query proof paths
 - reviewer endorsements with run binding
 - a real PostgreSQL-backed proof path
-- a bounded HTTP API service
+- a bounded HTTP API service with sync and async first-slice routes
 - domain pack, connector, and filing-adapter registries
+- differential evidence for multi-query comparison
 
 It also contains broader building blocks:
 
 - a healthcare domain pack
 - a Snowflake connector module
 - an XBRL US-GAAP 2024 adapter
-- OIDC reviewer identity verification
-- a JSON PKI trust-chain module
+- OIDC reviewer identity verification plus a CLI device-flow helper
+- a JSON PKI trust-chain module with API-path issuance and chain validation
+- a BullMQ/Redis async orchestration module
 
 Those modules prove architectural breadth. They do not yet imply finance-level end-to-end completeness outside the financial reference path.
 
@@ -57,11 +59,11 @@ Attestor makes AI-assisted output governable. It does not make AI inherently tru
 
 **Single-query:** mature signed certificate and verification-kit path.
 
-**Multi-query:** signed multi-query certificate and verification-kit path exists at the run level.
+**Multi-query:** signed run-level certificate and verification-kit path exists, with reviewer binding and differential evidence, but not per-unit certificate issuance.
 
-**Real PostgreSQL:** real bounded proof path is working, including a self-contained proof script and reproducible demo bootstrap.
+**Real PostgreSQL:** real bounded proof path is working, including a self-contained proof script, reproducible demo bootstrap, and schema/data-state attestation capture in the Postgres prove helper.
 
-**Identity:** operator-asserted reviewer identity is standard; API-path OIDC verification is shipped as a first slice; full IAM flow is not.
+**Service and identity:** the API can issue, verify, export filings, and run async jobs as a bounded first slice. Operator-asserted reviewer identity is standard; API-path OIDC verification and CLI device flow are shipped as first slices; full IAM flow is not.
 
 ## Who This Is For
 

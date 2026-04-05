@@ -48,6 +48,7 @@ Attestor keeps proof maturity explicit.
 
 - signed at the run level
 - portable certificate + kit + reviewer endorsement exist
+- differential evidence exists for multi-run comparison
 - per-unit and aggregate truth preserved
 - still not per-unit certificate issuance
 
@@ -57,6 +58,7 @@ Attestor keeps proof maturity explicit.
 - bounded read-only execution
 - predictive preflight
 - execution context evidence
+- schema/data-state attestation capture in the Postgres prove path
 - reproducible demo bootstrap
 
 ## Bounded Service Layer
@@ -67,9 +69,12 @@ The repository now ships a real Hono HTTP server. Today it provides:
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
 - `POST /api/v1/pipeline/run`
+- `POST /api/v1/pipeline/run-async`
+- `GET /api/v1/pipeline/status/:jobId`
 - `POST /api/v1/verify`
+- `POST /api/v1/filing/export`
 
-This is a bounded synchronous service layer. It is not yet a distributed control plane, async job system, or multi-tenant platform.
+This is a bounded service layer. Async submission/status is now real, but the service default remains an in-process first slice rather than a persistent Redis-backed deployment. It is not yet a distributed control plane or multi-tenant platform.
 
 ## Domain, Connector, and Filing Breadth
 
@@ -86,8 +91,8 @@ Current boundary:
 - Finance is the most complete end-to-end implementation.
 - Healthcare is a pack-first second domain.
 - Snowflake is a real connector module, not yet a top-level prove flow.
-- XBRL is a real mapping/export adapter, not yet a full filing issuance workflow.
-- PKI exists as a module, not yet as the default certificate issuance mode.
+- XBRL is a real mapping/export adapter with API export, not yet a full filing issuance workflow.
+- PKI-backed issuance and chain verification exist on the API path; default CLI/kit issuance still centers on direct Ed25519 signer keys.
 
 ## Reviewer Authority
 
@@ -110,12 +115,15 @@ Replay across runs is detectable. Reviewer identity can be operator-asserted or 
 - Snowflake connector module
 - XBRL mapping adapter
 - OIDC verification first slice
+- OIDC device-flow helper
+- Async API submission/status first slice
 
 **Not shipped**
 
 - Broader end-to-end domain implementations beyond finance
 - Top-level non-PostgreSQL prove routing
-- Filing issuance wired into pipeline/API flows
+- Filing issuance wired into authority closure by default
 - Full IAM/session lifecycle
-- PKI-integrated default signing
+- PKI as the default verifier path across all CLI/kit flows
+- Redis-backed async service mode as the default API backend
 - Distributed service control plane

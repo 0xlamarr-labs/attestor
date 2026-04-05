@@ -57,9 +57,10 @@ Attestor does not blur proof maturity across tracks.
 **Multi-query governed proof**
 
 - Multi-query pipeline with aggregate governance
-- Signed multi-query certificates
+- Signed run-level multi-query certificates
 - Multi-query verification kits
 - Run-bound multi-query reviewer endorsements
+- Differential evidence for multi-run comparison
 - Portable output pack, dossier, and manifest
 
 **Real PostgreSQL proof**
@@ -68,6 +69,7 @@ Attestor does not blur proof maturity across tracks.
 - Predictive guardrail preflight
 - Reproducible demo bootstrap
 - Self-contained proof script
+- Schema/data-state attestation capture in the Postgres prove path
 - Reviewer-verifiable proof artifacts
 
 ## What Ships in This Repository
@@ -78,9 +80,10 @@ Attestor does not blur proof maturity across tracks.
 - Deterministic scorer cascade with priority short-circuit
 - Evidence chain, provenance, and hash-linked audit trail
 - Ed25519 signing and certificate verification
-- JSON-based PKI trust chain module
+- JSON-based PKI trust chain module with API-path issuance and chain verification
 - Reviewer identity, endorsement, and run binding
 - Single-query and multi-query certificate issuance
+- Differential evidence for multi-query comparison
 
 **Reference financial implementation**
 
@@ -96,8 +99,10 @@ Attestor does not blur proof maturity across tracks.
 - Domain pack registry with `finance` and `healthcare`
 - Connector registry with PostgreSQL and Snowflake modules
 - Filing adapter registry with XBRL US-GAAP 2024 mapping
-- Bounded HTTP API server
+- Bounded HTTP API server with sync and async first-slice routes
 - OIDC reviewer identity verification on the API path
+- OIDC device-flow helper in the CLI proof path
+- BullMQ/Redis async orchestration module
 
 ## What Attestor Is
 
@@ -171,6 +176,9 @@ npm test
 # Core verification gate
 npm run verify
 
+# Expanded verification surface
+npm run verify:full
+
 # Additional live / integration suites
 npx tsx tests/live-api.test.ts
 npx tsx tests/live-postgres.test.ts
@@ -192,9 +200,12 @@ The repository now ships a real single-process Hono API server with:
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
 - `POST /api/v1/pipeline/run`
+- `POST /api/v1/pipeline/run-async`
+- `GET /api/v1/pipeline/status/:jobId`
 - `POST /api/v1/verify`
+- `POST /api/v1/filing/export`
 
-This is a bounded service layer, not a distributed control plane. There is no persistent job store, async orchestration, tenant isolation, or session management.
+This is a bounded service layer, not a distributed control plane. Async submission/status now exists as a real first slice, but the service default is still an in-process backend, not a persistent Redis-backed deployment. There is no tenant isolation, long-term job store, or full session management.
 
 ## Reviewer Authority
 
@@ -209,6 +220,7 @@ Identity truth today:
 
 - Operator-asserted reviewer identity is supported everywhere.
 - OIDC-verified reviewer identity is supported on the API path.
+- OIDC device-flow identity bootstrap is available in the CLI proof path when configured.
 - Full enterprise IAM flow is not shipped.
 
 ## Connectors and Domain Breadth
@@ -218,8 +230,8 @@ The repository is broader than finance in architecture, but not equally deep in 
 - Finance is the most complete domain and the reference implementation.
 - Healthcare is a pack-first second domain, not yet a full end-to-end scenario library.
 - PostgreSQL is the reference live execution connector.
-- Snowflake is a real connector module with env-gated live testing, but not yet a top-level `prove` flow.
-- XBRL US-GAAP 2024 is a real mapping/export adapter, but not yet wired into a full filing issuance workflow.
+- Snowflake is a real connector module with env-gated live testing and API connector routing, but not yet a top-level CLI `prove` flow.
+- XBRL US-GAAP 2024 is a real mapping/export adapter with API export, but not yet wired into full authority closure by default.
 
 ## PostgreSQL Product Proof
 
@@ -230,22 +242,23 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 - Demo bootstrap via `pg-demo-init`
 - Self-contained proof run via `scripts/real-db-proof.ts`
 - Execution provider and execution-context evidence in bundle and kit
+- Schema/data-state attestation capture in `runPostgresProve()`
 
 What it does not prove yet:
 
-- Full schema snapshot attestation
+- Full verifier-facing schema-attestation surfacing across every service path
 - Table-level content hashing
-- Data-state attestation across time
+- Historical data-state attestation comparison across time
 
 ## Not Yet Implemented
 
-- Differential evidence and schema/data-state attestation
 - Broader end-to-end domain implementations beyond finance
-- Top-level prove/service routing for non-PostgreSQL connectors
-- Filing-package issuance wired into pipeline or API flows
+- Top-level CLI prove routing for non-PostgreSQL connectors
+- Filing-package issuance wired into authority closure by default
 - Full OIDC login flow, token lifecycle, and session management
-- PKI trust-chain integration into default certificate and kit issuance
-- Distributed control plane, async job orchestration, and multi-tenant persistence
+- PKI trust-chain binding as the default verifier path across all CLI and kit flows
+- Redis-backed async service mode as the default API backend
+- Distributed control plane and multi-tenant persistence
 
 ## Output Artifacts
 
@@ -292,6 +305,7 @@ What it does not prove yet:
 |---|---|
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, single-process CLI + bounded HTTP API |
-| Core verification gate | 542 tests (`npm test`: 458 financial + 84 signing) |
-| Additional suites | live API, live PostgreSQL, env-gated live Snowflake, connector/filing integration |
+| Core verification gate | 554 tests (`npm test`: 458 financial + 96 signing) |
+| Expanded verification surface | 716 executed checks across `verify` + live API + live PostgreSQL + connector/filing suites, plus env-gated live Snowflake when configured |
+| Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

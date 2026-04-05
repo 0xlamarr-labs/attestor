@@ -64,6 +64,7 @@ Current multi-query artifact set:
 - multi-query certificate
 - multi-query verification kit
 - multi-query reviewer endorsement
+- differential evidence report
 
 What multi-query preserves:
 
@@ -76,7 +77,6 @@ What multi-query preserves:
 
 What multi-query still does not do:
 
-- differential evidence
 - DAG or dependency semantics
 - per-unit certificate issuance
 - cross-query state attestation
@@ -91,13 +91,14 @@ The bounded proof story includes:
 - predictive EXPLAIN-based preflight
 - schema allowlist enforcement
 - execution context hash
+- schema/data-state attestation capture in `runPostgresProve()`
 - reproducible demo bootstrap
 - self-contained proof script
 
 What it still does not prove:
 
-- full schema snapshot
-- data-state attestation across time
+- full verifier-facing schema-attestation surfacing across every service path
+- data-state attestation comparison across time
 - table-level content hashing
 
 ## Verification Surface
@@ -108,4 +109,8 @@ The repository currently exposes verification through:
 - the HTTP `/api/v1/verify` route
 - kit and certificate verification scripts
 
-The mature verifier contract is: signed artifact + public key material -> independent verdict.
+Current verification truth:
+
+- CLI and kit verification are mature for the direct Ed25519 signer path.
+- The HTTP verify route can additionally validate a JSON PKI chain when chain material is supplied.
+- PKI is not yet the default verifier path across every issuance surface.

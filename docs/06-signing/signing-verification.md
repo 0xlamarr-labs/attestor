@@ -14,7 +14,7 @@ Certificates are JSON documents that bind the full authority chain, evidence anc
 - **WHAT** evidence exists (evidence chain root/terminal, audit chain integrity, SQL hash, snapshot hash)
 - **WHETHER** execution was live or fixture-based (live proof mode + consistency)
 
-**Verification requires only the certificate JSON + the signer's public key. No platform access, no database, no API call.**
+**Verification requires only the certificate JSON + the signer's public key for the default Ed25519 path. No platform access, no database, no API call.**
 
 ```bash
 # Generate a signing key pair
@@ -42,6 +42,17 @@ A product-proof run emits a self-contained verification kit:
 | `verification-summary.json` | 6-dimensional verification result |
 | `public-key.pem` | Runtime signer public key |
 | `reviewer-public.pem` | Reviewer signer public key (when endorsement is signed) |
+
+## API PKI Verification First Slice
+
+The HTTP API can now issue PKI-backed signing material and validate a provided JSON trust chain alongside a certificate.
+
+Current boundary:
+
+- API issuance can return `trustChain` + `caPublicKeyPem`.
+- `/api/v1/verify` can validate chain integrity, issuer linkage, and expiry.
+- The default portable verifier contract for the CLI still centers on `certificate/kit + signer public key`.
+- PKI is not yet the default verification path across every CLI and kit workflow.
 
 ## 6-Dimensional Verification
 
