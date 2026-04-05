@@ -2,70 +2,72 @@
 
 Current repository-level architecture for Attestor as of April 2026.
 
-Attestor is a governance-and-proof runtime for AI-assisted high-stakes workflows. It provides explicit reviewer-facing artifacts, a typed authority chain, and truthful runtime-proof semantics. The architecture is domain-general; the current implementation targets internal financial analytics.
+Attestor is a governance and proof engine for AI-assisted high-stakes workflows. It provides deterministic governance gates, explicit reviewer-facing artifacts, a typed authority chain, and truthful runtime-proof semantics. The engine architecture is domain-general; the current implementation targets internal financial analytics as the reference domain.
 
 ---
 
-## Governance Capabilities
+## Engine Architecture
 
-The architecture is organized around governance capabilities:
+The engine is organized around governance capabilities, not UI or domain-specific layers:
 
-- **Domain contracts**: typed query contracts, report contracts, warrant scope, and execution obligations that define allowed behavior before execution
-- **Deterministic evidence**: SQL governance gates, data contracts, control totals, report validation, lineage capture, audit hashing
+- **Domain contracts**: typed contracts, warrant scope, and execution obligations that define allowed behavior before execution
+- **Deterministic evidence**: governance gates, data contracts, control totals, report validation, lineage capture, audit hashing
 - **Bounded scoring and review**: deterministic scorer cascade, review policy, escalation thresholds, reviewer-facing summaries
-- **Authority artifacts**: warrant -> escrow -> receipt -> capsule chain for monotonic authority closure
+- **Authority artifacts**: warrant → escrow → receipt → capsule chain for monotonic authority closure
 - **Live Proof**: typed runtime-proof artifact recording what was offline, mocked, or live, with explicit proof gaps
-- **Reviewer artifacts**: dossier, output pack, manifest, attestation, audit trail, and OpenLineage export
+- **Reviewer artifacts**: dossier, output pack, manifest, attestation, audit trail, and interop export
+- **Portable verification**: Ed25519-signed certificates and 6-dimensional verification kits
+
+These capabilities are domain-independent. Domain-specific behavior comes from contracts, semantic clauses, and scoring logic — not from the engine itself.
 
 ---
 
-## Shared Runtime Pattern
+## Shared Engine Pattern
 
 ```text
-request
-  -> typed contract
-  -> constrained execution
-  -> deterministic evidence collection
-  -> bounded scoring / review
-  -> reviewer-facing artifacts
-  -> explicit runtime-truth record
+proposal
+  → typed contract
+  → constrained execution
+  → deterministic evidence collection
+  → bounded scoring / review
+  → authority chain (warrant → escrow → receipt → capsule)
+  → reviewer-facing artifacts
+  → portable proof (Ed25519 certificate + verification kit)
 ```
 
-Generation and authority are separate. A generated query is only a candidate. Acceptance depends on governance, evidence, and review policy.
+Generation and authority are separate. A generated proposal is only a candidate. Acceptance depends on governance, evidence, and review policy.
 
 ---
 
-## Financial Runtime Shape
+## Financial Reference Implementation
+
+The current repository implements the engine pattern for internal financial analytics:
 
 ```text
 financial query contract
-  -> SQL governance
-  -> policy and entitlement
-  -> execution guardrails
-  -> snapshot or fixture execution
-  -> data contracts and control totals
-  -> provenance and lineage evidence
-  -> review policy and bounded scoring
-  -> filing readiness
-  -> warrant
-  -> escrow
-  -> receipt
-  -> decision capsule
-  -> output pack / dossier / manifest / attestation
-  -> Live Proof summary
-  -> Live Readiness assessment
+  → SQL governance
+  → policy and entitlement
+  → execution guardrails
+  → snapshot or fixture execution
+  → data contracts and control totals
+  → provenance and lineage evidence
+  → review policy and bounded scoring
+  → filing readiness
+  → warrant → escrow → receipt → capsule
+  → output pack / dossier / manifest / attestation
+  → Live Proof summary + Live Readiness assessment
 ```
 
-The committed repo centers this runtime on offline/reference exercises, but it also includes a bounded local live hybrid slice with model-generated SQL and local SQLite execution.
+The financial implementation includes bounded local live execution (model-generated SQL + local SQLite) and an optional bounded PostgreSQL proof path with predictive guardrails and a reproducible demo bootstrap.
 
 ---
 
 ## Authority Model
 
-The financial authority chain is:
+The authority chain is:
 
 ```text
-warrant -> escrow -> receipt -> capsule
+warrant → escrow → receipt → capsule
 ```
 
 Each artifact has a different job:
@@ -75,9 +77,7 @@ Each artifact has a different job:
 - **Receipt**: whether final authority was granted or withheld
 - **Capsule**: portable summary of the final authority state and anchors
 
-This chain is separate from Live Proof.
-Live Proof describes what runtime evidence was actually observed.
-Receipt and capsule describe authority closure.
+This chain is separate from Live Proof. Live Proof describes what runtime evidence was actually observed. Receipt and capsule describe authority closure.
 
 ---
 
@@ -91,77 +91,46 @@ Attestor uses explicit proof modes:
 - `live_runtime`
 - `hybrid`
 
-Live Proof records:
+Live Proof records upstream model evidence, execution evidence, explicit proof gaps, and consistency between observed evidence and the declared proof mode.
 
-- upstream model evidence
-- execution evidence
-- explicit proof gaps
-- consistency between observed evidence and the declared proof mode
+Live Readiness records which proof modes are available, which remain blocked, and what next steps would increase confidence.
 
-Live Readiness records:
-
-- which proof modes are currently available
-- which modes remain blocked
-- what next steps would increase confidence
-- whether the current result is a readiness check or a real live exercise
-
-Important design rule:
-
-- missing live proof does not automatically deny authority
-- live proof is a truthfulness artifact, not the authority chain itself
+Important design rule: missing live proof does not automatically deny authority. Live proof is a truthfulness artifact, not the authority chain itself.
 
 ---
 
 ## Reviewer-Facing Artifact Set
 
-Attestor emits or models these reviewer-facing artifacts:
+Attestor produces these reviewer-facing artifacts:
 
-- **Output pack**
-- **Decision dossier**
-- **Manifest**
-- **Attestation**
-- **Audit trail**
-- **OpenLineage export**
-- **Live Proof summary**
+- **Output pack** — machine-readable run summary
+- **Decision dossier** — reviewer packet with readiness, breaks, policy, guardrails, authority, proof
+- **Manifest** — artifact inventory and run-anchor hashes
+- **Attestation** — canonical evidence pack with chain linkage
+- **Audit trail** — ordered event log with evidence hashes
+- **OpenLineage export** — provenance and lineage interoperability
 
-The design rule is that these artifacts should agree with each other and should not overclaim what the runtime actually proved.
-
----
-
-## Controls and Reporting Relevance
-
-Attestor does not claim built-in regulatory compliance, but it is designed to support evidence and control expectations common in:
-
-- internal control over financial reporting
-- audit preparation
-- governed reconciliations and control totals
-- model-risk-sensitive financial workflows
-- reviewable reporting pipelines with explicit acceptance semantics
-
-The repo is strongest when used to answer:
-
-- What was authorized before execution?
-- What evidence justified acceptance?
-- What remained held or denied?
-- What was truly live versus offline?
-- What gaps remain before stronger reliance or filing use?
+These artifacts should agree with each other and should not overclaim what the runtime actually proved.
 
 ---
 
 ## Current Boundary
 
-What the repo truthfully proves today:
+What the repo implements today:
 
-- the offline/reference financial architecture is implemented
-- the authority chain is real in the repo
-- Live Proof and Live Readiness exist as typed, verifiable artifact models
-- reviewer-facing artifacts are implemented and internally coherent
-- the repo supports bounded local live hybrid exercises through model-generated SQL and local SQLite execution
+- Complete financial analytics reference implementation of the engine pattern
+- Authority chain, deterministic scoring, review policy, evidence chain
+- Ed25519-signed portable certificates and 6-dimensional verification kits
+- Reviewer-signed run-bound endorsements with independent outsider verification
+- Multi-query governed pipeline with portable proof artifacts
+- Bounded PostgreSQL proof path with predictive guardrails and demo bootstrap
+- Bounded local live hybrid exercises through model-generated SQL and local SQLite execution
 
-What the repo does not yet prove:
+What the repo does not yet implement:
 
-- broad, repeatable live external warehouse execution
-- enterprise identity and entitlement integration
-- external trust registration or PKI-backed signing
-- production filing submission adapters
-- a distributed service control plane
+- Domain packs beyond finance
+- Broad, repeatable live warehouse execution
+- Enterprise identity and entitlement integration
+- External trust registration or PKI-backed signing
+- Filing submission adapters
+- Distributed service control plane
