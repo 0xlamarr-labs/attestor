@@ -212,6 +212,46 @@ async function runSigningTests(): Promise<number> {
     console.log(`    Tamper: leaf=${!tamperResult.leafValid}, ca=${!caResult.caValid}, wrongKey=${wrongVerify.overall}`);
   }
 
+  // ═══ OIDC IDENTITY ═══
+  console.log('\n  [OIDC Identity]');
+  {
+    const { decodeTokenUnsafe, classifyIdentitySource } = await import('../identity/oidc-identity.js');
+
+    // Decode a real JWT structure (unsigned test token)
+    // Header: {"alg":"none","typ":"JWT"}, Payload: {"sub":"user123","name":"Jane Chen","email":"jchen@bank.internal","roles":["risk_officer"],"iss":"https://login.example.com","aud":"attestor","exp":9999999999}
+    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      sub: 'user123', name: 'Jane Chen', email: 'jchen@bank.internal',
+      roles: ['risk_officer'], iss: 'https://login.example.com', aud: 'attestor',
+      exp: 9999999999, iat: Math.floor(Date.now() / 1000),
+    })).toString('base64url');
+    const testToken = `${header}.${payload}.`;
+
+    const decoded = decodeTokenUnsafe(testToken);
+    assert(decoded !== null, 'OIDC: decode returns non-null');
+    assert(decoded!.sub === 'user123', 'OIDC: sub extracted');
+    assert(decoded!.name === 'Jane Chen', 'OIDC: name extracted');
+    assert(decoded!.email === 'jchen@bank.internal', 'OIDC: email extracted');
+    assert(Array.isArray(decoded!.roles), 'OIDC: roles is array');
+    assert((decoded!.roles as string[])[0] === 'risk_officer', 'OIDC: role extracted');
+    passed += 5;
+
+    // Invalid token
+    const badDecoded = decodeTokenUnsafe('not.a.jwt');
+    assert(badDecoded === null, 'OIDC: invalid token returns null');
+    passed += 1;
+
+    // Identity source classification
+    assert(classifyIdentitySource(false, false) === 'operator_asserted', 'OIDC: default = operator_asserted');
+    assert(classifyIdentitySource(true, false) === 'oidc_verified', 'OIDC: oidc = oidc_verified');
+    assert(classifyIdentitySource(false, true) === 'pki_bound', 'OIDC: pki = pki_bound');
+    assert(classifyIdentitySource(true, true) === 'pki_bound', 'OIDC: pki wins over oidc');
+    passed += 4;
+
+    console.log(`    decode: sub=${decoded!.sub}, name=${decoded!.name}`);
+    console.log(`    classify: operator=${classifyIdentitySource(false, false)}, oidc=${classifyIdentitySource(true, false)}, pki=${classifyIdentitySource(false, true)}`);
+  }
+
   console.log(`\n  Signing Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }
