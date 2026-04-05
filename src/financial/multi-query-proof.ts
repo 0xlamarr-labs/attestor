@@ -370,6 +370,10 @@ import {
   verifyMultiQueryCertificate,
   type MultiQueryCertificate,
 } from '../signing/multi-query-certificate.js';
+import {
+  verifyMultiQueryReviewerEndorsement,
+  type MultiQueryReviewerEndorsement,
+} from '../signing/multi-query-reviewer.js';
 import type { AttestorKeyPair } from '../signing/keys.js';
 
 export interface MultiQueryVerificationKit {
@@ -379,6 +383,11 @@ export interface MultiQueryVerificationKit {
   certificate: MultiQueryCertificate;
   manifest: MultiQueryManifest;
   signerPublicKeyPem: string;
+
+  /** Reviewer endorsement for this multi-query run. Null when no reviewer. */
+  reviewerEndorsement: MultiQueryReviewerEndorsement | null;
+  /** Reviewer's public key PEM for independent endorsement verification. Null when unsigned. */
+  reviewerPublicKeyPem: string | null;
 
   verification: MultiQueryVerificationSummary;
 }
@@ -406,17 +415,28 @@ export interface MultiQueryVerificationSummary {
   unitCount: number;
   /** Aggregate decision. */
   aggregateDecision: string;
+  /** Reviewer endorsement verification. */
+  reviewerEndorsement: {
+    present: boolean;
+    signed: boolean;
+    boundToRun: boolean;
+    verified: boolean;
+    reviewerName: string | null;
+    fingerprint: string | null;
+  };
   /** Overall verdict. */
   overall: 'verified' | 'signature_invalid' | 'governance_insufficient' | 'proof_degraded';
 }
 
 /**
- * Build a multi-query verification kit: certificate + manifest + verification summary.
+ * Build a multi-query verification kit: certificate + manifest + reviewer endorsement + verification summary.
  * This is the multi-query equivalent of the single-query buildVerificationKit.
  */
 export function buildMultiQueryVerificationKit(
   report: MultiQueryRunReport,
   keyPair: AttestorKeyPair,
+  endorsement?: MultiQueryReviewerEndorsement | null,
+  reviewerPublicKeyPem?: string | null,
 ): MultiQueryVerificationKit {
   const certificate = issueMultiQueryCertificate(report, keyPair);
   const manifest = buildMultiQueryManifest(report);
@@ -442,6 +462,29 @@ export function buildMultiQueryVerificationKit(
     hasProofGaps: report.hasProofGaps,
   };
 
+  // Reviewer endorsement verification
+  const present = !!endorsement;
+  const signed = present && !!endorsement!.signature;
+  let reviewerVerified = false;
+  let boundToRun = false;
+  if (signed && reviewerPublicKeyPem) {
+    const rv = verifyMultiQueryReviewerEndorsement(
+      endorsement!, reviewerPublicKeyPem,
+      report.runId, report.multiQueryHash,
+    );
+    reviewerVerified = rv.valid && rv.fingerprintMatch && rv.boundToRun;
+    boundToRun = rv.boundToRun;
+  }
+
+  const reviewerEndorsementDim = {
+    present,
+    signed,
+    boundToRun,
+    verified: reviewerVerified,
+    reviewerName: endorsement?.reviewer.name ?? null,
+    fingerprint: endorsement?.reviewer.signerFingerprint ?? null,
+  };
+
   let overall: MultiQueryVerificationSummary['overall'];
   if (!cryptographic.valid) overall = 'signature_invalid';
   else if (!governanceSufficiency.sufficient) overall = 'governance_insufficient';
@@ -454,6 +497,8 @@ export function buildMultiQueryVerificationKit(
     certificate,
     manifest,
     signerPublicKeyPem: keyPair.publicKeyPem,
+    reviewerEndorsement: endorsement ?? null,
+    reviewerPublicKeyPem: reviewerPublicKeyPem ?? null,
     verification: {
       cryptographic,
       structural,
@@ -461,6 +506,7 @@ export function buildMultiQueryVerificationKit(
       proofCompleteness,
       unitCount: report.unitCount,
       aggregateDecision: report.aggregateDecision,
+      reviewerEndorsement: reviewerEndorsementDim,
       overall,
     },
   };

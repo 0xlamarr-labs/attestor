@@ -1455,6 +1455,99 @@ export async function runFinancialTests(): Promise<number> {
     ok(kitMixed.verification.cryptographic.valid, 'MQKit(mixed): crypto still valid');
 
     console.log(`    pass: overall=${kit.verification.overall}, mixed: overall=${kitMixed.verification.overall}`);
+
+    // Without reviewer: endorsement dimension should be absent
+    ok(!kit.verification.reviewerEndorsement.present, 'MQKit(noReviewer): not present');
+    ok(!kit.verification.reviewerEndorsement.verified, 'MQKit(noReviewer): not verified');
+  }
+
+  // ═══ MULTI-QUERY REVIEWER ENDORSEMENT ═══
+  console.log('\n  [Multi-Query Reviewer Endorsement]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+    const { buildMultiQueryVerificationKit } = await import('./multi-query-proof.js');
+    const { buildMultiQueryReviewerEndorsement, verifyMultiQueryReviewerEndorsement } = await import('../signing/multi-query-reviewer.js');
+    const { generateKeyPair } = await import('../signing/keys.js');
+
+    const signingKey = generateKeyPair();
+    const reviewerKey = generateKeyPair();
+
+    const mqReport = runMultiQueryPipeline('mq-reviewer-test', [
+      { unitId: 'cp', label: 'Counterparty', input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT } },
+      { unitId: 'recon', label: 'Recon', input: { runId: 'x', intent: RECON_INTENT, candidateSql: RECON_SQL, fixtures: [RECON_FIXTURE] } },
+    ]);
+
+    // Build signed endorsement
+    const endorsement = buildMultiQueryReviewerEndorsement(
+      mqReport.runId, mqReport.multiQueryHash, mqReport.unitCount,
+      mqReport.aggregateDecision,
+      { name: 'Test Reviewer', role: 'risk_officer', identifier: 'test@bank.internal', signerFingerprint: null },
+      'Reviewed and approved the aggregate result',
+      reviewerKey,
+    );
+
+    // Endorsement structure
+    ok(endorsement.endorsedDecision === mqReport.aggregateDecision, 'MQReviewer: endorsed decision matches aggregate');
+    ok(endorsement.runBinding.runId === 'mq-reviewer-test', 'MQReviewer: bound to correct runId');
+    ok(endorsement.runBinding.multiQueryHash === mqReport.multiQueryHash, 'MQReviewer: bound to correct multiQueryHash');
+    ok(endorsement.runBinding.unitCount === 2, 'MQReviewer: bound to correct unitCount');
+    ok(endorsement.signature !== null, 'MQReviewer: signature present');
+    ok(endorsement.signature!.length === 128, 'MQReviewer: 64-byte signature');
+    ok(endorsement.reviewer.signerFingerprint === reviewerKey.fingerprint, 'MQReviewer: fingerprint set');
+
+    // Verify endorsement independently
+    const verifyResult = verifyMultiQueryReviewerEndorsement(
+      endorsement, reviewerKey.publicKeyPem,
+      mqReport.runId, mqReport.multiQueryHash,
+    );
+    ok(verifyResult.valid, 'MQReviewer: signature valid');
+    ok(verifyResult.fingerprintMatch, 'MQReviewer: fingerprint matches');
+    ok(verifyResult.boundToRun, 'MQReviewer: bound to run');
+    ok(!verifyResult.bindingMismatch, 'MQReviewer: no binding mismatch');
+
+    // Tamper detection: change rationale
+    const tampered = { ...endorsement, rationale: 'TAMPERED' };
+    const tamperResult = verifyMultiQueryReviewerEndorsement(tampered, reviewerKey.publicKeyPem);
+    ok(!tamperResult.valid, 'MQReviewer: tampered endorsement fails');
+
+    // Replay rejection: check against wrong runId
+    const replayResult = verifyMultiQueryReviewerEndorsement(
+      endorsement, reviewerKey.publicKeyPem,
+      'different-run-id', mqReport.multiQueryHash,
+    );
+    ok(replayResult.bindingMismatch, 'MQReviewer: replay detected (wrong runId)');
+
+    // Replay rejection: wrong multiQueryHash
+    const replayResult2 = verifyMultiQueryReviewerEndorsement(
+      endorsement, reviewerKey.publicKeyPem,
+      mqReport.runId, 'aaaa' + mqReport.multiQueryHash.slice(4),
+    );
+    ok(replayResult2.bindingMismatch, 'MQReviewer: replay detected (wrong hash)');
+
+    // Wrong key
+    const wrongKey = generateKeyPair();
+    const wrongResult = verifyMultiQueryReviewerEndorsement(endorsement, wrongKey.publicKeyPem);
+    ok(!wrongResult.valid, 'MQReviewer: wrong key fails');
+
+    console.log(`    endorsement: signed=${!!endorsement.signature}, verified=${verifyResult.valid}, tamper=${!tamperResult.valid}, replay1=${replayResult.bindingMismatch}, replay2=${replayResult2.bindingMismatch}`);
+
+    // Build kit WITH reviewer endorsement
+    const kit = buildMultiQueryVerificationKit(mqReport, signingKey, endorsement, reviewerKey.publicKeyPem);
+    ok(kit.reviewerEndorsement !== null, 'MQReviewerKit: endorsement in kit');
+    ok(kit.reviewerPublicKeyPem === reviewerKey.publicKeyPem, 'MQReviewerKit: reviewer key in kit');
+    ok(kit.verification.reviewerEndorsement.present, 'MQReviewerKit: reviewer present');
+    ok(kit.verification.reviewerEndorsement.signed, 'MQReviewerKit: reviewer signed');
+    ok(kit.verification.reviewerEndorsement.boundToRun, 'MQReviewerKit: reviewer bound');
+    ok(kit.verification.reviewerEndorsement.verified, 'MQReviewerKit: reviewer verified');
+    ok(kit.verification.reviewerEndorsement.reviewerName === 'Test Reviewer', 'MQReviewerKit: reviewer name');
+
+    // Kit without reviewer key → present + signed but not verified
+    const kitNoKey = buildMultiQueryVerificationKit(mqReport, signingKey, endorsement, null);
+    ok(kitNoKey.verification.reviewerEndorsement.present, 'MQReviewerKit(noKey): present');
+    ok(kitNoKey.verification.reviewerEndorsement.signed, 'MQReviewerKit(noKey): signed');
+    ok(!kitNoKey.verification.reviewerEndorsement.verified, 'MQReviewerKit(noKey): NOT verified');
+
+    console.log(`    kit: present=${kit.verification.reviewerEndorsement.present}, verified=${kit.verification.reviewerEndorsement.verified}, noKey=${!kitNoKey.verification.reviewerEndorsement.verified}`);
   }
 
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);

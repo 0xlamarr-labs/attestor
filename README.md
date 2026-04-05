@@ -4,7 +4,7 @@
 
 AI output becomes economically useful before it becomes operationally admissible. Attestor closes that gap. It enforces governed acceptance — typed contracts, deterministic controls, authority separation, reviewer-bound endorsement, and cryptographically signed portable proof — so that AI-assisted outputs can enter consequence-bearing workflows without surrendering control, auditability, or verifiability.
 
-The single-query governed proof path is mature: Ed25519-signed certificates, 6-dimensional verification kits, and run-bound reviewer endorsements are issued, portable, and independently verifiable. The multi-query path now carries Ed25519-signed certificates and verification kits with per-unit evidence anchors. Reviewer endorsement at the multi-query level is not yet shipped.
+Both single-query and multi-query governed proof paths are mature: Ed25519-signed certificates, verification kits, and run-bound reviewer endorsements are issued, portable, and independently verifiable at both levels.
 
 The reference implementation targets **bank-grade internal financial analytics**. The engine architecture is domain-independent.
 
@@ -86,7 +86,7 @@ Proof completeness varies by execution path. The repository does not blur this d
 - Portable artifacts: output pack, dossier, and manifest
 - Per-unit governance, evidence anchors, and decision preserved
 - Aggregate decision, proof mode, governance sufficiency, blocker attribution
-- Not yet at reviewer-endorsement completeness at the multi-query level
+- Ed25519-signed run-bound multi-query reviewer endorsement with independent verification
 
 **Real PostgreSQL proof** — achieved:
 - First real PostgreSQL-backed proof run completed (PostgreSQL 18.3, real execution, real evidence)
@@ -193,7 +193,7 @@ npm run verify:cert -- .attestor/proofs/<run>/certificate.json .attestor/proofs/
 # Generate a persistent signing key pair
 npm run keygen
 
-# Run all tests (430 tests)
+# Run all tests (457 tests)
 npm test
 
 # Full verification (typecheck + test + build)
@@ -237,7 +237,6 @@ Broader domain packs are architectural possibility. They are not shipped.
 
 ## Not Yet Implemented
 
-- Reviewer authority at the multi-query level (run-bound multi-query endorsement)
 - Differential evidence across multi-query units
 - Domain packs beyond finance
 - Warehouse-scale connectors (Snowflake, BigQuery, Databricks)
@@ -323,5 +322,5 @@ Fixture mode requires no API key or database.
 |---|---|
 | **Version** | 0.1.0 |
 | **Runtime** | Node.js 22+, TypeScript, local single-process |
-| **Tests** | 430 (398 financial + 32 signing) |
+| **Tests** | 457 (425 financial + 32 signing) |
 | **License** | Proprietary. All rights reserved. |

@@ -726,7 +726,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
 /**
  * Multi-Query Demo — governed multi-query proof with signed certificate and verification kit.
  */
-function runMultiQueryDemo(): void {
+async function runMultiQueryDemo(): Promise<void> {
   console.log(`\n  Attestor Multi-Query — Governed Multi-Query Signed Proof`);
   console.log('');
 
@@ -754,14 +754,28 @@ function runMultiQueryDemo(): void {
   // Display summary
   console.log(renderMultiQuerySummary(report));
 
-  // Signing key
+  // Signing keys
   const keyPair = generateKeyPair();
-  console.log(`\n  Signing key: ephemeral (${keyPair.fingerprint})`);
+  const reviewerKeyPair = generateKeyPair();
+  console.log(`\n  Signing key:  ephemeral (${keyPair.fingerprint})`);
+  console.log(`  Reviewer key: ephemeral (${reviewerKeyPair.fingerprint})`);
 
-  // Build proof artifacts — including signed certificate and verification kit
+  // Build reviewer endorsement
+  const { buildMultiQueryReviewerEndorsement } = await import('../signing/multi-query-reviewer.js');
+  const endorsement = buildMultiQueryReviewerEndorsement(
+    report.runId,
+    report.multiQueryHash,
+    report.unitCount,
+    report.aggregateDecision,
+    { name: 'Ephemeral Reviewer', role: 'attestor_operator', identifier: `mq-demo:${reviewerKeyPair.fingerprint}`, signerFingerprint: null },
+    'Multi-query demo proof review',
+    reviewerKeyPair,
+  );
+
+  // Build proof artifacts — signed certificate + reviewer-endorsed kit
   const outputPack = buildMultiQueryOutputPack(report);
   const dossier = buildMultiQueryDossier(report);
-  const kit = buildMultiQueryVerificationKit(report, keyPair);
+  const kit = buildMultiQueryVerificationKit(report, keyPair, endorsement, reviewerKeyPair.publicKeyPem);
 
   console.log(`  Certificate: ${kit.certificate.certificateId}`);
   console.log(`  Kit overall: ${kit.verification.overall.toUpperCase()}`);
@@ -775,14 +789,16 @@ function runMultiQueryDemo(): void {
   writeFileSync(join(outDir, 'kit.json'), JSON.stringify(kit, null, 2));
   writeFileSync(join(outDir, 'certificate.json'), JSON.stringify(kit.certificate, null, 2));
   writeFileSync(join(outDir, 'public-key.pem'), keyPair.publicKeyPem);
+  writeFileSync(join(outDir, 'reviewer-public.pem'), reviewerKeyPair.publicKeyPem);
   writeFileSync(join(outDir, 'verification-summary.json'), JSON.stringify(kit.verification, null, 2));
 
   console.log(`\n  Artifacts saved to: ${outDir}/`);
-  console.log(`    kit.json                — multi-query verification kit (certificate + manifest + summary)`);
+  console.log(`    kit.json                — multi-query verification kit (certificate + manifest + reviewer + summary)`);
   console.log(`    certificate.json        — Ed25519-signed multi-query attestation certificate`);
   console.log(`    output-pack.json        — machine-readable multi-query output pack`);
   console.log(`    dossier.json            — reviewer-facing multi-query decision dossier`);
   console.log(`    public-key.pem          — signer public key`);
+  console.log(`    reviewer-public.pem     — reviewer signer public key`);
   console.log(`    verification-summary.json — multi-query verification result`);
 
   console.log(`\n  Verification Summary:`);
@@ -791,6 +807,8 @@ function runMultiQueryDemo(): void {
   console.log(`    Proof:       ${kit.verification.proofCompleteness.aggregateMode}`);
   console.log(`    Units:       ${kit.verification.unitCount}`);
   console.log(`    Decision:    ${kit.verification.aggregateDecision}`);
+  const re = kit.verification.reviewerEndorsement;
+  console.log(`    Reviewer:    ${re.verified ? '✓ verified' : re.present ? '△ present but not verified' : '(none)'} ${re.reviewerName ? `(${re.reviewerName})` : ''}`);
   console.log(`    Overall:     ${kit.verification.overall.toUpperCase()}`);
   console.log('');
 }
@@ -993,7 +1011,7 @@ async function main(): Promise<void> {
   }
 
   if (command === 'multi-query') {
-    runMultiQueryDemo();
+    await runMultiQueryDemo();
     return;
   }
 
