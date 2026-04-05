@@ -50,7 +50,7 @@ npm run prove -- counterparty
 # Verify a certificate independently
 npm run verify:cert -- .attestor/proofs/<run>/kit.json
 
-# Run tests (241 tests)
+# Run tests (276 tests)
 npm test
 
 # Full verification (typecheck + test + build)
@@ -73,11 +73,13 @@ No API key or database is required for fixture scenarios. PostgreSQL proof requi
 | Portable attestation certificates (Ed25519) | Implemented |
 | 6-dimensional verification kit | Implemented |
 | Bounded PostgreSQL proof with predictive guardrails | Implemented |
+| Multi-query governed pipeline (N units, aggregate decision) | Implemented |
 | Filing readiness assessment | Implemented |
 | Offline fixture, local SQLite, and hybrid proof modes | Implemented |
 
 ### Not Implemented
 
+- Differential evidence across multi-query units
 - Warehouse-scale connectors (Snowflake, BigQuery, Databricks)
 - Filing submission adapters
 - Enterprise IAM / SSO / LDAP approval integration
@@ -147,5 +149,5 @@ Offline fixture mode works without any API key or database.
 |---|---|
 | **Version** | 0.1.0 |
 | **Runtime** | Node.js 22+, TypeScript, local single-process |
-| **Tests** | 241 (209 financial + 32 signing) |
+| **Tests** | 276 (244 financial + 32 signing) |
 | **License** | Proprietary. All rights reserved. |

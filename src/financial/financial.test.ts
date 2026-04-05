@@ -837,6 +837,138 @@ export async function runFinancialTests(): Promise<number> {
     console.log(`    No binding: bound=${unboundSummary.reviewerEndorsement.boundToRun}, mismatch=${unboundSummary.reviewerEndorsement.bindingMismatch}`);
   }
 
+  // ═══ POSTGRES READINESS TRUTH ═══
+  console.log('\n  [Postgres Readiness Truth]');
+  {
+    const { isPostgresConfigured, reportPostgresReadiness } = await import('../connectors/postgres.js');
+
+    // In test environment, ATTESTOR_PG_URL is not set
+    ok(!isPostgresConfigured(), 'PgReadiness: not configured in test env');
+
+    const readiness = await reportPostgresReadiness();
+    ok(!readiness.configured, 'PgReadiness: configured=false');
+    ok(!readiness.runnable, 'PgReadiness: runnable=false');
+    ok(readiness.message.includes('ATTESTOR_PG_URL'), 'PgReadiness: message mentions ATTESTOR_PG_URL');
+
+    console.log(`    configured=${readiness.configured}, runnable=${readiness.runnable}, message=${readiness.message}`);
+  }
+
+  // ═══ MULTI-QUERY PIPELINE ═══
+  console.log('\n  [Multi-Query Pipeline]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+
+    // Two-query run: counterparty (pass) + unsafe SQL (block)
+    const mqResult = runMultiQueryPipeline('mq-test-1', [
+      {
+        unitId: 'counterparty',
+        label: 'Counterparty exposure summary',
+        input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT },
+      },
+      {
+        unitId: 'unsafe',
+        label: 'Unsafe SQL write attempt',
+        input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: UNSAFE_SQL_WRITE, fixtures: [] },
+      },
+    ]);
+
+    // Per-unit results preserved
+    ok(mqResult.unitCount === 2, 'MQ: 2 units');
+    ok(mqResult.units.length === 2, 'MQ: 2 unit results');
+    ok(mqResult.units[0].unitId === 'counterparty', 'MQ: unit 0 = counterparty');
+    ok(mqResult.units[1].unitId === 'unsafe', 'MQ: unit 1 = unsafe');
+
+    // Per-unit decisions
+    ok(mqResult.units[0].decision === 'pass', 'MQ: counterparty passes');
+    ok(mqResult.units[1].decision === 'block', 'MQ: unsafe blocks');
+
+    // Aggregate decision is worst-case
+    ok(mqResult.aggregateDecision === 'block', 'MQ: aggregate=block (worst case)');
+
+    // Decision breakdown
+    ok(mqResult.decisionBreakdown.pass === 1, 'MQ: 1 pass');
+    ok(mqResult.decisionBreakdown.block === 1, 'MQ: 1 block');
+    ok(mqResult.decisionBreakdown.fail === 0, 'MQ: 0 fail');
+
+    // Governance sufficiency
+    ok(!mqResult.governanceSufficiency.sufficient, 'MQ: not sufficient (unsafe SQL fails governance)');
+    ok(mqResult.governanceSufficiency.sqlPassCount === 1, 'MQ: 1 SQL pass');
+    ok(mqResult.governanceSufficiency.totalUnits === 2, 'MQ: 2 total units');
+
+    // Proof mode
+    ok(mqResult.aggregateProofMode === 'offline_fixture', 'MQ: proof=offline_fixture');
+
+    // Per-unit evidence preserved
+    ok(mqResult.units[0].evidenceChainTerminal.length > 0, 'MQ: unit 0 has evidence chain');
+    ok(mqResult.units[1].evidenceChainTerminal.length > 0, 'MQ: unit 1 has evidence chain');
+    ok(mqResult.units[0].evidenceChainTerminal !== mqResult.units[1].evidenceChainTerminal, 'MQ: distinct evidence chains');
+
+    // Audit
+    ok(mqResult.totalAuditEntries > 0, 'MQ: audit entries > 0');
+    ok(mqResult.allAuditChainsIntact, 'MQ: all audit chains intact');
+
+    // Multi-query hash
+    ok(mqResult.multiQueryHash.length === 32, 'MQ: multiQueryHash is 32 hex chars');
+
+    // Blockers from unsafe unit
+    ok(mqResult.allBlockers.length > 0, 'MQ: has blockers');
+    ok(mqResult.allBlockers.some(b => b.unitId === 'unsafe'), 'MQ: blocker from unsafe unit');
+
+    console.log(`    Units: ${mqResult.unitCount}, aggregate=${mqResult.aggregateDecision}, proof=${mqResult.aggregateProofMode}`);
+    console.log(`    Breakdown: pass=${mqResult.decisionBreakdown.pass}, block=${mqResult.decisionBreakdown.block}`);
+    console.log(`    Governance: sufficient=${mqResult.governanceSufficiency.sufficient}, sql=${mqResult.governanceSufficiency.sqlPassCount}/${mqResult.governanceSufficiency.totalUnits}`);
+    console.log(`    Blockers: ${mqResult.allBlockers.length} from ${mqResult.allBlockers.map(b => b.unitId).join(',')}`);
+  }
+
+  // ═══ MULTI-QUERY: ALL PASS ═══
+  console.log('\n  [Multi-Query All Pass]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+
+    const mqPass = runMultiQueryPipeline('mq-test-2', [
+      {
+        unitId: 'counterparty',
+        label: 'Counterparty exposure',
+        input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT },
+      },
+      {
+        unitId: 'liquidity',
+        label: 'Liquidity risk',
+        input: { runId: 'x', intent: LIQUIDITY_INTENT, candidateSql: LIQUIDITY_SQL, fixtures: [LIQUIDITY_FIXTURE] },
+      },
+    ]);
+
+    // Liquidity scenario fails due to negative values, so aggregate should reflect that
+    ok(mqPass.units[0].decision === 'pass', 'MQPass: counterparty passes');
+    ok(mqPass.units[1].decision === 'fail', 'MQPass: liquidity fails');
+    ok(mqPass.aggregateDecision === 'fail', 'MQPass: aggregate=fail');
+    ok(mqPass.decisionBreakdown.pass === 1, 'MQPass: 1 pass');
+    ok(mqPass.decisionBreakdown.fail === 1, 'MQPass: 1 fail');
+
+    console.log(`    aggregate=${mqPass.aggregateDecision}, pass=${mqPass.decisionBreakdown.pass}, fail=${mqPass.decisionBreakdown.fail}`);
+  }
+
+  // ═══ MULTI-QUERY: SINGLE UNIT ═══
+  console.log('\n  [Multi-Query Single Unit]');
+  {
+    const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
+
+    const mqSingle = runMultiQueryPipeline('mq-test-3', [
+      {
+        unitId: 'only',
+        label: 'Single counterparty',
+        input: { runId: 'x', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT },
+      },
+    ]);
+
+    ok(mqSingle.unitCount === 1, 'MQSingle: 1 unit');
+    ok(mqSingle.aggregateDecision === 'pass', 'MQSingle: aggregate=pass');
+    ok(mqSingle.governanceSufficiency.sufficient, 'MQSingle: governance sufficient');
+    ok(mqSingle.allBlockers.length === 0, 'MQSingle: no blockers');
+
+    console.log(`    Single unit: aggregate=${mqSingle.aggregateDecision}, sufficient=${mqSingle.governanceSufficiency.sufficient}`);
+  }
+
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);
   return passed;
 }

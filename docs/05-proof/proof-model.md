@@ -53,3 +53,24 @@ Outsider-verifiable real-data proof requires:
 When all of these are present, the `prove` path can emit a verification kit backed by real database execution evidence, predictive guardrail preflight, and independently verifiable certificates.
 
 Use `npm run start -- doctor` to check readiness.
+
+## Multi-Query Governed Proof
+
+Attestor supports multi-query reporting runs where N governed query units execute within a single run.
+
+**How it works:**
+
+- Each query unit is a full governed pipeline execution with its own evidence chain, governance gates, and decision
+- The aggregate decision is conservative: any `block` or `fail` in any unit → the run-level decision reflects the worst case
+- Per-query traceability is preserved: each unit's decision, blockers, proof mode, and evidence chain terminal are available
+- Aggregate proof mode is the weakest across all units: if any unit is fixture-based while others are live, the aggregate is `hybrid`
+- Governance sufficiency requires all units to pass SQL governance, policy, and guardrails
+
+**What multi-query does NOT yet do:**
+
+- Differential evidence (proving what changed between queries)
+- Cross-query join or dependency semantics
+- DAG-based query ordering
+- Per-unit certificate issuance (certificates are per-run, not per-unit)
+
+This is a bounded first slice: one run, N independent units, one aggregate report.

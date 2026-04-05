@@ -475,8 +475,19 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
 
   // Step 3: Check for PostgreSQL-backed execution
   let pgProveResult: Awaited<ReturnType<typeof runPostgresProve>> | null = null;
-  if (isPostgresConfigured()) {
-    console.log(`  PostgreSQL: configured — running real database proof path...`);
+  const { reportPostgresReadiness: checkPg } = await import('../connectors/postgres.js');
+  const pgReadiness = await checkPg();
+
+  if (!pgReadiness.configured) {
+    console.log(`  PostgreSQL: not configured (ATTESTOR_PG_URL not set)`);
+    console.log(`    Proof will use offline fixture data.`);
+    console.log(`    For real DB proof: export ATTESTOR_PG_URL=postgres://user:pass@host:5432/db\n`);
+  } else if (!pgReadiness.driverInstalled) {
+    console.log(`  PostgreSQL: URL configured but pg driver not installed`);
+    console.log(`    Proof will use offline fixture data.`);
+    console.log(`    To enable: npm install pg\n`);
+  } else {
+    console.log(`  PostgreSQL: ready — running real database proof path...`);
     pgProveResult = await runPostgresProve(scenario.input.candidateSql);
     if (pgProveResult.attempted) {
       if (pgProveResult.predictiveGuardrail.performed) {
@@ -484,9 +495,12 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
         for (const sig of pgProveResult.predictiveGuardrail.signals) {
           console.log(`    ${sig.severity === 'critical' ? '✗' : '⚠'} ${sig.signal}: ${sig.detail}`);
         }
+        if (pgProveResult.predictiveGuardrail.recommendation === 'deny') {
+          console.log(`  Execution:  DENIED by predictive guardrail — proof falls back to fixture`);
+        }
       }
       if (pgProveResult.execution?.success) {
-        console.log(`  Execution:  ✓ ${pgProveResult.execution.rowCount} rows in ${pgProveResult.execution.durationMs}ms`);
+        console.log(`  Execution:  ✓ ${pgProveResult.execution.rowCount} rows in ${pgProveResult.execution.durationMs}ms (real PostgreSQL)`);
       } else if (pgProveResult.execution) {
         console.log(`  Execution:  ✗ ${pgProveResult.execution.error}`);
       }
@@ -557,7 +571,21 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   console.log(`  Audit:    ${report.audit.entries.length} entries, chain ${report.audit.chainIntact ? 'intact' : 'BROKEN'}`);
   console.log(`  Live:     ${report.liveProof.mode}`);
 
-  // Step 5: Predictive guardrail truth
+  // Step 5: Proof source truth — explicit about what data backed this run
+  const wasRealPg = pgProveResult?.attempted && pgProveResult.execution?.success;
+  const wasDenied = pgProveResult?.attempted && pgProveResult.predictiveGuardrail?.recommendation === 'deny';
+  if (wasRealPg) {
+    console.log(`  Source:   REAL PostgreSQL execution (${pgProveResult!.execution!.rowCount} rows, ${pgProveResult!.execution!.durationMs}ms)`);
+  } else if (wasDenied) {
+    console.log(`  Source:   offline fixture (PostgreSQL preflight DENIED execution)`);
+  } else if (pgReadiness.configured && !pgReadiness.driverInstalled) {
+    console.log(`  Source:   offline fixture (pg driver not installed)`);
+  } else if (!pgReadiness.configured) {
+    console.log(`  Source:   offline fixture (ATTESTOR_PG_URL not configured)`);
+  } else {
+    console.log(`  Source:   offline fixture`);
+  }
+
   if (pgProveResult?.predictiveGuardrail?.performed) {
     console.log(`  Preflight: ${pgProveResult.predictiveGuardrail.riskLevel} (${pgProveResult.predictiveGuardrail.signals.length} signals)`);
   }
