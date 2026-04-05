@@ -733,6 +733,108 @@ export async function runFinancialTests(): Promise<number> {
     ok(bundle.governance.review.endorsement!.signerFingerprint === reviewerKeyPair.fingerprint, 'Bundle: reviewer fingerprint');
 
     console.log(`    Bundle endorsement: signed=${bundle.governance.review.endorsement!.signed}, runBinding=${bundle.governance.review.endorsement!.runBinding!.runId}, fingerprint=${bundle.governance.review.endorsement!.signerFingerprint}`);
+
+    // Bundle carries replayIdentity in evidence
+    ok(bundle.evidence.replayIdentity.length > 0, 'Bundle: replayIdentity in evidence');
+    ok(bundle.evidence.replayIdentity === kitReport.replayMetadata.replayIdentity, 'Bundle: replayIdentity matches report');
+
+    // ═══ KIT-LEVEL BINDING MISMATCH DETECTION ═══
+    console.log('\n  [Kit-Level Binding Mismatch]');
+
+    const { buildVerificationSummary } = await import('../signing/bundle.js');
+    const { verifyCertificate } = await import('../signing/certificate.js');
+
+    // Take a valid signed endorsement from one run and inject it into a different run's kit
+    const otherReport = runFinancialPipeline({
+      runId: 'kit-other-run',
+      intent: { ...COUNTERPARTY_INTENT, materialityTier: 'high' as const },
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      signingKeyPair: certKeyPair,
+      approval: {
+        status: 'approved',
+        reviewerRole: 'risk_officer',
+        reviewNote: 'Other run review',
+        reviewerIdentity: { name: 'Jane Chen', role: 'risk_officer', identifier: 'jchen@bank.internal', signerFingerprint: null },
+        reviewerKeyPair,
+      },
+    });
+    const otherBundle = buildAuthorityBundle(otherReport);
+    const otherCrypto = verifyCertificate(otherReport.certificate!, certKeyPair.publicKeyPem);
+
+    // Steal the signed endorsement from kitReport and inject into otherReport's verification summary
+    const stolenEndorsement = kitReport.oversight.endorsement!;
+    const mismatchSummary = buildVerificationSummary(
+      otherReport.certificate!,
+      otherBundle,
+      otherCrypto,
+      stolenEndorsement,          // endorsement from a DIFFERENT run
+      reviewerKeyPair.publicKeyPem,
+    );
+
+    // The stolen endorsement is signed and has run binding, but NOT bound to THIS run
+    ok(mismatchSummary.reviewerEndorsement.present, 'Mismatch: endorsement present');
+    ok(mismatchSummary.reviewerEndorsement.signed, 'Mismatch: endorsement signed');
+    ok(!mismatchSummary.reviewerEndorsement.boundToRun, 'Mismatch: NOT bound to this run');
+    ok(mismatchSummary.reviewerEndorsement.bindingMismatch, 'Mismatch: bindingMismatch=true');
+    ok(!mismatchSummary.reviewerEndorsement.verified, 'Mismatch: NOT verified (binding mismatch blocks verification)');
+
+    // The correct endorsement in the correct kit still passes
+    const correctSummary = buildVerificationSummary(
+      kitReport.certificate!,
+      bundle,
+      verifyCertificate(kitReport.certificate!, certKeyPair.publicKeyPem),
+      kitReport.oversight.endorsement!,
+      reviewerKeyPair.publicKeyPem,
+    );
+    ok(correctSummary.reviewerEndorsement.boundToRun, 'Correct: bound to run');
+    ok(!correctSummary.reviewerEndorsement.bindingMismatch, 'Correct: no mismatch');
+    ok(correctSummary.reviewerEndorsement.verified, 'Correct: verified');
+
+    console.log(`    Mismatch detection: bound=${mismatchSummary.reviewerEndorsement.boundToRun}, mismatch=${mismatchSummary.reviewerEndorsement.bindingMismatch}, verified=${mismatchSummary.reviewerEndorsement.verified}`);
+    console.log(`    Correct kit: bound=${correctSummary.reviewerEndorsement.boundToRun}, mismatch=${correctSummary.reviewerEndorsement.bindingMismatch}, verified=${correctSummary.reviewerEndorsement.verified}`);
+
+    // ═══ BINDING MISMATCH: runId match but terminal mismatch ═══
+    // Craft a scenario where runId matches but chainTerminal doesn't
+    const partialMismatchEndorsement = {
+      ...kitReport.oversight.endorsement!,
+      runBinding: {
+        ...kitReport.oversight.endorsement!.runBinding!,
+        evidenceChainTerminal: 'ffff' + kitReport.oversight.endorsement!.runBinding!.evidenceChainTerminal.slice(4),
+      },
+    };
+    const partialSummary = buildVerificationSummary(
+      kitReport.certificate!,
+      bundle,
+      verifyCertificate(kitReport.certificate!, certKeyPair.publicKeyPem),
+      partialMismatchEndorsement,
+      reviewerKeyPair.publicKeyPem,
+    );
+    ok(!partialSummary.reviewerEndorsement.boundToRun, 'PartialMismatch: terminal mismatch → not bound');
+    ok(partialSummary.reviewerEndorsement.bindingMismatch, 'PartialMismatch: detected as mismatch');
+    ok(!partialSummary.reviewerEndorsement.verified, 'PartialMismatch: not verified');
+
+    console.log(`    Partial mismatch (terminal): bound=${partialSummary.reviewerEndorsement.boundToRun}, mismatch=${partialSummary.reviewerEndorsement.bindingMismatch}`);
+
+    // ═══ NO BINDING AT ALL ═══
+    const unboundEndorsement = {
+      ...kitReport.oversight.endorsement!,
+      runBinding: null,
+    };
+    const unboundSummary = buildVerificationSummary(
+      kitReport.certificate!,
+      bundle,
+      verifyCertificate(kitReport.certificate!, certKeyPair.publicKeyPem),
+      unboundEndorsement,
+      reviewerKeyPair.publicKeyPem,
+    );
+    ok(!unboundSummary.reviewerEndorsement.boundToRun, 'Unbound: not bound');
+    ok(!unboundSummary.reviewerEndorsement.bindingMismatch, 'Unbound: no mismatch (no binding to mismatch)');
+    ok(!unboundSummary.reviewerEndorsement.verified, 'Unbound: not verified');
+
+    console.log(`    No binding: bound=${unboundSummary.reviewerEndorsement.boundToRun}, mismatch=${unboundSummary.reviewerEndorsement.bindingMismatch}`);
   }
 
   console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);

@@ -105,13 +105,37 @@ A complete product-proof run (`attestor prove`) emits a verification kit:
 
 | Artifact | Purpose |
 |---|---|
-| `kit.json` | Self-contained verification package (certificate + bundle + summary) |
+| `kit.json` | Self-contained verification package (certificate + bundle + reviewer endorsement + summary) |
 | `certificate.json` | Portable Ed25519-signed attestation certificate |
-| `bundle.json` | Full authority bundle (governance evidence) |
-| `verification-summary.json` | 5-dimensional verification result |
-| `public-key.pem` | Signer public key for independent verification |
+| `bundle.json` | Full authority bundle (governance evidence + replay identity) |
+| `verification-summary.json` | 6-dimensional verification result |
+| `public-key.pem` | Runtime signer public key for independent verification |
+| `reviewer-public.pem` | Reviewer signer public key (when reviewer endorsement is signed) |
 
-The verify CLI checks 5 dimensions: cryptographic validity, structural validity, authority state, governance sufficiency, and proof completeness.
+The verify CLI checks 6 dimensions: cryptographic validity, structural validity, authority state, governance sufficiency, proof completeness, and **reviewer endorsement** (present, signed, run-bound, verified).
+
+### Reviewer-Verifiable Product Proof
+
+The `prove` path can emit a genuinely reviewer-verifiable kit. Reviewer endorsements are:
+- **run-bound**: the endorsement signature covers the specific `runId`, `replayIdentity`, and `evidenceChainTerminal`, preventing cross-run replay
+- **independently verifiable**: the kit carries both the endorsement and the reviewer's public key, so an outsider can verify WHO approved, WHAT they approved, and that the approval is bound to THIS specific run
+- **binding-checked**: the verification summary compares the endorsement's run binding against the kit's actual bundle identity; mismatches are detected and reported
+
+**Reviewer key material:**
+
+```bash
+# Default: ephemeral reviewer key generated for local proof demonstration
+npx tsx src/financial/cli.ts prove counterparty
+
+# With persistent reviewer key directory
+npx tsx src/financial/cli.ts prove counterparty .attestor --reviewer-key-dir ./reviewer-keys
+
+# Reviewer key files expected: reviewer-private.pem + reviewer-public.pem
+```
+
+When reviewer key material is absent, the kit stays truthful: `reviewerEndorsement.verified = false` and the output says so clearly.
+
+**What the next major blocker is:** The first real Postgres-backed proof run. Fixture-based proofs demonstrate the full governance and signing chain, but outsider-verifiable real-data proof requires a configured PostgreSQL instance (`ATTESTOR_PG_URL`).
 
 ## PostgreSQL Connector
 
@@ -392,8 +416,8 @@ Attestor is an **implemented financial reference runtime**, not yet a finished e
 ### Current limitations
 
 - live proof supports SQLite (built-in local) and optional bounded PostgreSQL (requires `npm install pg` + `ATTESTOR_PG_URL`). Warehouse-scale live proof is not yet shipped.
-- attestation remains repo-native and is not yet externally verifiable through PKI-backed signatures
-- review approvals are modeled in the runtime but not yet identity-bound to enterprise approval systems
+- attestation uses Ed25519 portable certificates; PKI-backed or CA-chained signing is not yet shipped
+- reviewer endorsements are Ed25519-signed and run-bound, but not yet identity-bound to enterprise approval systems (SSO/LDAP/AD)
 - regulatory alignment is informative and control-oriented, not clause-complete compliance automation
 - optional bounded PostgreSQL connector exists; no warehouse-scale connectors (Snowflake/Databricks), service API, or distributed execution plane are shipped yet
 

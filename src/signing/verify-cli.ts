@@ -84,7 +84,7 @@ function verifyCertificateStandalone(cert: AttestationCertificate, publicKeyPem:
       receipt: { id: null, status: cert.authority.receiptStatus, signatureMode: 'unknown' },
       capsule: { id: null, authorityState: cert.authority.capsuleAuthority, factCount: 0 },
     },
-    evidence: { chainRoot: cert.evidence.evidenceChainRoot, chainTerminal: cert.evidence.evidenceChainTerminal, auditEntryCount: cert.evidence.auditEntryCount, auditChainIntact: cert.evidence.auditChainIntact, sqlHash: cert.evidence.sqlHash, snapshotHash: cert.evidence.snapshotHash },
+    evidence: { chainRoot: cert.evidence.evidenceChainRoot, chainTerminal: cert.evidence.evidenceChainTerminal, replayIdentity: cert.runIdentity, auditEntryCount: cert.evidence.auditEntryCount, auditChainIntact: cert.evidence.auditChainIntact, sqlHash: cert.evidence.sqlHash, snapshotHash: cert.evidence.snapshotHash },
     governance: {
       sqlGovernance: { result: cert.governance.sqlGovernance, gatesPassed: 0, gatesTotal: 0 },
       policy: { result: cert.governance.policy, leastPrivilegePreserved: true },
@@ -151,8 +151,20 @@ function printSummary(s: VerificationSummary): void {
   } else {
     console.log(`  ${icon(s.reviewerEndorsement.present)} Present:     yes (${s.reviewerEndorsement.reviewerName ?? 'unknown'})`);
     console.log(`  ${icon(s.reviewerEndorsement.signed)} Signed:      ${s.reviewerEndorsement.signed ? 'yes' : 'no'}${s.reviewerEndorsement.fingerprint ? ` (${s.reviewerEndorsement.fingerprint})` : ''}`);
-    console.log(`  ${icon(s.reviewerEndorsement.boundToRun)} Run-bound:   ${s.reviewerEndorsement.boundToRun ? 'yes' : 'NO — replay risk'}`);
-    console.log(`  ${icon(s.reviewerEndorsement.verified)} Verified:    ${s.reviewerEndorsement.verified ? 'yes' : 'NO'}`);
+    if (s.reviewerEndorsement.bindingMismatch) {
+      console.log(`  ✗ Run-bound:   NO — binding MISMATCH (endorsement bound to a different run)`);
+    } else {
+      console.log(`  ${icon(s.reviewerEndorsement.boundToRun)} Run-bound:   ${s.reviewerEndorsement.boundToRun ? 'yes' : 'NO — no binding'}`);
+    }
+    if (s.reviewerEndorsement.verified) {
+      console.log(`  ✓ Verified:    yes (signature + binding + fingerprint)`);
+    } else if (s.reviewerEndorsement.signed && s.reviewerEndorsement.boundToRun) {
+      console.log(`  ✗ Verified:    NO — reviewer public key not available in kit`);
+    } else if (s.reviewerEndorsement.signed && s.reviewerEndorsement.bindingMismatch) {
+      console.log(`  ✗ Verified:    NO — binding mismatch prevents verification`);
+    } else {
+      console.log(`  ✗ Verified:    NO`);
+    }
   }
 
   console.log(`\n  ══ Overall: ${s.overall.toUpperCase()} ══\n`);

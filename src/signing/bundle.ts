@@ -33,6 +33,8 @@ export interface AuthorityBundle {
   evidence: {
     chainRoot: string;
     chainTerminal: string;
+    /** Replay identity anchoring the run's deterministic identity for endorsement binding. */
+    replayIdentity: string;
     auditEntryCount: number;
     auditChainIntact: boolean;
     sqlHash: string;
@@ -112,6 +114,7 @@ export function buildAuthorityBundle(report: FinancialRunReport): AuthorityBundl
     evidence: {
       chainRoot: report.evidenceChain.rootHash,
       chainTerminal: report.evidenceChain.terminalHash,
+      replayIdentity: report.replayMetadata.replayIdentity,
       auditEntryCount: report.audit.entries.length,
       auditChainIntact: report.audit.chainIntact,
       sqlHash: report.sqlGovernance.sqlHash,
@@ -218,8 +221,10 @@ export interface VerificationSummary {
     present: boolean;
     /** Is the endorsement cryptographically signed? */
     signed: boolean;
-    /** Is the endorsement bound to this specific run (runId + evidenceChainTerminal)? */
+    /** Is the endorsement bound to this specific run (runId + evidenceChainTerminal + replayIdentity)? */
     boundToRun: boolean;
+    /** Does the endorsement have run-binding fields but they DON'T match this kit's run? */
+    bindingMismatch: boolean;
     /** Does the signature verify against the provided reviewer public key? */
     verified: boolean;
     /** Reviewer name (when present). */
@@ -300,19 +305,30 @@ export function buildVerificationSummary(
   const proofMode = bundle.proof.mode;
 
   // ── Reviewer endorsement verification (6th dimension) ──
+  // boundToRun is a REAL consistency check: endorsement binding must match kit/bundle identity
   const present = !!endorsement;
   const signed = present && !!endorsement!.signature;
-  const boundToRun = present && !!endorsement!.runBinding && !!endorsement!.runBinding.runId;
+  const bindingPresent = present && !!endorsement!.runBinding && !!endorsement!.runBinding.runId;
+  const boundToRun = bindingPresent
+    && endorsement!.runBinding!.runId === bundle.runId
+    && endorsement!.runBinding!.evidenceChainTerminal === bundle.evidence.chainTerminal
+    && endorsement!.runBinding!.replayIdentity === bundle.evidence.replayIdentity;
+
+  // Endorsement is verified ONLY when signature is valid AND binding matches the kit
   let endorsementVerified = false;
-  if (signed && reviewerPublicKeyPem) {
+  if (signed && boundToRun && reviewerPublicKeyPem) {
     const result = verifyReviewerEndorsement(endorsement!, reviewerPublicKeyPem);
     endorsementVerified = result.valid && result.fingerprintMatch;
   }
+
+  // bindingMismatch: endorsement HAS run-binding fields, but they DON'T match this kit's run
+  const bindingMismatch = bindingPresent && !boundToRun;
 
   const reviewerEndorsementDim = {
     present,
     signed,
     boundToRun,
+    bindingMismatch,
     verified: endorsementVerified,
     reviewerName: endorsement?.reviewer.name ?? null,
     fingerprint: endorsement?.reviewer.signerFingerprint ?? null,

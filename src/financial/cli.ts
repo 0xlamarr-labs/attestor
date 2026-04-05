@@ -384,7 +384,8 @@ function printHelp(): void {
   Usage:
     npx tsx src/financial/cli.ts scenario <id>         Run a named fixture scenario
     npx tsx src/financial/cli.ts live-scenario <id>    Run a bounded local live scenario
-    npx tsx src/financial/cli.ts prove <id> [key-dir]  Run governed scenario + issue signed certificate
+    npx tsx src/financial/cli.ts prove <id> [key-dir] [--reviewer-key-dir <dir>]
+                                                      Run governed scenario + issue signed certificate
     npx tsx src/financial/cli.ts doctor                Check product proof readiness (keys, DB, credentials)
     npx tsx src/financial/cli.ts benchmark             Run the full replay benchmark corpus
     npx tsx src/financial/cli.ts list                  List available scenarios
@@ -404,18 +405,24 @@ ${Object.entries(LIVE_SCENARIOS).map(([id, definition]) => `    ${id.padEnd(20)}
  * Product Proof — the end-to-end attested analytics demonstration.
  *
  * 1. Generates or loads signing key pair
- * 2. Runs a governed financial scenario (fixture or live)
- * 3. Issues a signed Ed25519 attestation certificate
- * 4. Verifies the certificate independently
- * 5. Persists all artifacts including the certificate
+ * 2. Optionally loads or generates reviewer signing key pair
+ * 3. Runs a governed financial scenario (fixture or live)
+ * 4. Issues a signed Ed25519 attestation certificate
+ * 5. If reviewer key is available, endorsement is signed and kit is reviewer-verifiable
+ * 6. Verifies the certificate independently
+ * 7. Persists all artifacts including the verification kit
  *
- * Usage: attestor prove <scenario-id> [key-dir]
+ * Usage: attestor prove <scenario-id> [key-dir] [--reviewer-key-dir <dir>]
+ *
+ * Reviewer key material:
+ *   --reviewer-key-dir <dir>  Load reviewer key from <dir>/reviewer-private.pem + reviewer-public.pem
+ *   When absent: generates ephemeral reviewer key for local proof demonstration
  */
-async function runProductProof(scenarioId: string, keyDir?: string): Promise<void> {
+async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyDir?: string): Promise<void> {
   console.log(`\n  Attestor Product Proof — Attested Analytics Demonstration`);
   console.log(`  Scenario: ${scenarioId}`);
 
-  // Step 1: Signing key pair
+  // Step 1: Signing key pair (runtime certificate signer)
   let keyPair: AttestorKeyPair;
   if (keyDir) {
     try {
@@ -432,6 +439,30 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
   } else {
     keyPair = generateKeyPair();
     console.log(`  Signing key: ephemeral (fingerprint: ${keyPair.fingerprint})`);
+  }
+
+  // Step 1b: Reviewer signing key pair (separate from runtime signer)
+  let reviewerKeyPair: AttestorKeyPair | null = null;
+  let reviewerKeyMode: 'loaded' | 'ephemeral' | 'absent' = 'absent';
+  if (reviewerKeyDir) {
+    try {
+      const rpk = loadPrivateKey(join(reviewerKeyDir, 'reviewer-private.pem'));
+      const rpub = loadPublicKey(join(reviewerKeyDir, 'reviewer-public.pem'));
+      const rid = derivePublicKeyIdentity(rpub);
+      reviewerKeyPair = { privateKeyPem: rpk, publicKeyPem: rpub, ...rid };
+      reviewerKeyMode = 'loaded';
+      console.log(`  Reviewer key: loaded from ${reviewerKeyDir} (fingerprint: ${reviewerKeyPair.fingerprint})`);
+    } catch {
+      console.log(`  Reviewer key directory ${reviewerKeyDir} not usable. Generating ephemeral reviewer key...`);
+      reviewerKeyPair = generateKeyPair();
+      reviewerKeyMode = 'ephemeral';
+      console.log(`  Reviewer key: ephemeral (fingerprint: ${reviewerKeyPair.fingerprint})`);
+    }
+  } else {
+    // Default: generate ephemeral reviewer key for local proof demonstration
+    reviewerKeyPair = generateKeyPair();
+    reviewerKeyMode = 'ephemeral';
+    console.log(`  Reviewer key: ephemeral for local demo (fingerprint: ${reviewerKeyPair.fingerprint})`);
   }
 
   // Step 2: Find scenario
@@ -465,10 +496,35 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
     console.log('');
   }
 
-  // Step 4: Run governed pipeline with signing (+ Postgres evidence if available)
+  // Step 4: Run governed pipeline with signing + reviewer authority (+ Postgres evidence if available)
+  // Reviewer approval: when reviewer key pair is available and the scenario needs review,
+  // the prove path provides a reviewer endorsement. For low-materiality scenarios that don't
+  // require review, reviewer endorsement is still attached to demonstrate the full chain.
+  const reviewerApproval: FinancialPipelineInput['approval'] = reviewerKeyPair ? {
+    status: 'approved',
+    reviewerRole: 'attestor_operator',
+    reviewNote: `Product proof reviewer endorsement (${reviewerKeyMode} key)`,
+    reviewerIdentity: {
+      name: reviewerKeyMode === 'loaded' ? 'Loaded Reviewer' : 'Ephemeral Reviewer',
+      role: 'attestor_operator',
+      identifier: `prove-cli:${reviewerKeyPair.fingerprint}`,
+      signerFingerprint: null, // populated by pipeline signing
+    },
+    reviewerKeyPair,
+  } : undefined;
+
+  // When reviewer key is available, force high materiality to trigger the review path.
+  // This ensures the endorsement chain is exercised in the product proof.
+  const intentOverride = reviewerKeyPair
+    ? { ...scenario.input.intent, materialityTier: 'high' as const }
+    : scenario.input.intent;
+
   const pipelineInput: FinancialPipelineInput = {
     ...scenario.input,
+    intent: intentOverride,
     signingKeyPair: keyPair,
+    // Inject reviewer approval (overrides scenario-level approval if any)
+    ...(reviewerApproval ? { approval: reviewerApproval } : {}),
     // Only pass Postgres execution when it ACTUALLY executed (not denied by preflight)
     ...(pgProveResult?.attempted && pgProveResult.execution?.success && !pgProveResult.skipReason ? {
       externalExecution: pgProveResult.execution,
@@ -520,8 +576,8 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
     console.log(`    Fingerprint: ${verification.fingerprintConsistent ? '✓ consistent' : '✗ MISMATCH'}`);
     console.log(`    Overall:     ${verification.overall === 'valid' ? '✓ VALID' : '✗ ' + verification.overall.toUpperCase()}`);
 
-    // Step 7: Build verification kit (includes reviewer endorsement when present)
-    const kit = buildVerificationKit(report, keyPair.publicKeyPem, null);
+    // Step 7: Build verification kit (includes reviewer endorsement when reviewer key is available)
+    const kit = buildVerificationKit(report, keyPair.publicKeyPem, reviewerKeyPair?.publicKeyPem ?? null);
 
     // Step 8: Persist artifacts
     // Run-unique proof directory: scenario + timestamp + run ID prefix (no collision, no stale mixing)
@@ -535,13 +591,19 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
       writeFileSync(join(outDir, 'verification-summary.json'), JSON.stringify(kit.verification, null, 2));
     }
     writeFileSync(join(outDir, 'bundle.json'), JSON.stringify(kit?.bundle ?? {}, null, 2));
+    if (reviewerKeyPair) {
+      writeFileSync(join(outDir, 'reviewer-public.pem'), reviewerKeyPair.publicKeyPem);
+    }
 
     console.log(`\n  Artifacts saved to: ${outDir}/`);
     console.log(`    kit.json               — full verification kit (certificate + bundle + summary)`);
     console.log(`    certificate.json       — portable Ed25519-signed attestation certificate`);
     console.log(`    bundle.json            — authority bundle (full governance evidence)`);
-    console.log(`    verification-summary.json — multi-dimensional verification result`);
-    console.log(`    public-key.pem         — signer public key`);
+    console.log(`    verification-summary.json — 6-dimensional verification result`);
+    console.log(`    public-key.pem         — runtime signer public key`);
+    if (reviewerKeyPair) {
+      console.log(`    reviewer-public.pem    — reviewer signer public key`);
+    }
     console.log(`\n  To verify independently:`);
     console.log(`    npx tsx src/signing/verify-cli.ts ${outDir}/kit.json`);
     console.log(`    npx tsx src/signing/verify-cli.ts ${outDir}/certificate.json ${outDir}/public-key.pem`);
@@ -552,6 +614,21 @@ async function runProductProof(scenarioId: string, keyDir?: string): Promise<voi
       console.log(`    Authority:   ${kit.verification.authority.state}`);
       console.log(`    Governance:  ${kit.verification.governanceSufficiency.sufficient ? 'sufficient' : 'INSUFFICIENT'}`);
       console.log(`    Proof:       ${kit.verification.proofCompleteness.mode} (${kit.verification.proofCompleteness.gapCount} gaps)`);
+
+      // Reviewer endorsement truth
+      const re = kit.verification.reviewerEndorsement;
+      if (!re.present) {
+        console.log(`    Reviewer:    (no endorsement)`);
+      } else if (re.verified) {
+        console.log(`    Reviewer:    ✓ verified (${re.reviewerName}, ${re.fingerprint}, ${reviewerKeyMode} key)`);
+      } else if (re.signed && !re.boundToRun) {
+        console.log(`    Reviewer:    ✗ signed but binding mismatch — endorsement NOT bound to this run`);
+      } else if (re.signed) {
+        console.log(`    Reviewer:    △ signed but not independently verifiable (reviewer key not in kit)`);
+      } else {
+        console.log(`    Reviewer:    △ present but unsigned`);
+      }
+
       console.log(`    Overall:     ${kit.verification.overall.toUpperCase()}`);
     }
   } else {
@@ -631,7 +708,19 @@ async function main(): Promise<void> {
   }
 
   if (command === 'prove' && args[1]) {
-    await runProductProof(args[1], args[2]);
+    // Parse optional --reviewer-key-dir flag from remaining args
+    const proveArgs = args.slice(1);
+    const scenarioArg = proveArgs[0];
+    let keyDirArg: string | undefined;
+    let reviewerKeyDirArg: string | undefined;
+    for (let i = 1; i < proveArgs.length; i++) {
+      if (proveArgs[i] === '--reviewer-key-dir' && proveArgs[i + 1]) {
+        reviewerKeyDirArg = proveArgs[++i];
+      } else if (!keyDirArg) {
+        keyDirArg = proveArgs[i];
+      }
+    }
+    await runProductProof(scenarioArg, keyDirArg, reviewerKeyDirArg);
     return;
   }
 
