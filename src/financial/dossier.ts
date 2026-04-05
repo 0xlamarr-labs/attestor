@@ -80,6 +80,18 @@ export function buildDecisionDossier(report: FinancialRunReport): DecisionDossie
     { category: 'attestation', status: report.attestation?.signatureMode ?? 'not_emitted', detail: report.attestation ? `verification=${report.attestation.verification.overall}, chain=${report.attestation.verification.chainLinkage ? 'ok' : 'fail'}, artifacts=${report.attestation.verification.canonicalArtifacts ? 'ok' : 'fail'}` : 'No attestation' },
     { category: 'live_proof', status: report.liveProof?.mode ?? 'unknown', detail: `upstream_live=${report.liveProof?.upstream.live ?? false}, execution_live=${report.liveProof?.execution.live ?? false}, consistent=${report.liveProof?.consistent ?? false}, gap_categories=${report.liveProof?.gaps.map((gap) => gap.category).join('|') ?? 'none'}${report.liveReadiness ? `, readiness=${report.liveReadiness.exerciseType}, available_modes=${report.liveReadiness.availableModes.join('+')}` : ''}` },
     { category: 'interop', status: report.openLineageExport ? 'exported' : 'not_exported', detail: report.openLineageExport ? `eventType=${report.openLineageExport.eventType}, inputs=${report.openLineageExport.inputs.length}, outputs=${report.openLineageExport.outputs.length}` : 'No OpenLineage export' },
+    // Predictive guardrails
+    ...(report.predictiveGuardrail?.performed ? [{
+      category: 'predictive_guardrail' as const,
+      status: report.predictiveGuardrail.recommendation,
+      detail: `risk=${report.predictiveGuardrail.riskLevel}, signals=${report.predictiveGuardrail.signals.length}${report.predictiveGuardrail.signals.length > 0 ? ': ' + report.predictiveGuardrail.signals.map((s) => s.signal).join(', ') : ''}`,
+    }] : []),
+    // Semantic clauses
+    ...(report.semanticClauses?.performed ? [{
+      category: 'semantic_clauses' as const,
+      status: report.semanticClauses.hardFailCount > 0 ? 'hard_failure' : report.semanticClauses.failCount > 0 ? 'soft_failure' : 'pass',
+      detail: `clauses=${report.semanticClauses.clauseCount}, pass=${report.semanticClauses.passCount}, fail=${report.semanticClauses.failCount}, hard_fail=${report.semanticClauses.hardFailCount}`,
+    }] : []),
   ];
 
   return { runId: report.runId, generatedAt: new Date().toISOString(), decision: report.decision, timeline, criticalEvidence, blockers, reviewPath, unresolvedRisks, artifactHashes, reviewerSummary };

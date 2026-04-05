@@ -299,6 +299,10 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
   else if (policyResult.result === 'fail') decision = 'block';
   if (guardrailResult.result === 'fail' && decision !== 'block') decision = 'fail';
   if (breakReport.hardStops > 0 && decision !== 'block') decision = 'fail';
+  // Semantic clause hard failures → fail (analytical obligations violated)
+  if (semanticClauseResult?.hardFailCount && semanticClauseResult.hardFailCount > 0 && decision !== 'block') decision = 'fail';
+  // Predictive guardrail deny → block (pre-execution risk too high)
+  if (input.predictiveGuardrail?.recommendation === 'deny' && decision !== 'block') decision = 'block';
   if (reviewPolicy.required) {
     if (reviewPolicy.rejected) decision = 'rejected';
     else if (!reviewPolicy.approved && (decision === 'pass' || decision === 'warn')) decision = 'pending_approval';
@@ -371,7 +375,7 @@ export function runFinancialPipeline(input: FinancialPipelineInput): FinancialRu
     : buildOfflineProof(input.runId, replayIdentity);
   const liveReadiness = assessLiveReadiness({
     exerciseType: liveProof.mode === 'offline_fixture' || liveProof.mode === 'mocked_model' ? 'readiness_only' : 'live_exercise',
-    liveDbAvailable: !!input.liveExecution,
+    liveDbAvailable: !!input.liveExecution || hasExternalExecution,
   });
 
   // ── Build report ──

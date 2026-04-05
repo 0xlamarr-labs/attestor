@@ -133,6 +133,27 @@ export function buildOutputPack(report: FinancialRunReport): OutputPack {
       readiness: report.liveReadiness?.exerciseType ?? null,
       availableModes: report.liveReadiness?.availableModes ?? null,
     } : null,
+    // Predictive guardrails (Postgres pre-execution risk preflight)
+    predictiveGuardrail: report.predictiveGuardrail ? {
+      performed: report.predictiveGuardrail.performed,
+      riskLevel: report.predictiveGuardrail.riskLevel,
+      recommendation: report.predictiveGuardrail.recommendation,
+      signalCount: report.predictiveGuardrail.signals.length,
+      signals: report.predictiveGuardrail.signals.map((s) => ({ signal: s.signal, severity: s.severity, detail: s.detail })),
+    } : null,
+
+    // Semantic clauses (analytical obligation checks)
+    semanticClauses: report.semanticClauses ? {
+      performed: report.semanticClauses.performed,
+      clauseCount: report.semanticClauses.clauseCount,
+      passCount: report.semanticClauses.passCount,
+      failCount: report.semanticClauses.failCount,
+      hardFailCount: report.semanticClauses.hardFailCount,
+      failedClauses: report.semanticClauses.evaluations
+        .filter((e) => !e.passed)
+        .map((e) => ({ id: e.clause.id, type: e.clause.type, severity: e.clause.severity, explanation: e.explanation })),
+    } : null,
+
     filingReadiness: report.filingReadiness,
 
     regulatoryAlignment: [
@@ -173,6 +194,24 @@ export function renderPackSummary(pack: OutputPack): string {
     lines.push(`- **Total:** ${pack.breakOps.totalBreaks} | **Hard stops:** ${pack.breakOps.hardStops} | **Reviewable:** ${pack.breakOps.reviewableVariances} | **Info:** ${pack.breakOps.informational}`);
     for (const b of pack.breakOps.breaks) {
       lines.push(`  - [${b.handling}] ${b.check}: expected=${b.expected}, actual=${b.actual}, variance=${b.variance} (${b.reconClass})`);
+    }
+    lines.push('');
+  }
+
+  if (pack.predictiveGuardrail?.performed) {
+    lines.push(`## Predictive Guardrails`);
+    lines.push(`- **Risk Level:** ${pack.predictiveGuardrail.riskLevel} | **Recommendation:** ${pack.predictiveGuardrail.recommendation} | **Signals:** ${pack.predictiveGuardrail.signalCount}`);
+    for (const s of pack.predictiveGuardrail.signals) {
+      lines.push(`  - [${s.severity}] ${s.signal}: ${s.detail}`);
+    }
+    lines.push('');
+  }
+
+  if (pack.semanticClauses?.performed) {
+    lines.push(`## Semantic Clauses`);
+    lines.push(`- **Clauses:** ${pack.semanticClauses.clauseCount} | **Pass:** ${pack.semanticClauses.passCount} | **Fail:** ${pack.semanticClauses.failCount} | **Hard Fail:** ${pack.semanticClauses.hardFailCount}`);
+    for (const c of pack.semanticClauses.failedClauses) {
+      lines.push(`  - [${c.severity}/${c.type}] ${c.id}: ${c.explanation}`);
     }
     lines.push('');
   }

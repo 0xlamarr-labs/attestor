@@ -1023,6 +1023,8 @@ export interface OutputPack {
   receipt: { receiptId: string; status: string; decision: string; warrantId: string; signatureMode: string; issuanceReason: string } | null;
   capsule: { capsuleId: string; authorityState: string; decision: string; reason: string; hardFacts: number; advisorySignals: number } | null;
   liveProof: { mode: string; upstreamLive: boolean; executionLive: boolean; gaps: number; gapCategories: string[]; consistent: boolean; readiness: string | null; availableModes: string[] | null } | null;
+  predictiveGuardrail: { performed: boolean; riskLevel: string; recommendation: string; signalCount: number; signals: Array<{ signal: string; severity: string; detail: string }> } | null;
+  semanticClauses: { performed: boolean; clauseCount: number; passCount: number; failCount: number; hardFailCount: number; failedClauses: Array<{ id: string; type: string; severity: string; explanation: string }> } | null;
   filingReadiness: FilingReadiness;
   regulatoryAlignment: RegulatoryAlignmentNote[];
 }

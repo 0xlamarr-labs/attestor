@@ -395,7 +395,7 @@ Attestor is an **implemented financial reference runtime**, not yet a finished e
 - attestation remains repo-native and is not yet externally verifiable through PKI-backed signatures
 - review approvals are modeled in the runtime but not yet identity-bound to enterprise approval systems
 - regulatory alignment is informative and control-oriented, not clause-complete compliance automation
-- no warehouse connectors, service API, or distributed execution plane are shipped in the current repo
+- optional bounded PostgreSQL connector exists; no warehouse-scale connectors (Snowflake/Databricks), service API, or distributed execution plane are shipped yet
 
 ## What Is Implemented Today
 
@@ -440,7 +440,7 @@ Attestor is an **implemented financial reference runtime**, not yet a finished e
 
 ## What Is Not Claimed Today
 
-- No production database connectors beyond bounded local SQLite
+- No warehouse-scale database connectors (Snowflake/BigQuery/Databricks). SQLite fixture + optional bounded PostgreSQL read-only path are current scope.
 - No regulatory filing submission
 - No multi-tenant entitlement service
 - No distributed execution plane
