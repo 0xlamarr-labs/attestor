@@ -60,7 +60,7 @@ The single-query governed proof path is mature: signed certificates, 6-dimension
 
 The multi-query path ships a first-slice portable artifact layer (output pack, dossier, manifest) with per-unit and aggregate truth. It does not yet carry signed certificates, verification kits, or reviewer-endorsement completeness.
 
-Real PostgreSQL proof is operational: bounded read-only execution, predictive guardrails, reproducible demo bootstrap, and execution context evidence in the bundle and kit.
+Real PostgreSQL proof is achieved: the first governed proof run against a real PostgreSQL instance has completed with signed certificate, reviewer-verified kit, and execution context evidence. A self-contained proof script (`scripts/real-db-proof.ts`) reproduces this without manual setup.
 
 ## Who This Is For
 

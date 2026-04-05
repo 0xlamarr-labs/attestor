@@ -86,11 +86,12 @@ Proof completeness varies by execution path. The repository does not blur this d
 - Aggregate decision, proof mode, governance sufficiency, blocker attribution
 - Not yet at signed certificate / verification kit / reviewer-endorsement completeness
 
-**Real PostgreSQL proof** — operational:
-- Bounded read-only PostgreSQL connector with predictive guardrails
-- Reproducible demo bootstrap (`pg-demo-init`) for repo-native proof
+**Real PostgreSQL proof** — achieved:
+- First real PostgreSQL-backed proof run completed (PostgreSQL 18.3, real execution, real evidence)
+- Bounded read-only connector with predictive guardrails (EXPLAIN-based preflight)
+- Reproducible demo bootstrap (`pg-demo-init`) and self-contained proof script (`scripts/real-db-proof.ts`)
 - Execution context hash and provider markers in bundle and kit
-- Operator path: doctor → probe → bootstrap → prove
+- Operator path: doctor → probe → bootstrap → prove → verified kit
 
 ## What This Repository Implements
 
@@ -174,6 +175,9 @@ npm run prove -- counterparty .attestor --reviewer-key-dir ./reviewer-keys
 
 # Bootstrap demo PostgreSQL schema for real DB proof
 npx tsx src/financial/cli.ts pg-demo-init
+
+# Run the first real PostgreSQL-backed proof (self-contained, downloads PG automatically)
+npx tsx scripts/real-db-proof.ts
 
 # Run a multi-query governed proof (fixed 3-unit demo, first-slice artifacts)
 npx tsx src/financial/cli.ts multi-query
@@ -268,13 +272,15 @@ Workflow-bound reviewer authority. Not a status flag — a cryptographic proof o
 
 ## PostgreSQL Product Proof
 
-Optional bounded PostgreSQL connector for real-database execution proof.
+Real PostgreSQL-backed proof has been achieved. The first governed proof run against a real PostgreSQL instance (18.3) completed successfully with signed certificate, reviewer-verified kit, and execution context evidence.
+
+**Self-contained proof.** `npx tsx scripts/real-db-proof.ts` downloads an embedded PostgreSQL binary, starts it, bootstraps the demo schema, runs the full governed proof, and saves verified artifacts. Zero manual setup required.
 
 **Safety.** Read-only transactions. Statement timeout. Row limits. Write/stacked-query rejection. Schema allowlist enforcement.
 
 **Predictive guardrails.** EXPLAIN-based risk preflight. Critical-risk queries are denied before they touch data.
 
-**Demo bootstrap.** `pg-demo-init` seeds a deterministic `attestor_demo` schema for reproducible repo-native proof.
+**Demo bootstrap.** `pg-demo-init` seeds a deterministic `attestor_demo` schema for reproducible proof. Canonical demo SQL for the counterparty scenario.
 
 **Evidence.** `executionContextHash` anchors which database environment was queried. `executionProvider` and `hasDbContextEvidence` make a real-DB kit distinguishable from a fixture kit.
 

@@ -98,7 +98,7 @@ Design rule: missing live proof does not deny authority. It constrains what can 
 
 **Multi-query.** First slice. Per-unit and aggregate truth in portable artifacts (output pack, dossier, manifest). Not yet at signed certificate, kit, or reviewer-endorsement completeness.
 
-**Real PostgreSQL.** Operational. Bounded read-only execution, predictive guardrails, reproducible demo bootstrap, execution context evidence in bundle and kit.
+**Real PostgreSQL.** Achieved. First real proof run completed (PostgreSQL 18.3). Bounded read-only execution, predictive guardrails, reproducible demo bootstrap, execution context evidence in bundle and kit. Self-contained proof script available.
 
 ---
 
@@ -130,7 +130,7 @@ Shipped:
 - Authority chain, deterministic scoring, review policy, evidence chain
 - Ed25519 certificates, verification kits, reviewer endorsements (single-query)
 - Multi-query governed pipeline with first-slice portable artifacts
-- Bounded PostgreSQL proof with predictive guardrails and demo bootstrap
+- Real PostgreSQL proof achieved: bounded execution, predictive guardrails, demo bootstrap, self-contained proof script
 
 Not shipped:
 - Domain packs beyond finance

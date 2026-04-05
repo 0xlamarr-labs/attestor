@@ -107,7 +107,9 @@ These fields make a real DB-backed kit immediately distinguishable from a fixtur
 
 ## Demo Bootstrap
 
-Attestor includes a bounded demo bootstrap that seeds a deterministic `attestor_demo` schema in PostgreSQL. This makes the first real DB proof run reproducible from the repo.
+Attestor includes a bounded demo bootstrap that seeds a deterministic `attestor_demo` schema in PostgreSQL. The first real DB proof run has been completed using this path (PostgreSQL 18.3, real execution, signed certificate, verified kit).
+
+**Self-contained proof:** `npx tsx scripts/real-db-proof.ts` downloads an embedded PostgreSQL binary, starts it, bootstraps the demo schema, runs the full governed proof, and saves verified artifacts. No manual PostgreSQL installation required.
 
 **Bash / macOS / Linux:**
 ```bash
