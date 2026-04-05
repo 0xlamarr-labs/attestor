@@ -1,0 +1,300 @@
+/**
+ * Live Proof v1.1 — Truthful runtime evidence
+ */
+
+import { strict as assert } from 'node:assert';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { runFinancialPipeline } from './pipeline.js';
+import { verifyLiveProof, buildLiveProof, buildOfflineProof, assessLiveReadiness, buildLiveProofReviewerSummary } from './types.js';
+import { verifyCapsule } from './capsule.js';
+import { runBenchmarkCorpus, type BenchmarkEntry } from './replay.js';
+import { executeSqliteQuery, materializeSqliteFixtureDatabases } from './execution.js';
+import {
+  COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
+  COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT, COUNTERPARTY_LIVE_DATABASES,
+  LIQUIDITY_SQL, LIQUIDITY_INTENT, LIQUIDITY_FIXTURE,
+  RECON_SQL, RECON_INTENT, RECON_FIXTURE,
+  UNSAFE_SQL_WRITE, UNSAFE_SQL_INJECTION,
+  HIGH_MAT_INTENT,
+  CONTROL_TOTAL_INTENT,
+} from './fixtures/scenarios.js';
+
+let passed = 0;
+function ok(condition: boolean, msg: string): void { assert(condition, msg); passed++; }
+
+export async function runFinancialTests(): Promise<number> {
+  passed = 0;
+  console.log('\n══════════════════════════════════════════════════════════════');
+  console.log('  BANK-GRADE — Live Proof v1.1');
+  console.log('══════════════════════════════════════════════════════════════');
+
+  // ═══ LIVE PROOF ON PIPELINE RUN ═══
+  console.log('\n  [Live Proof on Run]');
+  {
+    const r = runFinancialPipeline({ runId: 'lp-1', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT });
+
+    ok(r.liveProof !== undefined && r.liveProof !== null, 'LiveProof: present on report');
+    ok(r.liveProof.mode === 'offline_fixture', 'LiveProof: mode=offline_fixture');
+    ok(!r.liveProof.upstream.live, 'LiveProof: upstream not live');
+    ok(!r.liveProof.execution.live, 'LiveProof: execution not live');
+    ok(r.liveProof.execution.mode === 'fixture', 'LiveProof: execution=fixture');
+    ok(r.liveProof.gaps.length >= 3, `LiveProof: ${r.liveProof.gaps.length} gaps`);
+    ok(r.liveProof.consistent, 'LiveProof: consistent');
+    ok(r.liveProof.replayIdentity === r.replayMetadata.replayIdentity, 'LiveProof: replay identity matches');
+
+    console.log(`    LiveProof: mode=${r.liveProof.mode}, gaps=${r.liveProof.gaps.length}, consistent=${r.liveProof.consistent}`);
+  }
+
+  // ═══ PROOF-MODE VERIFICATION ═══
+  console.log('\n  [Proof-Mode Verification]');
+  {
+    // Offline: consistent
+    const offline = buildOfflineProof('test', 'replay');
+    ok(verifyLiveProof(offline), 'Verify: offline consistent');
+
+    // Fake inconsistent: offline mode but upstream.live=true
+    const fake = buildLiveProof('test', 'replay', { upstream: { live: true } });
+    ok(fake.mode !== 'offline_fixture', 'Fake: mode derived from evidence (not offline)');
+
+    // Live model: upstream.live=true + provider + model
+    const liveModel = buildLiveProof('test', 'replay', {
+      upstream: { live: true, provider: 'anthropic', model: 'claude-opus-4.6' },
+    });
+    ok(liveModel.mode === 'live_model', 'LiveModel: mode=live_model');
+    ok(verifyLiveProof(liveModel), 'LiveModel: consistent');
+    ok(liveModel.gaps.some((g) => g.category === 'execution'), 'LiveModel: has execution gap (no live DB)');
+
+    // Live runtime: execution.live=true + provider
+    const liveRuntime = buildLiveProof('test', 'replay', {
+      execution: { live: true, provider: 'duckdb', mode: 'live_db' },
+    });
+    ok(liveRuntime.mode === 'live_runtime', 'LiveRuntime: mode=live_runtime');
+    ok(verifyLiveProof(liveRuntime), 'LiveRuntime: consistent');
+
+    // Hybrid: both live
+    const hybrid = buildLiveProof('test', 'replay', {
+      upstream: { live: true, provider: 'openai', model: 'gpt-5.4' },
+      execution: { live: true, provider: 'snowflake', mode: 'live_db' },
+    });
+    ok(hybrid.mode === 'hybrid', 'Hybrid: mode=hybrid');
+    ok(verifyLiveProof(hybrid), 'Hybrid: consistent');
+    ok(hybrid.gaps.length === 0 || hybrid.gaps.every((g) => g.category === 'cost'), 'Hybrid: minimal gaps');
+
+    console.log(`    Modes: offline=${offline.mode}, liveModel=${liveModel.mode}, liveRuntime=${liveRuntime.mode}, hybrid=${hybrid.mode}`);
+  }
+
+  // ═══ LIVE PROOF IN ARTIFACTS ═══
+  console.log('\n  [Live Proof in Artifacts]');
+  {
+    const r = runFinancialPipeline({ runId: 'lp-art', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT });
+
+    // Output pack
+    ok(r.outputPack.liveProof !== null, 'Pack: liveProof present');
+    ok(r.outputPack.liveProof!.mode === 'offline_fixture', 'Pack: mode=offline');
+    ok(!r.outputPack.liveProof!.upstreamLive, 'Pack: upstream not live');
+    ok(r.outputPack.liveProof!.gaps >= 3, 'Pack: has gaps');
+    ok(r.outputPack.liveProof!.gapCategories.includes('model'), 'Pack: exposes gap categories');
+    ok(r.outputPack.liveProof!.consistent, 'Pack: consistent');
+
+    // Dossier
+    ok(r.dossier.reviewerSummary.some((s) => s.category === 'live_proof'), 'Dossier: has live_proof');
+    const lpSection = r.dossier.reviewerSummary.find((s) => s.category === 'live_proof')!;
+    ok(lpSection.status === 'offline_fixture', 'Dossier: shows offline');
+    ok(lpSection.detail.includes('gap_categories=model|execution|cost'), 'Dossier: gap categories visible');
+
+    // Attestation + OpenLineage
+    ok(r.attestation !== null, 'Attestation: present');
+    ok(r.attestation!.liveProof.mode === 'offline_fixture', 'Attestation: carries proof mode');
+    ok(r.attestation!.liveProof.gapCategories.includes('execution'), 'Attestation: carries proof gaps');
+    ok(r.attestation!.liveProof.consistent, 'Attestation: proof consistent');
+
+    ok(r.openLineageExport !== null, 'OpenLineage: present');
+    ok(r.openLineageExport!.facets.attestor_liveProof.mode === 'offline_fixture', 'OpenLineage: carries proof mode');
+    ok(r.openLineageExport!.facets.attestor_liveProof.gaps.includes('cost'), 'OpenLineage: carries proof gaps');
+    ok(r.dossier.reviewerSummary.find((s) => s.category === 'attestation')?.status === 'unsigned', 'Dossier: attestation reflects final artifact');
+    ok(r.dossier.reviewerSummary.find((s) => s.category === 'interop')?.status === 'exported', 'Dossier: interop reflects final export');
+
+    // Synthetic runtime observation should propagate coherently through the artifact chain.
+    const synthetic = runFinancialPipeline({
+      runId: 'lp-synth',
+      intent: COUNTERPARTY_INTENT,
+      candidateSql: COUNTERPARTY_SQL,
+      fixtures: [COUNTERPARTY_FIXTURE],
+      generatedReport: COUNTERPARTY_REPORT,
+      reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      liveProof: {
+        upstream: { live: true, provider: 'anthropic', model: 'claude-opus-4.6' },
+      },
+    });
+    ok(synthetic.liveProof.mode === 'live_model', 'Pipeline: propagates synthetic live-model evidence');
+    ok(synthetic.outputPack.liveProof!.mode === 'live_model', 'Pipeline: pack reflects synthetic live-model evidence');
+    ok(synthetic.manifest.liveProof.mode === 'live_model', 'Pipeline: manifest reflects synthetic live-model evidence');
+
+    console.log(`    Artifacts: pack=${r.outputPack.liveProof!.mode}, dossier=${lpSection.status}`);
+  }
+
+  // ═══ E2E PIPELINE ═══
+  console.log('\n  [E2E Pipeline]');
+  {
+    ok(runFinancialPipeline({ runId: 'e1', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT }).decision === 'pass', 'E2E: pass');
+    ok(runFinancialPipeline({ runId: 'e2', intent: COUNTERPARTY_INTENT, candidateSql: UNSAFE_SQL_WRITE, fixtures: [] }).decision === 'block', 'E2E: block');
+    ok(runFinancialPipeline({ runId: 'e3', intent: LIQUIDITY_INTENT, candidateSql: LIQUIDITY_SQL, fixtures: [LIQUIDITY_FIXTURE] }).decision === 'fail', 'E2E: fail');
+    ok(runFinancialPipeline({ runId: 'e4', intent: HIGH_MAT_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT }).decision === 'pending_approval', 'E2E: pending');
+    ok(runFinancialPipeline({ runId: 'e5', intent: HIGH_MAT_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT, approval: { status: 'approved', reviewerRole: 'o', reviewNote: 'y' } }).decision === 'pass', 'E2E: approved');
+    ok(runFinancialPipeline({ runId: 'e6', intent: COUNTERPARTY_INTENT, candidateSql: UNSAFE_SQL_INJECTION, fixtures: [] }).decision === 'block', 'E2E: injection');
+    ok(runFinancialPipeline({ runId: 'e7', intent: CONTROL_TOTAL_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT }).decision === 'fail', 'E2E: ct');
+
+    const full = runFinancialPipeline({ runId: 'e-full', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT });
+    ok(full.capsule!.authorityState === 'authorized', 'E2E: capsule authorized');
+    ok(full.receipt!.receiptStatus === 'issued', 'E2E: receipt issued');
+    ok(full.liveProof.mode === 'offline_fixture', 'E2E: live proof offline');
+
+    console.log('    E2E: all verified');
+  }
+
+  // ═══ BENCHMARK ═══
+  console.log('\n  [Benchmark]');
+  {
+    ok(runBenchmarkCorpus([
+      { scenario: { id: 'B1', description: 'Pass', category: 'pass', expectedFailureMode: null, expectedDecision: 'pass' }, input: { runId: 'b1', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT } },
+      { scenario: { id: 'B2', description: 'Block', category: 'sql_safety', expectedFailureMode: 'w', expectedDecision: 'block' }, input: { runId: 'b2', intent: COUNTERPARTY_INTENT, candidateSql: UNSAFE_SQL_WRITE, fixtures: [] } },
+    ]).passed === 2, 'Benchmark: 2/2');
+    console.log('    Benchmark: 2/2');
+  }
+
+  // ═══ LIVE READINESS ASSESSMENT v1.1 ═══
+  console.log('\n  [Live Readiness Assessment v1.1]');
+  {
+    const readiness = assessLiveReadiness();
+    ok(readiness.version === '1.1', 'Readiness: version 1.1');
+    ok(readiness.exerciseType === 'readiness_only', 'Readiness: readiness_only (no live credentials in test env)');
+    ok(readiness.availableModes.includes('offline_fixture'), 'Readiness: offline_fixture always available');
+    ok(readiness.blockedModes.length > 0, 'Readiness: some modes blocked (no credentials)');
+    ok(readiness.nextSteps.length > 0, 'Readiness: has actionable next steps');
+    ok(readiness.authorityImpact.includes('not deny authority'), 'Readiness: authority impact explains no denial');
+    ok(readiness.upstream.detail.length > 0, 'Readiness: upstream detail present');
+    ok(readiness.execution.detail.length > 0, 'Readiness: execution detail present');
+
+    console.log(`    Readiness: type=${readiness.exerciseType}, available=${readiness.availableModes.join(',')}, blocked=${readiness.blockedModes.length}, steps=${readiness.nextSteps.length}`);
+  }
+
+  // ═══ BOUNDED LIVE SQLITE EXECUTION ═══
+  console.log('\n  [Bounded Live SQLite Execution]');
+  {
+    const tempDir = mkdtempSync(join(tmpdir(), 'attestor-fin-live-'));
+    try {
+      const snapshot = materializeSqliteFixtureDatabases(tempDir, COUNTERPARTY_LIVE_DATABASES);
+      const execution = executeSqliteQuery(COUNTERPARTY_SQL, {
+        provider: 'sqlite',
+        bindings: snapshot.bindings,
+      });
+      ok(snapshot.sourceCount === 1, 'LiveSQLite: one source database materialized');
+      ok(execution.success, 'LiveSQLite: query executes successfully');
+      ok(execution.rowCount === 5, `LiveSQLite: expected 5 rows (got ${execution.rowCount})`);
+      ok(execution.columns.join(',') === 'counterparty_name,exposure_usd,credit_rating,sector', 'LiveSQLite: expected columns preserved');
+      console.log(`    LiveSQLite: rows=${execution.rowCount}, schemaHash=${execution.schemaHash}`);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  // ═══ LIVE PIPELINE MODES ═══
+  console.log('\n  [Live Pipeline Modes]');
+  {
+    const tempDir = mkdtempSync(join(tmpdir(), 'attestor-fin-pipeline-'));
+    try {
+      const snapshot = materializeSqliteFixtureDatabases(tempDir, COUNTERPARTY_LIVE_DATABASES);
+
+      const runtimeOnly = runFinancialPipeline({
+        runId: 'lp-runtime',
+        intent: COUNTERPARTY_INTENT,
+        candidateSql: COUNTERPARTY_SQL,
+        fixtures: [],
+        liveExecution: { provider: 'sqlite', bindings: snapshot.bindings },
+        generatedReport: COUNTERPARTY_REPORT,
+        reportContract: COUNTERPARTY_REPORT_CONTRACT,
+      });
+      ok(runtimeOnly.liveProof.mode === 'live_runtime', 'LivePipeline: runtime-only proof mode');
+      ok(runtimeOnly.liveProof.execution.live, 'LivePipeline: execution marked live');
+      ok(runtimeOnly.liveReadiness?.exerciseType === 'live_exercise', 'LivePipeline: runtime-only run marked live_exercise');
+      ok(runtimeOnly.snapshot.sourceKind === 'live_db', 'LivePipeline: snapshot sourceKind=live_db');
+      ok(runtimeOnly.outputPack.snapshot.sourceKind === 'live_db', 'LivePipeline: pack snapshot sourceKind=live_db');
+      ok(!!runtimeOnly.dossier.reviewerSummary.find((s) => s.category === 'snapshot')?.detail.includes('live_db source'), 'LivePipeline: dossier snapshot detail reflects live_db');
+
+      const hybrid = runFinancialPipeline({
+        runId: 'lp-hybrid',
+        intent: COUNTERPARTY_INTENT,
+        candidateSql: COUNTERPARTY_SQL,
+        fixtures: [],
+        liveExecution: { provider: 'sqlite', bindings: snapshot.bindings },
+        generatedReport: COUNTERPARTY_REPORT,
+        reportContract: COUNTERPARTY_REPORT_CONTRACT,
+        liveProof: {
+          upstream: {
+            provider: 'openai',
+            model: 'o3',
+            tokenUsage: { input: 128, output: 48 },
+            latencyMs: 42,
+            requestId: null,
+            live: true,
+          },
+        },
+      });
+      ok(hybrid.liveProof.mode === 'hybrid', 'LivePipeline: hybrid proof mode');
+      ok(hybrid.liveProof.gaps.length === 0, 'LivePipeline: hybrid has no proof gaps');
+      ok(hybrid.liveReadiness?.exerciseType === 'live_exercise', 'LivePipeline: hybrid run marked live_exercise');
+      ok(hybrid.decision === 'pass', 'LivePipeline: hybrid counterparty run passes');
+
+      const readiness = assessLiveReadiness({ exerciseType: 'live_exercise', liveDbAvailable: true });
+      ok(readiness.exerciseType === 'live_exercise', 'ReadinessOptions: exerciseType override applied');
+      ok(readiness.execution.liveDbAvailable, 'ReadinessOptions: liveDbAvailable override applied');
+      ok(readiness.availableModes.includes('live_runtime'), 'ReadinessOptions: live_runtime available when live DB present');
+
+      console.log(`    LivePipeline: runtime=${runtimeOnly.liveProof.mode}, hybrid=${hybrid.liveProof.mode}, readiness=${readiness.exerciseType}`);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  // ═══ LIVE READINESS ON PIPELINE RUN ═══
+  console.log('\n  [Live Readiness on Pipeline Run]');
+  {
+    const r = runFinancialPipeline({ runId: 'lr-1', intent: COUNTERPARTY_INTENT, candidateSql: COUNTERPARTY_SQL, fixtures: [COUNTERPARTY_FIXTURE], generatedReport: COUNTERPARTY_REPORT, reportContract: COUNTERPARTY_REPORT_CONTRACT });
+    ok(r.liveReadiness !== null, 'Pipeline: liveReadiness present');
+    ok(r.liveReadiness!.version === '1.1', 'Pipeline: readiness version 1.1');
+    ok(r.liveReadiness!.exerciseType === 'readiness_only', 'Pipeline: readiness_only');
+    ok(r.outputPack.liveProof!.readiness === 'readiness_only', 'Pack: readiness propagated');
+    ok(r.outputPack.liveProof!.availableModes !== null, 'Pack: availableModes propagated');
+    ok(r.dossier.reviewerSummary.find((s) => s.category === 'live_proof')!.detail.includes('readiness=readiness_only'), 'Dossier: readiness visible');
+
+    console.log(`    Pipeline readiness: ${r.liveReadiness!.exerciseType}, available modes in pack: ${r.outputPack.liveProof!.availableModes?.join(',')}`);
+  }
+
+  // ═══ REVIEWER SUMMARY ═══
+  console.log('\n  [Reviewer Summary]');
+  {
+    const proof = buildOfflineProof('test', 'replay');
+    const readiness = assessLiveReadiness();
+    const summary = buildLiveProofReviewerSummary(proof, readiness);
+    ok(summary.includes('Proof mode: offline_fixture'), 'Summary: includes mode');
+    ok(summary.includes('Gaps'), 'Summary: includes gaps');
+    ok(summary.includes('Readiness: readiness_only'), 'Summary: includes readiness');
+    ok(summary.includes('Next steps'), 'Summary: includes next steps');
+    ok(summary.includes('Blocked modes'), 'Summary: includes blocked modes');
+
+    console.log(`    Summary length: ${summary.length} chars`);
+  }
+
+  console.log(`\n  Financial Tests: ${passed} passed, 0 failed\n`);
+  return passed;
+}
+
+// Auto-run when executed directly
+runFinancialTests().then((passed) => {
+  process.exit(passed > 0 ? 0 : 1);
+}).catch((err) => {
+  console.error("Test suite crashed:", err);
+  process.exit(1);
+});
