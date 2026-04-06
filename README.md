@@ -285,9 +285,12 @@ What it does not prove yet:
 - Request-level tenant isolation: middleware active on all API routes, enforced when ATTESTOR_TENANT_KEYS set
 
 **Capability modules** (code exists, not yet activated as runtime policy):
-- Database-level multi-tenant isolation: RLS schema + migration SQL + per-request middleware available, not auto-activated on startup
-- Distributed service topology: docker-compose.yml for local multi-service dev, architecture types defined, not a shipped distributed runtime
-- Healthcare: eCQM measures are a governed first slice, not a CMS-certified production reporting path
+- OS keychain session manager (`keychain-session.ts`): @napi-rs/keyring abstraction + revocation + refresh, not yet wired into CLI runtime. Dependency not installed.
+- Redis auto-provision (`redis-auto.ts`): 3-tier resolution (URL → localhost → embedded), not yet used by API server startup. `redis-memory-server` not installed.
+- RLS auto-activation (`tenant-rls.ts` `autoActivateRLS()`): idempotent migration runner, not called on startup
+- Database-level multi-tenant isolation: RLS schema available, not auto-activated
+- QRDA III generator (`qrda3-generator.ts`): CMS-compatible XML generation, wired into healthcare CLI, not CMS-certified
+- Distributed service topology: Dockerfile + docker-compose.yml for local dev, architecture types defined, not a deployed multi-node runtime
 
 ## Not Yet Implemented
 
