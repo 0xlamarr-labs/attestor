@@ -1087,6 +1087,21 @@ async function runHealthcareDemo(): Promise<void> {
     }
   }
 
+  // CMS 2026 Schematron validation (real .sch file)
+  const { validateCmsSchematron } = await import('../filing/qrda3-cms-schematron.js');
+  const schResult = await validateCmsSchematron(qrda3Xml);
+  const schIcon = schResult.errorCount === 0 ? '✓' : '⚠';
+  console.log(`  CMS Sch: ${schIcon} ${schResult.errorCount} errors, ${schResult.warningCount} warnings (${schResult.scope})`);
+  if (schResult.errorCount > 0) {
+    // Show unique error descriptions
+    const unique = new Map<string, number>();
+    for (const e of schResult.errors) { unique.set(e.description, (unique.get(e.description) ?? 0) + 1); }
+    for (const [desc, count] of [...unique.entries()].slice(0, 5)) {
+      console.log(`    ✗ [${count}x] ${desc.slice(0, 120)}`);
+    }
+    if (unique.size > 5) console.log(`    ... and ${unique.size - 5} more rule types`);
+  }
+
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
   if (allExpected) {
     console.log(`  Certificate: ${scenarios[0].id} issued with signing key ${keyPair.fingerprint}`);

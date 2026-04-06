@@ -66,11 +66,11 @@ export function generateQrda3(
       'xmlns:sdtc': 'urn:hl7-org:sdtc',
     });
 
-  // Document header
+  // Document header — CMS 2026 IG conformance (CONF:4484-*)
   doc.ele('realmCode').att('code', 'US').up();
   doc.ele('typeId').att('root', '2.16.840.1.113883.1.3').att('extension', 'POCD_HD000040').up();
-  doc.ele('templateId').att('root', TEMPLATE_IDS.qrda3Report).up();
-  doc.ele('templateId').att('root', TEMPLATE_IDS.qrda3ReportCms).att('extension', '2024-05-01').up();
+  doc.ele('templateId').att('root', TEMPLATE_IDS.qrda3Report).att('extension', '2020-12-01').up();  // CONF:4484-17209 + 21319
+  doc.ele('templateId').att('root', TEMPLATE_IDS.qrda3ReportCms).att('extension', '2025-05-01').up();  // CMS 2026 IG (CONF:CMS_1/2/3)
   doc.ele('id').att('root', crypto.randomUUID()).up();
   doc.ele('code').att('code', '55184-6').att('codeSystem', '2.16.840.1.113883.6.1').att('displayName', 'Quality Reporting Document Architecture Calculated Summary Report').up();
   doc.ele('title').txt(`Attestor QRDA III Report — ${reportingYear}`).up();
@@ -78,16 +78,46 @@ export function generateQrda3(
   doc.ele('confidentialityCode').att('code', 'N').att('codeSystem', '2.16.840.1.113883.5.25').up();
   doc.ele('languageCode').att('code', 'en').up();
 
+  // recordTarget — required by CMS (CONF:4484-17212), nullFlavor for aggregate reporting
+  const rt = doc.ele('recordTarget');
+  rt.ele('patientRole').ele('id').att('nullFlavor', 'NA').up().up();
+
+  // author — required by CMS (CONF:4484-18156)
+  const author = doc.ele('author');
+  author.ele('time').att('value', now).up();
+  const assignedAuthor = author.ele('assignedAuthor');
+  assignedAuthor.ele('id').att('root', '2.16.840.1.113883.4.6').att('extension', options.performerNpi ?? '0000000000').up();
+  assignedAuthor.ele('assignedPerson').ele('name').ele('family').txt(options.performerName ?? 'Attestor').up().up().up();
+  assignedAuthor.ele('representedOrganization').ele('id').att('root', '2.16.840.1.113883.4.2').att('extension', '000000000').up().ele('name').txt(options.performerName ?? 'Attestor').up().up();  // CONF:4484-18163
+
+  // custodian — required by CMS (CONF:4484-17213)
+  const custodian = doc.ele('custodian');
+  custodian.ele('assignedCustodian').ele('representedCustodianOrganization').ele('id').att('root', crypto.randomUUID()).up().up().up();
+
+  // informationRecipient — required by CMS (CONF:CMS_7)
+  const infoRecip = doc.ele('informationRecipient');
+  const intendedRecip = infoRecip.ele('intendedRecipient');
+  intendedRecip.ele('id').att('root', '2.16.840.1.113883.3.249.7').att('extension', options.programName ?? 'MIPS_INDIV').up();
+
+  // documentationOf — required by CMS (CONF:5562-18170_C01)
+  const docOf = doc.ele('documentationOf').att('typeCode', 'DOC');
+  const serviceEvent = docOf.ele('serviceEvent').att('classCode', 'PCPR');
+  const performer = serviceEvent.ele('performer').att('typeCode', 'PRF');
+  performer.ele('time').ele('low').att('value', `${reportingYear}0101`).up().ele('high').att('value', `${reportingYear}1231`).up().up();
+  const assignedEntity = performer.ele('assignedEntity');
+  assignedEntity.ele('id').att('root', '2.16.840.1.113883.4.6').att('extension', options.performerNpi ?? '0000000000').up();
+  assignedEntity.ele('representedOrganization').ele('id').att('root', '2.16.840.1.113883.4.2').att('extension', '000000000').up().up();
+
   // Reporting period
   const component = doc.ele('component').ele('structuredBody');
 
   // Reporting parameters section
   const reportingSection = component.ele('component').ele('section');
-  reportingSection.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.2.1').up();
+  reportingSection.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.2.1').att('extension', '2020-12-01').up();  // CONF:4484-18098 + 26552
   reportingSection.ele('code').att('code', '55187-9').att('codeSystem', '2.16.840.1.113883.6.1').up();
   reportingSection.ele('title').txt('Reporting Parameters').up();
   const rpEntry = reportingSection.ele('entry').ele('act').att('classCode', 'ACT').att('moodCode', 'EVN');
-  rpEntry.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.3.8').up();
+  rpEntry.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.3.8').att('extension', '2020-12-01').up();  // CONF:4484-18098
   const rpTime = rpEntry.ele('effectiveTime');
   rpTime.ele('low').att('value', `${reportingYear}0101`).up();
   rpTime.ele('high').att('value', `${reportingYear}1231`).up();
@@ -95,13 +125,16 @@ export function generateQrda3(
   // Measure section
   for (const measure of measures) {
     const measureSection = component.ele('component').ele('section');
-    measureSection.ele('templateId').att('root', TEMPLATE_IDS.measureSection).up();
+    measureSection.ele('templateId').att('root', TEMPLATE_IDS.measureSection).att('extension', '2020-12-01').up();  // CONF:4484-17285 + 21171
+    measureSection.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.2.6').att('extension', '2025-05-01').up();  // CMS Measure Section (CONF:5562-21394_C01)
     measureSection.ele('code').att('code', '55186-1').att('codeSystem', '2.16.840.1.113883.6.1').up();
     measureSection.ele('title').txt(measure.title).up();
 
     const entry = measureSection.ele('entry');
     const organizer = entry.ele('organizer').att('classCode', 'CLUSTER').att('moodCode', 'EVN');
-    organizer.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.1').up();
+    organizer.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.1').att('extension', '2020-12-01').up();  // CONF:4484-17909 + 21170
+    organizer.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.17').att('extension', '2025-05-01').up();  // CMS Measure Reference (CONF:CMS_54/55/56)
+    organizer.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.25').att('extension', '2022-05-01').up();  // CMS Measure Data (CONF:CMS_59/60/61)
     organizer.ele('statusCode').att('code', 'completed').up();
 
     // Measure reference
@@ -114,20 +147,31 @@ export function generateQrda3(
       const popCode = POPULATION_CODES[pop.type];
       if (!popCode) continue;
 
+      // Measure Data component with CMS templates (CONF:4484-18425 + CONF:4526-18425_C01)
       const comp = organizer.ele('component');
-      const obs = comp.ele('observation').att('classCode', 'OBS').att('moodCode', 'EVN');
-      obs.ele('templateId').att('root', TEMPLATE_IDS.aggregateCount).up();
-      obs.ele('code').att('code', popCode.code).att('codeSystem', '2.16.840.1.113883.5.4').att('displayName', popCode.displayName).up();
-      obs.ele('statusCode').att('code', 'completed').up();
-      obs.ele('value').att('xsi:type', 'INT').att('value', String(pop.count)).up();
+      const measureDataObs = comp.ele('observation').att('classCode', 'OBS').att('moodCode', 'EVN');
+      measureDataObs.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.5').att('extension', '2016-09-01').up();  // Measure Data V3 (CONF:4484-18426)
+      measureDataObs.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.16').att('extension', '2025-05-01').up();  // CMS Measure Data V5 (CONF:5569-18426_C01)
+      measureDataObs.ele('code').att('code', 'ASSERTION').att('codeSystem', '2.16.840.1.113883.5.4').up();
+      measureDataObs.ele('statusCode').att('code', 'completed').up();
+      measureDataObs.ele('value').att('xsi:type', 'CD').att('code', popCode.code).att('codeSystem', '2.16.840.1.113883.5.4').att('displayName', popCode.displayName).up();
+      // Aggregate count as entryRelationship
+      const aggrER = measureDataObs.ele('entryRelationship').att('typeCode', 'SUBJ').att('inversionInd', 'true');
+      const aggrObs = aggrER.ele('observation').att('classCode', 'OBS').att('moodCode', 'EVN');
+      aggrObs.ele('templateId').att('root', TEMPLATE_IDS.aggregateCount).up();
+      aggrObs.ele('code').att('code', 'MSRAGG').att('codeSystem', '2.16.840.1.113883.5.4').att('displayName', 'rate aggregation').up();  // CONF:77-19508
+      aggrObs.ele('statusCode').att('code', 'completed').up();
+      aggrObs.ele('value').att('xsi:type', 'INT').att('value', String(pop.count)).up();
+      aggrObs.ele('methodCode').att('code', 'COUNT').att('codeSystem', '2.16.840.1.113883.5.84').att('displayName', 'Count').up();  // CONF:77-19509 + 77-19510
     }
 
     // Performance rate
     if (measure.rate !== null) {
       const prComp = organizer.ele('component');
       const prObs = prComp.ele('observation').att('classCode', 'OBS').att('moodCode', 'EVN');
-      prObs.ele('templateId').att('root', TEMPLATE_IDS.performanceRate).up();
+      prObs.ele('templateId').att('root', TEMPLATE_IDS.performanceRate).att('extension', '2020-12-01').up();  // CONF:4484-19650 + 21444
       prObs.ele('code').att('code', 'ASSERTION').att('codeSystem', '2.16.840.1.113883.5.4').up();
+      prObs.ele('reference').att('typeCode', 'REFR').ele('externalObservation').att('classCode', 'OBS').att('moodCode', 'EVN').ele('id').att('root', measure.measureId).up().up().up();  // CONF:4484-19651
       prObs.ele('statusCode').att('code', 'completed').up();
       prObs.ele('value').att('xsi:type', 'REAL').att('value', measure.rate.toFixed(6)).up();
     }

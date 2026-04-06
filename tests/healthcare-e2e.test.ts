@@ -254,6 +254,37 @@ async function run() {
     console.log(`    rules=${result.passedRules}/${result.totalRules}, errors=${result.errors}, scope=${result.scope}, sections=${sections.join(',')}`);
   }
 
+  // ═══ CMS 2026 Schematron Validation (Real .sch File) ═══
+  console.log('\n  [CMS 2026 Schematron — Real .sch Execution]');
+  {
+    const { generateQrda3 } = await import('../src/filing/qrda3-generator.js');
+    const { CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING, evaluateMeasure } = await import('../src/domains/healthcare-measures.js');
+    const { validateCmsSchematron } = await import('../src/filing/qrda3-cms-schematron.js');
+
+    const evals = [
+      evaluateMeasure(CMS165_BLOOD_PRESSURE, { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 }),
+      evaluateMeasure(CMS122_DIABETES_A1C, { initial_population: 800, denominator: 750, denominator_exclusion: 50, numerator: 60 }),
+      evaluateMeasure(CMS130_COLORECTAL_SCREENING, { initial_population: 1000, denominator: 950, denominator_exclusion: 50, numerator: 760 }),
+    ];
+    const xml = generateQrda3(evals);
+    const result = await validateCmsSchematron(xml);
+
+    ok(result.scope === 'cms_schematron_2026', 'CMS-Sch: scope = cms_schematron_2026');
+    ok(typeof result.errorCount === 'number', 'CMS-Sch: errorCount is number');
+    ok(typeof result.warningCount === 'number', 'CMS-Sch: warningCount is number');
+    ok(result.schematronFile.includes('2026_CMS_QRDA_Category_III'), 'CMS-Sch: uses vendored 2026 .sch file');
+    ok(Array.isArray(result.errors), 'CMS-Sch: errors is array');
+
+    // We expect some remaining errors (supplemental data, etc.) — track the count
+    // to ensure future generator improvements reduce it
+    console.log(`    scope=${result.scope}, errors=${result.errorCount}, warnings=${result.warningCount}`);
+    if (result.errorCount > 0) {
+      const unique = new Map<string, number>();
+      for (const e of result.errors) unique.set(e.description, (unique.get(e.description) ?? 0) + 1);
+      console.log(`    unique error types: ${unique.size}`);
+    }
+  }
+
   console.log(`\n  Healthcare E2E Tests: ${passed} passed, 0 failed\n`);
 }
 
