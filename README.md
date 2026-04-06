@@ -303,7 +303,7 @@ What it does not prove yet:
 
 ## Not Yet Implemented
 
-- ONC Cypress full-stack testing (current: QRDA III passes CMS 2026 Schematron plus custom Cypress-equivalent Layers 2-6 with zero errors. Not yet validated against the actual ONC Cypress stack — Cypress is a Ruby on Rails + MongoDB application with its own Schematron engine, measure bundle loading, and VSAC integration. Layer 7 VSAC value set validation still requires NLM credentials and is not implemented.)
+- ONC Cypress full-stack validation (current: ONC Cypress API client implemented and wired into healthcare CLI — env-gated on `CYPRESS_UMLS_USER` + `CYPRESS_UMLS_PASS`. Real API call to `cypressdemo.healthit.gov/qrda_validation/2026/III/CMS`. Requires free UMLS credentials from uts.nlm.nih.gov — ~5 business day approval. Not yet tested with live credentials. Layer 7 VSAC value set validation also requires UMLS and is not implemented.)
 
 ## Output Artifacts
 
@@ -349,6 +349,8 @@ What it does not prove yet:
 | `ATTESTOR_TENANT_KEYS` | Tenant API keys (`key:id:name,...`) for request-level isolation |
 | `REDIS_URL` | Redis URL for BullMQ async backend |
 | `ATTESTOR_ALLOW_LEGACY_API` | Set `true` to allow flat Ed25519 at `/api/v1/verify` (deprecated) |
+| `CYPRESS_UMLS_USER` | UMLS username for ONC Cypress API validation (free from uts.nlm.nih.gov) |
+| `CYPRESS_UMLS_PASS` | UMLS password for ONC Cypress API validation |
 
 ## Project Status
 

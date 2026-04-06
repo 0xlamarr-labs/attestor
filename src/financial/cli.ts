@@ -1113,6 +1113,21 @@ async function runHealthcareDemo(): Promise<void> {
     for (const e of layer.errors) console.log(`      ✗ ${e}`);
   }
 
+  // ONC Cypress API validation (env-gated — only when UMLS credentials available)
+  const { isCypressConfigured, validateViaCypressApi } = await import('../filing/cypress-api-client.js');
+  if (isCypressConfigured()) {
+    console.log(`  Submitting to ONC Cypress server...`);
+    const apiResult = await validateViaCypressApi(qrda3Xml);
+    const apiIcon = apiResult.valid ? '✓' : (apiResult.httpStatus === 0 ? '⊘' : '✗');
+    console.log(`  ONC Cypress: ${apiIcon} ${apiResult.errorCount} errors (${apiResult.scope}, HTTP ${apiResult.httpStatus})`);
+    if (!apiResult.valid && apiResult.errors.length > 0) {
+      for (const e of apiResult.errors.slice(0, 5)) console.log(`    - ${e.message.slice(0, 120)}`);
+      if (apiResult.errors.length > 5) console.log(`    ... and ${apiResult.errors.length - 5} more`);
+    }
+  } else {
+    console.log(`  ONC Cypress: ⊘ skipped (set CYPRESS_UMLS_USER + CYPRESS_UMLS_PASS for real ONC validation)`);
+  }
+
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
   if (allExpected) {
     console.log(`  Certificate: ${scenarios[0].id} issued with signing key ${keyPair.fingerprint}`);
