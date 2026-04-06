@@ -270,32 +270,31 @@ What it does not prove yet:
 
 **Shipped product paths** (integrated, tested, reachable through CLI/API):
 - Keyless-first signing in API (Sigstore pattern, per-request ephemeral keys + CA-issued certs)
-- PKI chain verification as **mandatory default** in CLI verify path (exit code 2 when chain absent, `--allow-legacy-verify` escape)
+- PKI chain verification as **mandatory default** in CLI verify path (exit code 2 when chain absent, `--allow-legacy-verify` escape). API verify path returns `verificationMode` and `deprecationNotice` when flat Ed25519 is used without trust chain.
 - Secure encrypted token store (AES-256-GCM) as default OIDC persistence for both read and write. Plaintext cache is not read by default. Legacy import: `ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1` (one-time). Plaintext write: `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1` (opt-in).
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
-- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output
+- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output + QRDA III structural self-validation
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
 - Redis production config used when REDIS_URL is set (BullMQ backend with production-grade connection config)
+- Split API/worker deployment: `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown
 
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
-- OIDC: encrypted local cache + refresh + device flow, not enterprise session management
-- PKI: keyless-first in API, chain verification default in CLI, not yet mandatory everywhere
-- Async: BullMQ when REDIS_URL set, in-process fallback, not yet Redis-default
+- PKI: keyless-first in API, mandatory in CLI, **deprecation-mode in API** (accepts flat Ed25519 with deprecation notice, not yet rejected). Not yet mandatory across all programmatic paths.
+- Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, rate limiting, or dead-letter queue.
 - Request-level tenant isolation: middleware active on all API routes, enforced when ATTESTOR_TENANT_KEYS set
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
+- QRDA III: CMS-compatible XML generation with structural self-validation (13 checks), not CMS Schematron-validated or Cypress-tested
 
 **Capability modules** (code exists, not yet fully productized):
-- QRDA III generator: CMS-compatible XML generation wired into healthcare CLI, not CMS-certified
-- Distributed service topology: Dockerfile + docker-compose.yml for local dev, not a deployed multi-node runtime
+- Horizontal multi-node scaling (current: single-node API + worker split, no load balancer or multi-instance coordination)
 
 ## Not Yet Implemented
 
-- PKI as the mandatory verifier path with deprecation timeline for flat Ed25519 (current: default with --allow-legacy-verify escape)
-- Distributed multi-node service deployment (current: local docker-compose + Dockerfile, not a deployed control plane)
-- CMS-certified healthcare reporting (current: QRDA III generation + FHIR MeasureReport, not Schematron-validated or Cypress-tested)
+- PKI as the mandatory verifier path across ALL surfaces including API (current: CLI=mandatory, API=deprecation-mode accepting flat Ed25519 with notice)
+- CMS-certified healthcare reporting (current: QRDA III generation + structural self-validation + FHIR MeasureReport, not Schematron-validated or Cypress-tested)
 
 ## Output Artifacts
 

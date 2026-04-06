@@ -373,12 +373,25 @@ app.post('/api/v1/verify', async (c) => {
     }
 
     // 4. Structured verification scope summary
+    const pkiVerified = certResult.overall === 'valid' && pkiBound;
+    const verificationMode = chainVerification ? 'pki' as const : 'legacy_ed25519' as const;
     const trustBinding = {
       certificateSignature: certResult.signatureValid && certResult.fingerprintConsistent,
       chainValid: chainVerification?.chainIntact ?? false,
       certificateBoundToLeaf: pkiBound,
-      pkiVerified: certResult.overall === 'valid' && pkiBound,
+      pkiVerified,
     };
+
+    // 5. Deprecation notice when legacy flat Ed25519 path is used
+    const deprecationNotice = verificationMode === 'legacy_ed25519'
+      ? 'Flat Ed25519 verification without PKI trust chain is deprecated. ' +
+        'Submit trustChain + caPublicKeyPem for full PKI-backed verification. ' +
+        'Legacy mode will be removed in a future version.'
+      : null;
+
+    if (verificationMode === 'legacy_ed25519') {
+      console.log(`[verify] Legacy flat Ed25519 verification used (no trust chain submitted)`);
+    }
 
     return c.json({
       signatureValid: certResult.signatureValid,
@@ -386,6 +399,8 @@ app.post('/api/v1/verify', async (c) => {
       schemaValid: certResult.schemaValid,
       overall: certResult.overall,
       explanation: certResult.explanation,
+      verificationMode,
+      deprecationNotice,
       chainVerification,
       trustBinding,
     });
@@ -590,6 +605,36 @@ app.get('/api/v1/pipeline/status/:jobId', async (c) => {
   });
 });
 
+// ─── Readiness Probe ───────────────────────────────────────────────────────
+// Distinct from /health: /ready signals "this instance can serve requests"
+// Used by orchestrators (Kubernetes, Railway, Compose healthcheck)
+
+app.get('/api/v1/ready', (c) => {
+  const checks: Record<string, boolean> = {};
+  let ready = true;
+
+  // 1. Async backend initialized (BullMQ or in-process fallback)
+  checks.asyncBackend = asyncBackendMode === 'bullmq' || asyncBackendMode === 'in_process';
+  if (!checks.asyncBackend) ready = false;
+
+  // 2. PKI initialized
+  checks.pki = pkiReady;
+  if (!checks.pki) ready = false;
+
+  // 3. Domain registry loaded
+  checks.domains = domainRegistry.listIds().length > 0;
+  if (!checks.domains) ready = false;
+
+  // 4. Redis was resolved at startup (state-based, not new probe)
+  if (asyncBackendMode === 'bullmq') {
+    checks.redis = redisMode !== 'unavailable' && redisMode !== 'none';
+    if (!checks.redis) ready = false;
+  }
+
+  const status = ready ? 200 : 503;
+  return c.json({ ready, checks, asyncBackendMode, redisMode }, status);
+});
+
 // ─── Server Start/Stop ──────────────────────────────────────────────────────
 
 export function startServer(port: number = 3700): { port: number; close: () => void } {
@@ -609,6 +654,16 @@ export { app };
 // Standalone mode: start server when run directly
 if (process.argv[1]?.endsWith('api-server.ts') || process.argv[1]?.endsWith('api-server.js')) {
   const port = parseInt(process.env.PORT ?? '3700', 10);
-  startServer(port);
+  const handle = startServer(port);
   console.log(`[attestor] API server running on port ${port}`);
+
+  // Graceful shutdown: drain connections on SIGTERM/SIGINT (container orchestration)
+  const shutdown = (signal: string) => {
+    console.log(`[attestor] ${signal} received — shutting down gracefully...`);
+    handle.close();
+    // Give in-flight requests 5s to complete, then force exit
+    setTimeout(() => { console.log('[attestor] Force exit after timeout'); process.exit(0); }, 5000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }

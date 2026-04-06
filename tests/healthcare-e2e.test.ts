@@ -120,6 +120,72 @@ async function run() {
     console.log(`    domains=${registry.listIds().join(',')}, totalClauses=${totalClauses}`);
   }
 
+  // ═══ QRDA III Structural Validation ═══
+  console.log('\n  [QRDA III Structural Validation]');
+  {
+    const { generateQrda3, validateQrda3Structure } = await import('../src/filing/qrda3-generator.js');
+    const {
+      CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING,
+      evaluateMeasure, toFhirMeasureReport,
+    } = await import('../src/domains/healthcare-measures.js');
+
+    // Evaluate the 3 CMS measures with test data
+    const eval165 = evaluateMeasure(CMS165_BLOOD_PRESSURE, { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 });
+    const eval122 = evaluateMeasure(CMS122_DIABETES_A1C, { initial_population: 800, denominator: 750, denominator_exclusion: 50, numerator: 60 });
+    const eval130 = evaluateMeasure(CMS130_COLORECTAL_SCREENING, { initial_population: 1000, denominator: 950, denominator_exclusion: 50, numerator: 760 });
+
+    // Generate QRDA III
+    const xml = generateQrda3([eval165, eval122, eval130], { reportingYear: '2026' });
+    ok(xml.length > 5000, 'QRDA3: generated substantial XML');
+
+    // Structural validation
+    const validation = validateQrda3Structure(xml, 3);
+    ok(validation.scope === 'structural_self_check', 'QRDA3: validation scope is structural_self_check');
+    ok(validation.valid, `QRDA3: structural validation passed (${validation.checks.length} checks)`);
+
+    // Verify individual structural checks
+    const checkNames = validation.checks.map(c => c.name);
+    ok(checkNames.includes('root_element'), 'QRDA3: ClinicalDocument root verified');
+    ok(checkNames.includes('template_qrda3'), 'QRDA3: QRDA III template ID verified');
+    ok(checkNames.includes('template_qrda3_cms'), 'QRDA3: CMS template ID verified');
+    ok(checkNames.includes('measure_count'), 'QRDA3: measure count verified');
+    ok(checkNames.includes('pop_ipp'), 'QRDA3: IPP population code verified');
+    ok(checkNames.includes('pop_denom'), 'QRDA3: DENOM population code verified');
+    ok(checkNames.includes('xml_closed'), 'QRDA3: XML properly closed');
+
+    // All checks should have passed
+    const failedChecks = validation.checks.filter(c => !c.passed);
+    ok(failedChecks.length === 0, `QRDA3: all ${validation.checks.length} checks passed`);
+
+    console.log(`    xml=${xml.length} chars, checks=${validation.checks.length} passed, scope=${validation.scope}`);
+  }
+
+  // ═══ FHIR MeasureReport Structure ═══
+  console.log('\n  [FHIR MeasureReport Structure]');
+  {
+    const { CMS165_BLOOD_PRESSURE, evaluateMeasure, toFhirMeasureReport } = await import('../src/domains/healthcare-measures.js');
+    const eval165 = evaluateMeasure(CMS165_BLOOD_PRESSURE, { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 });
+    const fhir = toFhirMeasureReport(eval165);
+
+    ok(fhir.resourceType === 'MeasureReport', 'FHIR: resourceType = MeasureReport');
+    ok(fhir.type === 'summary', 'FHIR: type = summary');
+    ok(fhir.measure.includes('CMS165v12'), 'FHIR: measure reference includes CMS165v12');
+    ok(fhir.period.start === '2026-01-01', 'FHIR: period start correct');
+    ok(fhir.period.end === '2026-12-31', 'FHIR: period end correct');
+    ok(fhir.group.length === 1, 'FHIR: one group present');
+    ok(fhir.group[0].population.length >= 3, 'FHIR: 3+ population entries');
+    ok(fhir.group[0].measureScore.value !== null, 'FHIR: measure score present');
+    ok(typeof fhir.group[0].measureScore.value === 'number', 'FHIR: measure score is number');
+
+    // Check population codes are present
+    const popCodes = fhir.group[0].population.map(p => p.code);
+    ok(popCodes.includes('initial_population'), 'FHIR: IPP population present');
+    ok(popCodes.includes('denominator'), 'FHIR: DENOM population present');
+    ok(popCodes.includes('numerator'), 'FHIR: NUMER population present');
+
+    console.log(`    resourceType=${fhir.resourceType}, populations=${popCodes.length}, score=${fhir.group[0].measureScore.value?.toFixed(4)}`);
+  }
+
   console.log(`\n  Healthcare E2E Tests: ${passed} passed, 0 failed\n`);
 }
 

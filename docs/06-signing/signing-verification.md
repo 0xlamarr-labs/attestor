@@ -52,9 +52,10 @@ PKI chain verification is now the **default** path in both CLI and API.
 - When PKI chain material is absent: **exit code 2** (`PKI_REQUIRED`) — verification impossible
 - Legacy flat Ed25519 override: `--allow-legacy-verify` or `ATTESTOR_ALLOW_LEGACY=true`
 
-**API verify behavior:**
+**API verify behavior (deprecation-mode):**
 - `/api/v1/verify` accepts `trustChain` + `caPublicKeyPem` alongside `certificate` + `publicKeyPem`
-- Validates chain integrity, issuer linkage, certificate-to-leaf binding, and expiry
+- When trust chain is provided: full PKI verification with chain integrity, issuer linkage, certificate-to-leaf binding, and expiry
+- When trust chain is absent: **still returns 200** but response includes `verificationMode: 'legacy_ed25519'` and a `deprecationNotice` warning that flat Ed25519 verification will be removed in a future version
 - Returns `chainVerification` + `trustBinding` summary
 
 **API issuance:**
@@ -62,10 +63,10 @@ PKI chain verification is now the **default** path in both CLI and API.
 - Every signed run uses per-request ephemeral keys with CA-issued short-lived certs
 
 **Current boundary:**
-- PKI is the default verifier path for both CLI and API
-- Legacy flat Ed25519 is available as an explicit escape hatch (deprecation planned)
-- No formal deprecation timeline yet (planned for v2.0)
-- Not yet mandatory across every programmatic kit issuance path
+- CLI: PKI is **mandatory** (exit code 2 without chain material, `--allow-legacy-verify` escape)
+- API: PKI is **deprecation-mode** (accepts flat Ed25519 but returns deprecation notice)
+- API issuance always generates PKI chain material, so the API verify deprecation path is only triggered by external callers submitting legacy certificates
+- Legacy flat Ed25519 will be removed in a future version (no formal timeline yet)
 
 ## 6-Dimensional Verification
 

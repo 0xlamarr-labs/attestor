@@ -1,10 +1,15 @@
-## Attestor Distributed Deployment — Local Development
+## Attestor Service Topology — Local Development
 ##
-## Starts: API server + BullMQ worker + PostgreSQL + Redis
+## Services:
+##   api    — Hono HTTP server (port 3700)
+##   worker — BullMQ pipeline worker (separate process)
+##   postgres — PostgreSQL 16 with RLS support
+##   redis  — Redis 7 for BullMQ job queue
+##
 ## Usage: docker compose up
 ##
-## This is for local development. For production, use Railway or
-## equivalent managed platform with the same service topology.
+## Production topology is the same service split — api and worker
+## connect to managed Redis and PostgreSQL via environment variables.
 
 services:
   api:
@@ -21,6 +26,23 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3700/api/v1/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker:
+    build: .
+    command: node dist/service/worker.js
+    environment:
+      REDIS_URL: redis://redis:6379
+      ATTESTOR_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine

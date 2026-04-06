@@ -166,7 +166,11 @@ async function run() {
       ok(v.fingerprintConsistent === true, 'Verify(real): fingerprint consistent');
       ok(v.schemaValid === true, 'Verify(real): schema valid');
       ok(v.overall === 'valid', 'Verify(real): overall = valid');
-      console.log(`    sig=${v.signatureValid}, fp=${v.fingerprintConsistent}, overall=${v.overall}`);
+      // PKI deprecation fields — this call has no trust chain, so legacy mode
+      ok(v.verificationMode === 'legacy_ed25519', 'Verify(real): verificationMode = legacy_ed25519');
+      ok(typeof v.deprecationNotice === 'string', 'Verify(real): deprecation notice present');
+      ok(v.deprecationNotice.includes('deprecated'), 'Verify(real): deprecation notice says deprecated');
+      console.log(`    sig=${v.signatureValid}, fp=${v.fingerprintConsistent}, overall=${v.overall}, mode=${v.verificationMode}`);
     }
 
     // ═══ VERIFY ENDPOINT — bad input ═══
@@ -268,7 +272,10 @@ async function run() {
       ok(pv.trustBinding.chainValid === true, 'PKI-Verify: chain valid in binding');
       ok(pv.trustBinding.certificateBoundToLeaf === true, 'PKI-Verify: bound to leaf');
       ok(pv.trustBinding.pkiVerified === true, 'PKI-Verify: fully PKI verified');
-      console.log(`    cert=${pv.overall}, chain=${pv.chainVerification.overall}, bound=${pv.chainVerification.pkiBound}, pkiVerified=${pv.trustBinding.pkiVerified}`);
+      // PKI mode — no deprecation
+      ok(pv.verificationMode === 'pki', 'PKI-Verify: verificationMode = pki');
+      ok(pv.deprecationNotice === null, 'PKI-Verify: no deprecation notice');
+      console.log(`    cert=${pv.overall}, chain=${pv.chainVerification.overall}, bound=${pv.chainVerification.pkiBound}, pkiVerified=${pv.trustBinding.pkiVerified}, mode=${pv.verificationMode}`);
     }
 
     // ═══ PKI LEAF MISMATCH DETECTION ═══
@@ -362,6 +369,19 @@ async function run() {
       const body = await res.json() as any;
       ok(body.error !== undefined, 'Pipeline(bad): error message');
       console.log(`    error handled: ${body.error}`);
+    }
+
+    // ═══ READINESS PROBE ═══
+    console.log('\n  [GET /api/v1/ready]');
+    {
+      const res = await fetch(`${BASE}/api/v1/ready`);
+      ok(res.status === 200, 'Ready: status 200');
+      const body = await res.json() as any;
+      ok(body.ready === true, 'Ready: ready = true');
+      ok(body.checks.asyncBackend === true, 'Ready: asyncBackend check passed');
+      ok(body.checks.pki === true, 'Ready: PKI check passed');
+      ok(body.checks.domains === true, 'Ready: domains check passed');
+      console.log(`    ready=${body.ready}, mode=${body.asyncBackendMode}, redis=${body.redisMode}`);
     }
 
     // ═══ 404 for unknown route ═══

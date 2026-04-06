@@ -135,3 +135,73 @@ export function generateQrda3(
 
   return doc.end({ prettyPrint: true });
 }
+
+// ─── Structural Self-Validation ─────────────────────────────────────────────
+// Checks required CDA elements exist in generated XML.
+// This is NOT CMS Schematron validation — it is a structural conformance check
+// that verifies our generator output meets minimum CDA/QRDA III requirements.
+
+export interface Qrda3ValidationResult {
+  valid: boolean;
+  checks: { name: string; passed: boolean; detail: string }[];
+  errors: string[];
+  /** Structural self-check only, not CMS Schematron or Cypress */
+  scope: 'structural_self_check';
+}
+
+/**
+ * Validate QRDA III XML structural conformance.
+ * Checks required CDA elements, template IDs, population codes, and rates.
+ */
+export function validateQrda3Structure(xml: string, expectedMeasureCount: number): Qrda3ValidationResult {
+  const checks: Qrda3ValidationResult['checks'] = [];
+  const errors: string[] = [];
+
+  function check(name: string, passed: boolean, detail: string) {
+    checks.push({ name, passed, detail });
+    if (!passed) errors.push(`${name}: ${detail}`);
+  }
+
+  // 1. Root CDA element
+  check('root_element', xml.includes('<ClinicalDocument'), 'ClinicalDocument root element');
+
+  // 2. Required CMS template IDs
+  check('template_qrda3', xml.includes(TEMPLATE_IDS.qrda3Report), `QRDA III Report template (${TEMPLATE_IDS.qrda3Report})`);
+  check('template_qrda3_cms', xml.includes(TEMPLATE_IDS.qrda3ReportCms), `QRDA III CMS template (${TEMPLATE_IDS.qrda3ReportCms})`);
+  check('template_measure_section', xml.includes(TEMPLATE_IDS.measureSection), `Measure section template (${TEMPLATE_IDS.measureSection})`);
+
+  // 3. Required header elements
+  check('realm_code', xml.includes('realmCode') && xml.includes('"US"'), 'US realm code');
+  check('type_id', xml.includes('typeId'), 'CDA type ID');
+  check('confidentiality', xml.includes('confidentialityCode'), 'Confidentiality code');
+  check('language', xml.includes('languageCode') && xml.includes('"en"'), 'Language code (en)');
+
+  // 4. Reporting parameters section
+  check('reporting_params', xml.includes('2.16.840.1.113883.10.20.17.2.1'), 'Reporting parameters section template');
+  check('reporting_period', xml.includes('<low') && xml.includes('<high'), 'Reporting period with low/high bounds');
+
+  // 5. Measure count — count measure section template occurrences
+  const measureSectionMatches = xml.match(new RegExp(TEMPLATE_IDS.measureSection.replace(/\./g, '\\.'), 'g'));
+  const actualMeasureCount = measureSectionMatches ? measureSectionMatches.length : 0;
+  check('measure_count', actualMeasureCount === expectedMeasureCount, `Expected ${expectedMeasureCount} measure sections, found ${actualMeasureCount}`);
+
+  // 6. Population aggregate counts present
+  check('aggregate_counts', xml.includes(TEMPLATE_IDS.aggregateCount), `Aggregate count observations (${TEMPLATE_IDS.aggregateCount})`);
+
+  // 7. Performance rates present
+  check('performance_rates', xml.includes(TEMPLATE_IDS.performanceRate), `Performance rate observations (${TEMPLATE_IDS.performanceRate})`);
+
+  // 8. Population codes — at least IPP and DENOM
+  check('pop_ipp', xml.includes('"IPP"'), 'Initial Population (IPP) code');
+  check('pop_denom', xml.includes('"DENOM"'), 'Denominator (DENOM) code');
+
+  // 9. Well-formed XML (basic check — ends properly)
+  check('xml_closed', xml.trimEnd().endsWith('</ClinicalDocument>'), 'XML document properly closed');
+
+  return {
+    valid: errors.length === 0,
+    checks,
+    errors,
+    scope: 'structural_self_check',
+  };
+}
