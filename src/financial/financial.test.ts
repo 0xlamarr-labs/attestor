@@ -650,7 +650,9 @@ export async function runFinancialTests(): Promise<number> {
 
     const { buildVerificationKit } = await import('../signing/bundle.js');
     const { generateKeyPair: genCertKey } = await import('../signing/keys.js');
+    const { generatePkiHierarchy } = await import('../signing/pki-chain.js');
     const certKeyPair = genCertKey();
+    const testPki = generatePkiHierarchy('Test CA', 'Test Signer', 'Test Reviewer');
 
     // Run a signed pipeline with both certificate signing key and reviewer key
     const kitReport = runFinancialPipeline({
@@ -675,9 +677,17 @@ export async function runFinancialTests(): Promise<number> {
     ok(kitReport.oversight.endorsement!.signature !== null, 'Kit: endorsement signed');
     ok(kitReport.oversight.endorsement!.runBinding !== null, 'Kit: endorsement run-bound');
 
-    // Build verification kit with reviewer public key
-    const kit = buildVerificationKit(kitReport, certKeyPair.publicKeyPem, reviewerKeyPair.publicKeyPem);
+    // Build verification kit with reviewer public key + PKI trust chain
+    const kit = buildVerificationKit(
+      kitReport, certKeyPair.publicKeyPem, reviewerKeyPair.publicKeyPem,
+      testPki.chains.signer, testPki.ca.keyPair.publicKeyPem,
+    );
     ok(kit !== null, 'Kit: built successfully');
+
+    // Kit carries PKI material
+    ok(kit!.trustChain !== null, 'Kit: trustChain present');
+    ok(kit!.caPublicKeyPem !== null, 'Kit: caPublicKeyPem present');
+    ok(kit!.trustChain!.type === 'attestor.trust_chain.v1', 'Kit: trustChain type correct');
 
     // Kit carries reviewer material
     ok(kit!.reviewerEndorsement !== null, 'Kit: reviewerEndorsement present');

@@ -815,8 +815,11 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     console.log(`    Fingerprint: ${verification.fingerprintConsistent ? '✓ consistent' : '✗ MISMATCH'}`);
     console.log(`    Overall:     ${verification.overall === 'valid' ? '✓ VALID' : '✗ ' + verification.overall.toUpperCase()}`);
 
-    // Step 7: Build verification kit (includes reviewer endorsement when reviewer key is available)
-    const kit = buildVerificationKit(report, keyPair.publicKeyPem, reviewerKeyPair?.publicKeyPem ?? null);
+    // Step 7: Build verification kit with PKI trust chain (self-contained portable proof)
+    const kit = buildVerificationKit(
+      report, keyPair.publicKeyPem, reviewerKeyPair?.publicKeyPem ?? null,
+      pkiHierarchy.chains.signer, pkiHierarchy.ca.keyPair.publicKeyPem,
+    );
 
     // Step 8: Persist artifacts
     // Run-unique proof directory: scenario + timestamp + run ID prefix (no collision, no stale mixing)

@@ -279,31 +279,31 @@ What it does not prove yet:
 
 **Shipped product paths** (integrated, tested, reachable through CLI/API):
 - Keyless-first signing in API (Sigstore pattern, per-request ephemeral keys + CA-issued certs)
-- PKI chain verification as **mandatory default** in CLI verify path (exit code 2 when chain absent, `--allow-legacy-verify` escape). API verify path returns `verificationMode` and `deprecationNotice` when flat Ed25519 is used without trust chain.
+- PKI chain verification as **mandatory** across CLI and API. CLI: exit code 2 without chain (`--allow-legacy-verify` escape). API: 422 rejection without chain (`ATTESTOR_ALLOW_LEGACY_API=true` escape). `VerificationKit` now self-contains `trustChain` + `caPublicKeyPem`.
 - Secure encrypted token store (AES-256-GCM) as default OIDC persistence for both read and write. Plaintext cache is not read by default. Legacy import: `ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1` (one-time). Plaintext write: `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1` (opt-in).
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
-- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output + QRDA III structural self-validation
+- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output (schema-validated via `@solarahealth/fhir-r4`) + QRDA III structural self-validation
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
 - Redis async backend with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis → in-process fallback). BullMQ active when any Redis tier resolves.
 - Split API/worker deployment: `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown
 
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
-- PKI: keyless-first in API, mandatory in CLI, **deprecation-mode in API** (accepts flat Ed25519 with deprecation notice, not yet rejected). Not yet mandatory across all programmatic paths.
+- PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
 - Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, rate limiting, or dead-letter queue.
 - Request-level tenant isolation: middleware active on all API routes, enforced when ATTESTOR_TENANT_KEYS set
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
 - QRDA III: CMS-compatible XML generation with structural self-validation (16 checks), not CMS Schematron-validated or Cypress-tested
+- FHIR MeasureReport: schema-validated against FHIR R4 StructureDefinition (`@solarahealth/fhir-r4` Zod). Structural validation only, not terminology/FHIRPath conformance.
 
 **Capability modules** (code exists, not yet fully productized):
 - Horizontal multi-node scaling (current: single-node API + worker split, no load balancer or multi-instance coordination)
 
 ## Not Yet Implemented
 
-- PKI as the mandatory verifier path across ALL surfaces including API (current: CLI=mandatory, API=deprecation-mode accepting flat Ed25519 with notice)
-- CMS-certified healthcare reporting (current: QRDA III generation + structural self-validation + FHIR MeasureReport, not Schematron-validated or Cypress-tested)
+- CMS-certified healthcare reporting (current: QRDA III generation + structural self-validation + FHIR R4 schema-validated MeasureReport, not Schematron-validated or Cypress-tested). Next step: saxon-js Schematron pipeline with vendored CMS 2026 rules.
 
 ## Output Artifacts
 
@@ -348,6 +348,7 @@ What it does not prove yet:
 | `OIDC_CLIENT_ID` | OIDC client ID for device flow |
 | `ATTESTOR_TENANT_KEYS` | Tenant API keys (`key:id:name,...`) for request-level isolation |
 | `REDIS_URL` | Redis URL for BullMQ async backend |
+| `ATTESTOR_ALLOW_LEGACY_API` | Set `true` to allow flat Ed25519 at `/api/v1/verify` (deprecated) |
 
 ## Project Status
 
@@ -355,7 +356,7 @@ What it does not prove yet:
 |---|---|
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
-| Core verification gate | 554 tests (`npm test`: 458 financial + 96 signing) |
-| Expanded verification surface | 781 tests across 6 suites: 554 unit + 106 live API + 43 live PostgreSQL + 38 connector/filing + 40 healthcare E2E, plus env-gated live Snowflake |
+| Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
+| Expanded verification surface | 789 tests across 6 suites: 557 unit + 102 live API + 43 live PostgreSQL + 38 connector/filing + 49 healthcare E2E, plus env-gated live Snowflake |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

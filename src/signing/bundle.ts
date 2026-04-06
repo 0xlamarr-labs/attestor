@@ -13,6 +13,7 @@ import type { AttestationCertificate } from './certificate.js';
 import type { CertificateVerification } from './certificate.js';
 import { verifyCertificate } from './certificate.js';
 import { verifyReviewerEndorsement } from './reviewer-endorsement.js';
+import type { TrustChain } from './pki-chain.js';
 
 // ─── Authority Bundle ────────────────────────────────────────────────────────
 
@@ -190,6 +191,11 @@ export interface VerificationKit {
   bundle: AuthorityBundle;
   signerPublicKeyPem: string;
 
+  /** PKI trust chain (CA + leaf certificates) for full chain verification. Null when PKI not available. */
+  trustChain: TrustChain | null;
+  /** CA public key PEM for independent trust chain verification. Null when PKI not available. */
+  caPublicKeyPem: string | null;
+
   /** Reviewer endorsement material for independent verification (null when no endorsement). */
   reviewerEndorsement: ReviewerEndorsement | null;
   /** Reviewer's public key PEM for independent endorsement verification (null when unsigned). */
@@ -254,6 +260,8 @@ export function buildVerificationKit(
   report: FinancialRunReport,
   publicKeyPem: string,
   reviewerPublicKeyPem?: string | null,
+  trustChain?: TrustChain | null,
+  caPublicKeyPem?: string | null,
 ): VerificationKit | null {
   if (!report.certificate) return null;
 
@@ -269,6 +277,8 @@ export function buildVerificationKit(
     certificate: report.certificate,
     bundle,
     signerPublicKeyPem: publicKeyPem,
+    trustChain: trustChain ?? null,
+    caPublicKeyPem: caPublicKeyPem ?? null,
     reviewerEndorsement: endorsement,
     reviewerPublicKeyPem: reviewerPublicKeyPem ?? null,
     verification,

@@ -151,26 +151,21 @@ async function run() {
       console.log(`    cert=${fullCert.certificateId}, chain: CA=${body.trustChain.ca.name}, leaf=${body.trustChain.leaf.subject}`);
     }
 
-    // ═══ VERIFY ENDPOINT — real end-to-end certificate verification ═══
-    console.log('\n  [POST /api/v1/verify — REAL certificate E2E]');
+    // ═══ VERIFY ENDPOINT — PKI mandatory: flat Ed25519 rejected with 422 ═══
+    console.log('\n  [POST /api/v1/verify — flat Ed25519 rejected (PKI mandatory)]');
     {
-      // Use the FULL certificate from the pipeline run
+      // Submit WITHOUT trust chain — should be rejected with 422
       const verifyRes = await fetch(`${BASE}/api/v1/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ certificate: fullCert, publicKeyPem: savedPubKey }),
       });
-      ok(verifyRes.status === 200, 'Verify(real): status 200');
+      ok(verifyRes.status === 422, 'Verify(flat): status 422 (PKI required)');
       const v = await verifyRes.json() as any;
-      ok(v.signatureValid === true, 'Verify(real): signature VALID');
-      ok(v.fingerprintConsistent === true, 'Verify(real): fingerprint consistent');
-      ok(v.schemaValid === true, 'Verify(real): schema valid');
-      ok(v.overall === 'valid', 'Verify(real): overall = valid');
-      // PKI deprecation fields — this call has no trust chain, so legacy mode
-      ok(v.verificationMode === 'legacy_ed25519', 'Verify(real): verificationMode = legacy_ed25519');
-      ok(typeof v.deprecationNotice === 'string', 'Verify(real): deprecation notice present');
-      ok(v.deprecationNotice.includes('deprecated'), 'Verify(real): deprecation notice says deprecated');
-      console.log(`    sig=${v.signatureValid}, fp=${v.fingerprintConsistent}, overall=${v.overall}, mode=${v.verificationMode}`);
+      ok(v.error.includes('PKI trust chain required'), 'Verify(flat): error says PKI required');
+      ok(v.hint !== undefined, 'Verify(flat): hint present');
+      ok(v.legacyEscape !== undefined, 'Verify(flat): legacy escape documented');
+      console.log(`    status=422, error=${v.error}`);
     }
 
     // ═══ VERIFY ENDPOINT — bad input ═══

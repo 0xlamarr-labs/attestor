@@ -245,7 +245,11 @@ app.post('/api/v1/pipeline/run', async (c) => {
 
     let kit = null;
     if (keyPair && report.certificate) {
-      kit = buildVerificationKit(report, keyPair.publicKeyPem);
+      kit = buildVerificationKit(
+        report, keyPair.publicKeyPem, undefined,
+        keylessPair?.signer.trustChain ?? null,
+        keylessPair?.signer.caPublicKeyPem ?? null,
+      );
     }
 
     return c.json({
@@ -338,13 +342,25 @@ app.post('/api/v1/verify', async (c) => {
       return c.json({ error: 'certificate and publicKeyPem are required' }, 400);
     }
 
+    // PKI mandatory gate: reject flat Ed25519 unless legacy escape is set
+    const allowLegacyApi = process.env.ATTESTOR_ALLOW_LEGACY_API === 'true';
+    const hasPkiMaterial = trustChain && trustChain.ca && trustChain.leaf && caPublicKeyPem;
+    if (!hasPkiMaterial && !allowLegacyApi) {
+      console.log(`[verify] Rejected: no PKI chain material submitted`);
+      return c.json({
+        error: 'PKI trust chain required for verification.',
+        hint: 'Submit trustChain and caPublicKeyPem alongside certificate and publicKeyPem.',
+        legacyEscape: 'Set ATTESTOR_ALLOW_LEGACY_API=true to allow flat Ed25519 verification (deprecated).',
+      }, 422);
+    }
+
     // 1. Verify certificate signature
     const certResult = verifyCertificate(certificate, publicKeyPem);
 
     // 2. Verify PKI trust chain if provided
     let chainVerification = null;
     let pkiBound = false;
-    if (trustChain && trustChain.ca && trustChain.leaf && caPublicKeyPem) {
+    if (hasPkiMaterial) {
       const chainResult = verifyTrustChain(trustChain, caPublicKeyPem);
 
       // 3. CRITICAL: Bind certificate to chain leaf

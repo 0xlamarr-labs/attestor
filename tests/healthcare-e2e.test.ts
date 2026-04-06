@@ -186,6 +186,31 @@ async function run() {
     console.log(`    resourceType=${fhir.resourceType}, populations=${popCodes.length}, score=${fhir.group[0].measureScore.value?.toFixed(4)}`);
   }
 
+  // ═══ FHIR MeasureReport Schema Validation ═══
+  console.log('\n  [FHIR MeasureReport Schema Validation]');
+  {
+    const { CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING, evaluateMeasure, toFhirMeasureReport } = await import('../src/domains/healthcare-measures.js');
+    const { validateFhirMeasureReport } = await import('../src/domains/fhir-validator.js');
+
+    // Validate all 3 CMS measures
+    const measures = [
+      { def: CMS165_BLOOD_PRESSURE, counts: { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 } },
+      { def: CMS122_DIABETES_A1C, counts: { initial_population: 800, denominator: 750, denominator_exclusion: 50, numerator: 60 } },
+      { def: CMS130_COLORECTAL_SCREENING, counts: { initial_population: 1000, denominator: 950, denominator_exclusion: 50, numerator: 760 } },
+    ];
+
+    for (const m of measures) {
+      const evaluation = evaluateMeasure(m.def, m.counts);
+      const fhir = toFhirMeasureReport(evaluation);
+      const result = await validateFhirMeasureReport(fhir);
+
+      ok(result.scope === 'fhir_r4_schema', `FHIR-V(${m.def.measureId}): scope = fhir_r4_schema`);
+      ok(result.resourceType === 'MeasureReport', `FHIR-V(${m.def.measureId}): resourceType = MeasureReport`);
+      ok(result.valid, `FHIR-V(${m.def.measureId}): valid (${result.errors.length} errors)`);
+      console.log(`    ${m.def.measureId}: valid=${result.valid}, errors=${result.errors.length}, scope=${result.scope}`);
+    }
+  }
+
   console.log(`\n  Healthcare E2E Tests: ${passed} passed, 0 failed\n`);
 }
 
