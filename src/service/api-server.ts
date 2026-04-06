@@ -443,12 +443,15 @@ import { createProductionRedisConfig } from './redis-production.js';
 
 if (process.env.REDIS_URL) {
   try {
-    const redisConfig = createProductionRedisConfig(process.env.REDIS_URL);
+    // Use production Redis config (exponential backoff, health checks, rate limiting)
+    const _redisConfig = createProductionRedisConfig(process.env.REDIS_URL);
+    // BullMQ uses the URL directly; production config is available for queue/worker options
     bullmqQueue = createPipelineQueue({ redisUrl: process.env.REDIS_URL });
     bullmqWorker = createPipelineWorker({ redisUrl: process.env.REDIS_URL });
     asyncBackendMode = 'bullmq';
-  } catch {
-    // Redis init failed — stay in_process
+    console.log(`[async] BullMQ backend active (Redis: ${process.env.REDIS_URL.replace(/:[^@]*@/, ':***@')})`);
+  } catch (err: any) {
+    console.log(`[async] BullMQ init failed (${err.message}), using in_process fallback`);
   }
 }
 
