@@ -28,8 +28,8 @@ interface KeychainBackend {
 /** Try native OS keychain via @napi-rs/keyring */
 async function tryNativeKeychain(): Promise<KeychainBackend | null> {
   try {
-    const keyring = await (Function('return import("@napi-rs/keyring")')() as Promise<any>);
-    const Entry = keyring.Entry ?? keyring.default?.Entry;
+    const keyring = await import('@napi-rs/keyring');
+    const Entry = keyring.Entry ?? (keyring as any).default?.Entry;
     if (!Entry) return null;
 
     return {

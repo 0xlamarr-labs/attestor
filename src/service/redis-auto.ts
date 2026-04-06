@@ -30,11 +30,12 @@ export interface RedisResolution {
 export async function resolveRedis(): Promise<RedisResolution> {
   // Tier 1: REDIS_URL
   if (process.env.REDIS_URL) {
+    let t1Conn: IORedis | null = null;
     try {
       const url = new URL(process.env.REDIS_URL);
       const host = url.hostname;
       const port = parseInt(url.port || '6379', 10);
-      const conn = new IORedis({
+      t1Conn = new IORedis({
         host, port,
         password: url.password || undefined,
         maxRetriesPerRequest: null,
@@ -42,54 +43,81 @@ export async function resolveRedis(): Promise<RedisResolution> {
         connectTimeout: 2000,
         retryStrategy: () => null,
       });
+      t1Conn.on('error', () => {}); // Suppress unhandled error events
       await Promise.race([
-        conn.connect().then(() => conn.ping()),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        t1Conn.connect().then(() => t1Conn!.ping()),
+        new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error('timeout')), 3000);
+          if (typeof t.unref === 'function') t.unref();
+        }),
       ]);
-      return { connection: conn, mode: 'external', host, port };
-    } catch { /* fall through */ }
+      return { connection: t1Conn, mode: 'external', host, port };
+    } catch {
+      try { t1Conn?.disconnect(); } catch {}
+    }
   }
 
   // Tier 2: localhost:6379 (fast probe with 1s timeout)
-  try {
-    const conn = new IORedis({
-      host: '127.0.0.1', port: 6379,
-      maxRetriesPerRequest: null,
-      lazyConnect: true,
-      connectTimeout: 1000,
-      retryStrategy: () => null, // no retries — fail fast
-    });
-    await Promise.race([
-      conn.connect().then(() => conn.ping()),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500)),
-    ]);
-    return { connection: conn, mode: 'localhost', host: '127.0.0.1', port: 6379 };
-  } catch {
-    // localhost Redis not available — fall through
+  {
+    let probeConn: IORedis | null = null;
+    try {
+      probeConn = new IORedis({
+        host: '127.0.0.1', port: 6379,
+        maxRetriesPerRequest: null,
+        lazyConnect: true,
+        connectTimeout: 1000,
+        retryStrategy: () => null,
+      });
+      // Suppress unhandled error events from ioredis (ECONNREFUSED, etc.)
+      probeConn.on('error', () => {});
+      await Promise.race([
+        probeConn.connect().then(() => probeConn!.ping()),
+        new Promise<never>((_, reject) => {
+          const t = setTimeout(() => reject(new Error('timeout')), 1500);
+          if (typeof t.unref === 'function') t.unref();
+        }),
+      ]);
+      return { connection: probeConn, mode: 'localhost' as const, host: '127.0.0.1', port: 6379 };
+    } catch {
+      try { probeConn?.disconnect(); } catch {}
+    }
   }
 
-  // Tier 3: embedded redis-memory-server
+  // Tier 3: embedded redis-memory-server (with 10s timeout for first-run binary download)
+  let embeddedServer: any = null;
   try {
-    const rms = await (Function('return import("redis-memory-server")')() as Promise<any>);
-    const RedisMemoryServer = rms.RedisMemoryServer ?? rms.default?.RedisMemoryServer;
-    const server = new RedisMemoryServer();
-    const host = await server.getHost();
-    const port = await server.getPort();
+    const rms = await import('redis-memory-server');
+    const RedisMemoryServer = rms.RedisMemoryServer ?? (rms as any).default?.RedisMemoryServer;
+    embeddedServer = new RedisMemoryServer();
+    const startResult = await Promise.race([
+      (async () => { const h = await embeddedServer.getHost(); const p = await embeddedServer.getPort(); return { host: h, port: p }; })(),
+      new Promise<never>((_, reject) => {
+        const t = setTimeout(() => reject(new Error('embedded Redis startup timeout (10s)')), 10000);
+        if (typeof t.unref === 'function') t.unref();
+      }),
+    ]);
+    const { host, port } = startResult;
     const conn = new IORedis({
       host, port,
       maxRetriesPerRequest: null,
       lazyConnect: true,
     });
+    conn.on('error', () => {}); // Suppress unhandled error events
     await conn.connect();
     await conn.ping();
     console.log(`[redis] Embedded Redis started on ${host}:${port} (dev mode — not for production)`);
 
     // Cleanup on process exit
-    process.on('SIGTERM', async () => { try { await server.stop(); } catch {} });
-    process.on('SIGINT', async () => { try { await server.stop(); } catch {} });
+    const cleanup = async () => { try { await embeddedServer.stop(); } catch {} };
+    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', cleanup);
 
     return { connection: conn, mode: 'embedded', host, port };
   } catch (err: any) {
+    // Clean up embedded server if it was partially started
+    if (embeddedServer) {
+      try { await embeddedServer.stop(); } catch {}
+    }
     throw new Error(
       `Redis required but unavailable.\n` +
       `  Tried: REDIS_URL (not set), localhost:6379 (not running), embedded (failed: ${err.message})\n` +

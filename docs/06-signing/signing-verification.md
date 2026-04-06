@@ -43,16 +43,29 @@ A product-proof run emits a self-contained verification kit:
 | `public-key.pem` | Runtime signer public key |
 | `reviewer-public.pem` | Reviewer signer public key (when endorsement is signed) |
 
-## API PKI Verification First Slice
+## PKI Verification
 
-The HTTP API can now issue PKI-backed signing material and validate a provided JSON trust chain alongside a certificate.
+PKI chain verification is now the **default** path in both CLI and API.
 
-Current boundary:
+**CLI verify behavior:**
+- When PKI chain material is present in a kit: full CA → leaf → certificate binding verification
+- When PKI chain material is absent: **exit code 2** (`PKI_REQUIRED`) — verification impossible
+- Legacy flat Ed25519 override: `--allow-legacy-verify` or `ATTESTOR_ALLOW_LEGACY=true`
 
-- API issuance can return `trustChain` + `caPublicKeyPem`.
-- `/api/v1/verify` can validate chain integrity, issuer linkage, and expiry.
-- The default portable verifier contract for the CLI still centers on `certificate/kit + signer public key`.
-- PKI is not yet the default verification path across every CLI and kit workflow.
+**API verify behavior:**
+- `/api/v1/verify` accepts `trustChain` + `caPublicKeyPem` alongside `certificate` + `publicKeyPem`
+- Validates chain integrity, issuer linkage, certificate-to-leaf binding, and expiry
+- Returns `chainVerification` + `trustBinding` summary
+
+**API issuance:**
+- `POST /api/v1/pipeline/run` with `sign=true` returns keyless-first signed certificate + trust chain + CA public key
+- Every signed run uses per-request ephemeral keys with CA-issued short-lived certs
+
+**Current boundary:**
+- PKI is the default verifier path for both CLI and API
+- Legacy flat Ed25519 is available as an explicit escape hatch (deprecation planned)
+- No formal deprecation timeline yet (planned for v2.0)
+- Not yet mandatory across every programmatic kit issuance path
 
 ## 6-Dimensional Verification
 

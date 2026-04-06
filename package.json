@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.12",
+    "@napi-rs/keyring": "^1.2.0",
     "@types/node": "^22.0.0",
     "bullmq": "^5.73.0",
     "dotenv": "^17.0.0",
@@ -37,6 +38,7 @@
     "openai": "^4.77.3",
     "openid-client": "^6.8.2",
     "pg": "^8.20.0",
+    "redis-memory-server": "^0.16.0",
     "snowflake-sdk": "^2.3.6",
     "typescript": "^5.7.3",
     "xmlbuilder2": "^4.0.3"

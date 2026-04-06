@@ -270,7 +270,7 @@ What it does not prove yet:
 
 **Shipped product paths** (integrated, tested, reachable through CLI/API):
 - Keyless-first signing in API (Sigstore pattern, per-request ephemeral keys + CA-issued certs)
-- PKI chain verification as default in CLI verify path (fallback warning when chain material absent)
+- PKI chain verification as **mandatory default** in CLI verify path (exit code 2 when chain absent, `--allow-legacy-verify` escape)
 - Secure encrypted token store (AES-256-GCM) as default OIDC persistence for both read and write. Plaintext cache is not read by default. Legacy import: `ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1` (one-time). Plaintext write: `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1` (opt-in).
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
 - Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output
@@ -283,8 +283,8 @@ What it does not prove yet:
 - PKI: keyless-first in API, chain verification default in CLI, not yet mandatory everywhere
 - Async: BullMQ when REDIS_URL set, in-process fallback, not yet Redis-default
 - Request-level tenant isolation: middleware active on all API routes, enforced when ATTESTOR_TENANT_KEYS set
-- OIDC session: keychain-session wired into CLI prove (OS keychain when @napi-rs/keyring installed, encrypted-file fallback otherwise)
-- Redis async: 3-tier auto-resolution wired into API startup (REDIS_URL → localhost → embedded → in_process fallback)
+- OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
+- Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
 
 **Capability modules** (code exists, not yet fully productized):

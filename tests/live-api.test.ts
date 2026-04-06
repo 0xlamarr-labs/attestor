@@ -376,6 +376,8 @@ async function run() {
   } finally {
     serverHandle.close();
     console.log('  Server stopped.\n');
+    // Force exit: embedded Redis / BullMQ connections keep the event loop alive
+    process.exit(0);
   }
 }
 
