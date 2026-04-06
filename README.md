@@ -258,7 +258,7 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 - Self-contained proof run via `scripts/real-db-proof.ts`
 - Execution provider and execution-context evidence in bundle and kit
 - Schema/data-state attestation: schema fingerprint, sentinel data, attestation hash in the Postgres prove path
-- API response distinguishes `schema_attestation_summary` vs `execution_context_only` scope
+- API responses distinguish `schema_attestation_full`, `schema_attestation_connector`, and `execution_context_only` evidence scopes
 
 What it does not prove yet:
 
