@@ -120,9 +120,14 @@ export function evaluateMeasure(
     count: populationData[p.type] ?? 0,
   }));
 
+  // CMS performance rate formula: (NUMER - NUMEX) / (DENOM - DENEX - DENEXCEP)
   const denominator = populationData['denominator'] ?? 0;
   const numerator = populationData['numerator'] ?? 0;
-  const rate = denominator > 0 ? numerator / denominator : null;
+  const numeratorExclusion = populationData['numerator_exclusion'] ?? 0;
+  const denominatorExclusion = populationData['denominator_exclusion'] ?? 0;
+  const denominatorException = populationData['denominator_exception'] ?? 0;
+  const effectiveDenom = denominator - denominatorExclusion - denominatorException;
+  const rate = effectiveDenom > 0 ? (numerator - numeratorExclusion) / effectiveDenom : null;
 
   // Governance checks
   const checks: GovernanceCheck[] = [

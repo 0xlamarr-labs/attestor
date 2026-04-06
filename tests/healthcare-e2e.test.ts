@@ -285,6 +285,43 @@ async function run() {
     }
   }
 
+  // ═══ Cypress-Equivalent Validators (Layers 2-6) ═══
+  console.log('\n  [Cypress-Equivalent Validators — Layers 2-6]');
+  {
+    const { generateQrda3 } = await import('../src/filing/qrda3-generator.js');
+    const { CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING, evaluateMeasure } = await import('../src/domains/healthcare-measures.js');
+    const { validateCypressLayers } = await import('../src/filing/qrda3-cypress-validators.js');
+
+    const evals = [
+      evaluateMeasure(CMS165_BLOOD_PRESSURE, { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 }),
+      evaluateMeasure(CMS122_DIABETES_A1C, { initial_population: 800, denominator: 750, denominator_exclusion: 50, numerator: 60 }),
+      evaluateMeasure(CMS130_COLORECTAL_SCREENING, { initial_population: 1000, denominator: 950, denominator_exclusion: 50, numerator: 760 }),
+    ];
+    const xml = generateQrda3(evals);
+    const result = validateCypressLayers(xml);
+
+    ok(result.scope === 'cypress_validators', 'Cypress: scope = cypress_validators');
+    ok(result.valid, `Cypress: valid (${result.totalErrors} errors)`);
+    ok(result.totalErrors === 0, 'Cypress: 0 errors');
+    ok(result.layers.length === 5, 'Cypress: 5 layers (2-6)');
+
+    // Each layer passes
+    for (const layer of result.layers) {
+      ok(layer.valid, `Cypress L${layer.layer} ${layer.name}: valid`);
+      ok(layer.errors.length === 0, `Cypress L${layer.layer}: 0 errors`);
+    }
+
+    // Layer names present
+    const names = result.layers.map(l => l.name);
+    ok(names.includes('MeasureIdValidator'), 'Cypress: MeasureIdValidator present');
+    ok(names.includes('PerformanceRateValidator'), 'Cypress: PerformanceRateValidator present');
+    ok(names.includes('PopulationLogicValidator'), 'Cypress: PopulationLogicValidator present');
+    ok(names.includes('ProgramValidator'), 'Cypress: ProgramValidator present');
+    ok(names.includes('MeasurePeriodValidator'), 'Cypress: MeasurePeriodValidator present');
+
+    console.log(`    layers=${result.layers.length}, errors=${result.totalErrors}, warnings=${result.totalWarnings}, scope=${result.scope}`);
+  }
+
   console.log(`\n  Healthcare E2E Tests: ${passed} passed, 0 failed\n`);
 }
 

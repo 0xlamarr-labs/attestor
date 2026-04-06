@@ -1102,6 +1102,17 @@ async function runHealthcareDemo(): Promise<void> {
     if (unique.size > 5) console.log(`    ... and ${unique.size - 5} more rule types`);
   }
 
+  // Cypress-equivalent validators (Layers 2-6)
+  const { validateCypressLayers } = await import('../filing/qrda3-cypress-validators.js');
+  const cypressResult = validateCypressLayers(qrda3Xml);
+  console.log(`  Cypress: ${cypressResult.valid ? '✓' : '✗'} ${cypressResult.totalErrors} errors, ${cypressResult.totalWarnings} warnings (${cypressResult.scope})`);
+  for (const layer of cypressResult.layers) {
+    const icon = layer.valid ? '✓' : '✗';
+    const warnStr = layer.warnings.length > 0 ? ` (${layer.warnings.length} warnings)` : '';
+    console.log(`    ${icon} L${layer.layer} ${layer.name}: ${layer.errors.length} errors${warnStr}`);
+    for (const e of layer.errors) console.log(`      ✗ ${e}`);
+  }
+
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
   if (allExpected) {
     console.log(`  Certificate: ${scenarios[0].id} issued with signing key ${keyPair.fingerprint}`);
