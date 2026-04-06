@@ -1059,6 +1059,12 @@ async function runHealthcareDemo(): Promise<void> {
     console.log(`  ${result.performanceMet ? '✓' : '✗'} ${measure.measureId}: ${measure.title} — rate=${rateStr}, FHIR=${fhir.resourceType}`);
   }
 
+  // QRDA III export
+  const { generateQrda3 } = await import('../filing/qrda3-generator.js');
+  const allEvaluations = cmsMeasures.map(({ measure, data }) => evaluateMeasure(measure, data));
+  const qrda3Xml = generateQrda3(allEvaluations, { reportingYear: '2026', performerName: 'Attestor Healthcare Demo' });
+  console.log(`\n  QRDA III: generated ${qrda3Xml.length} chars XML for ${allEvaluations.length} measures`);
+
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
   if (allExpected) {
     console.log(`  Certificate: ${scenarios[0].id} issued with signing key ${keyPair.fingerprint}`);

@@ -37,7 +37,8 @@
     "openid-client": "^6.8.2",
     "pg": "^8.20.0",
     "snowflake-sdk": "^2.3.6",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "xmlbuilder2": "^4.0.3"
   },
   "devDependencies": {
     "tsx": "^4.19.2"

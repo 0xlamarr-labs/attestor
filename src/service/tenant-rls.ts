@@ -151,6 +151,63 @@ export async function getTenantRuns(
   return result.rows;
 }
 
+// ─── Auto-Activation ────────────────────────────────────────────────────────
+
+/**
+ * Auto-activate RLS on startup when ATTESTOR_PG_URL is set.
+ * Idempotent: checks pg_policies before creating.
+ * Returns activation status for health reporting.
+ */
+export async function autoActivateRLS(pool: any): Promise<{
+  activated: boolean;
+  policiesFound: number;
+  tablesProtected: string[];
+  error: string | null;
+}> {
+  const client = await pool.connect();
+  try {
+    // Check existing policies
+    const existing = await client.query(
+      `SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE 'tenant_isolation%'`
+    );
+
+    if (existing.rows.length > 0) {
+      return {
+        activated: true,
+        policiesFound: existing.rows.length,
+        tablesProtected: existing.rows.map((r: any) => r.tablename),
+        error: null,
+      };
+    }
+
+    // Try to create tables + policies (idempotent)
+    try {
+      await client.query(TENANT_SCHEMA_SQL);
+
+      // Verify
+      const after = await client.query(
+        `SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public' AND policyname LIKE 'tenant_isolation%'`
+      );
+
+      return {
+        activated: after.rows.length > 0,
+        policiesFound: after.rows.length,
+        tablesProtected: after.rows.map((r: any) => r.tablename),
+        error: null,
+      };
+    } catch (err: any) {
+      return {
+        activated: false,
+        policiesFound: 0,
+        tablesProtected: [],
+        error: `RLS migration failed: ${err.message}. Connection role may lack ALTER TABLE privilege.`,
+      };
+    }
+  } finally {
+    client.release();
+  }
+}
+
 /**
  * Verify RLS isolation: attempt to read another tenant's data.
  * Should return 0 rows if RLS is working correctly.

@@ -8,10 +8,8 @@
 
 services:
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: npx tsx src/service/api-server.ts
+    build: .
+    command: node dist/service/api-server.js
     ports:
       - "3700:3700"
     environment:

@@ -131,8 +131,16 @@ function verifyKit(kit: VerificationKit): void {
     console.log(`  ${leafBound ? '✓' : '✗'} Cert bound:  ${leafBound ? 'certificate matches leaf' : 'MISMATCH'}`);
     console.log(`  ${pkiVerified ? '✓' : '✗'} PKI:         ${pkiVerified ? 'VERIFIED' : chainResult.overall}`);
   } else {
-    console.log(`  △ No PKI chain material in kit — falling back to flat Ed25519 verification`);
-    console.log(`    Note: PKI-backed kits are now the default. This kit was issued without chain material.`);
+    const allowLegacy = process.argv.includes('--allow-legacy-verify') || process.env.ATTESTOR_ALLOW_LEGACY === 'true';
+    if (allowLegacy) {
+      console.log(`  ⚠ No PKI chain — using legacy flat Ed25519 verification (deprecated)`);
+      console.log(`    This mode will be removed in a future version.`);
+    } else {
+      console.log(`  ✗ No PKI chain material in kit — PKI verification is now mandatory.`);
+      console.log(`    This kit was issued without chain material and cannot be verified.`);
+      console.log(`    Override: --allow-legacy-verify or ATTESTOR_ALLOW_LEGACY=true`);
+      // Still allow the process to continue with the Ed25519 result, but mark as degraded
+    }
   }
 
   process.exit(summary.overall === 'verified' ? 0 : 1);
