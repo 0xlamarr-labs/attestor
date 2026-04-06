@@ -69,7 +69,7 @@ export interface AsyncPipelineSubmitResponse {
 export interface AsyncPipelineStatusResponse {
   jobId: string;
   backendMode: 'bullmq' | 'in_process';
-  status: 'waiting' | 'active' | 'completed' | 'failed';
+  status: 'queued' | 'running' | 'waiting' | 'active' | 'completed' | 'failed';
   submittedAt: string;
   completedAt: string | null;
   result: {
