@@ -509,9 +509,14 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     return loadCachedTokens();
   };
   const saveTokens = (tokens: any) => {
-    saveCachedTokens(tokens); // plain backup
+    // Encrypted store is the default persistence path.
+    // Plaintext backup is opt-in via ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1
     if (useSecureStore) {
       encryptAndStore({ ...tokens, storedAt: tokens.cachedAt ?? new Date().toISOString() });
+    }
+    if (process.env.ATTESTOR_PLAINTEXT_TOKEN_FALLBACK === '1') {
+      saveCachedTokens(tokens);
+      console.log(`  OIDC: ⚠ plaintext token fallback active (ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1)`);
     }
   };
 
@@ -1030,6 +1035,23 @@ async function runHealthcareDemo(): Promise<void> {
   console.log(`    Performance: ${measureResult.performanceMet ? '✓ met' : '✗ not met'}`);
   for (const gc of measureResult.governanceChecks) {
     console.log(`    ${gc.passed ? '✓' : '✗'} ${gc.description}`);
+  }
+
+  // CMS Top-3 quality measures
+  const { CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING, toFhirMeasureReport } = await import('../domains/healthcare-measures.js');
+
+  const cmsMeasures = [
+    { measure: CMS165_BLOOD_PRESSURE, data: { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 } },
+    { measure: CMS122_DIABETES_A1C, data: { initial_population: 800, denominator: 750, denominator_exclusion: 50, numerator: 60 } },
+    { measure: CMS130_COLORECTAL_SCREENING, data: { initial_population: 2000, denominator: 1900, denominator_exclusion: 100, numerator: 1520 } },
+  ];
+
+  console.log(`\n  ── CMS Quality Measures (eCQM) ──`);
+  for (const { measure, data } of cmsMeasures) {
+    const result = evaluateMeasure(measure, data);
+    const fhir = toFhirMeasureReport(result);
+    const rateStr = result.rate !== null ? (result.rate * 100).toFixed(1) + '%' : 'N/A';
+    console.log(`  ${result.performanceMet ? '✓' : '✗'} ${measure.measureId}: ${measure.title} — rate=${rateStr}, FHIR=${fhir.resourceType}`);
   }
 
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);

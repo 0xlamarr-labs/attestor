@@ -270,33 +270,33 @@ What it does not prove yet:
 
 **Shipped product paths** (integrated, tested, reachable through CLI/API):
 - Keyless-first signing in API (Sigstore pattern, per-request ephemeral keys + CA-issued certs)
-- Secure encrypted token store in CLI OIDC path (AES-256-GCM)
-- xBRL-CSV EBA DPM 2.0 adapter registered in API filing export
-- eCQM quality measure evaluation in healthcare CLI command
-- Redis production config used when REDIS_URL is set
+- PKI chain verification as default in CLI verify path (fallback warning when chain material absent)
+- Secure encrypted token store (AES-256-GCM) as default OIDC persistence (plaintext opt-in via `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1`)
+- xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
+- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output
+- Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
+- Redis production config used when REDIS_URL is set (BullMQ backend with production-grade connection config)
 
-**First slices** (real and useful, not yet the default everywhere):
-- Healthcare domain: governed E2E scenarios + clause evaluators + eCQM measures, not yet a full production path
-- Filing: XBRL US-GAAP + xBRL-CSV EBA both registered, filing evidence in warrant, not yet full filing-package issuance by default
-- OIDC: local encrypted cache + refresh + device flow, not enterprise session management
-- PKI: keyless-first in API, chain verification in CLI, not yet the default verifier path everywhere
+**First slices** (real, wired into runtime paths, but not fully productized):
+- Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
+- OIDC: encrypted local cache + refresh + device flow, not enterprise session management
+- PKI: keyless-first in API, chain verification default in CLI, not yet mandatory everywhere
 - Async: BullMQ when REDIS_URL set, in-process fallback, not yet Redis-default
+- Request-level tenant isolation: middleware active on all API routes, enforced when ATTESTOR_TENANT_KEYS set
 
-**Capability modules** (implemented as code, not yet wired into a user-facing flow):
-- Database-level multi-tenant isolation (`tenant-rls.ts` — PostgreSQL RLS schema and functions, requires PG setup to activate)
-- Snowflake schema attestation (`snowflake-attestation.ts` — cross-DB attestation parity, requires live Snowflake)
-- Distributed service architecture types (`distributed-types.ts` — topology, workflow steps, deployment config)
+**Capability modules** (code exists, not yet activated as runtime policy):
+- Database-level multi-tenant isolation: RLS schema + migration SQL + per-request middleware available, not auto-activated on startup
+- Distributed service topology: docker-compose.yml for local multi-service dev, architecture types defined, not a shipped distributed runtime
+- Healthcare: eCQM measures are a governed first slice, not a CMS-certified production reporting path
 
 ## Not Yet Implemented
 
-- Full enterprise OIDC/IAM session lifecycle and central session management
-- PKI as the mandatory default verifier path across all CLI and kit flows
-- Redis-backed async as the default API backend (currently opt-in via REDIS_URL)
-- Database-level tenant isolation as an active runtime policy (RLS schema exists, not deployed by default)
-- Full verifier-facing schema attestation across every API connector path
-- Snowflake schema attestation wired into the connector prove path
-- Distributed service control plane deployment
-- Broader fully productized domain surfaces (healthcare is a first slice, not a full production domain)
+- Full enterprise OIDC/IAM with central session management (OS keychain integration, token revocation endpoints)
+- PKI as the mandatory verifier path (current: default with fallback; future: mandatory with deprecation)
+- Redis-backed async as the unconditional default (current: opt-in via REDIS_URL)
+- Database-level RLS auto-activation on startup (current: schema available, activation requires explicit migration)
+- Distributed service control plane (current: local docker-compose topology; not a deployed multi-node runtime)
+- CMS-certified healthcare production reporting (current: eCQM first slice with FHIR MeasureReport)
 
 ## Output Artifacts
 

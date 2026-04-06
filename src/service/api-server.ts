@@ -88,8 +88,12 @@ app.get('/api/v1/health', (c) => {
     },
     tenantIsolation: {
       requestLevel: true,
-      databaseRls: !!process.env.ATTESTOR_PG_URL,
-      rlsSchemaAvailable: true,
+      databaseRls: {
+        schemaAvailable: true,
+        configured: !!process.env.ATTESTOR_PG_URL,
+        activated: false,  // RLS not yet auto-activated on startup — requires explicit migration
+        verified: false,   // No runtime RLS isolation proof yet
+      },
     },
     engine: 'attestor',
   });
@@ -273,6 +277,15 @@ app.post('/api/v1/pipeline/run', async (c) => {
         sentinelFingerprint: fullSchemaAttestation.sentinelFingerprint,
         tableNames: fullSchemaAttestation.tables,
         attestationHash: fullSchemaAttestation.attestationHash,
+      } : connectorExecution?.schemaAttestation ? {
+        present: true,
+        scope: 'schema_attestation_connector' as const,
+        executionContextHash: connectorExecution.executionContextHash,
+        provider: connectorProvider,
+        schemaFingerprint: connectorExecution.schemaAttestation.schemaFingerprint,
+        sentinelFingerprint: connectorExecution.schemaAttestation.sentinelFingerprint,
+        tableNames: connectorExecution.schemaAttestation.tables,
+        attestationHash: connectorExecution.schemaAttestation.attestationHash,
       } : connectorExecution?.executionContextHash ? {
         present: true,
         scope: 'execution_context_only' as const,

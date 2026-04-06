@@ -130,14 +130,20 @@ export const snowflakeConnector: DatabaseConnector = {
         .slice(0, 16);
 
       // Capture schema attestation (best-effort)
+      let schemaAttestationResult: ConnectorExecutionResult['schemaAttestation'] = null;
       try {
         const tableRefs = [...sql.matchAll(/\b(\w+)\.(\w+)\.(\w+)\b/g)].map(m => m[3]);
         if (tableRefs.length > 0 && ctx.DB && ctx.SCH) {
           const attestation = await captureSnowflakeSchemaAttestation(
             (s: string) => execSql(conn, s), ctx.DB, ctx.SCH, tableRefs,
           );
-          // Store on the result via executionContextHash enrichment
-          // (attestation is available but not yet part of the ConnectorExecutionResult type)
+          schemaAttestationResult = {
+            schemaFingerprint: attestation.schemaFingerprint,
+            sentinelFingerprint: attestation.sentinelFingerprint,
+            tables: attestation.tables,
+            attestationHash: attestation.attestationHash,
+            source: 'snowflake',
+          };
         }
       } catch { /* schema attestation is best-effort */ }
 
@@ -160,6 +166,7 @@ export const snowflakeConnector: DatabaseConnector = {
         error: null,
         executionContextHash,
         executionTimestamp: timestamp,
+        schemaAttestation: schemaAttestationResult,
       };
     } catch (err: any) {
       return {

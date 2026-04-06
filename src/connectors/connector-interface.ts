@@ -60,6 +60,14 @@ export interface ConnectorExecutionResult {
   executionContextHash: string | null;
   /** ISO timestamp of execution. */
   executionTimestamp: string;
+  /** Schema attestation summary (when captured by the connector). */
+  schemaAttestation?: {
+    schemaFingerprint: string;
+    sentinelFingerprint: string;
+    tables: string[];
+    attestationHash: string;
+    source: string;
+  } | null;
 }
 
 export interface ConnectorPreflightResult {
