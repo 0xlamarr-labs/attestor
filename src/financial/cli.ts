@@ -1042,6 +1042,7 @@ async function runHealthcareDemo(): Promise<void> {
 
   // CMS Top-3 quality measures
   const { CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING, toFhirMeasureReport } = await import('../domains/healthcare-measures.js');
+  const { validateFhirMeasureReport } = await import('../domains/fhir-validator.js');
 
   const cmsMeasures = [
     { measure: CMS165_BLOOD_PRESSURE, data: { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 } },
@@ -1050,18 +1051,31 @@ async function runHealthcareDemo(): Promise<void> {
   ];
 
   console.log(`\n  ── CMS Quality Measures (eCQM) ──`);
+  let fhirValidationErrors = 0;
   for (const { measure, data } of cmsMeasures) {
     const result = evaluateMeasure(measure, data);
     const fhir = toFhirMeasureReport(result);
+    const validation = await validateFhirMeasureReport(fhir);
     const rateStr = result.rate !== null ? (result.rate * 100).toFixed(1) + '%' : 'N/A';
-    console.log(`  ${result.performanceMet ? '✓' : '✗'} ${measure.measureId}: ${measure.title} — rate=${rateStr}, FHIR=${fhir.resourceType}`);
+    const valIcon = validation.valid ? '✓' : '✗';
+    console.log(`  ${result.performanceMet ? '✓' : '✗'} ${measure.measureId}: ${measure.title} — rate=${rateStr}, FHIR=${valIcon} ${validation.scope} (${validation.errors.length} errors)`);
+    if (!validation.valid) {
+      fhirValidationErrors += validation.errors.length;
+      for (const err of validation.errors) {
+        console.log(`      ✗ ${err.path}: ${err.message}`);
+      }
+    }
+  }
+  if (fhirValidationErrors > 0) {
+    console.log(`\n  ⚠ FHIR validation: ${fhirValidationErrors} error(s) — MeasureReport output may not conform to R4 schema`);
   }
 
   // QRDA III export
-  const { generateQrda3 } = await import('../filing/qrda3-generator.js');
+  const { generateQrda3, validateQrda3Structure } = await import('../filing/qrda3-generator.js');
   const allEvaluations = cmsMeasures.map(({ measure, data }) => evaluateMeasure(measure, data));
   const qrda3Xml = generateQrda3(allEvaluations, { reportingYear: '2026', performerName: 'Attestor Healthcare Demo' });
-  console.log(`\n  QRDA III: generated ${qrda3Xml.length} chars XML for ${allEvaluations.length} measures`);
+  const qrda3Validation = validateQrda3Structure(qrda3Xml, allEvaluations.length);
+  console.log(`\n  QRDA III: generated ${qrda3Xml.length} chars XML for ${allEvaluations.length} measures — structural ${qrda3Validation.valid ? '✓' : '✗'} (${qrda3Validation.checks.length} checks, ${qrda3Validation.scope})`);
 
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
   if (allExpected) {
