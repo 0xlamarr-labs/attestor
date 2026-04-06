@@ -23,13 +23,15 @@ async function run() {
 
   const { isCypressConfigured, validateViaCypressApi } = await import('../src/filing/cypress-api-client.js');
 
+  const demoYear = '2025';
+
   // ═══ CONNECTIVITY TEST (always runs, no credentials needed) ═══
   console.log('  [Cypress API Connectivity Test]');
   {
     const { generateQrda3: genQrda } = await import('../src/filing/qrda3-generator.js');
     const { CMS165_BLOOD_PRESSURE: bp, evaluateMeasure: evalM } = await import('../src/domains/healthcare-measures.js');
     const testXml = genQrda([evalM(bp, { initial_population: 100, denominator: 90, denominator_exclusion: 10, numerator: 72 })]);
-    const connResult = await validateViaCypressApi(testXml, { user: 'connectivity-test', pass: 'connectivity-test', year: '2025' });
+    const connResult = await validateViaCypressApi(testXml, { user: 'connectivity-test', pass: 'connectivity-test', year: demoYear });
     ok(connResult.scope === 'onc_cypress_api', 'Connectivity: scope = onc_cypress_api');
     ok(connResult.httpStatus === 401, 'Connectivity: server reachable (HTTP 401 = auth required)');
     ok(connResult.errors.length > 0, 'Connectivity: server returned error message');
@@ -60,8 +62,8 @@ async function run() {
   console.log('  Submitting to ONC Cypress server...\n');
 
   // ═══ Validate via real Cypress API ═══
-  console.log('  [POST cypressdemo.healthit.gov/qrda_validation/2026/III/CMS]');
-  const result = await validateViaCypressApi(xml);
+  console.log(`  [POST cypressdemo.healthit.gov/qrda_validation/${demoYear}/III/CMS]`);
+  const result = await validateViaCypressApi(xml, { year: demoYear });
 
   ok(result.scope === 'onc_cypress_api', 'Cypress API: scope = onc_cypress_api');
   ok(result.httpStatus > 0, `Cypress API: server responded (HTTP ${result.httpStatus})`);

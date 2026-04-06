@@ -303,7 +303,7 @@ What it does not prove yet:
 
 ## Not Yet Implemented
 
-- ONC Cypress live-credential validation (current: Cypress API client wired into CLI + connectivity test proves `cypressdemo.healthit.gov` is reachable and responds with HTTP 401 auth gate. Env-gated on `CYPRESS_UMLS_USER` + `CYPRESS_UMLS_PASS` (free UMLS from uts.nlm.nih.gov). Not yet tested with live UMLS credentials. Layer 7 VSAC value set validation also requires UMLS and is not implemented.)
+- ONC Cypress live-credential validation (current: Cypress API client is wired into the healthcare CLI and connectivity proof shows `cypressdemo.healthit.gov` is reachable and enforcing auth. Remaining closure work is twofold: run the real ONC validation path with working `CYPRESS_UMLS_USER` + `CYPRESS_UMLS_PASS` credentials, and decide or implement Layer 7 VSAC value set coverage, which is still absent and UMLS-gated. A zero-error ONC run would materially reduce the gap, but this item is not fully closed until the live run and the VSAC boundary are explicitly resolved.)
 
 ## Output Artifacts
 
