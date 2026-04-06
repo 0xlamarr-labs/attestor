@@ -77,6 +77,8 @@ export interface PipelineResponse {
   schemaAttestation?: SchemaAttestationSummary | null;
   /** Connector used for execution. */
   connectorUsed?: string | null;
+  /** Signing mode when certificate was issued. */
+  signingMode?: 'keyless' | null;
   /** Filing export auto-summary when sign=true and XBRL adapter is available. */
   filingExport?: { adapterId: string; coveragePercent: number; mappedCount: number } | null;
   /** Error message when the run failed. */
@@ -91,12 +93,15 @@ export interface PipelineResponse {
 
 export interface SchemaAttestationSummary {
   present: boolean;
-  scope: 'schema_attestation_summary' | 'execution_context_only';
+  /** Attestation scope — reflects what was actually captured. */
+  scope: 'schema_attestation_full' | 'schema_attestation_connector' | 'execution_context_only';
   executionContextHash: string | null;
   provider: string | null;
-  schemaFingerprint?: string | null;
-  sentinelFingerprint?: string | null;
-  tableNames?: string[] | null;
+  schemaFingerprint: string | null;
+  sentinelFingerprint: string | null;
+  tableNames: string[] | null;
+  /** Combined attestation hash (schema + sentinels + timestamp). Present for full/connector attestation. */
+  attestationHash: string | null;
 }
 
 // Health / Status
@@ -107,8 +112,24 @@ export interface ServiceHealth {
   uptime: number;
   domains: string[];
   connectors: string[];
-  filingAdapters?: string[];
-  pki?: { ready: boolean; caName: string; caFingerprint: string; signerSubject: string; reviewerSubject: string };
+  filingAdapters: string[];
+  pki: {
+    ready: boolean;
+    caName: string;
+    caFingerprint: string;
+    signerSubject: string;
+    reviewerSubject: string;
+  };
+  tenantIsolation: {
+    requestLevel: boolean;
+    databaseRls: {
+      schemaAvailable: boolean;
+      configured: boolean;
+      activated: boolean;
+      verified: boolean;
+    };
+  };
+  engine: string;
 }
 
 export interface VerifyResponse {

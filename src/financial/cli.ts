@@ -499,21 +499,26 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   const { isOidcConfigured, loadOidcConfig, executeDeviceFlow } = await import('../identity/oidc-device-flow.js');
   const { loadCachedTokens, saveCachedTokens, isTokenExpired, isTokenExpiringSoon, refreshTokens } = await import('../identity/token-cache.js');
   const { encryptAndStore, loadAndDecrypt } = await import('../identity/secure-token-store.js');
-  // Use encrypted store when available, fall back to plain cache
-  const useSecureStore = true;
+  // Encrypted store is the only default read/write path.
+  // Plaintext cache is NOT read by default. To import a legacy plaintext cache once
+  // into the secure store, set ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1.
   const loadTokens = () => {
-    if (useSecureStore) {
-      const secure = loadAndDecrypt();
-      if (secure) return { ...secure, cachedAt: secure.storedAt ?? '' } as any;
+    const secure = loadAndDecrypt();
+    if (secure) return { ...secure, cachedAt: secure.storedAt ?? '' } as any;
+    // One-time import from legacy plaintext cache if explicitly opted in
+    if (process.env.ATTESTOR_PLAINTEXT_TOKEN_IMPORT === '1') {
+      const legacy = loadCachedTokens();
+      if (legacy) {
+        console.log(`  OIDC: importing legacy plaintext cache into encrypted store (one-time)`);
+        encryptAndStore({ ...legacy, storedAt: legacy.cachedAt ?? new Date().toISOString() });
+        return legacy;
+      }
     }
-    return loadCachedTokens();
+    return null;
   };
   const saveTokens = (tokens: any) => {
     // Encrypted store is the default persistence path.
-    // Plaintext backup is opt-in via ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1
-    if (useSecureStore) {
-      encryptAndStore({ ...tokens, storedAt: tokens.cachedAt ?? new Date().toISOString() });
-    }
+    encryptAndStore({ ...tokens, storedAt: tokens.cachedAt ?? new Date().toISOString() });
     if (process.env.ATTESTOR_PLAINTEXT_TOKEN_FALLBACK === '1') {
       saveCachedTokens(tokens);
       console.log(`  OIDC: ⚠ plaintext token fallback active (ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1)`);
