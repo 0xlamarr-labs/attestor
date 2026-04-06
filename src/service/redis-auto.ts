@@ -32,31 +32,41 @@ export async function resolveRedis(): Promise<RedisResolution> {
   if (process.env.REDIS_URL) {
     try {
       const url = new URL(process.env.REDIS_URL);
+      const host = url.hostname;
+      const port = parseInt(url.port || '6379', 10);
       const conn = new IORedis({
-        host: url.hostname, port: parseInt(url.port || '6379', 10),
+        host, port,
         password: url.password || undefined,
         maxRetriesPerRequest: null,
         lazyConnect: true,
-        connectTimeout: 3000,
+        connectTimeout: 2000,
+        retryStrategy: () => null,
       });
-      await conn.connect();
-      await conn.ping();
-      return { connection: conn, mode: 'external', host: url.hostname, port: parseInt(url.port || '6379', 10) };
+      await Promise.race([
+        conn.connect().then(() => conn.ping()),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+      ]);
+      return { connection: conn, mode: 'external', host, port };
     } catch { /* fall through */ }
   }
 
-  // Tier 2: localhost:6379
+  // Tier 2: localhost:6379 (fast probe with 1s timeout)
   try {
     const conn = new IORedis({
       host: '127.0.0.1', port: 6379,
       maxRetriesPerRequest: null,
       lazyConnect: true,
-      connectTimeout: 2000,
+      connectTimeout: 1000,
+      retryStrategy: () => null, // no retries — fail fast
     });
-    await conn.connect();
-    await conn.ping();
+    await Promise.race([
+      conn.connect().then(() => conn.ping()),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500)),
+    ]);
     return { connection: conn, mode: 'localhost', host: '127.0.0.1', port: 6379 };
-  } catch { /* fall through */ }
+  } catch {
+    // localhost Redis not available — fall through
+  }
 
   // Tier 3: embedded redis-memory-server
   try {

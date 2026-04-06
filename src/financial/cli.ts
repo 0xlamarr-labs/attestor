@@ -497,31 +497,27 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   let oidcIdentity: import('../financial/types.js').ReviewerIdentity | null = null;
   let oidcTokenPath: 'cached' | 'refreshed' | 'device_flow' | 'none' = 'none';
   const { isOidcConfigured, loadOidcConfig, executeDeviceFlow } = await import('../identity/oidc-device-flow.js');
-  const { loadCachedTokens, saveCachedTokens, isTokenExpired, isTokenExpiringSoon, refreshTokens } = await import('../identity/token-cache.js');
-  const { encryptAndStore, loadAndDecrypt } = await import('../identity/secure-token-store.js');
-  // Encrypted store is the only default read/write path.
-  // Plaintext cache is NOT read by default. To import a legacy plaintext cache once
-  // into the secure store, set ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1.
-  const loadTokens = () => {
-    const secure = loadAndDecrypt();
-    if (secure) return { ...secure, cachedAt: secure.storedAt ?? '' } as any;
-    // One-time import from legacy plaintext cache if explicitly opted in
+  const { loadCachedTokens, saveCachedTokens, isTokenExpired, isTokenExpiringSoon } = await import('../identity/token-cache.js');
+  const { loadSession, saveSession, isSessionValid, isSessionExpiringSoon, refreshSession, getSessionBackendName } = await import('../identity/keychain-session.js');
+  // Keychain-first: OS keychain (Windows/macOS/Linux) with encrypted-file fallback.
+  const keychainBackend = await getSessionBackendName();
+  const loadTokens = async () => {
+    const session = await loadSession();
+    if (session) return session as any;
     if (process.env.ATTESTOR_PLAINTEXT_TOKEN_IMPORT === '1') {
       const legacy = loadCachedTokens();
       if (legacy) {
-        console.log(`  OIDC: importing legacy plaintext cache into encrypted store (one-time)`);
-        encryptAndStore({ ...legacy, storedAt: legacy.cachedAt ?? new Date().toISOString() });
+        console.log(`  OIDC: importing legacy cache into keychain (${keychainBackend})`);
+        await saveSession({ accessToken: legacy.accessToken ?? '', refreshToken: legacy.refreshToken ?? null, idToken: legacy.idToken ?? null, expiresAt: legacy.expiresAt ?? 0, issuer: legacy.issuer ?? '', subject: legacy.subject ?? '', name: legacy.name ?? '', email: legacy.email ?? null, backendUsed: keychainBackend });
         return legacy;
       }
     }
     return null;
   };
-  const saveTokens = (tokens: any) => {
-    // Encrypted store is the default persistence path.
-    encryptAndStore({ ...tokens, storedAt: tokens.cachedAt ?? new Date().toISOString() });
+  const saveTokens = async (tokens: any) => {
+    await saveSession({ accessToken: tokens.accessToken ?? '', refreshToken: tokens.refreshToken ?? null, idToken: tokens.idToken ?? null, expiresAt: tokens.expiresAt ?? 0, issuer: tokens.issuer ?? '', subject: tokens.subject ?? '', name: tokens.name ?? '', email: tokens.email ?? null, backendUsed: keychainBackend });
     if (process.env.ATTESTOR_PLAINTEXT_TOKEN_FALLBACK === '1') {
       saveCachedTokens(tokens);
-      console.log(`  OIDC: ⚠ plaintext token fallback active (ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1)`);
     }
   };
 
@@ -530,7 +526,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     console.log(`\n  OIDC: configured (${oidcConfig.issuerUrl})`);
 
     // 1. Try cached tokens first
-    const cached = loadTokens();
+    const cached = await loadTokens();
     if (cached && !isTokenExpired(cached)) {
       oidcIdentity = { name: cached.name ?? 'Cached User', role: 'oidc_authenticated', identifier: cached.email ?? cached.subject, signerFingerprint: null };
       oidcTokenPath = 'cached';
@@ -539,9 +535,9 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
       // 1b. Refresh if expiring soon
       if (isTokenExpiringSoon(cached)) {
         console.log(`  OIDC: token expiring soon, attempting refresh...`);
-        const refreshed = await refreshTokens(cached, oidcConfig.clientId);
+        const refreshed = await refreshSession(cached, oidcConfig.clientId);
         if (refreshed) {
-          saveTokens(refreshed);
+          await saveTokens(refreshed);
           oidcIdentity = { name: refreshed.name ?? cached.name ?? 'Refreshed User', role: 'oidc_authenticated', identifier: refreshed.email ?? refreshed.subject, signerFingerprint: null };
           oidcTokenPath = 'refreshed';
           console.log(`  OIDC: token refreshed successfully`);
@@ -550,9 +546,9 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
     } else if (cached && isTokenExpired(cached) && cached.refreshToken) {
       // 2. Expired but has refresh token — try refresh
       console.log(`  OIDC: cached token expired, attempting refresh...`);
-      const refreshed = await refreshTokens(cached, oidcConfig.clientId);
+      const refreshed = await refreshSession(cached, oidcConfig.clientId);
       if (refreshed) {
-        saveTokens(refreshed);
+        await saveTokens(refreshed);
         oidcIdentity = { name: refreshed.name ?? 'Refreshed User', role: 'oidc_authenticated', identifier: refreshed.email ?? refreshed.subject, signerFingerprint: null };
         oidcTokenPath = 'refreshed';
         console.log(`  OIDC: token refreshed — ${oidcIdentity.name}`);
@@ -567,7 +563,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
         oidcIdentity = oidcResult.identity;
         oidcTokenPath = 'device_flow';
         // Save real token material for cache/refresh
-        saveTokens({
+        await saveTokens({
           accessToken: oidcResult.accessToken ?? '',
           idToken: oidcResult.idToken ?? null,
           refreshToken: oidcResult.refreshToken ?? null,
@@ -575,7 +571,6 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
           issuer: oidcResult.issuer ?? oidcConfig.issuerUrl,
           subject: oidcResult.subject ?? '',
           name: oidcIdentity.name, email: oidcIdentity.identifier,
-          cachedAt: new Date().toISOString(),
         });
         if (!oidcResult.refreshToken) {
           console.log(`  OIDC: note — IdP did not issue a refresh token. Future sessions will require interactive login.`);

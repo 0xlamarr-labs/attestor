@@ -38,7 +38,7 @@ import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
 import { tenantMiddleware, type TenantContext } from './tenant-isolation.js';
-import { TENANT_SCHEMA_SQL } from './tenant-rls.js';
+import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -91,10 +91,13 @@ app.get('/api/v1/health', (c) => {
       databaseRls: {
         schemaAvailable: true,
         configured: !!process.env.ATTESTOR_PG_URL,
-        activated: false,  // RLS not yet auto-activated on startup — requires explicit migration
-        verified: false,   // No runtime RLS isolation proof yet
+        activated: rlsActivationResult.activated,
+        policiesFound: rlsActivationResult.policiesFound,
+        tablesProtected: rlsActivationResult.tablesProtected,
+        error: rlsActivationResult.error,
       },
     },
+    asyncBackend: { mode: asyncBackendMode, redisMode },
     engine: 'attestor',
   });
 });
@@ -450,21 +453,44 @@ interface AsyncJob {
 }
 const inProcessJobs = new Map<string, AsyncJob>();
 
-// BullMQ initialization is opt-in via REDIS_URL env var.
-// When REDIS_URL is set, use production Redis config + BullMQ. Otherwise in_process.
-import { createProductionRedisConfig } from './redis-production.js';
+// BullMQ initialization via 3-tier Redis auto-resolution:
+// 1. REDIS_URL env var (production)  2. localhost:6379 probe  3. embedded (dev/CI)
+// Falls back to in_process if all tiers fail.
+import { resolveRedis } from './redis-auto.js';
 
-if (process.env.REDIS_URL) {
+let redisMode: string = 'none';
+try {
+  const resolved = await resolveRedis();
+  const redisUrl = `redis://${resolved.host}:${resolved.port}`;
+  bullmqQueue = createPipelineQueue({ redisUrl });
+  bullmqWorker = createPipelineWorker({ redisUrl });
+  asyncBackendMode = 'bullmq';
+  redisMode = resolved.mode;
+  console.log(`[async] BullMQ active (Redis: ${resolved.mode} @ ${resolved.host}:${resolved.port})`);
+} catch (err: any) {
+  redisMode = 'unavailable';
+  console.log(`[async] Redis unavailable (${err.message}), using in_process fallback`);
+}
+
+// ─── RLS Auto-Activation ─────────────────────────────────────────────────────
+
+let rlsActivationResult = { activated: false, policiesFound: 0, tablesProtected: [] as string[], error: null as string | null };
+
+if (process.env.ATTESTOR_PG_URL) {
   try {
-    // Use production Redis config (exponential backoff, health checks, rate limiting)
-    const _redisConfig = createProductionRedisConfig(process.env.REDIS_URL);
-    // BullMQ uses the URL directly; production config is available for queue/worker options
-    bullmqQueue = createPipelineQueue({ redisUrl: process.env.REDIS_URL });
-    bullmqWorker = createPipelineWorker({ redisUrl: process.env.REDIS_URL });
-    asyncBackendMode = 'bullmq';
-    console.log(`[async] BullMQ backend active (Redis: ${process.env.REDIS_URL.replace(/:[^@]*@/, ':***@')})`);
+    const pg = await (Function('return import("pg")')() as Promise<any>);
+    const Pool = pg.Pool ?? pg.default?.Pool;
+    const pool = new Pool({ connectionString: process.env.ATTESTOR_PG_URL });
+    rlsActivationResult = await autoActivateRLS(pool);
+    if (rlsActivationResult.activated) {
+      console.log(`[rls] Active: ${rlsActivationResult.policiesFound} policies on [${rlsActivationResult.tablesProtected.join(', ')}]`);
+    } else {
+      console.log(`[rls] Not activated: ${rlsActivationResult.error ?? 'unknown'}`);
+    }
+    await pool.end();
   } catch (err: any) {
-    console.log(`[async] BullMQ init failed (${err.message}), using in_process fallback`);
+    rlsActivationResult.error = err.message;
+    console.log(`[rls] Skipped: ${err.message}`);
   }
 }
 

@@ -283,23 +283,19 @@ What it does not prove yet:
 - PKI: keyless-first in API, chain verification default in CLI, not yet mandatory everywhere
 - Async: BullMQ when REDIS_URL set, in-process fallback, not yet Redis-default
 - Request-level tenant isolation: middleware active on all API routes, enforced when ATTESTOR_TENANT_KEYS set
+- OIDC session: keychain-session wired into CLI prove (OS keychain when @napi-rs/keyring installed, encrypted-file fallback otherwise)
+- Redis async: 3-tier auto-resolution wired into API startup (REDIS_URL → localhost → embedded → in_process fallback)
+- DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
 
-**Capability modules** (code exists, not yet activated as runtime policy):
-- OS keychain session manager (`keychain-session.ts`): @napi-rs/keyring abstraction + revocation + refresh, not yet wired into CLI runtime. Dependency not installed.
-- Redis auto-provision (`redis-auto.ts`): 3-tier resolution (URL → localhost → embedded), not yet used by API server startup. `redis-memory-server` not installed.
-- RLS auto-activation (`tenant-rls.ts` `autoActivateRLS()`): idempotent migration runner, not called on startup
-- Database-level multi-tenant isolation: RLS schema available, not auto-activated
-- QRDA III generator (`qrda3-generator.ts`): CMS-compatible XML generation, wired into healthcare CLI, not CMS-certified
-- Distributed service topology: Dockerfile + docker-compose.yml for local dev, architecture types defined, not a deployed multi-node runtime
+**Capability modules** (code exists, not yet fully productized):
+- QRDA III generator: CMS-compatible XML generation wired into healthcare CLI, not CMS-certified
+- Distributed service topology: Dockerfile + docker-compose.yml for local dev, not a deployed multi-node runtime
 
 ## Not Yet Implemented
 
-- Full enterprise OIDC/IAM with central session management (OS keychain integration, token revocation endpoints)
-- PKI as the mandatory verifier path (current: default with fallback; future: mandatory with deprecation)
-- Redis-backed async as the unconditional default (current: opt-in via REDIS_URL)
-- Database-level RLS auto-activation on startup (current: schema available, activation requires explicit migration)
-- Distributed service control plane (current: local docker-compose topology; not a deployed multi-node runtime)
-- CMS-certified healthcare production reporting (current: eCQM first slice with FHIR MeasureReport)
+- PKI as the mandatory verifier path with deprecation timeline for flat Ed25519 (current: default with --allow-legacy-verify escape)
+- Distributed multi-node service deployment (current: local docker-compose + Dockerfile, not a deployed control plane)
+- CMS-certified healthcare reporting (current: QRDA III generation + FHIR MeasureReport, not Schematron-validated or Cypress-tested)
 
 ## Output Artifacts
 
