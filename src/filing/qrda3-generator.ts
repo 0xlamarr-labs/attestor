@@ -40,6 +40,29 @@ const POPULATION_CODES: Record<string, { code: string; displayName: string }> = 
   numerator_exclusion: { code: 'NUMEX', displayName: 'Numerator Exclusion' },
 };
 
+// ─── Supplemental Data Helper ──────────────────────────────────────────────
+// CMS requires Payer, Sex, Race, Ethnicity supplemental data on each Measure Data observation.
+// These emit minimal valid supplemental data elements with "unknown" aggregate counts.
+
+function emitSupplementalData(parent: any, templateRoot: string, templateExt: string, loincCode: string, displayName: string, _tag: string): void {
+  const er = parent.ele('entryRelationship').att('typeCode', 'COMP');
+  const obs = er.ele('observation').att('classCode', 'OBS').att('moodCode', 'EVN');
+  obs.ele('templateId').att('root', templateRoot).att('extension', templateExt).up();
+  obs.ele('code').att('code', loincCode).att('codeSystem', '2.16.840.1.113883.6.1').att('displayName', displayName).up();
+  obs.ele('statusCode').att('code', 'completed').up();
+  const valEle = obs.ele('value').att('xsi:type', 'CD').att('nullFlavor', 'OTH');
+  valEle.ele('translation').att('code', 'UNK').att('codeSystem', '2.16.840.1.113883.5.1').att('displayName', 'Unknown').up();
+  valEle.up();
+  // Aggregate count for this stratum
+  const aggrER = obs.ele('entryRelationship').att('typeCode', 'SUBJ').att('inversionInd', 'true');
+  const aggrObs = aggrER.ele('observation').att('classCode', 'OBS').att('moodCode', 'EVN');
+  aggrObs.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.3').up();
+  aggrObs.ele('code').att('code', 'MSRAGG').att('codeSystem', '2.16.840.1.113883.5.4').att('displayName', 'rate aggregation').up();
+  aggrObs.ele('statusCode').att('code', 'completed').up();
+  aggrObs.ele('value').att('xsi:type', 'INT').att('value', '0').up();
+  aggrObs.ele('methodCode').att('code', 'COUNT').att('codeSystem', '2.16.840.1.113883.5.84').att('displayName', 'Count').up();
+}
+
 // ─── Generator ──────────────────────────────────────────────────────────────
 
 export interface Qrda3Options {
@@ -108,6 +131,12 @@ export function generateQrda3(
   assignedEntity.ele('id').att('root', '2.16.840.1.113883.4.6').att('extension', options.performerNpi ?? '0000000000').up();
   assignedEntity.ele('representedOrganization').ele('id').att('root', '2.16.840.1.113883.4.2').att('extension', '000000000').up().up();
 
+  // CMS EHR Certification ID participant — CONF:CMS_140
+  const participant = doc.ele('participant').att('typeCode', 'DEV');
+  const associatedEntity = participant.ele('associatedEntity').att('classCode', 'RGPR');
+  associatedEntity.ele('id').att('root', '2.16.840.1.113883.3.2074.1').att('extension', '0015HxDLbM0RXaO').up();
+  associatedEntity.ele('code').att('code', '129465004').att('codeSystem', '2.16.840.1.113883.6.96').att('displayName', 'medical record').up();  // CONF:4484-18308
+
   // Reporting period
   const component = doc.ele('component').ele('structuredBody');
 
@@ -116,20 +145,33 @@ export function generateQrda3(
   reportingSection.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.2.1').att('extension', '2020-12-01').up();  // CONF:4484-18098 + 26552
   reportingSection.ele('code').att('code', '55187-9').att('codeSystem', '2.16.840.1.113883.6.1').up();
   reportingSection.ele('title').txt('Reporting Parameters').up();
-  const rpEntry = reportingSection.ele('entry').ele('act').att('classCode', 'ACT').att('moodCode', 'EVN');
-  rpEntry.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.3.8').att('extension', '2020-12-01').up();  // CONF:4484-18098
-  const rpTime = rpEntry.ele('effectiveTime');
+  const rpEntry = reportingSection.ele('entry').att('typeCode', 'DRIV');
+  const rpAct = rpEntry.ele('act').att('classCode', 'ACT').att('moodCode', 'EVN');
+  rpAct.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.3.8').att('extension', '2020-12-01').up();  // CONF:4484-18098
+  rpAct.ele('id').att('root', crypto.randomUUID()).up();  // CONF:4484-26549
+  rpAct.ele('code').att('code', '252116004').att('codeSystem', '2.16.840.1.113883.6.96').att('displayName', 'Observation Parameters').up();  // CONF:4484-3272
+  const rpTime = rpAct.ele('effectiveTime');
   rpTime.ele('low').att('value', `${reportingYear}0101`).up();
   rpTime.ele('high').att('value', `${reportingYear}1231`).up();
 
-  // Measure section
-  for (const measure of measures) {
-    const measureSection = component.ele('component').ele('section');
-    measureSection.ele('templateId').att('root', TEMPLATE_IDS.measureSection).att('extension', '2020-12-01').up();  // CONF:4484-17285 + 21171
-    measureSection.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.2.6').att('extension', '2025-05-01').up();  // CMS Measure Section (CONF:5562-21394_C01)
-    measureSection.ele('code').att('code', '55186-1').att('codeSystem', '2.16.840.1.113883.6.1').up();
-    measureSection.ele('title').txt(measure.title).up();
+  // Single Measure Section containing all measures as entries (CMS IG: one section, multiple entries)
+  const measureSection = component.ele('component').ele('section');
+  measureSection.ele('templateId').att('root', TEMPLATE_IDS.measureSection).att('extension', '2020-12-01').up();  // CONF:4484-17285 + 21171
+  measureSection.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.2.3').att('extension', '2025-05-01').up();  // CMS Measure Section V6 (CONF:5562-21394_C01)
+  measureSection.ele('code').att('code', '55186-1').att('codeSystem', '2.16.840.1.113883.6.1').up();
+  measureSection.ele('title').txt('Measure Section').up();
 
+  // Reporting Parameters Act reference within measure section (CONF:4484-21467/21468)
+  const rpEntryInSection = measureSection.ele('entry').att('typeCode', 'DRIV');
+  const rpActRef = rpEntryInSection.ele('act').att('classCode', 'ACT').att('moodCode', 'EVN');
+  rpActRef.ele('templateId').att('root', '2.16.840.1.113883.10.20.17.3.8').att('extension', '2020-12-01').up();
+  rpActRef.ele('id').att('root', crypto.randomUUID()).up();
+  rpActRef.ele('code').att('code', '252116004').att('codeSystem', '2.16.840.1.113883.6.96').att('displayName', 'Observation Parameters').up();
+  const rpActRefTime = rpActRef.ele('effectiveTime');
+  rpActRefTime.ele('low').att('value', `${reportingYear}0101`).up();
+  rpActRefTime.ele('high').att('value', `${reportingYear}1231`).up();
+
+  for (const measure of measures) {
     const entry = measureSection.ele('entry');
     const organizer = entry.ele('organizer').att('classCode', 'CLUSTER').att('moodCode', 'EVN');
     organizer.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.1').att('extension', '2020-12-01').up();  // CONF:4484-17909 + 21170
@@ -163,6 +205,21 @@ export function generateQrda3(
       aggrObs.ele('statusCode').att('code', 'completed').up();
       aggrObs.ele('value').att('xsi:type', 'INT').att('value', String(pop.count)).up();
       aggrObs.ele('methodCode').att('code', 'COUNT').att('codeSystem', '2.16.840.1.113883.5.84').att('displayName', 'Count').up();  // CONF:77-19509 + 77-19510
+
+      // Measure Data reference — CONF:3259-18239/18240/18241
+      const mdRef = measureDataObs.ele('reference').att('typeCode', 'REFR');
+      mdRef.ele('externalObservation').att('classCode', 'OBS').att('moodCode', 'EVN')
+        .ele('id').att('root', measure.measureId).att('extension', popCode.code).up().up();
+
+      // Supplemental data elements — required per CMS Measure Data CMS V5
+      // Payer (CONF:4427-18141_C01)
+      emitSupplementalData(measureDataObs, '2.16.840.1.113883.10.20.27.3.18', '2018-05-01', '48768-6', 'Payer', 'PAYER');
+      // Sex (CONF:4427-18136_C01 / CMS_151)
+      emitSupplementalData(measureDataObs, '2.16.840.1.113883.10.20.27.3.21', '2025-05-01', '76689-9', 'Sex Assigned at Birth', 'SEX');
+      // Race (CONF:4427-18140_C01 / 3259-18150)
+      emitSupplementalData(measureDataObs, '2.16.840.1.113883.10.20.27.3.8', '2016-09-01', '72826-1', 'Race', 'RACE');
+      // Ethnicity (CONF:4427-18139_C01 / 3259-18149)
+      emitSupplementalData(measureDataObs, '2.16.840.1.113883.10.20.27.3.7', '2016-09-01', '69490-1', 'Ethnicity', 'ETH');
     }
 
     // Performance rate
@@ -170,8 +227,12 @@ export function generateQrda3(
       const prComp = organizer.ele('component');
       const prObs = prComp.ele('observation').att('classCode', 'OBS').att('moodCode', 'EVN');
       prObs.ele('templateId').att('root', TEMPLATE_IDS.performanceRate).att('extension', '2020-12-01').up();  // CONF:4484-19650 + 21444
+      prObs.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.25').att('extension', '2022-05-01').up();  // CMS Performance Rate (CONF:CMS_59/60/61)
       prObs.ele('code').att('code', 'ASSERTION').att('codeSystem', '2.16.840.1.113883.5.4').up();
-      prObs.ele('reference').att('typeCode', 'REFR').ele('externalObservation').att('classCode', 'OBS').att('moodCode', 'EVN').ele('id').att('root', measure.measureId).up().up().up();  // CONF:4484-19651
+      const prRef = prObs.ele('reference').att('typeCode', 'REFR');
+      const prExtObs = prRef.ele('externalObservation').att('classCode', 'OBS').att('moodCode', 'EVN');
+      prExtObs.ele('id').att('root', measure.measureId).up();  // CONF:4484-19651
+      prExtObs.ele('code').att('code', 'NUMER').att('codeSystem', '2.16.840.1.113883.5.4').att('displayName', 'Numerator').up();  // CONF:4484-19657
       prObs.ele('statusCode').att('code', 'completed').up();
       prObs.ele('value').att('xsi:type', 'REAL').att('value', measure.rate.toFixed(6)).up();
     }
@@ -224,10 +285,11 @@ export function validateQrda3Structure(xml: string, expectedMeasureCount: number
   check('reporting_params', xml.includes('2.16.840.1.113883.10.20.17.2.1'), 'Reporting parameters section template');
   check('reporting_period', xml.includes('<low') && xml.includes('<high'), 'Reporting period with low/high bounds');
 
-  // 5. Measure count — count measure section template occurrences
-  const measureSectionMatches = xml.match(new RegExp(TEMPLATE_IDS.measureSection.replace(/\./g, '\\.'), 'g'));
-  const actualMeasureCount = measureSectionMatches ? measureSectionMatches.length : 0;
-  check('measure_count', actualMeasureCount === expectedMeasureCount, `Expected ${expectedMeasureCount} measure sections, found ${actualMeasureCount}`);
+  // 5. Measure count — count measure reference organizer entries (one per measure within the single section)
+  // Match the exact template root followed by a quote (not a digit, to avoid matching .10, .16, .17, etc.)
+  const measureOrganizerMatches = xml.match(/2\.16\.840\.1\.113883\.10\.20\.27\.3\.1["']/g);
+  const actualMeasureCount = measureOrganizerMatches ? measureOrganizerMatches.length : 0;
+  check('measure_count', actualMeasureCount === expectedMeasureCount, `Expected ${expectedMeasureCount} measure organizers, found ${actualMeasureCount}`);
 
   // 6. Population aggregate counts present
   check('aggregate_counts', xml.includes(TEMPLATE_IDS.aggregateCount), `Aggregate count observations (${TEMPLATE_IDS.aggregateCount})`);

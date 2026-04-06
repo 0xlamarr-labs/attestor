@@ -282,7 +282,7 @@ What it does not prove yet:
 - PKI chain verification as **mandatory** across CLI and API. CLI: exit code 2 without chain (`--allow-legacy-verify` escape). API: 422 rejection without chain (`ATTESTOR_ALLOW_LEGACY_API=true` escape). `VerificationKit` now self-contains `trustChain` + `caPublicKeyPem`.
 - Secure encrypted token store (AES-256-GCM) as default OIDC persistence for both read and write. Plaintext cache is not read by default. Legacy import: `ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1` (one-time). Plaintext write: `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1` (opt-in).
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
-- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport (R4 schema-validated) + QRDA III generation (structural self-validation + CMS IG XPath + real CMS 2026 Schematron execution)
+- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport (R4 schema-validated) + QRDA III generation passing CMS 2026 Schematron with zero errors (4-tier: structural self-validation + CMS IG XPath + real CMS .sch execution)
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
 - Redis async backend with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis → in-process fallback). BullMQ active when any Redis tier resolves.
 - Split API/worker deployment (single-node first slice): `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown. Not horizontal multi-node — see Capability modules.
@@ -295,7 +295,7 @@ What it does not prove yet:
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
-- QRDA III: CMS-compatible XML generation with 3-tier runtime validation: structural self-validation (16 checks) + CMS IG XPath assertions (29 rules via SaxonJS) + **real CMS 2026 Schematron execution** (vendored `2026_CMS_QRDA_Category_III-v1.0.sch` via `cda-schematron-validator`). Schematron reports remaining conformance gaps (supplemental data elements, etc.). Not ONC Cypress-tested.
+- QRDA III: CMS-compatible XML generation with 3-tier runtime validation: structural self-validation (16 checks) + CMS IG XPath assertions (29 rules via SaxonJS) + **real CMS 2026 Schematron execution passing with zero errors** (vendored `2026_CMS_QRDA_Category_III-v1.0.sch` via `cda-schematron-validator`). Not ONC Cypress-tested.
 - FHIR MeasureReport: schema-validated at runtime in healthcare CLI via `@solarahealth/fhir-r4` (Zod). Structural JSON Schema validation only, not terminology bindings or FHIRPath conformance.
 
 **Capability modules** (code exists, not yet fully productized):
@@ -303,7 +303,7 @@ What it does not prove yet:
 
 ## Not Yet Implemented
 
-- CMS-certified healthcare reporting (current: QRDA III generation with real CMS 2026 Schematron execution — 73 remaining conformance errors, primarily supplemental data elements not yet generated. Not ONC Cypress-tested. Next step: implement supplemental data generation to reach zero Schematron errors.)
+- ONC Cypress-tested healthcare reporting (current: QRDA III generation passes real CMS 2026 Schematron with zero errors. Not yet validated against ONC Project Cypress, which adds program-level and measure-level validation beyond Schematron conformance.)
 
 ## Output Artifacts
 
