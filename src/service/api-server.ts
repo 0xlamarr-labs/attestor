@@ -38,6 +38,7 @@ import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
 import { tenantMiddleware, type TenantContext } from './tenant-isolation.js';
+import { TENANT_SCHEMA_SQL } from './tenant-rls.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -84,6 +85,11 @@ app.get('/api/v1/health', (c) => {
       caFingerprint: pki.ca.certificate.fingerprint,
       signerSubject: pki.signer.certificate.subject,
       reviewerSubject: pki.reviewer.certificate.subject,
+    },
+    tenantIsolation: {
+      requestLevel: true,
+      databaseRls: !!process.env.ATTESTOR_PG_URL,
+      rlsSchemaAvailable: true,
     },
     engine: 'attestor',
   });

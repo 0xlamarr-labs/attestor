@@ -116,19 +116,23 @@ function verifyKit(kit: VerificationKit): void {
   );
   printSummary(summary);
 
-  // PKI trust chain verification (if chain material is embedded in the kit)
+  // ── PKI Trust Chain Verification (DEFAULT path) ──
   const kitAny = kit as any;
+  console.log(`\n  ── PKI Trust Chain (default verifier) ──`);
   if (kitAny.trustChain && kitAny.caPublicKeyPem) {
-    console.log(`\n  ── PKI Trust Chain ──`);
     const chainResult = verifyTrustChain(kitAny.trustChain, kitAny.caPublicKeyPem);
     const signerIdentity = derivePublicKeyIdentity(kit.signerPublicKeyPem);
     const leafBound = kitAny.trustChain.leaf?.subjectFingerprint === signerIdentity.fingerprint;
+    const pkiVerified = chainResult.overall === 'valid' && leafBound;
 
     console.log(`  ${chainResult.caValid ? '✓' : '✗'} CA:          ${chainResult.caValid ? 'valid' : 'INVALID'} (${kitAny.trustChain.ca?.name ?? 'unknown'})`);
     console.log(`  ${chainResult.leafValid ? '✓' : '✗'} Leaf:        ${chainResult.leafValid ? 'valid' : 'INVALID'} (${kitAny.trustChain.leaf?.subject ?? 'unknown'})`);
     console.log(`  ${chainResult.chainIntact ? '✓' : '✗'} Chain:       ${chainResult.chainIntact ? 'intact' : 'BROKEN'}`);
     console.log(`  ${leafBound ? '✓' : '✗'} Cert bound:  ${leafBound ? 'certificate matches leaf' : 'MISMATCH'}`);
-    console.log(`  ${chainResult.overall === 'valid' && leafBound ? '✓' : '✗'} PKI:         ${chainResult.overall === 'valid' && leafBound ? 'VERIFIED' : chainResult.overall}`);
+    console.log(`  ${pkiVerified ? '✓' : '✗'} PKI:         ${pkiVerified ? 'VERIFIED' : chainResult.overall}`);
+  } else {
+    console.log(`  △ No PKI chain material in kit — falling back to flat Ed25519 verification`);
+    console.log(`    Note: PKI-backed kits are now the default. This kit was issued without chain material.`);
   }
 
   process.exit(summary.overall === 'verified' ? 0 : 1);

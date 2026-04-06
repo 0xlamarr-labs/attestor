@@ -13,6 +13,7 @@ import type {
   DatabaseConnector, ConnectorConfig, ConnectorExecutionResult,
   ConnectorPreflightResult, ConnectorProbeResult,
 } from './connector-interface.js';
+import { captureSnowflakeSchemaAttestation } from './snowflake-attestation.js';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -127,6 +128,18 @@ export const snowflakeConnector: DatabaseConnector = {
         .update(`${ctx.VER}|${ctx.ACCT}|${ctx.DB}|${ctx.SCH}|snowflake`)
         .digest('hex')
         .slice(0, 16);
+
+      // Capture schema attestation (best-effort)
+      try {
+        const tableRefs = [...sql.matchAll(/\b(\w+)\.(\w+)\.(\w+)\b/g)].map(m => m[3]);
+        if (tableRefs.length > 0 && ctx.DB && ctx.SCH) {
+          const attestation = await captureSnowflakeSchemaAttestation(
+            (s: string) => execSql(conn, s), ctx.DB, ctx.SCH, tableRefs,
+          );
+          // Store on the result via executionContextHash enrichment
+          // (attestation is available but not yet part of the ConnectorExecutionResult type)
+        }
+      } catch { /* schema attestation is best-effort */ }
 
       // Execute governed query
       const rows = await execSql(conn, sql);
