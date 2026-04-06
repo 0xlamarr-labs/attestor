@@ -41,9 +41,11 @@
     "openid-client": "^6.8.2",
     "pg": "^8.20.0",
     "redis-memory-server": "^0.16.0",
+    "saxon-js": "^2.7.0",
     "snowflake-sdk": "^2.3.6",
     "typescript": "^5.7.3",
-    "xmlbuilder2": "^4.0.3"
+    "xmlbuilder2": "^4.0.3",
+    "xslt3": "^2.7.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2"

@@ -211,6 +211,49 @@ async function run() {
     }
   }
 
+  // ═══ CMS IG XPath Validation (SaxonJS) ═══
+  console.log('\n  [CMS IG XPath Validation — SaxonJS]');
+  {
+    const { generateQrda3 } = await import('../src/filing/qrda3-generator.js');
+    const { CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING, evaluateMeasure } = await import('../src/domains/healthcare-measures.js');
+    const { validateQrda3Schematron, CMS_QRDA3_RULES } = await import('../src/filing/qrda3-schematron.js');
+
+    const evals = [
+      evaluateMeasure(CMS165_BLOOD_PRESSURE, { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 }),
+      evaluateMeasure(CMS122_DIABETES_A1C, { initial_population: 800, denominator: 750, denominator_exclusion: 50, numerator: 60 }),
+      evaluateMeasure(CMS130_COLORECTAL_SCREENING, { initial_population: 1000, denominator: 950, denominator_exclusion: 50, numerator: 760 }),
+    ];
+    const xml = generateQrda3(evals);
+    const result = await validateQrda3Schematron(xml);
+
+    ok(result.scope === 'cms_qrda3_xpath', 'CMS-V: scope = cms_qrda3_xpath');
+    ok(result.totalRules === CMS_QRDA3_RULES.length, `CMS-V: totalRules = ${CMS_QRDA3_RULES.length}`);
+    ok(result.valid, `CMS-V: valid (${result.errors} errors)`);
+    ok(result.errors === 0, 'CMS-V: 0 errors');
+    ok(result.passedRules === result.totalRules, `CMS-V: all ${result.totalRules} rules pass`);
+
+    // Check key conformance rule IDs are present
+    const ruleIds = result.assertions.map(a => a.ruleId);
+    ok(ruleIds.includes('CONF:3338-17208'), 'CMS-V: QRDA III template rule present');
+    ok(ruleIds.includes('CMS_0001'), 'CMS-V: CMS template rule present');
+    ok(ruleIds.includes('CONF:3338-17244'), 'CMS-V: Reporting Parameters rule present');
+    ok(ruleIds.includes('CONF:3338-17284'), 'CMS-V: Measure Section rule present');
+    ok(ruleIds.includes('CONF:3338-17563'), 'CMS-V: Aggregate Count rule present');
+    ok(ruleIds.includes('CONF:3338-18411'), 'CMS-V: Performance Rate rule present');
+    ok(ruleIds.includes('CMS_POP_IPP'), 'CMS-V: IPP population rule present');
+    ok(ruleIds.includes('CMS_POP_DENOM'), 'CMS-V: DENOM population rule present');
+
+    // Check sections covered
+    const sections = [...new Set(result.assertions.map(a => a.section))];
+    ok(sections.includes('Document'), 'CMS-V: Document section covered');
+    ok(sections.includes('ReportingParameters'), 'CMS-V: ReportingParameters section covered');
+    ok(sections.includes('MeasureSection'), 'CMS-V: MeasureSection section covered');
+    ok(sections.includes('AggregateCount'), 'CMS-V: AggregateCount section covered');
+    ok(sections.includes('PerformanceRate'), 'CMS-V: PerformanceRate section covered');
+
+    console.log(`    rules=${result.passedRules}/${result.totalRules}, errors=${result.errors}, scope=${result.scope}, sections=${sections.join(',')}`);
+  }
+
   console.log(`\n  Healthcare E2E Tests: ${passed} passed, 0 failed\n`);
 }
 

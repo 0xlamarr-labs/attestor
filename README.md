@@ -282,7 +282,7 @@ What it does not prove yet:
 - PKI chain verification as **mandatory** across CLI and API. CLI: exit code 2 without chain (`--allow-legacy-verify` escape). API: 422 rejection without chain (`ATTESTOR_ALLOW_LEGACY_API=true` escape). `VerificationKit` now self-contains `trustChain` + `caPublicKeyPem`.
 - Secure encrypted token store (AES-256-GCM) as default OIDC persistence for both read and write. Plaintext cache is not read by default. Legacy import: `ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1` (one-time). Plaintext write: `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1` (opt-in).
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
-- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output with runtime FHIR R4 schema validation + QRDA III generation with runtime structural self-validation
+- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output with runtime FHIR R4 schema validation + QRDA III generation with runtime structural self-validation + CMS IG XPath validation (29 rules via SaxonJS)
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
 - Redis async backend with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis → in-process fallback). BullMQ active when any Redis tier resolves.
 - Split API/worker deployment (single-node first slice): `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown. Not horizontal multi-node — see Capability modules.
@@ -295,7 +295,7 @@ What it does not prove yet:
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
-- QRDA III: CMS-compatible XML generation with structural self-validation (16 checks), not CMS Schematron-validated or Cypress-tested
+- QRDA III: CMS-compatible XML generation with structural self-validation (16 checks) + CMS IG XPath validation (29 CMS CONF: rules via SaxonJS XPath 3.1 engine). Not official CMS .sch file execution or Cypress-tested.
 - FHIR MeasureReport: schema-validated at runtime in healthcare CLI via `@solarahealth/fhir-r4` (Zod). Structural JSON Schema validation only, not terminology bindings or FHIRPath conformance.
 
 **Capability modules** (code exists, not yet fully productized):
@@ -303,7 +303,7 @@ What it does not prove yet:
 
 ## Not Yet Implemented
 
-- CMS-certified healthcare reporting (current: QRDA III generation + structural self-validation + FHIR R4 schema-validated MeasureReport, not Schematron-validated or Cypress-tested). Next step: saxon-js Schematron pipeline with vendored CMS 2026 rules.
+- CMS-certified healthcare reporting (current: QRDA III generation + 16-check structural validation + 29-rule CMS IG XPath validation via SaxonJS + FHIR R4 schema-validated MeasureReport; not official CMS .sch Schematron file execution or ONC Cypress-tested). Next step: vendor CMS 2026 .sch files and compile to SEF for full Schematron execution.
 
 ## Output Artifacts
 
@@ -357,6 +357,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 789 tests across 6 suites: 557 unit + 102 live API + 43 live PostgreSQL + 38 connector/filing + 49 healthcare E2E, plus env-gated live Snowflake |
+| Expanded verification surface | 807 tests across 6 suites: 557 unit + 102 live API + 43 live PostgreSQL + 38 connector/filing + 67 healthcare E2E, plus env-gated live Snowflake |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

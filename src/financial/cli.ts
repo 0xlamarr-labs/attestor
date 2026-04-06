@@ -1077,6 +1077,16 @@ async function runHealthcareDemo(): Promise<void> {
   const qrda3Validation = validateQrda3Structure(qrda3Xml, allEvaluations.length);
   console.log(`\n  QRDA III: generated ${qrda3Xml.length} chars XML for ${allEvaluations.length} measures — structural ${qrda3Validation.valid ? '✓' : '✗'} (${qrda3Validation.checks.length} checks, ${qrda3Validation.scope})`);
 
+  // CMS IG XPath validation (SaxonJS)
+  const { validateQrda3Schematron } = await import('../filing/qrda3-schematron.js');
+  const cmsValidation = await validateQrda3Schematron(qrda3Xml);
+  console.log(`  CMS IG:  ${cmsValidation.valid ? '✓' : '✗'} ${cmsValidation.passedRules}/${cmsValidation.totalRules} rules pass (${cmsValidation.errors} errors, ${cmsValidation.scope})`);
+  if (cmsValidation.errors > 0) {
+    for (const a of cmsValidation.assertions.filter(a => !a.passed)) {
+      console.log(`    ✗ ${a.ruleId}: ${a.description}`);
+    }
+  }
+
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
   if (allExpected) {
     console.log(`  Certificate: ${scenarios[0].id} issued with signing key ${keyPair.fingerprint}`);
