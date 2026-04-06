@@ -605,3 +605,10 @@ export function startServer(port: number = 3700): { port: number; close: () => v
 }
 
 export { app };
+
+// Standalone mode: start server when run directly
+if (process.argv[1]?.endsWith('api-server.ts') || process.argv[1]?.endsWith('api-server.js')) {
+  const port = parseInt(process.env.PORT ?? '3700', 10);
+  startServer(port);
+  console.log(`[attestor] API server running on port ${port}`);
+}

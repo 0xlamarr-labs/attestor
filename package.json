@@ -21,6 +21,7 @@
     "benchmark": "tsx src/financial/cli.ts benchmark",
     "live": "tsx src/financial/cli.ts live-scenario",
     "prove": "tsx src/financial/cli.ts prove",
+    "serve": "tsx src/service/api-server.ts",
     "verify:cert": "tsx src/signing/verify-cli.ts",
     "keygen": "tsx -e \"import{generateKeyPair,saveKeyPair}from'./src/signing/keys.js';const kp=generateKeyPair();saveKeyPair(kp,'.attestor/private.pem','.attestor/public.pem');console.log('Key pair generated:',kp.fingerprint)\""
   },

@@ -136,10 +136,11 @@ function verifyKit(kit: VerificationKit): void {
       console.log(`  ⚠ No PKI chain — using legacy flat Ed25519 verification (deprecated)`);
       console.log(`    This mode will be removed in a future version.`);
     } else {
-      console.log(`  ✗ No PKI chain material in kit — PKI verification is now mandatory.`);
-      console.log(`    This kit was issued without chain material and cannot be verified.`);
+      console.log(`  ✗ No PKI chain material — PKI verification is mandatory.`);
+      console.log(`    This kit was issued without trust chain and cannot be fully verified.`);
       console.log(`    Override: --allow-legacy-verify or ATTESTOR_ALLOW_LEGACY=true`);
-      // Still allow the process to continue with the Ed25519 result, but mark as degraded
+      console.log(`\n  ══ Overall: PKI_REQUIRED ══\n`);
+      process.exit(2); // Exit 2 = verification impossible (not just failed)
     }
   }
 
