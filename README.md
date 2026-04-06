@@ -194,9 +194,15 @@ Notes:
 
 ## Bounded Service Layer
 
-The repository now ships a real single-process Hono API server with:
+The repository ships a split API/worker service topology:
 
-- `GET /api/v1/health`
+- **API server** (`npm run serve`) — HTTP endpoints, synchronous pipeline, verification, filing
+- **Pipeline worker** (`npm run worker`) — standalone BullMQ consumer for async jobs
+
+API endpoints:
+
+- `GET /api/v1/health` — detailed system state (PKI, RLS, async backend)
+- `GET /api/v1/ready` — orchestrator readiness probe (200 when ready, 503 when not)
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
 - `POST /api/v1/pipeline/run`
@@ -208,18 +214,21 @@ The repository now ships a real single-process Hono API server with:
 This is a bounded service layer, not a distributed control plane.
 
 Current service capabilities:
-- Async submission/status with truthful backend mode (`bullmq` when `REDIS_URL` set, `in_process` otherwise)
-- Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` (enforced when configured, anonymous/default when not)
+- Split API/worker deployment via `docker-compose.yml` (separate `api` and `worker` services sharing Redis)
+- 3-tier Redis auto-resolution: `REDIS_URL` → localhost:6379 → embedded `redis-memory-server` → in-process fallback
+- Readiness probe (`/api/v1/ready`) checking async backend, PKI, domains, and Redis state
+- SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
+- Request-level tenant isolation via `ATTESTOR_TENANT_KEYS`, database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
 - XBRL filing export auto-summary in signed pipeline responses
 - OIDC reviewer identity verification on the API path
 - Connector routing (e.g., `connector: 'snowflake'` in pipeline/run)
 
 Current service boundaries:
-- Single-process local server
-- In-process async fallback when Redis is not available
-- Request-level tenant identification, not database-level isolation
-- No persistent multi-tenant storage, long-term job store, or full session management
+- Single-node API + worker split (no multi-instance horizontal scaling or load balancer)
+- In-process async fallback when all Redis tiers unavailable (jobs lost on restart)
+- No persistent long-term job store, job priority, or dead-letter queue
+- No centralized logging, metrics, or tracing
 
 ## Reviewer Authority
 
@@ -234,8 +243,8 @@ Identity truth today:
 
 - Operator-asserted reviewer identity is supported everywhere.
 - OIDC-verified reviewer identity is supported on the API path.
-- CLI prove path supports OIDC device flow with local token cache (cached → refresh → interactive fallback).
-- Token lifecycle: local file-based cache with expiry checking and refresh-token support.
+- CLI prove path supports OIDC device flow with keychain-backed session management (OS keychain via `@napi-rs/keyring` when available, encrypted-file fallback otherwise; cached → refresh → interactive fallback).
+- Token lifecycle: OS keychain or encrypted local store (AES-256-GCM) with expiry checking and refresh-token support.
 - Full enterprise IAM/session management is not shipped.
 
 ## Connectors and Domain Breadth
@@ -275,7 +284,7 @@ What it does not prove yet:
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
 - Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport output + QRDA III structural self-validation
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
-- Redis production config used when REDIS_URL is set (BullMQ backend with production-grade connection config)
+- Redis async backend with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis → in-process fallback). BullMQ active when any Redis tier resolves.
 - Split API/worker deployment: `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown
 
 **First slices** (real, wired into runtime paths, but not fully productized):
@@ -286,7 +295,7 @@ What it does not prove yet:
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
-- QRDA III: CMS-compatible XML generation with structural self-validation (13 checks), not CMS Schematron-validated or Cypress-tested
+- QRDA III: CMS-compatible XML generation with structural self-validation (16 checks), not CMS Schematron-validated or Cypress-tested
 
 **Capability modules** (code exists, not yet fully productized):
 - Horizontal multi-node scaling (current: single-node API + worker split, no load balancer or multi-instance coordination)
@@ -320,6 +329,7 @@ What it does not prove yet:
 | [Proof model](docs/05-proof/proof-model.md) | Proof modes, maturity, and multi-query proof |
 | [Signing and verification](docs/06-signing/signing-verification.md) | Certificates, kits, reviewer endorsements |
 | [PostgreSQL and connectors](docs/07-connectors/postgres-connectors.md) | PostgreSQL proof path and connector safety |
+| [Deployment](docs/08-deployment/deployment.md) | Service topology, container usage, health/readiness |
 
 ## Environment Variables
 
@@ -344,8 +354,8 @@ What it does not prove yet:
 | Field | Value |
 |---|---|
 | Version | 0.1.0 |
-| Runtime | Node.js 22+, TypeScript, single-process CLI + bounded HTTP API |
+| Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 554 tests (`npm test`: 458 financial + 96 signing) |
-| Expanded verification surface | 748 tests across 6 suites: 554 unit + 96 live API + 43 live PostgreSQL + 38 connector/filing + 17 healthcare E2E, plus env-gated live Snowflake |
+| Expanded verification surface | 781 tests across 6 suites: 554 unit + 106 live API + 43 live PostgreSQL + 38 connector/filing + 40 healthcare E2E, plus env-gated live Snowflake |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |
