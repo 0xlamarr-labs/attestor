@@ -1,0 +1,50 @@
+## Attestor Distributed Deployment — Local Development
+##
+## Starts: API server + BullMQ worker + PostgreSQL + Redis
+## Usage: docker compose up
+##
+## This is for local development. For production, use Railway or
+## equivalent managed platform with the same service topology.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: npx tsx src/service/api-server.ts
+    ports:
+      - "3700:3700"
+    environment:
+      ATTESTOR_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+      REDIS_URL: redis://redis:6379
+      ATTESTOR_TENANT_KEYS: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: attestor
+      POSTGRES_PASSWORD: attestor
+      POSTGRES_DB: attestor
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attestor"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pg_data:

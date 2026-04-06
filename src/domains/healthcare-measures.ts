@@ -157,3 +157,74 @@ export function evaluateMeasure(
     governanceChecks: checks,
   };
 }
+
+// ─── CMS Top 3 Quality Measures ─────────────────────────────────────────────
+
+/** CMS165v12 — Controlling High Blood Pressure (largest population, MIPS/MSSP/HEDIS). */
+export const CMS165_BLOOD_PRESSURE: QualityMeasure = {
+  measureId: 'CMS165v12',
+  nqfNumber: '0018',
+  title: 'Controlling High Blood Pressure',
+  type: 'outcome',
+  reportingPeriod: { start: '2026-01-01', end: '2026-12-31' },
+  populations: [
+    { type: 'initial_population', description: 'Patients 18-85 with hypertension', criteria: 'age BETWEEN 18 AND 85 AND has_hypertension = true' },
+    { type: 'denominator', description: 'Initial population', criteria: 'initial_population' },
+    { type: 'denominator_exclusion', description: 'ESRD, dialysis, kidney transplant, pregnancy', criteria: 'has_exclusion = true' },
+    { type: 'numerator', description: 'Most recent BP < 140/90', criteria: 'systolic < 140 AND diastolic < 90' },
+  ],
+};
+
+/** CMS122v12 — Diabetes: Hemoglobin A1c Poor Control (inverse: lower numerator = better). */
+export const CMS122_DIABETES_A1C: QualityMeasure = {
+  measureId: 'CMS122v12',
+  nqfNumber: '0059',
+  title: 'Diabetes: Hemoglobin A1c Poor Control (>9%)',
+  type: 'outcome',
+  reportingPeriod: { start: '2026-01-01', end: '2026-12-31' },
+  populations: [
+    { type: 'initial_population', description: 'Patients 18-75 with diabetes', criteria: 'age BETWEEN 18 AND 75 AND has_diabetes = true' },
+    { type: 'denominator', description: 'Initial population', criteria: 'initial_population' },
+    { type: 'denominator_exclusion', description: 'Hospice, advanced illness', criteria: 'has_exclusion = true' },
+    { type: 'numerator', description: 'Most recent HbA1c > 9%', criteria: 'hba1c > 9.0' },
+  ],
+};
+
+/** CMS130v12 — Colorectal Cancer Screening (multi-pathway). */
+export const CMS130_COLORECTAL_SCREENING: QualityMeasure = {
+  measureId: 'CMS130v12',
+  nqfNumber: '0034',
+  title: 'Colorectal Cancer Screening',
+  type: 'process',
+  reportingPeriod: { start: '2026-01-01', end: '2026-12-31' },
+  populations: [
+    { type: 'initial_population', description: 'Patients 45-75', criteria: 'age BETWEEN 45 AND 75' },
+    { type: 'denominator', description: 'Initial population', criteria: 'initial_population' },
+    { type: 'denominator_exclusion', description: 'Colorectal cancer, total colectomy', criteria: 'has_exclusion = true' },
+    { type: 'numerator', description: 'Appropriate screening', criteria: 'colonoscopy_10yr OR fit_dna_3yr OR fobt_1yr' },
+  ],
+};
+
+// ─── FHIR MeasureReport ─────────────────────────────────────────────────────
+
+export interface FhirMeasureReport {
+  resourceType: 'MeasureReport';
+  type: 'summary';
+  measure: string;
+  period: { start: string; end: string };
+  group: { population: { code: string; count: number }[]; measureScore: { value: number | null } }[];
+}
+
+/** Generate FHIR-compatible MeasureReport from an evaluation. */
+export function toFhirMeasureReport(evaluation: MeasureEvaluation): FhirMeasureReport {
+  return {
+    resourceType: 'MeasureReport',
+    type: 'summary',
+    measure: `http://hl7.org/fhir/us/cqfmeasures/${evaluation.measureId}`,
+    period: evaluation.reportingPeriod,
+    group: [{
+      population: evaluation.populations.map(p => ({ code: p.type, count: p.count })),
+      measureScore: { value: evaluation.rate },
+    }],
+  };
+}
