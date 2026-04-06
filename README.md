@@ -80,6 +80,7 @@ Attestor does not blur proof maturity across tracks.
 - Deterministic scorer cascade with priority short-circuit
 - Evidence chain, provenance, and hash-linked audit trail
 - Ed25519 signing and certificate verification
+- Keyless-first API signing with short-lived CA-issued certificates
 - JSON-based PKI trust chain module with API-path issuance and chain verification
 - Reviewer identity, endorsement, and run binding
 - Single-query and multi-query certificate issuance
@@ -98,11 +99,10 @@ Attestor does not blur proof maturity across tracks.
 
 - Domain pack registry with `finance` and `healthcare`
 - Connector registry with PostgreSQL and Snowflake modules
-- Filing adapter registry with XBRL US-GAAP 2024 mapping
+- Filing adapter registry with XBRL US-GAAP 2024 and xBRL-CSV EBA DPM 2.0 adapters
 - Bounded HTTP API server with sync and async first-slice routes
-- OIDC reviewer identity verification on the API path
-- OIDC device-flow helper in the CLI proof path
-- BullMQ/Redis async orchestration module
+- OIDC reviewer identity verification on the API path, plus encrypted local token cache + device flow in the CLI proof path
+- BullMQ/Redis async orchestration with production Redis config when `REDIS_URL` is set
 
 ## What Attestor Is
 
@@ -243,10 +243,10 @@ Identity truth today:
 The repository is broader than finance in architecture, but not equally deep in every path.
 
 - Finance is the most complete domain and the reference implementation.
-- Healthcare has a domain pack, real clause evaluators, and a governed E2E scenario library (readmission rates, small cell suppression, temporal consistency).
+- Healthcare has a domain pack, real clause evaluators, eCQM measure evaluation, and a governed E2E scenario library (readmission rates, small cell suppression, temporal consistency).
 - PostgreSQL is the reference live execution connector with schema/data-state attestation.
 - Snowflake is a real connector module with env-gated live testing, API connector routing, and CLI `prove --connector snowflake` support.
-- XBRL US-GAAP 2024 is a real mapping/export adapter with API export and auto-summary in signed pipeline responses.
+- XBRL US-GAAP 2024 and xBRL-CSV EBA DPM 2.0 are real filing adapters; US-GAAP is used for API export and signed auto-summary, while xBRL-CSV EBA is registered in the filing export surface.
 
 ## PostgreSQL Product Proof
 
