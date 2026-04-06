@@ -303,7 +303,7 @@ What it does not prove yet:
 
 ## Not Yet Implemented
 
-- ONC Cypress full-stack testing (current: QRDA III passes CMS 2026 Schematron + Cypress-equivalent Layers 2-6 with zero errors. Not validated against actual ONC Cypress Docker instance, and Layer 7 VSAC value set validation requires NLM credentials.)
+- ONC Cypress full-stack testing (current: QRDA III passes CMS 2026 Schematron plus custom Cypress-equivalent Layers 2-6 with zero errors. Not yet validated against the actual ONC Cypress stack — Cypress is a Ruby on Rails + MongoDB application with its own Schematron engine, measure bundle loading, and VSAC integration. Layer 7 VSAC value set validation still requires NLM credentials and is not implemented.)
 
 ## Output Artifacts
 

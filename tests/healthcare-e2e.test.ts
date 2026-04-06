@@ -300,24 +300,24 @@ async function run() {
     const xml = generateQrda3(evals);
     const result = validateCypressLayers(xml);
 
-    ok(result.scope === 'cypress_validators', 'Cypress: scope = cypress_validators');
-    ok(result.valid, `Cypress: valid (${result.totalErrors} errors)`);
-    ok(result.totalErrors === 0, 'Cypress: 0 errors');
-    ok(result.layers.length === 5, 'Cypress: 5 layers (2-6)');
+    ok(result.scope === 'cypress_validators', 'Cypress-eq: scope = cypress_validators');
+    ok(result.valid, `Cypress-eq: valid (${result.totalErrors} errors)`);
+    ok(result.totalErrors === 0, 'Cypress-eq: 0 errors');
+    ok(result.layers.length === 5, 'Cypress-eq: 5 layers (2-6)');
 
     // Each layer passes
     for (const layer of result.layers) {
-      ok(layer.valid, `Cypress L${layer.layer} ${layer.name}: valid`);
-      ok(layer.errors.length === 0, `Cypress L${layer.layer}: 0 errors`);
+      ok(layer.valid, `Cypress-eq L${layer.layer} ${layer.name}: valid`);
+      ok(layer.errors.length === 0, `Cypress-eq L${layer.layer}: 0 errors`);
     }
 
     // Layer names present
     const names = result.layers.map(l => l.name);
-    ok(names.includes('MeasureIdValidator'), 'Cypress: MeasureIdValidator present');
-    ok(names.includes('PerformanceRateValidator'), 'Cypress: PerformanceRateValidator present');
-    ok(names.includes('PopulationLogicValidator'), 'Cypress: PopulationLogicValidator present');
-    ok(names.includes('ProgramValidator'), 'Cypress: ProgramValidator present');
-    ok(names.includes('MeasurePeriodValidator'), 'Cypress: MeasurePeriodValidator present');
+    ok(names.includes('MeasureIdValidator'), 'Cypress-eq: MeasureIdValidator present');
+    ok(names.includes('PerformanceRateValidator'), 'Cypress-eq: PerformanceRateValidator present');
+    ok(names.includes('PopulationLogicValidator'), 'Cypress-eq: PopulationLogicValidator present');
+    ok(names.includes('ProgramValidator'), 'Cypress-eq: ProgramValidator present');
+    ok(names.includes('MeasurePeriodValidator'), 'Cypress-eq: MeasurePeriodValidator present');
 
     console.log(`    layers=${result.layers.length}, errors=${result.totalErrors}, warnings=${result.totalWarnings}, scope=${result.scope}`);
   }

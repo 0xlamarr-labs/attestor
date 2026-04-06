@@ -1105,7 +1105,7 @@ async function runHealthcareDemo(): Promise<void> {
   // Cypress-equivalent validators (Layers 2-6)
   const { validateCypressLayers } = await import('../filing/qrda3-cypress-validators.js');
   const cypressResult = validateCypressLayers(qrda3Xml);
-  console.log(`  Cypress: ${cypressResult.valid ? '✓' : '✗'} ${cypressResult.totalErrors} errors, ${cypressResult.totalWarnings} warnings (${cypressResult.scope})`);
+  console.log(`  Cypress-eq: ${cypressResult.valid ? '✓' : '✗'} ${cypressResult.totalErrors} errors, ${cypressResult.totalWarnings} warnings (${cypressResult.scope}, not actual ONC Cypress)`);
   for (const layer of cypressResult.layers) {
     const icon = layer.valid ? '✓' : '✗';
     const warnStr = layer.warnings.length > 0 ? ` (${layer.warnings.length} warnings)` : '';
