@@ -101,8 +101,8 @@ Attestor does not blur proof maturity across tracks.
 - Connector registry with PostgreSQL and Snowflake modules
 - Filing adapter registry with XBRL US-GAAP 2024 and xBRL-CSV EBA DPM 2.0 adapters
 - Bounded HTTP API server with sync and async first-slice routes
-- OIDC reviewer identity verification on the API path, plus encrypted local token cache + device flow in the CLI proof path
-- BullMQ/Redis async orchestration with production Redis config when `REDIS_URL` is set
+- OIDC reviewer identity verification on the API path, plus OS keychain-backed session management (`@napi-rs/keyring` native keychain with encrypted-file fallback) + device flow in the CLI proof path
+- BullMQ/Redis async orchestration with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis), in-process fallback when all Redis tiers unavailable
 
 ## What Attestor Is
 

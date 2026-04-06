@@ -14,7 +14,7 @@ Certificates are JSON documents that bind the full authority chain, evidence anc
 - **WHAT** evidence exists (evidence chain root/terminal, audit chain integrity, SQL hash, snapshot hash)
 - **WHETHER** execution was live or fixture-based (live proof mode + consistency)
 
-**Verification requires only the certificate JSON + the signer's public key for the default Ed25519 path. No platform access, no database, no API call.**
+**Verification is portable and offline — no platform access, no database, no API call. The default verifier path is PKI-first: kit verification requires trust chain material (CA → leaf → certificate binding). When chain material is absent, the CLI exits with code 2 (`PKI_REQUIRED`). Legacy flat Ed25519 verification (certificate JSON + signer public key only) remains available as an explicit override (`--allow-legacy-verify` or `ATTESTOR_ALLOW_LEGACY=true`).**
 
 ```bash
 # Generate a signing key pair
