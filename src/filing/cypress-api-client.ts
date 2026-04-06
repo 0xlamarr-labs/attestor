@@ -35,7 +35,7 @@ export interface CypressApiConfig {
   pass?: string;
   /** Cypress server base URL. Default: cypressdemo.healthit.gov */
   baseUrl?: string;
-  /** Reporting year. Default: '2026' */
+  /** Reporting year. Default: '2025' (use the latest year supported by the demo server) */
   year?: string;
   /** Implementation guide. Default: 'CMS' */
   ig?: 'CMS' | 'HL7';
@@ -93,40 +93,39 @@ export async function validateViaCypressApi(
   }
 
   const baseUrl = config.baseUrl ?? CYPRESS_API_BASE;
-  const year = config.year ?? '2026';
+  const year = config.year ?? '2025';
   const ig = config.ig ?? 'CMS';
   const url = `${baseUrl}/qrda_validation/${year}/III/${ig}`;
 
   const auth = Buffer.from(`${user}:${pass}`).toString('base64');
 
-  // Build multipart form data with the XML file
-  const boundary = '----AttestorCypressBoundary' + Date.now();
-  const body = [
-    `--${boundary}`,
-    'Content-Disposition: form-data; name="file"; filename="attestor-qrda3.xml"',
-    'Content-Type: application/xml',
-    '',
-    xml,
-    `--${boundary}--`,
-    '',
-  ].join('\r\n');
+  // Build multipart form data using native FormData (Node.js 18+)
+  const formData = new FormData();
+  formData.append('file', new Blob([xml], { type: 'application/xml' }), 'attestor-qrda3.xml');
 
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${auth}`,
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Accept': 'application/json',
       },
-      body,
+      body: formData,
     });
 
     const httpStatus = response.status;
 
+    let responseBody: any;
+    try {
+      responseBody = await response.json();
+    } catch {
+      responseBody = { execution_errors: [] };
+    }
+
     if (httpStatus === 401) {
       return {
         valid: false,
-        errors: [{ message: 'UMLS authentication failed (HTTP 401). Check CYPRESS_UMLS_USER and CYPRESS_UMLS_PASS.' }],
+        errors: [{ message: responseBody?.error ?? 'UMLS authentication failed (HTTP 401). Check CYPRESS_UMLS_USER and CYPRESS_UMLS_PASS.' }],
         errorCount: 1,
         validator: null, path: null,
         scope: 'onc_cypress_api',
@@ -134,7 +133,18 @@ export async function validateViaCypressApi(
       };
     }
 
-    const result = await response.json() as any;
+    if (httpStatus === 422) {
+      return {
+        valid: false,
+        errors: [{ message: responseBody?.error ?? `Server returned 422 — the reporting year or IG may not be available on the demo server.` }],
+        errorCount: 1,
+        validator: null, path: null,
+        scope: 'onc_cypress_api',
+        httpStatus,
+      };
+    }
+
+    const result = responseBody;
     const executionErrors: CypressApiError[] = (result.execution_errors ?? []).map((e: any) => ({
       message: e.message ?? e.msg ?? JSON.stringify(e),
       validator: e.validator,

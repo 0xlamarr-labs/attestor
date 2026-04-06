@@ -23,10 +23,25 @@ async function run() {
 
   const { isCypressConfigured, validateViaCypressApi } = await import('../src/filing/cypress-api-client.js');
 
+  // ═══ CONNECTIVITY TEST (always runs, no credentials needed) ═══
+  console.log('  [Cypress API Connectivity Test]');
+  {
+    const { generateQrda3: genQrda } = await import('../src/filing/qrda3-generator.js');
+    const { CMS165_BLOOD_PRESSURE: bp, evaluateMeasure: evalM } = await import('../src/domains/healthcare-measures.js');
+    const testXml = genQrda([evalM(bp, { initial_population: 100, denominator: 90, denominator_exclusion: 10, numerator: 72 })]);
+    const connResult = await validateViaCypressApi(testXml, { user: 'connectivity-test', pass: 'connectivity-test', year: '2025' });
+    ok(connResult.scope === 'onc_cypress_api', 'Connectivity: scope = onc_cypress_api');
+    ok(connResult.httpStatus === 401, 'Connectivity: server reachable (HTTP 401 = auth required)');
+    ok(connResult.errors.length > 0, 'Connectivity: server returned error message');
+    console.log(`    HTTP ${connResult.httpStatus}: ${connResult.errors[0]?.message ?? 'no message'}`);
+    console.log('    ✓ ONC Cypress server is reachable and responding\n');
+  }
+
   if (!isCypressConfigured()) {
-    console.log('  ⊘ SKIPPED: CYPRESS_UMLS_USER / CYPRESS_UMLS_PASS not set');
+    console.log('  ⊘ FULL VALIDATION SKIPPED: CYPRESS_UMLS_USER / CYPRESS_UMLS_PASS not set');
     console.log('    Sign up for free UMLS credentials at: https://uts.nlm.nih.gov/uts/signup-login');
-    console.log('    Then: CYPRESS_UMLS_USER=x CYPRESS_UMLS_PASS=y npx tsx tests/live-cypress.test.ts\n');
+    console.log('    Then: CYPRESS_UMLS_USER=x CYPRESS_UMLS_PASS=y npx tsx tests/live-cypress.test.ts');
+    console.log(`\n  Live Cypress Tests: ${passed} passed (connectivity only)\n`);
     return;
   }
 

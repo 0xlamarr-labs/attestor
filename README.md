@@ -303,7 +303,7 @@ What it does not prove yet:
 
 ## Not Yet Implemented
 
-- ONC Cypress full-stack validation (current: ONC Cypress API client implemented and wired into healthcare CLI — env-gated on `CYPRESS_UMLS_USER` + `CYPRESS_UMLS_PASS`. Real API call to `cypressdemo.healthit.gov/qrda_validation/2026/III/CMS`. Requires free UMLS credentials from uts.nlm.nih.gov — ~5 business day approval. Not yet tested with live credentials. Layer 7 VSAC value set validation also requires UMLS and is not implemented.)
+- ONC Cypress live-credential validation (current: Cypress API client wired into CLI + connectivity test proves `cypressdemo.healthit.gov` is reachable and responds with HTTP 401 auth gate. Env-gated on `CYPRESS_UMLS_USER` + `CYPRESS_UMLS_PASS` (free UMLS from uts.nlm.nih.gov). Not yet tested with live UMLS credentials. Layer 7 VSAC value set validation also requires UMLS and is not implemented.)
 
 ## Output Artifacts
 
@@ -359,6 +359,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 831 tests across 6 suites: 557 unit + 102 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E, plus env-gated live Snowflake |
+| Expanded verification surface | 834 tests across 7 suites: 557 unit + 102 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |
