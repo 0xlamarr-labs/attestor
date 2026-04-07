@@ -141,6 +141,21 @@ export function readUsageLedgerSnapshot(): {
   };
 }
 
+export function queryUsageLedger(filters?: {
+  tenantId?: string | null;
+  period?: string | null;
+}): UsageLedgerRecord[] {
+  const ledger = loadLedger();
+  return ledger.monthlyPipelineRuns
+    .filter((entry) => !filters?.tenantId || entry.tenantId === filters.tenantId)
+    .filter((entry) => !filters?.period || entry.period === filters.period)
+    .sort((a, b) => {
+      if (a.period !== b.period) return a.period < b.period ? 1 : -1;
+      if (a.used !== b.used) return b.used - a.used;
+      return a.tenantId.localeCompare(b.tenantId);
+    });
+}
+
 export function resetUsageMeter(): void {
   const path = ledgerPath();
   if (existsSync(path)) rmSync(path, { force: true });

@@ -537,6 +537,23 @@ async function run() {
       const tenantUsageBody = await tenantUsage.json() as any;
       ok(tenantUsageBody.tenantContext.tenantId === 'tenant-admin', 'Admin API: tenant route resolves issued key');
 
+      const tenantRun = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${issueBody.key.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(tenantRun.status === 200, 'Admin API: issued key can consume pipeline run');
+
       const listRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
         headers: { Authorization: 'Bearer admin-secret' },
       });
@@ -545,6 +562,29 @@ async function run() {
       const listed = listBody.keys.find((entry: any) => entry.id === issueBody.key.id);
       ok(Boolean(listed), 'Admin API: issued key appears in list');
       ok(!('apiKeyHash' in listed), 'Admin API: hash not exposed');
+
+      const usageNoAuth = await fetch(`${BASE}/api/v1/admin/usage`);
+      ok(usageNoAuth.status === 401, 'Admin Usage: auth required');
+
+      const usageListRes = await fetch(`${BASE}/api/v1/admin/usage`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(usageListRes.status === 200, 'Admin Usage: list status 200');
+      const usageListBody = await usageListRes.json() as any;
+      const usageListed = usageListBody.records.find((entry: any) => entry.tenantId === 'tenant-admin');
+      ok(Boolean(usageListed), 'Admin Usage: tenant-admin appears in usage report');
+      ok(usageListed.tenantName === 'Admin Co', 'Admin Usage: tenant name enriched');
+      ok(usageListed.planId === 'pro', 'Admin Usage: plan enriched');
+      ok(usageListed.used === 1, 'Admin Usage: used count tracked');
+      ok(usageListBody.summary.totalUsed >= 1, 'Admin Usage: summary totalUsed present');
+
+      const usageFilterRes = await fetch(`${BASE}/api/v1/admin/usage?tenantId=tenant-admin`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(usageFilterRes.status === 200, 'Admin Usage: tenant filter status 200');
+      const usageFilterBody = await usageFilterRes.json() as any;
+      ok(usageFilterBody.records.length === 1, 'Admin Usage: tenant filter narrows records');
+      ok(usageFilterBody.records[0].tenantId === 'tenant-admin', 'Admin Usage: tenant filter record correct');
 
       const revokeRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/revoke`, {
         method: 'POST',
@@ -558,7 +598,7 @@ async function run() {
         headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
       });
       ok(revokedTenantRes.status === 401, 'Admin API: revoked key no longer works');
-      console.log(`    issued=${issueBody.key.id}, listed=${listed.id}, revoked=${revokeBody.key.status}`);
+      console.log(`    issued=${issueBody.key.id}, usageUsed=${usageListed.used}, revoked=${revokeBody.key.status}`);
     }
 
     console.log(`\n  Live API Tests: ${passed} passed, 0 failed\n`);

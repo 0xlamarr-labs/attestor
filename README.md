@@ -218,7 +218,7 @@ Current service capabilities:
 - 3-tier Redis auto-resolution: `REDIS_URL` → localhost:6379 → embedded `redis-memory-server` → in-process fallback
 - Readiness probe (`/api/v1/ready`) checking async backend, PKI, domains, and Redis state
 - SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
-- Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or local file-backed tenant key store, plus admin tenant-key management endpoints behind `ATTESTOR_ADMIN_API_KEY`, and database-level RLS auto-activated when `ATTESTOR_PG_URL` set
+- Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or local file-backed tenant key store, plus admin tenant-key management and usage-reporting endpoints behind `ATTESTOR_ADMIN_API_KEY`, and database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
 - XBRL filing export auto-summary in signed pipeline responses
 - OIDC reviewer identity verification on the API path
@@ -292,6 +292,7 @@ What it does not prove yet:
 - Hosted API shell: API-key tenant plans + monthly pipeline-run quota enforcement + `/api/v1/account/usage` meter endpoint. Usage is now persisted in a local single-node file-backed ledger, but is not yet a shared billing datastore or Stripe-backed billing system.
 - Tenant onboarding CLI: `npm run tenant:keys -- issue|list|revoke` manages a local file-backed tenant key store for hosted operator workflows. Keys are hashed at rest and plaintext is only shown once on issuance.
 - Admin tenant management API: `GET/POST /api/v1/admin/tenant-keys` plus `POST /api/v1/admin/tenant-keys/:id/revoke` behind `ATTESTOR_ADMIN_API_KEY`. Intended for operator/backoffice automation, not end-customer self-serve yet.
+- Admin usage reporting API: `GET /api/v1/admin/usage` returns tenant-level monthly usage from the local ledger, with optional `tenantId` / `period` filtering and best-effort tenant metadata enrichment.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
 - Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, rate limiting, or dead-letter queue.
 - Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the local file-backed tenant key store is configured; optional plan/quota metadata now propagates into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
@@ -365,6 +366,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 871 tests across 7 suites: 557 unit + 139 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
+| Expanded verification surface | 882 tests across 7 suites: 557 unit + 150 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

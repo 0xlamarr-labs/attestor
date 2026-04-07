@@ -133,6 +133,17 @@ export function hasActiveTenantKeys(): boolean {
   return store.records.some((entry) => entry.status === 'active');
 }
 
+export function findTenantRecordByTenantId(tenantId: string): TenantKeyRecord | null {
+  const store = loadStore();
+  const candidates = store.records.filter((entry) => entry.tenantId === tenantId);
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
+    return a.createdAt > b.createdAt ? -1 : 1;
+  });
+  return candidates[0] ?? null;
+}
+
 export function resetTenantKeyStoreForTests(): void {
   const path = storePath();
   if (existsSync(path)) rmSync(path, { force: true });

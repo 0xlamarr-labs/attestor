@@ -223,6 +223,30 @@ export interface AdminRevokeTenantKeyResponse {
   key: AdminTenantKeyRecord;
 }
 
+export interface AdminUsageRecord {
+  tenantId: string;
+  tenantName: string | null;
+  planId: string | null;
+  monthlyRunQuota: number | null;
+  meter: 'monthly_pipeline_runs';
+  period: string;
+  used: number;
+  remaining: number | null;
+  enforced: boolean;
+  updatedAt: string;
+}
+
+export interface AdminUsageResponse {
+  records: AdminUsageRecord[];
+  summary: {
+    tenantFilter: string | null;
+    periodFilter: string | null;
+    recordCount: number;
+    tenantCount: number;
+    totalUsed: number;
+  };
+}
+
 export interface UsageContext {
   tenantId: string;
   planId: string;
@@ -245,6 +269,7 @@ export const API_ROUTES = {
   ACCOUNT_USAGE: '/api/v1/account/usage',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
+  ADMIN_USAGE: '/api/v1/admin/usage',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',
   CONNECTORS: '/api/v1/connectors',

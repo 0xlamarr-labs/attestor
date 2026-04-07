@@ -11,6 +11,7 @@
  * - GET  /api/v1/domains             — registered domain packs
  * - GET  /api/v1/connectors          — registered database connectors
  * - GET/POST /api/v1/admin/tenant-keys — hosted operator tenant key management
+ * - GET  /api/v1/admin/usage         — hosted operator usage reporting
  *
  * This is a real server. It binds to a port and accepts real HTTP requests.
  * Integration tests hit it over the network.
@@ -40,8 +41,9 @@ import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
 import { tenantMiddleware, getTenantContextFromHeaders, type TenantContext } from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
-import { canConsumePipelineRun, consumePipelineRun, getUsageContext } from './usage-meter.js';
+import { canConsumePipelineRun, consumePipelineRun, getUsageContext, queryUsageLedger } from './usage-meter.js';
 import {
+  findTenantRecordByTenantId,
   issueTenantApiKey,
   listTenantKeyRecords,
   revokeTenantApiKey,
@@ -236,6 +238,41 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', (c) => {
 
   return c.json({
     key: adminTenantKeyView(result.record),
+  });
+});
+
+app.get('/api/v1/admin/usage', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const tenantId = c.req.query('tenantId')?.trim() || null;
+  const period = c.req.query('period')?.trim() || null;
+  const records = queryUsageLedger({ tenantId, period }).map((entry) => {
+    const tenantRecord = findTenantRecordByTenantId(entry.tenantId);
+    const quota = tenantRecord?.monthlyRunQuota ?? null;
+    return {
+      tenantId: entry.tenantId,
+      tenantName: tenantRecord?.tenantName ?? null,
+      planId: tenantRecord?.planId ?? null,
+      monthlyRunQuota: quota,
+      meter: 'monthly_pipeline_runs' as const,
+      period: entry.period,
+      used: entry.used,
+      remaining: quota === null ? null : Math.max(0, quota - entry.used),
+      enforced: quota !== null,
+      updatedAt: entry.updatedAt,
+    };
+  });
+
+  return c.json({
+    records,
+    summary: {
+      tenantFilter: tenantId,
+      periodFilter: period,
+      recordCount: records.length,
+      tenantCount: new Set(records.map((entry) => entry.tenantId)).size,
+      totalUsed: records.reduce((sum, entry) => sum + entry.used, 0),
+    },
   });
 });
 
