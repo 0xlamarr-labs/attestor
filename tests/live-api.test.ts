@@ -14,6 +14,7 @@ import { strict as assert } from 'node:assert';
 import { join } from 'node:path';
 import { startServer } from '../src/service/api-server.js';
 import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } from '../src/service/tenant-key-store.js';
+import { readUsageLedgerSnapshot, resetUsageMeter } from '../src/service/usage-meter.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
@@ -30,7 +31,9 @@ function ok(condition: boolean, msg: string): void {
 
 async function run() {
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-tenant-keys.json');
+  process.env.ATTESTOR_USAGE_LEDGER_PATH = join(process.cwd(), '.attestor', 'live-api-usage-ledger.json');
   resetTenantKeyStoreForTests();
+  resetUsageMeter();
 
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE API INTEGRATION TESTS — Real HTTP, Real Server');
@@ -464,6 +467,11 @@ async function run() {
       ok(thirdBody.usage.used === 2, 'Quota: rejected run does not increment usage');
       ok(thirdBody.usage.remaining === 0, 'Quota: rejected run remaining = 0');
       console.log(`    quota enforced: used=${thirdBody.usage.used}/${thirdBody.usage.quota}, status=${third.status}`);
+
+      const ledger = readUsageLedgerSnapshot();
+      const persisted = ledger.records.find((entry) => entry.tenantId === 'tenant-pro' && entry.period === secondBody.usage.period);
+      ok(Boolean(persisted), 'Quota: usage persisted to local ledger');
+      ok(persisted?.used === 2, 'Quota: persisted ledger count = 2');
     }
 
     process.env.ATTESTOR_TENANT_KEYS = '';
@@ -498,6 +506,7 @@ async function run() {
     console.log(`\n  Live API Tests: ${passed} passed, 0 failed\n`);
   } finally {
     resetTenantKeyStoreForTests();
+    resetUsageMeter();
     serverHandle.close();
     console.log('  Server stopped.\n');
     // Force exit: embedded Redis / BullMQ connections keep the event loop alive
