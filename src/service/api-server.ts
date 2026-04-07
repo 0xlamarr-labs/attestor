@@ -15,7 +15,7 @@
  * Integration tests hit it over the network.
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { serve } from '@hono/node-server';
 import { runFinancialPipeline } from '../financial/pipeline.js';
 import { generateKeyPair } from '../signing/keys.js';
@@ -37,8 +37,9 @@ import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js'
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
-import { tenantMiddleware, type TenantContext } from './tenant-isolation.js';
+import { tenantMiddleware, getTenantContextFromHeaders, type TenantContext } from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
+import { canConsumePipelineRun, consumePipelineRun, getUsageContext } from './usage-meter.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -67,6 +68,10 @@ function createRequestSigners(identitySource: string, reviewerName?: string) {
     { subject: 'API Runtime Signer', source: identitySource === 'oidc_verified' ? 'oidc_verified' : 'ephemeral', identifier: 'api-keyless' },
     reviewerName ? { subject: reviewerName, source: identitySource === 'oidc_verified' ? 'oidc_verified' : 'operator_asserted', identifier: reviewerName } : undefined,
   );
+}
+
+function currentTenant(c: Context): TenantContext {
+  return getTenantContextFromHeaders(c.req.raw.headers);
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────
@@ -128,6 +133,19 @@ app.get('/api/v1/connectors', async (c) => {
   return c.json({ connectors });
 });
 
+app.get('/api/v1/account/usage', (c) => {
+  const tenant = currentTenant(c);
+  const usage = getUsageContext(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+  return c.json({
+    tenantContext: {
+      tenantId: tenant.tenantId,
+      source: tenant.source,
+      planId: tenant.planId,
+    },
+    usage,
+  });
+});
+
 // ─── Pipeline Run ───────────────────────────────────────────────────────────
 
 app.post('/api/v1/pipeline/run', async (c) => {
@@ -137,6 +155,16 @@ app.post('/api/v1/pipeline/run', async (c) => {
 
     if (!candidateSql || !intent) {
       return c.json({ error: 'candidateSql and intent are required' }, 400);
+    }
+
+    const tenant = currentTenant(c);
+    const quotaCheck = canConsumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    if (!quotaCheck.allowed) {
+      return c.json({
+        error: 'Monthly pipeline run quota exceeded for this tenant plan.',
+        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+        usage: quotaCheck.usage,
+      }, 429);
     }
 
     // ── Optional connector-backed execution ──
@@ -252,6 +280,8 @@ app.post('/api/v1/pipeline/run', async (c) => {
       );
     }
 
+    const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+
     return c.json({
       runId: report.runId,
       decision: report.decision,
@@ -305,12 +335,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
       } : null,
       // Tenant context (from middleware)
       tenantContext: (() => {
-        try {
-          const tenantHeader = c.req.header('x-attestor-tenant-id');
-          const tenantSource = c.req.header('x-attestor-tenant-source');
-          return { tenantId: tenantHeader ?? 'default', source: tenantSource ?? 'anonymous' };
-        } catch { return { tenantId: 'default', source: 'anonymous' }; }
+        return { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId };
       })(),
+      usage,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
       // Auto-filing: when sign=true and filing adapter is available, include XBRL mapping summary
@@ -533,7 +560,18 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       return c.json({ error: 'candidateSql and intent are required' }, 400);
     }
 
+    const tenant = currentTenant(c);
+    const quotaCheck = canConsumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    if (!quotaCheck.allowed) {
+      return c.json({
+        error: 'Monthly pipeline run quota exceeded for this tenant plan.',
+        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+        usage: quotaCheck.usage,
+      }, 429);
+    }
+
     const submittedAt = new Date().toISOString();
+    const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
 
     if (asyncBackendMode === 'bullmq' && bullmqQueue) {
       // BullMQ path
@@ -546,7 +584,14 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         signingKeyPair: sign ? pki.signer.keyPair : undefined,
       };
       const { jobId } = await submitPipelineJob(bullmqQueue, input, sign);
-      return c.json({ jobId, status: 'queued', backendMode: 'bullmq', submittedAt }, 202);
+      return c.json({
+        jobId,
+        status: 'queued',
+        backendMode: 'bullmq',
+        submittedAt,
+        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+        usage,
+      }, 202);
     }
 
     // In-process fallback (explicit about mode)
@@ -590,7 +635,14 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       }
     });
 
-    return c.json({ jobId, status: 'queued', backendMode: 'in_process', submittedAt }, 202);
+    return c.json({
+      jobId,
+      status: 'queued',
+      backendMode: 'in_process',
+      submittedAt,
+      tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+      usage,
+    }, 202);
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }

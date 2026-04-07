@@ -289,9 +289,10 @@ What it does not prove yet:
 
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
+- Hosted API shell: API-key tenant plans + monthly pipeline-run quota enforcement + `/api/v1/account/usage` meter endpoint. Usage meter is in-memory only, resets on restart, and is not yet a persistent billing ledger or billing backend.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
 - Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, rate limiting, or dead-letter queue.
-- Request-level tenant isolation: middleware active on all API routes, enforced when ATTESTOR_TENANT_KEYS set
+- Request-level tenant isolation: middleware active on all API routes, enforced when `ATTESTOR_TENANT_KEYS` is set; optional plan/quota metadata now propagates into API responses
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
@@ -346,7 +347,7 @@ What it does not prove yet:
 | `SNOWFLAKE_WAREHOUSE` | Snowflake warehouse override |
 | `OIDC_ISSUER_URL` | OIDC identity provider URL for reviewer identity |
 | `OIDC_CLIENT_ID` | OIDC client ID for device flow |
-| `ATTESTOR_TENANT_KEYS` | Tenant API keys (`key:id:name,...`) for request-level isolation |
+| `ATTESTOR_TENANT_KEYS` | Tenant API keys with optional plan/quota metadata (`key:id:name[:plan][:quota],...`) for request-level isolation and hosted quota enforcement |
 | `REDIS_URL` | Redis URL for BullMQ async backend |
 | `ATTESTOR_ALLOW_LEGACY_API` | Set `true` to allow flat Ed25519 at `/api/v1/verify` (deprecated) |
 | `CYPRESS_UMLS_USER` | UMLS username for ONC Cypress API validation (free from uts.nlm.nih.gov) |
@@ -359,6 +360,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 834 tests across 7 suites: 557 unit + 102 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
+| Expanded verification surface | 850 tests across 7 suites: 557 unit + 118 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

@@ -387,6 +387,80 @@ async function run() {
       console.log(`    status=${res.status}`);
     }
 
+    // ═══ HOSTED SHELL — plan/quota/usage first slice ═══
+    process.env.ATTESTOR_TENANT_KEYS = 'pro-key:tenant-pro:Acme:pro:2';
+
+    console.log('\n  [GET /api/v1/account/usage — tenant usage]');
+    {
+      const res = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: 'Bearer pro-key' },
+      });
+      ok(res.status === 200, 'Usage: status 200');
+      const body = await res.json() as any;
+      ok(body.tenantContext.tenantId === 'tenant-pro', 'Usage: tenant id');
+      ok(body.tenantContext.planId === 'pro', 'Usage: plan id');
+      ok(body.usage.used === 0, 'Usage: starts at 0');
+      ok(body.usage.quota === 2, 'Usage: quota = 2');
+      ok(body.usage.remaining === 2, 'Usage: remaining = 2');
+      console.log(`    tenant=${body.tenantContext.tenantId}, plan=${body.tenantContext.planId}, used=${body.usage.used}/${body.usage.quota}`);
+    }
+
+    console.log('\n  [POST /api/v1/pipeline/run — tenant metering]');
+    {
+      const first = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer pro-key' },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(first.status === 200, 'Quota: first run allowed');
+      const firstBody = await first.json() as any;
+      ok(firstBody.tenantContext.planId === 'pro', 'Quota: plan propagated');
+      ok(firstBody.usage.used === 1, 'Quota: first run increments usage');
+      ok(firstBody.usage.remaining === 1, 'Quota: first run remaining = 1');
+
+      const second = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer pro-key' },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(second.status === 200, 'Quota: second run allowed');
+      const secondBody = await second.json() as any;
+      ok(secondBody.usage.used === 2, 'Quota: second run increments usage');
+      ok(secondBody.usage.remaining === 0, 'Quota: second run remaining = 0');
+
+      const third = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer pro-key' },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(third.status === 429, 'Quota: third run rejected');
+      const thirdBody = await third.json() as any;
+      ok(thirdBody.usage.used === 2, 'Quota: rejected run does not increment usage');
+      ok(thirdBody.usage.remaining === 0, 'Quota: rejected run remaining = 0');
+      console.log(`    quota enforced: used=${thirdBody.usage.used}/${thirdBody.usage.quota}, status=${third.status}`);
+    }
+
     console.log(`\n  Live API Tests: ${passed} passed, 0 failed\n`);
   } finally {
     serverHandle.close();

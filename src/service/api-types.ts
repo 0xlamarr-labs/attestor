@@ -42,7 +42,8 @@ export interface SyncPipelineRunResponse {
   signingMode: 'keyless' | null;
   connectorUsed: string | null;
   schemaAttestation: SchemaAttestationSummary | null;
-  tenantContext: { tenantId: string; source: string };
+  tenantContext: { tenantId: string; source: string; planId: string | null };
+  usage: UsageContext;
   identitySource: 'operator_asserted' | 'oidc_verified' | 'pki_bound';
   reviewerName: string | null;
   filingExport: { adapterId: string; coveragePercent: number; mappedCount: number } | null;
@@ -64,6 +65,8 @@ export interface AsyncPipelineSubmitResponse {
   status: 'queued';
   backendMode: 'bullmq' | 'in_process';
   submittedAt: string;
+  tenantContext: { tenantId: string; source: string; planId: string | null };
+  usage: UsageContext;
 }
 
 export interface AsyncPipelineStatusResponse {
@@ -184,6 +187,22 @@ export interface ServiceHealth {
   engine: string;
 }
 
+export interface AccountUsageResponse {
+  tenantContext: { tenantId: string; source: string; planId: string | null };
+  usage: UsageContext;
+}
+
+export interface UsageContext {
+  tenantId: string;
+  planId: string;
+  meter: 'monthly_pipeline_runs';
+  period: string;
+  used: number;
+  quota: number | null;
+  remaining: number | null;
+  enforced: boolean;
+}
+
 // ─── Route Constants ────────────────────────────────────────────────────────
 
 export const API_ROUTES = {
@@ -192,6 +211,7 @@ export const API_ROUTES = {
   PIPELINE_STATUS: '/api/v1/pipeline/status/:jobId',
   VERIFY: '/api/v1/verify',
   FILING_EXPORT: '/api/v1/filing/export',
+  ACCOUNT_USAGE: '/api/v1/account/usage',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',
   CONNECTORS: '/api/v1/connectors',
