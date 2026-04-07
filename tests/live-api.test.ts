@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { startServer } from '../src/service/api-server.js';
 import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } from '../src/service/tenant-key-store.js';
 import { readUsageLedgerSnapshot, resetUsageMeter } from '../src/service/usage-meter.js';
+import { resetTenantRateLimiterForTests } from '../src/service/rate-limit.js';
 import { resetAccountStoreForTests } from '../src/service/account-store.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
@@ -39,8 +40,12 @@ async function run() {
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
+  process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
+  process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
+  process.env.ATTESTOR_RATE_LIMIT_PRO_REQUESTS = '20';
   resetTenantKeyStoreForTests();
   resetUsageMeter();
+  resetTenantRateLimiterForTests();
   resetAccountStoreForTests();
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
@@ -503,6 +508,7 @@ async function run() {
       ok(usageBody.tenantContext.tenantId === 'tenant-file', 'File store: tenant id propagated');
       ok(usageBody.tenantContext.planId === 'starter', 'File store: plan propagated');
       ok(usageBody.usage.quota === 1, 'File store: quota propagated');
+      ok(usageBody.rateLimit.requestsPerWindow === 3, 'File store: rate limit propagated');
 
       const anonymousRes = await fetch(`${BASE}/api/v1/account/usage`);
       ok(anonymousRes.status === 401, 'File store: active keys enforce auth');
@@ -527,9 +533,11 @@ async function run() {
       ok(plansRes.status === 200, 'Admin Plans: list status 200');
       const plansBody = await plansRes.json() as any;
       ok(plansBody.defaults.hostedProvisioningPlanId === 'starter', 'Admin Plans: hosted default = starter');
+      ok(plansBody.defaults.rateLimitWindowSeconds === 2, 'Admin Plans: rate-limit window override exposed');
       const starterPlan = plansBody.plans.find((entry: any) => entry.id === 'starter');
       ok(Boolean(starterPlan), 'Admin Plans: starter plan present');
       ok(starterPlan.defaultMonthlyRunQuota === 100, 'Admin Plans: starter quota = 100');
+      ok(starterPlan.defaultPipelineRequestsPerWindow === 3, 'Admin Plans: starter rate limit = 3');
       ok(starterPlan.defaultForHostedProvisioning === true, 'Admin Plans: starter is hosted default');
 
       const accountsNoAuth = await fetch(`${BASE}/api/v1/admin/accounts`);
@@ -606,6 +614,8 @@ async function run() {
         headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
       });
       ok(accountUsageRes.status === 200, 'Admin Accounts: initial key works on tenant route');
+      const accountUsageBody = await accountUsageRes.json() as any;
+      ok(accountUsageBody.rateLimit.requestsPerWindow === 3, 'Admin Accounts: starter rate limit visible on account usage');
 
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
@@ -822,6 +832,104 @@ async function run() {
         }),
       });
       ok(accountRun.status === 200, 'Admin Accounts: created account key can consume pipeline run');
+      const accountRunBody = await accountRun.json() as any;
+      ok(accountRunBody.rateLimit.requestsPerWindow === 3, 'Admin Accounts: run response includes rate limit');
+      ok(accountRunBody.rateLimit.used >= 1, 'Admin Accounts: run rate limit usage increments');
+
+      const rateTenantRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+        },
+        body: JSON.stringify({
+          tenantId: 'tenant-rate',
+          tenantName: 'Rate Co',
+          planId: 'starter',
+        }),
+      });
+      ok(rateTenantRes.status === 201, 'Admin API: starter tenant for rate-limit test issued');
+      const rateTenantBody = await rateTenantRes.json() as any;
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const allowed = await fetch(`${BASE}/api/v1/pipeline/run`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${rateTenantBody.key.apiKey}`,
+          },
+          body: JSON.stringify({
+            candidateSql: COUNTERPARTY_SQL,
+            intent: COUNTERPARTY_INTENT,
+            fixtures: [COUNTERPARTY_FIXTURE],
+            generatedReport: COUNTERPARTY_REPORT,
+            reportContract: COUNTERPARTY_REPORT_CONTRACT,
+            sign: false,
+          }),
+        });
+        ok(allowed.status === 200, `Rate Limit: starter request ${attempt + 1} allowed`);
+        const allowedBody = await allowed.json() as any;
+        ok(allowedBody.rateLimit.requestsPerWindow === 3, `Rate Limit: request ${attempt + 1} limit exposed`);
+      }
+
+      const limitedSync = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${rateTenantBody.key.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(limitedSync.status === 429, 'Rate Limit: sync route throttled after starter window exhausted');
+      ok(limitedSync.headers.get('retry-after') !== null, 'Rate Limit: retry-after header present');
+      const limitedSyncBody = await limitedSync.json() as any;
+      ok(limitedSyncBody.rateLimit.remaining === 0, 'Rate Limit: sync 429 reports zero remaining');
+      ok(limitedSyncBody.rateLimit.requestsPerWindow === 3, 'Rate Limit: sync 429 reports starter limit');
+
+      const limitedAsync = await fetch(`${BASE}/api/v1/pipeline/run-async`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${rateTenantBody.key.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(limitedAsync.status === 429, 'Rate Limit: async route shares tenant window');
+
+      await new Promise((resolve) => setTimeout(resolve, 2200));
+
+      const afterReset = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${rateTenantBody.key.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(afterReset.status === 200, 'Rate Limit: window reset allows new request');
+      const afterResetBody = await afterReset.json() as any;
+      ok(afterResetBody.rateLimit.used === 1, 'Rate Limit: reset starts new window usage at 1');
 
       const usageAccountFilterRes = await fetch(`${BASE}/api/v1/admin/usage?tenantId=tenant-account`, {
         headers: { Authorization: 'Bearer admin-secret' },
@@ -913,6 +1021,7 @@ async function run() {
     resetAccountStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
+    resetTenantRateLimiterForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     serverHandle.close();

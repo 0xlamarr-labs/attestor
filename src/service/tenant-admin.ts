@@ -20,7 +20,7 @@ import {
   tenantKeyStorePolicy,
   TenantKeyStoreError,
 } from './tenant-key-store.js';
-import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, validHostedPlanIds } from './plan-catalog.js';
+import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, resolvePlanRateLimit, validHostedPlanIds } from './plan-catalog.js';
 
 function readFlag(flag: string, fallback?: string): string | undefined {
   const index = process.argv.indexOf(flag);
@@ -77,10 +77,12 @@ async function main() {
     console.log(`Policy: maxActiveKeysPerTenant=${tenantKeyStorePolicy().maxActiveKeysPerTenant}`);
     console.log('Built-in hosted plans:');
     for (const plan of listHostedPlans()) {
+      const rateLimit = resolvePlanRateLimit(plan.id);
       console.log([
         `id=${plan.id}`,
         `name="${plan.displayName}"`,
         `quota=${plan.defaultMonthlyRunQuota ?? 'unlimited'}`,
+        `rateLimit=${rateLimit.requestsPerWindow ?? 'unlimited'}/${rateLimit.windowSeconds}s`,
         `defaultForHostedProvisioning=${plan.defaultForHostedProvisioning}`,
         `scope=${plan.intendedFor}`,
       ].join(' | '));

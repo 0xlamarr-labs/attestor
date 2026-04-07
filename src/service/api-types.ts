@@ -44,6 +44,7 @@ export interface SyncPipelineRunResponse {
   schemaAttestation: SchemaAttestationSummary | null;
   tenantContext: { tenantId: string; source: string; planId: string | null };
   usage: UsageContext;
+  rateLimit: RateLimitContext;
   identitySource: 'operator_asserted' | 'oidc_verified' | 'pki_bound';
   reviewerName: string | null;
   filingExport: { adapterId: string; coveragePercent: number; mappedCount: number } | null;
@@ -67,6 +68,7 @@ export interface AsyncPipelineSubmitResponse {
   submittedAt: string;
   tenantContext: { tenantId: string; source: string; planId: string | null };
   usage: UsageContext;
+  rateLimit: RateLimitContext;
 }
 
 export interface AsyncPipelineStatusResponse {
@@ -190,6 +192,7 @@ export interface ServiceHealth {
 export interface AccountUsageResponse {
   tenantContext: { tenantId: string; source: string; planId: string | null };
   usage: UsageContext;
+  rateLimit: RateLimitContext;
 }
 
 export interface AdminTenantKeyRecord {
@@ -274,6 +277,7 @@ export interface HostedPlanSummary {
   displayName: string;
   description: string;
   defaultMonthlyRunQuota: number | null;
+  defaultPipelineRequestsPerWindow: number | null;
   intendedFor: 'self_host' | 'hosted' | 'enterprise';
   defaultForHostedProvisioning: boolean;
 }
@@ -283,6 +287,7 @@ export interface AdminListPlansResponse {
   defaults: {
     hostedProvisioningPlanId: 'starter';
     maxActiveKeysPerTenant: number;
+    rateLimitWindowSeconds: number;
   };
 }
 
@@ -352,6 +357,19 @@ export interface UsageContext {
   quota: number | null;
   remaining: number | null;
   enforced: boolean;
+}
+
+export interface RateLimitContext {
+  tenantId: string;
+  planId: string;
+  scope: 'pipeline_requests';
+  windowSeconds: number;
+  requestsPerWindow: number | null;
+  used: number;
+  remaining: number | null;
+  enforced: boolean;
+  resetAt: string;
+  retryAfterSeconds: number;
 }
 
 // ─── Route Constants ────────────────────────────────────────────────────────

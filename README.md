@@ -230,7 +230,8 @@ Current service capabilities:
 - 3-tier Redis auto-resolution: `REDIS_URL` → localhost:6379 → embedded `redis-memory-server` → in-process fallback
 - Readiness probe (`/api/v1/ready`) checking async backend, PKI, domains, and Redis state
 - SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
-- Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or local file-backed tenant key store, plus overlap-capped key rotation (`rotate` -> `deactivate/reactivate` -> `revoke`) and admin account/tenant provisioning behind `ATTESTOR_ADMIN_API_KEY`, and database-level RLS auto-activated when `ATTESTOR_PG_URL` set
+- Plan-aware tenant rate limiting on pipeline routes with `429` + `Retry-After` and per-plan runtime defaults
+- Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or local file-backed tenant key store, plus overlap-capped key rotation (`rotate` -> `deactivate/reactivate` -> `revoke`), plan-aware tenant rate limiting on pipeline routes, and admin account/tenant provisioning behind `ATTESTOR_ADMIN_API_KEY`, with database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
 - XBRL filing export auto-summary in signed pipeline responses
 - OIDC reviewer identity verification on the API path
@@ -301,18 +302,18 @@ What it does not prove yet:
 
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
-- Hosted API shell: built-in hosted plan catalog (`community`, `starter`, `pro`, `enterprise`) + API-key tenant plans + monthly pipeline-run quota enforcement + `/api/v1/account/usage` meter endpoint. Usage is now persisted in a local single-node file-backed ledger, and tenant keys record `lastUsedAt`, but this is not yet a shared billing datastore or Stripe-backed billing system.
+- Hosted API shell: built-in hosted plan catalog (`community`, `starter`, `pro`, `enterprise`) + API-key tenant plans + monthly pipeline-run quota enforcement + plan-aware tenant rate limiting on expensive pipeline routes + `/api/v1/account/usage` meter endpoint. Usage is now persisted in a local single-node file-backed ledger, and tenant keys record `lastUsedAt`, but this is not yet a shared billing datastore or Stripe-backed billing system.
 - Tenant onboarding CLI: `npm run tenant:keys -- plans|issue|list|rotate|deactivate|reactivate|revoke` manages a local file-backed tenant key store for hosted operator workflows. Built-in plans resolve default quotas centrally; keys are hashed at rest and plaintext is only shown once on issuance.
 - Account provisioning store: local file-backed hosted account registry with one primary tenant per account in this first slice.
 - Admin account API: `GET/POST /api/v1/admin/accounts` creates a hosted customer record and issues the first tenant API key in one operator call. Hosted operator provisioning defaults to the `starter` plan unless overridden.
-- Admin plan catalog API: `GET /api/v1/admin/plans` returns the built-in hosted plan catalog and the current default provisioning plan for operator/backoffice automation.
+- Admin plan catalog API: `GET /api/v1/admin/plans` returns the built-in hosted plan catalog, the current default provisioning plan, and the active pipeline rate-limit window/defaults for operator/backoffice automation.
 - Admin tenant management API: `GET/POST /api/v1/admin/tenant-keys` plus `POST /api/v1/admin/tenant-keys/:id/rotate|deactivate|reactivate|revoke` behind `ATTESTOR_ADMIN_API_KEY`. Built-in plan ids are validated server-side so operator typos cannot silently create the wrong quota boundary, and active overlap is capped to two keys per tenant by default.
 - Admin mutation idempotency: account create, tenant key issue, rotate, deactivate, reactivate, and revoke accept `Idempotency-Key` for safe operator retries. Replay payloads are encrypted at rest in a short-lived local store derived from `ATTESTOR_ADMIN_API_KEY`.
 - Admin audit ledger: `GET /api/v1/admin/audit` exposes a local tamper-evident, hash-linked log of hosted operator mutations (`account.created`, `tenant_key.issued`, `tenant_key.rotated`, `tenant_key.deactivated`, `tenant_key.reactivated`, `tenant_key.revoked`).
 - Admin usage reporting API: `GET /api/v1/admin/usage` returns tenant-level monthly usage from the local ledger, with optional `tenantId` / `period` filtering and best-effort tenant metadata enrichment.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
-- Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, rate limiting, or dead-letter queue.
-- Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the local file-backed tenant key store is configured; optional plan/quota metadata now propagates into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
+- Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, distributed/shared rate limiting, or dead-letter queue.
+- Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the local file-backed tenant key store is configured; optional plan/quota metadata and rate-limit context now propagate into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
@@ -372,6 +373,8 @@ What it does not prove yet:
 | `ATTESTOR_TENANT_KEY_STORE_PATH` | Optional path for the local file-backed tenant key store used by `npm run tenant:keys` and hosted API key lookup |
 | `ATTESTOR_TENANT_KEY_MAX_ACTIVE_PER_TENANT` | Optional max active hosted API keys per tenant during overlap / cutover (default `2`) |
 | `ATTESTOR_USAGE_LEDGER_PATH` | Optional path for the local file-backed hosted usage ledger used by quota enforcement and `/api/v1/account/usage` |
+| `ATTESTOR_RATE_LIMIT_WINDOW_SECONDS` | Optional tenant pipeline rate-limit window size in seconds (default `60`) |
+| `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | Optional per-plan pipeline request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
 | `ATTESTOR_ADMIN_API_KEY` | Admin API key for hosted operator endpoints: accounts, plan catalog, audit, tenant key lifecycle management, and usage reporting |
 | `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | Optional path for the local tamper-evident admin mutation ledger used by `/api/v1/admin/audit` |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | Optional path for the short-lived encrypted admin idempotency replay store |
@@ -388,6 +391,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 955 tests across 7 suites: 557 unit + 223 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
+| Expanded verification surface | 971 tests across 7 suites: 557 unit + 239 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

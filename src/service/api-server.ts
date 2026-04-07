@@ -48,6 +48,7 @@ import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWor
 import { tenantMiddleware, getTenantContextFromHeaders, type TenantContext } from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 import { canConsumePipelineRun, consumePipelineRun, getUsageContext, queryUsageLedger } from './usage-meter.js';
+import { canConsumeTenantPipelineRequest, consumeTenantPipelineRequest, getTenantPipelineRateLimit } from './rate-limit.js';
 import {
   findTenantRecordByTenantId,
   issueTenantApiKey,
@@ -60,7 +61,7 @@ import {
   type TenantKeyRecord,
 } from './tenant-key-store.js';
 import { createHostedAccount, findHostedAccountByTenantId, listHostedAccounts, type HostedAccountRecord } from './account-store.js';
-import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, resolvePlanSpec } from './plan-catalog.js';
+import { DEFAULT_HOSTED_PLAN_ID, defaultRateLimitWindowSeconds, listHostedPlans, resolvePlanRateLimit, resolvePlanSpec } from './plan-catalog.js';
 import { appendAdminAuditRecord, listAdminAuditRecords, type AdminAuditAction } from './admin-audit-log.js';
 import { lookupAdminIdempotency, recordAdminIdempotency } from './admin-idempotency-store.js';
 import { hashJsonValue } from './json-stable.js';
@@ -152,6 +153,7 @@ function adminPlanView() {
     displayName: plan.displayName,
     description: plan.description,
     defaultMonthlyRunQuota: plan.defaultMonthlyRunQuota,
+    defaultPipelineRequestsPerWindow: resolvePlanRateLimit(plan.id).requestsPerWindow,
     intendedFor: plan.intendedFor,
     defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
   }));
@@ -163,6 +165,26 @@ function tenantKeyStoreErrorResponse(c: Context, err: unknown): Response | null 
     return c.json({ error: err.message }, 404);
   }
   return c.json({ error: err.message }, 409);
+}
+
+function applyRateLimitHeaders(
+  c: Context,
+  rateLimit: {
+    requestsPerWindow: number | null;
+    remaining: number | null;
+    resetAt: string;
+    retryAfterSeconds: number;
+    enforced: boolean;
+  },
+  options?: { includeRetryAfter?: boolean },
+): void {
+  if (!rateLimit.enforced || rateLimit.requestsPerWindow === null) return;
+  c.header('x-attestor-rate-limit-limit', String(rateLimit.requestsPerWindow));
+  c.header('x-attestor-rate-limit-remaining', String(rateLimit.remaining ?? 0));
+  c.header('x-attestor-rate-limit-reset', rateLimit.resetAt);
+  if (options?.includeRetryAfter) {
+    c.header('Retry-After', String(rateLimit.retryAfterSeconds));
+  }
 }
 
 function adminAuditView(record: {
@@ -352,6 +374,7 @@ app.get('/api/v1/connectors', async (c) => {
 app.get('/api/v1/account/usage', (c) => {
   const tenant = currentTenant(c);
   const usage = getUsageContext(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+  const rateLimit = getTenantPipelineRateLimit(tenant.tenantId, tenant.planId);
   return c.json({
     tenantContext: {
       tenantId: tenant.tenantId,
@@ -359,6 +382,7 @@ app.get('/api/v1/account/usage', (c) => {
       planId: tenant.planId,
     },
     usage,
+    rateLimit,
   });
 });
 
@@ -394,6 +418,7 @@ app.get('/api/v1/admin/plans', (c) => {
     defaults: {
       hostedProvisioningPlanId: DEFAULT_HOSTED_PLAN_ID,
       maxActiveKeysPerTenant: tenantKeyStorePolicy().maxActiveKeysPerTenant,
+      rateLimitWindowSeconds: defaultRateLimitWindowSeconds(),
     },
   });
 });
@@ -834,6 +859,18 @@ app.post('/api/v1/pipeline/run', async (c) => {
         usage: quotaCheck.usage,
       }, 429);
     }
+    const rateCheck = canConsumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    if (!rateCheck.allowed) {
+      applyRateLimitHeaders(c, rateCheck.rateLimit, { includeRetryAfter: true });
+      return c.json({
+        error: 'Pipeline request rate limit exceeded for this tenant plan.',
+        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+        usage: quotaCheck.usage,
+        rateLimit: rateCheck.rateLimit,
+      }, 429);
+    }
+    const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    applyRateLimitHeaders(c, rateLimit);
 
     // ── Optional connector-backed execution ──
     let connectorExecution: any = null;
@@ -1006,6 +1043,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
         return { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId };
       })(),
       usage,
+      rateLimit,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
       // Auto-filing: when sign=true and filing adapter is available, include XBRL mapping summary
@@ -1237,8 +1275,20 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         usage: quotaCheck.usage,
       }, 429);
     }
+    const rateCheck = canConsumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    if (!rateCheck.allowed) {
+      applyRateLimitHeaders(c, rateCheck.rateLimit, { includeRetryAfter: true });
+      return c.json({
+        error: 'Pipeline request rate limit exceeded for this tenant plan.',
+        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+        usage: quotaCheck.usage,
+        rateLimit: rateCheck.rateLimit,
+      }, 429);
+    }
 
     const submittedAt = new Date().toISOString();
+    const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    applyRateLimitHeaders(c, rateLimit);
     const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
 
     if (asyncBackendMode === 'bullmq' && bullmqQueue) {
@@ -1259,6 +1309,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         submittedAt,
         tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
         usage,
+        rateLimit,
       }, 202);
     }
 
@@ -1310,6 +1361,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       submittedAt,
       tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
       usage,
+      rateLimit,
     }, 202);
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
