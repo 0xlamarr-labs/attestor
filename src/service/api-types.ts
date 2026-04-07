@@ -305,6 +305,19 @@ export interface AdminAccountBillingSummary {
     | 'paused'
     | null;
   stripePriceId: string | null;
+  lastCheckoutSessionId: string | null;
+  lastCheckoutCompletedAt: string | null;
+  lastCheckoutPlanId: string | null;
+  lastInvoiceId: string | null;
+  lastInvoiceStatus: 'draft' | 'open' | 'paid' | 'uncollectible' | 'void' | null;
+  lastInvoiceCurrency: string | null;
+  lastInvoiceAmountPaid: number | null;
+  lastInvoiceAmountDue: number | null;
+  lastInvoiceEventId: string | null;
+  lastInvoiceEventType: string | null;
+  lastInvoiceProcessedAt: string | null;
+  lastInvoicePaidAt: string | null;
+  delinquentSince: string | null;
   lastWebhookEventId: string | null;
   lastWebhookEventType: string | null;
   lastWebhookProcessedAt: string | null;
@@ -475,9 +488,15 @@ export interface AdminBillingEventRecord {
   reason: string | null;
   accountId: string | null;
   tenantId: string | null;
+  stripeCheckoutSessionId: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   stripePriceId: string | null;
+  stripeInvoiceId: string | null;
+  stripeInvoiceStatus: 'draft' | 'open' | 'paid' | 'uncollectible' | 'void' | null;
+  stripeInvoiceCurrency: string | null;
+  stripeInvoiceAmountPaid: number | null;
+  stripeInvoiceAmountDue: number | null;
   accountStatusBefore: 'active' | 'suspended' | 'archived' | null;
   accountStatusAfter: 'active' | 'suspended' | 'archived' | null;
   billingStatusBefore:

@@ -90,7 +90,7 @@ docker run \
 | `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | No | `.attestor/admin-audit-log.json` | Local hash-linked admin mutation ledger |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | No | `.attestor/admin-idempotency.json` | Local encrypted idempotency replay store for admin `POST` routes |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | No | `24` | Replay retention window for admin idempotency records |
-| `ATTESTOR_BILLING_LEDGER_PG_URL` | No | None | Shared PostgreSQL-backed Stripe billing event ledger used by `/api/v1/admin/billing/events` and cross-node webhook dedupe |
+| `ATTESTOR_BILLING_LEDGER_PG_URL` | No | None | Shared PostgreSQL-backed Stripe billing event ledger used by `/api/v1/admin/billing/events`, checkout/invoice lifecycle history, and cross-node webhook dedupe |
 | `ATTESTOR_OBSERVABILITY_LOG_PATH` | No | None | Optional JSONL path for structured API request logs with trace correlation and tenant/account context |
 | `STRIPE_API_KEY` | No | None | Stripe secret API key for hosted Checkout and Billing Portal session creation |
 | `STRIPE_WEBHOOK_SECRET` | No | None | Stripe signing secret for `POST /api/v1/billing/stripe/webhook` |
@@ -150,10 +150,10 @@ What is deployed today:
 - Local file-backed tenant key lifecycle with rotate -> deactivate/reactivate -> revoke, `lastUsedAt`, and max-2 active overlap
 - Tenant-aware in-memory pipeline throttling with plan defaults, `Retry-After`, and `429` responses
 - Local file-backed hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
-- Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*` processing with duplicate-event suppression and account suspend/reactivate sync, plus an optional shared PostgreSQL-backed billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
+- Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed` processing with duplicate-event suppression, checkout/invoice summary persistence, and account suspend/reactivate sync, plus an optional shared PostgreSQL-backed billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
 - Async queue hardening first slice: bounded BullMQ retry/backoff, exact paginated tenant-aware pending-job caps on async submit, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry
 - Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, and optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`
-- Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, and webhook-driven plan/quota sync back into hosted tenant records
+- Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, webhook-driven plan/quota sync back into hosted tenant records, and customer-visible checkout/invoice summary at `GET /api/v1/account`
 - Health + readiness probes
 
 What is not yet implemented:
@@ -163,4 +163,4 @@ What is not yet implemented:
 - Multi-tenant queue groups or stronger multi-node isolation beyond per-tenant pending-job caps
 - External log/metrics collector, OTLP exporter, or full distributed tracing backend
 - External KMS-backed tenant key storage or shared multi-node key ledger
-- Internal invoice ledger, Stripe checkout completion persistence outside webhooks, or broader shared multi-node control-plane stores beyond the Stripe webhook event ledger
+- Full internal invoice line-item ledger, entitlement service, or broader shared multi-node control-plane stores beyond the Stripe webhook event ledger

@@ -7,7 +7,7 @@
  * BOUNDARY:
  * - Local file-backed store only
  * - One primary tenant per account in this first slice
- * - Stripe metadata sync only; no invoice ledger or customer portal yet
+ * - Stripe metadata sync + checkout/invoice summary only; no shared customer portal state
  */
 
 import { randomUUID } from 'node:crypto';
@@ -27,12 +27,33 @@ export type StripeSubscriptionStatus =
   | 'paused'
   | null;
 
+export type StripeInvoiceStatus =
+  | 'draft'
+  | 'open'
+  | 'paid'
+  | 'uncollectible'
+  | 'void'
+  | null;
+
 export interface HostedAccountBillingState {
   provider: 'stripe' | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   stripeSubscriptionStatus: StripeSubscriptionStatus;
   stripePriceId: string | null;
+  lastCheckoutSessionId: string | null;
+  lastCheckoutCompletedAt: string | null;
+  lastCheckoutPlanId: string | null;
+  lastInvoiceId: string | null;
+  lastInvoiceStatus: StripeInvoiceStatus;
+  lastInvoiceCurrency: string | null;
+  lastInvoiceAmountPaid: number | null;
+  lastInvoiceAmountDue: number | null;
+  lastInvoiceEventId: string | null;
+  lastInvoiceEventType: string | null;
+  lastInvoiceProcessedAt: string | null;
+  lastInvoicePaidAt: string | null;
+  delinquentSince: string | null;
   lastWebhookEventId: string | null;
   lastWebhookEventType: string | null;
   lastWebhookProcessedAt: string | null;
@@ -110,6 +131,19 @@ function defaultBillingState(): HostedAccountBillingState {
     stripeSubscriptionId: null,
     stripeSubscriptionStatus: null,
     stripePriceId: null,
+    lastCheckoutSessionId: null,
+    lastCheckoutCompletedAt: null,
+    lastCheckoutPlanId: null,
+    lastInvoiceId: null,
+    lastInvoiceStatus: null,
+    lastInvoiceCurrency: null,
+    lastInvoiceAmountPaid: null,
+    lastInvoiceAmountDue: null,
+    lastInvoiceEventId: null,
+    lastInvoiceEventType: null,
+    lastInvoiceProcessedAt: null,
+    lastInvoicePaidAt: null,
+    delinquentSince: null,
     lastWebhookEventId: null,
     lastWebhookEventType: null,
     lastWebhookProcessedAt: null,
@@ -127,6 +161,20 @@ function normalizeStripeSubscriptionStatus(raw: string | null | undefined): Stri
     case 'canceled':
     case 'unpaid':
     case 'paused':
+      return raw;
+    default:
+      return null;
+  }
+}
+
+function normalizeStripeInvoiceStatus(raw: string | null | undefined): StripeInvoiceStatus {
+  if (!raw) return null;
+  switch (raw) {
+    case 'draft':
+    case 'open':
+    case 'paid':
+    case 'uncollectible':
+    case 'void':
       return raw;
     default:
       return null;
@@ -170,6 +218,7 @@ function loadStore(): AccountStoreFile {
             ...(record.billing ?? {}),
             provider: record.billing?.provider === 'stripe' ? 'stripe' : null,
             stripeSubscriptionStatus: normalizeStripeSubscriptionStatus(record.billing?.stripeSubscriptionStatus ?? null),
+            lastInvoiceStatus: normalizeStripeInvoiceStatus(record.billing?.lastInvoiceStatus ?? null),
           },
         })),
       };
@@ -242,6 +291,38 @@ function ensureStripeBindingUniqueness(
       );
     }
   }
+}
+
+function resolveStripeAccountMatch(
+  store: AccountStoreFile,
+  options: {
+    accountId?: string | null;
+    stripeSubscriptionId?: string | null;
+    stripeCustomerId?: string | null;
+  },
+): {
+  record: HostedAccountRecord | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+} {
+  if (options.accountId) {
+    const record = findRecord(store, options.accountId);
+    if (record) {
+      return { record, matchReason: 'account_id' };
+    }
+  }
+  if (options.stripeSubscriptionId) {
+    const record = store.records.find((entry) => entry.billing.stripeSubscriptionId === options.stripeSubscriptionId) ?? null;
+    if (record) {
+      return { record, matchReason: 'subscription_id' };
+    }
+  }
+  if (options.stripeCustomerId) {
+    const record = store.records.find((entry) => entry.billing.stripeCustomerId === options.stripeCustomerId) ?? null;
+    if (record) {
+      return { record, matchReason: 'customer_id' };
+    }
+  }
+  return { record: null, matchReason: 'none' };
 }
 
 function touchRecord(record: HostedAccountRecord): void {
@@ -348,6 +429,8 @@ export function attachStripeBillingToAccount(id: string, billing: AttachStripeBi
   ensureStripeBindingUniqueness(store, billing, id);
 
   record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
     provider: billing.stripeCustomerId || billing.stripeSubscriptionId ? 'stripe' : record.billing.provider,
     stripeCustomerId: billing.stripeCustomerId ?? record.billing.stripeCustomerId,
     stripeSubscriptionId: billing.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
@@ -384,20 +467,9 @@ export function applyStripeSubscriptionState(options: {
 } {
   const normalizedStatus = normalizeStripeSubscriptionStatus(options.stripeSubscriptionStatus ?? null);
   const store = loadStore();
-  let matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none' = 'none';
-  let record: HostedAccountRecord | null = null;
-  if (options.accountId) {
-    record = findRecord(store, options.accountId);
-    if (record) matchReason = 'account_id';
-  }
-  if (!record && options.stripeSubscriptionId) {
-    record = store.records.find((entry) => entry.billing.stripeSubscriptionId === options.stripeSubscriptionId) ?? null;
-    if (record) matchReason = 'subscription_id';
-  }
-  if (!record && options.stripeCustomerId) {
-    record = store.records.find((entry) => entry.billing.stripeCustomerId === options.stripeCustomerId) ?? null;
-    if (record) matchReason = 'customer_id';
-  }
+  const match = resolveStripeAccountMatch(store, options);
+  const matchReason = match.matchReason;
+  const record = match.record;
 
   if (!record) {
     return {
@@ -419,6 +491,8 @@ export function applyStripeSubscriptionState(options: {
   const previousStatus = record.status;
   const previousBillingStatus = record.billing.stripeSubscriptionStatus;
   record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
     provider: 'stripe',
     stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
     stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
@@ -438,6 +512,167 @@ export function applyStripeSubscriptionState(options: {
       record.suspendedAt = new Date().toISOString();
     }
   }
+
+  touchRecord(record);
+  saveStore(store);
+  return {
+    record,
+    previousStatus,
+    nextStatus: record.status,
+    previousBillingStatus,
+    nextBillingStatus: record.billing.stripeSubscriptionStatus,
+    path: storePath(),
+    matchReason,
+  };
+}
+
+export function applyStripeCheckoutCompletion(options: {
+  accountId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  planId?: string | null;
+  checkoutSessionId: string;
+  completedAt?: string | null;
+  eventId: string;
+  eventType: string;
+}): {
+  record: HostedAccountRecord | null;
+  previousStatus: HostedAccountStatus | null;
+  nextStatus: HostedAccountStatus | null;
+  previousBillingStatus: StripeSubscriptionStatus;
+  nextBillingStatus: StripeSubscriptionStatus;
+  path: string | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+} {
+  const store = loadStore();
+  const match = resolveStripeAccountMatch(store, options);
+  const matchReason = match.matchReason;
+  const record = match.record;
+  if (!record) {
+    return {
+      record: null,
+      previousStatus: null,
+      nextStatus: null,
+      previousBillingStatus: null,
+      nextBillingStatus: null,
+      path: null,
+      matchReason: 'none',
+    };
+  }
+
+  ensureStripeBindingUniqueness(store, {
+    stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+  }, record.id);
+
+  const previousStatus = record.status;
+  const previousBillingStatus = record.billing.stripeSubscriptionStatus;
+  record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
+    provider: 'stripe',
+    stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripePriceId: options.stripePriceId ?? record.billing.stripePriceId,
+    lastCheckoutSessionId: options.checkoutSessionId,
+    lastCheckoutCompletedAt: options.completedAt ?? new Date().toISOString(),
+    lastCheckoutPlanId: options.planId ?? record.billing.lastCheckoutPlanId,
+    lastWebhookEventId: options.eventId,
+    lastWebhookEventType: options.eventType,
+    lastWebhookProcessedAt: new Date().toISOString(),
+  };
+
+  touchRecord(record);
+  saveStore(store);
+  return {
+    record,
+    previousStatus,
+    nextStatus: record.status,
+    previousBillingStatus,
+    nextBillingStatus: record.billing.stripeSubscriptionStatus,
+    path: storePath(),
+    matchReason,
+  };
+}
+
+export function applyStripeInvoiceState(options: {
+  accountId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  invoiceId: string;
+  invoiceStatus?: string | null;
+  currency?: string | null;
+  amountPaid?: number | null;
+  amountDue?: number | null;
+  paidAt?: string | null;
+  paymentFailedAt?: string | null;
+  eventId: string;
+  eventType: string;
+}): {
+  record: HostedAccountRecord | null;
+  previousStatus: HostedAccountStatus | null;
+  nextStatus: HostedAccountStatus | null;
+  previousBillingStatus: StripeSubscriptionStatus;
+  nextBillingStatus: StripeSubscriptionStatus;
+  path: string | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+} {
+  const normalizedInvoiceStatus = normalizeStripeInvoiceStatus(options.invoiceStatus ?? null);
+  const store = loadStore();
+  const match = resolveStripeAccountMatch(store, options);
+  const matchReason = match.matchReason;
+  const record = match.record;
+  if (!record) {
+    return {
+      record: null,
+      previousStatus: null,
+      nextStatus: null,
+      previousBillingStatus: null,
+      nextBillingStatus: null,
+      path: null,
+      matchReason: 'none',
+    };
+  }
+
+  ensureStripeBindingUniqueness(store, {
+    stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+  }, record.id);
+
+  const previousStatus = record.status;
+  const previousBillingStatus = record.billing.stripeSubscriptionStatus;
+  const paidAt = options.eventType === 'invoice.paid'
+    ? (options.paidAt ?? new Date().toISOString())
+    : record.billing.lastInvoicePaidAt;
+  const delinquentSince = options.eventType === 'invoice.payment_failed'
+    ? (record.billing.delinquentSince ?? options.paymentFailedAt ?? new Date().toISOString())
+    : options.eventType === 'invoice.paid'
+      ? null
+      : record.billing.delinquentSince;
+
+  record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
+    provider: 'stripe',
+    stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripePriceId: options.stripePriceId ?? record.billing.stripePriceId,
+    lastInvoiceId: options.invoiceId,
+    lastInvoiceStatus: normalizedInvoiceStatus,
+    lastInvoiceCurrency: options.currency ?? record.billing.lastInvoiceCurrency,
+    lastInvoiceAmountPaid: options.amountPaid ?? record.billing.lastInvoiceAmountPaid,
+    lastInvoiceAmountDue: options.amountDue ?? record.billing.lastInvoiceAmountDue,
+    lastInvoiceEventId: options.eventId,
+    lastInvoiceEventType: options.eventType,
+    lastInvoiceProcessedAt: new Date().toISOString(),
+    lastInvoicePaidAt: paidAt,
+    delinquentSince,
+    lastWebhookEventId: options.eventId,
+    lastWebhookEventType: options.eventType,
+    lastWebhookProcessedAt: new Date().toISOString(),
+  };
 
   touchRecord(record);
   saveStore(store);

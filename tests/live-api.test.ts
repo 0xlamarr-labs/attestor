@@ -957,6 +957,46 @@ async function run() {
       ok(attachBillingReplayRes.status === 200, 'Admin Accounts: attach stripe replay preserves status');
       ok(attachBillingReplayRes.headers.get('x-attestor-idempotent-replay') === 'true', 'Admin Accounts: attach stripe replay header set');
 
+      const checkoutCompletedPayload = JSON.stringify({
+        id: 'evt_checkout_account_001_completed',
+        object: 'event',
+        type: 'checkout.session.completed',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            id: checkoutBody.checkoutSessionId,
+            object: 'checkout.session',
+            mode: 'subscription',
+            customer: 'cus_account_001',
+            subscription: 'sub_account_001',
+            created: Math.floor(Date.now() / 1000),
+            metadata: {
+              attestorAccountId: createAccountBody.account.id,
+              attestorTenantId: createAccountBody.account.primaryTenantId,
+              attestorPlanId: 'pro',
+            },
+          },
+        },
+      });
+      const checkoutCompletedSignature = stripe.webhooks.generateTestHeaderString({
+        payload: checkoutCompletedPayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET!,
+      });
+      const checkoutCompletedRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': checkoutCompletedSignature,
+        },
+        body: checkoutCompletedPayload,
+      });
+      ok(checkoutCompletedRes.status === 200, 'Stripe Webhook: checkout.session.completed accepted');
+      const checkoutCompletedBody = await checkoutCompletedRes.json() as any;
+      ok(checkoutCompletedBody.billing.lastCheckoutSessionId === checkoutBody.checkoutSessionId, 'Stripe Webhook: checkout completion stores session id');
+      ok(checkoutCompletedBody.billing.lastCheckoutPlanId === 'pro', 'Stripe Webhook: checkout completion stores target plan');
+      ok(typeof checkoutCompletedBody.billing.lastCheckoutCompletedAt === 'string', 'Stripe Webhook: checkout completion stores completed timestamp');
+      ok(checkoutCompletedBody.mappedPlanId === 'pro', 'Stripe Webhook: checkout completion maps hosted plan');
+
       const suspendAccountRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/suspend`, {
         method: 'POST',
         headers: {
@@ -1102,6 +1142,103 @@ async function run() {
       ok(allowedAfterActiveWebhookBody.tenantContext.planId === 'pro', 'Stripe Webhook: tenant plan updated from Stripe price');
       ok(allowedAfterActiveWebhookBody.usage.quota === 1000, 'Stripe Webhook: tenant quota updated from Stripe price');
 
+      const invoiceFailedPayload = JSON.stringify({
+        id: 'evt_invoice_account_001_failed',
+        object: 'event',
+        type: 'invoice.payment_failed',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            id: 'in_account_001_failed',
+            object: 'invoice',
+            customer: 'cus_account_001',
+            subscription: 'sub_account_001',
+            status: 'open',
+            currency: 'usd',
+            amount_paid: 0,
+            amount_due: 5000,
+            billing_reason: 'subscription_cycle',
+            metadata: {
+              attestorAccountId: createAccountBody.account.id,
+            },
+            status_transitions: {
+              paid_at: null,
+            },
+            lines: {
+              object: 'list',
+              data: [{ price: { id: 'price_pro_monthly' } }],
+            },
+          },
+        },
+      });
+      const invoiceFailedSignature = stripe.webhooks.generateTestHeaderString({
+        payload: invoiceFailedPayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET!,
+      });
+      const invoiceFailedRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': invoiceFailedSignature,
+        },
+        body: invoiceFailedPayload,
+      });
+      ok(invoiceFailedRes.status === 200, 'Stripe Webhook: invoice.payment_failed accepted');
+      const invoiceFailedBody = await invoiceFailedRes.json() as any;
+      ok(invoiceFailedBody.billing.lastInvoiceId === 'in_account_001_failed', 'Stripe Webhook: invoice failure stores invoice id');
+      ok(invoiceFailedBody.billing.lastInvoiceStatus === 'open', 'Stripe Webhook: invoice failure stores invoice status');
+      ok(invoiceFailedBody.billing.lastInvoiceAmountDue === 5000, 'Stripe Webhook: invoice failure stores amount due');
+      ok(typeof invoiceFailedBody.billing.delinquentSince === 'string', 'Stripe Webhook: invoice failure stores delinquentSince');
+
+      const invoicePaidPayload = JSON.stringify({
+        id: 'evt_invoice_account_001_paid',
+        object: 'event',
+        type: 'invoice.paid',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            id: 'in_account_001_paid',
+            object: 'invoice',
+            customer: 'cus_account_001',
+            subscription: 'sub_account_001',
+            status: 'paid',
+            currency: 'usd',
+            amount_paid: 5000,
+            amount_due: 5000,
+            billing_reason: 'subscription_cycle',
+            metadata: {
+              attestorAccountId: createAccountBody.account.id,
+            },
+            status_transitions: {
+              paid_at: Math.floor(Date.now() / 1000),
+            },
+            lines: {
+              object: 'list',
+              data: [{ price: { id: 'price_pro_monthly' } }],
+            },
+          },
+        },
+      });
+      const invoicePaidSignature = stripe.webhooks.generateTestHeaderString({
+        payload: invoicePaidPayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET!,
+      });
+      const invoicePaidRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': invoicePaidSignature,
+        },
+        body: invoicePaidPayload,
+      });
+      ok(invoicePaidRes.status === 200, 'Stripe Webhook: invoice.paid accepted');
+      const invoicePaidBody = await invoicePaidRes.json() as any;
+      ok(invoicePaidBody.billing.lastInvoiceId === 'in_account_001_paid', 'Stripe Webhook: invoice paid stores latest invoice id');
+      ok(invoicePaidBody.billing.lastInvoiceStatus === 'paid', 'Stripe Webhook: invoice paid stores paid status');
+      ok(invoicePaidBody.billing.lastInvoiceAmountPaid === 5000, 'Stripe Webhook: invoice paid stores amount paid');
+      ok(typeof invoicePaidBody.billing.lastInvoicePaidAt === 'string', 'Stripe Webhook: invoice paid stores paid timestamp');
+      ok(invoicePaidBody.billing.delinquentSince === null, 'Stripe Webhook: invoice paid clears delinquentSince');
+
       const portalReadyRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
@@ -1119,6 +1256,11 @@ async function run() {
       ok(accountSummaryAfterWebhookBody.account.billing.stripeCustomerId === 'cus_account_001', 'Account API: summary shows Stripe customer');
       ok(accountSummaryAfterWebhookBody.account.billing.stripeSubscriptionId === 'sub_account_001', 'Account API: summary shows Stripe subscription');
       ok(accountSummaryAfterWebhookBody.account.billing.stripeSubscriptionStatus === 'active', 'Account API: summary shows restored Stripe status');
+      ok(accountSummaryAfterWebhookBody.account.billing.lastCheckoutSessionId === checkoutBody.checkoutSessionId, 'Account API: summary shows checkout session');
+      ok(accountSummaryAfterWebhookBody.account.billing.lastCheckoutPlanId === 'pro', 'Account API: summary shows checkout plan');
+      ok(accountSummaryAfterWebhookBody.account.billing.lastInvoiceStatus === 'paid', 'Account API: summary shows last invoice status');
+      ok(accountSummaryAfterWebhookBody.account.billing.lastInvoiceAmountPaid === 5000, 'Account API: summary shows last invoice payment');
+      ok(accountSummaryAfterWebhookBody.account.billing.delinquentSince === null, 'Account API: summary shows cleared delinquentSince');
       ok(accountSummaryAfterWebhookBody.tenantContext.planId === 'pro', 'Account API: summary shows synced plan');
 
       const billingEventsNoAuth = await fetch(`${BASE}/api/v1/admin/billing/events`);
@@ -1129,8 +1271,12 @@ async function run() {
       });
       ok(billingEventsRes.status === 200, 'Admin Billing Events: list status 200');
       const billingEventsBody = await billingEventsRes.json() as any;
-      ok(billingEventsBody.summary.recordCount === 2, 'Admin Billing Events: two webhook events stored for account');
-      ok(billingEventsBody.summary.appliedCount === 2, 'Admin Billing Events: both stored events applied');
+      ok(billingEventsBody.summary.recordCount === 5, 'Admin Billing Events: five webhook events stored for account');
+      ok(billingEventsBody.summary.appliedCount === 5, 'Admin Billing Events: all stored events applied');
+      const checkoutLedger = billingEventsBody.records.find((entry: any) => entry.providerEventId === 'evt_checkout_account_001_completed');
+      ok(Boolean(checkoutLedger), 'Admin Billing Events: checkout completion event present');
+      ok(checkoutLedger.stripeCheckoutSessionId === checkoutBody.checkoutSessionId, 'Admin Billing Events: checkout event captures session id');
+      ok(checkoutLedger.mappedPlanId === 'pro', 'Admin Billing Events: checkout event captures mapped plan');
       const pastDueLedger = billingEventsBody.records.find((entry: any) => entry.providerEventId === 'evt_sub_account_001_past_due');
       ok(Boolean(pastDueLedger), 'Admin Billing Events: past_due event present');
       ok(pastDueLedger.accountStatusAfter === 'suspended', 'Admin Billing Events: past_due captures suspended status');
@@ -1140,6 +1286,14 @@ async function run() {
       ok(activeLedger.accountStatusBefore === 'suspended', 'Admin Billing Events: active event captures previous status');
       ok(activeLedger.accountStatusAfter === 'active', 'Admin Billing Events: active event captures restored status');
       ok(activeLedger.mappedPlanId === 'pro', 'Admin Billing Events: active event captures mapped plan');
+      const invoiceFailedLedger = billingEventsBody.records.find((entry: any) => entry.providerEventId === 'evt_invoice_account_001_failed');
+      ok(Boolean(invoiceFailedLedger), 'Admin Billing Events: invoice failure event present');
+      ok(invoiceFailedLedger.stripeInvoiceId === 'in_account_001_failed', 'Admin Billing Events: invoice failure captures invoice id');
+      ok(invoiceFailedLedger.stripeInvoiceAmountDue === 5000, 'Admin Billing Events: invoice failure captures amount due');
+      const invoicePaidLedger = billingEventsBody.records.find((entry: any) => entry.providerEventId === 'evt_invoice_account_001_paid');
+      ok(Boolean(invoicePaidLedger), 'Admin Billing Events: invoice paid event present');
+      ok(invoicePaidLedger.stripeInvoiceStatus === 'paid', 'Admin Billing Events: invoice paid captures invoice status');
+      ok(invoicePaidLedger.stripeInvoiceAmountPaid === 5000, 'Admin Billing Events: invoice paid captures amount paid');
 
       const billingEventTypeRes = await fetch(`${BASE}/api/v1/admin/billing/events?eventType=customer.subscription.updated`, {
         headers: { Authorization: 'Bearer admin-secret' },

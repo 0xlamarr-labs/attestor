@@ -84,6 +84,8 @@ import {
 } from './tenant-key-store.js';
 import {
   AccountStoreError,
+  applyStripeCheckoutCompletion,
+  applyStripeInvoiceState,
   applyStripeSubscriptionState,
   attachStripeBillingToAccount,
   createHostedAccount,
@@ -264,6 +266,61 @@ function parseStripeSubscriptionStatus(raw: unknown): StripeSubscriptionStatus {
   }
 }
 
+function parseStripeInvoiceStatus(
+  raw: unknown,
+): 'draft' | 'open' | 'paid' | 'uncollectible' | 'void' | null {
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  switch (raw.trim()) {
+    case 'draft':
+    case 'open':
+    case 'paid':
+    case 'uncollectible':
+    case 'void':
+      return raw.trim() as 'draft' | 'open' | 'paid' | 'uncollectible' | 'void';
+    default:
+      return null;
+  }
+}
+
+function metadataStringValue(
+  key: string,
+  ...sources: Array<Record<string, unknown> | Stripe.Metadata | null | undefined>
+): string | null {
+  for (const source of sources) {
+    const value = source?.[key];
+    if (typeof value === 'string' && value.trim() !== '') {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function stripeReferenceId(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  if (value && typeof value === 'object' && 'id' in value && typeof (value as { id?: unknown }).id === 'string') {
+    return ((value as { id: string }).id).trim();
+  }
+  return null;
+}
+
+function unixSecondsToIso(value: unknown): string | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? new Date(value * 1000).toISOString()
+    : null;
+}
+
+function stripeInvoicePriceId(invoice: Stripe.Invoice): string | null {
+  for (const entry of invoice.lines?.data ?? []) {
+    const directPriceId = stripeReferenceId((entry as { price?: unknown }).price);
+    if (directPriceId) return directPriceId;
+    const pricingPriceId = stripeReferenceId(
+      (entry as { pricing?: { price_details?: { price?: unknown } | null } | null }).pricing?.price_details?.price,
+    );
+    if (pricingPriceId) return pricingPriceId;
+  }
+  return null;
+}
+
 function adminTenantKeyView(record: TenantKeyRecord) {
   return {
     id: record.id,
@@ -431,9 +488,15 @@ function billingEventView(record: Awaited<ReturnType<typeof listBillingEvents>>[
     reason: record.reason,
     accountId: record.accountId,
     tenantId: record.tenantId,
+    stripeCheckoutSessionId: record.stripeCheckoutSessionId,
     stripeCustomerId: record.stripeCustomerId,
     stripeSubscriptionId: record.stripeSubscriptionId,
     stripePriceId: record.stripePriceId,
+    stripeInvoiceId: record.stripeInvoiceId,
+    stripeInvoiceStatus: record.stripeInvoiceStatus,
+    stripeInvoiceCurrency: record.stripeInvoiceCurrency,
+    stripeInvoiceAmountPaid: record.stripeInvoiceAmountPaid,
+    stripeInvoiceAmountDue: record.stripeInvoiceAmountDue,
     accountStatusBefore: record.accountStatusBefore,
     accountStatusAfter: record.accountStatusAfter,
     billingStatusBefore: record.billingStatusBefore,
@@ -755,7 +818,10 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       || event.type === 'customer.subscription.updated'
       || event.type === 'customer.subscription.deleted'
       || event.type === 'customer.subscription.paused'
-      || event.type === 'customer.subscription.resumed';
+      || event.type === 'customer.subscription.resumed'
+      || event.type === 'checkout.session.completed'
+      || event.type === 'invoice.paid'
+      || event.type === 'invoice.payment_failed';
 
     if (!supportedEvent) {
       observeBillingWebhookEvent(event.type, 'ignored');
@@ -791,34 +857,387 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       });
     }
 
-    const subscription = event.data.object as Stripe.Subscription;
-    const stripeCustomerId =
-      typeof subscription.customer === 'string'
-        ? subscription.customer
-        : subscription.customer?.id ?? null;
-    const stripeSubscriptionId = typeof subscription.id === 'string' ? subscription.id : null;
-    const stripeSubscriptionStatus =
-      typeof subscription.status === 'string'
-        ? subscription.status
-        : event.type === 'customer.subscription.deleted'
-          ? 'canceled'
-          : null;
-    const stripePriceId = typeof subscription.items?.data?.[0]?.price?.id === 'string'
-      ? subscription.items.data[0].price.id
-      : null;
-    const accountIdFromMetadata =
-      typeof subscription.metadata?.attestorAccountId === 'string' && subscription.metadata.attestorAccountId.trim() !== ''
-        ? subscription.metadata.attestorAccountId.trim()
+    if (event.type.startsWith('customer.subscription.')) {
+      const subscription = event.data.object as Stripe.Subscription;
+      const stripeCustomerId = stripeReferenceId(subscription.customer);
+      const stripeSubscriptionId = stripeReferenceId(subscription.id);
+      const stripeSubscriptionStatus =
+        typeof subscription.status === 'string'
+          ? subscription.status
+          : event.type === 'customer.subscription.deleted'
+            ? 'canceled'
+            : null;
+      const stripePriceId = typeof subscription.items?.data?.[0]?.price?.id === 'string'
+        ? subscription.items.data[0].price.id
         : null;
+      const accountIdFromMetadata = metadataStringValue('attestorAccountId', subscription.metadata);
+
+      let applied;
+      try {
+        applied = applyStripeSubscriptionState({
+          accountId: accountIdFromMetadata,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripeSubscriptionStatus,
+          stripePriceId,
+          eventId: event.id,
+          eventType: event.type,
+        });
+      } catch (err) {
+        if (sharedBillingLedger && !finalizedSharedEvent) {
+          try {
+            await releaseStripeBillingEventClaim(event.id);
+          } catch {
+            // allow original error mapping to surface
+          }
+        }
+        const mapped = accountStoreErrorResponse(c, err);
+        if (mapped) return mapped;
+        throw err;
+      }
+
+      if (!applied.record) {
+        observeBillingWebhookEvent(event.type, 'ignored');
+        if (sharedBillingLedger) {
+          await finalizeStripeBillingEvent({
+            providerEventId: event.id,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+            stripeCustomerId,
+            stripeSubscriptionId,
+            stripePriceId,
+            billingStatusAfter: stripeSubscriptionStatus,
+            metadata: {
+              eventType: event.type,
+            },
+          });
+          finalizedSharedEvent = true;
+        } else {
+          recordProcessedStripeWebhook({
+            eventId: event.id,
+            eventType: event.type,
+            accountId: null,
+            stripeCustomerId,
+            stripeSubscriptionId,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+            rawPayload,
+          });
+        }
+        return c.json({
+          received: true,
+          duplicate: false,
+          ignored: true,
+          eventId: event.id,
+          eventType: event.type,
+          reason: 'no_account_match',
+          stripeCustomerId,
+          stripeSubscriptionId,
+        });
+      }
+
+      const mappedPlan = findHostedPlanByStripePriceId(stripePriceId);
+      if (mappedPlan) {
+        const resolvedPlan = resolvePlanSpec({
+          planId: mappedPlan.id,
+          defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+        });
+        syncTenantPlanByTenantId(applied.record.primaryTenantId, {
+          planId: resolvedPlan.planId,
+          monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+        });
+      }
+
+      c.set('obs.accountId', applied.record.id);
+      c.set('obs.accountStatus', applied.record.status);
+      c.set('obs.tenantId', applied.record.primaryTenantId);
+      c.set('obs.planId', mappedPlan?.id ?? null);
+
+      if (sharedBillingLedger) {
+        await finalizeStripeBillingEvent({
+          providerEventId: event.id,
+          outcome: 'applied',
+          accountId: applied.record.id,
+          tenantId: applied.record.primaryTenantId,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripePriceId,
+          accountStatusBefore: applied.previousStatus,
+          accountStatusAfter: applied.nextStatus,
+          billingStatusBefore: applied.previousBillingStatus,
+          billingStatusAfter: applied.nextBillingStatus,
+          mappedPlanId: mappedPlan?.id ?? null,
+          metadata: {
+            eventType: event.type,
+            matchReason: applied.matchReason,
+          },
+        });
+        finalizedSharedEvent = true;
+      } else {
+        recordProcessedStripeWebhook({
+          eventId: event.id,
+          eventType: event.type,
+          accountId: applied.record.id,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          outcome: 'applied',
+          reason: null,
+          rawPayload,
+        });
+      }
+
+      observeBillingWebhookEvent(event.type, 'applied');
+
+      appendAdminAuditRecord({
+        actorType: 'stripe_webhook',
+        actorLabel: 'stripe.webhooks',
+        action: 'billing.stripe.webhook_applied',
+        routeId: 'billing.stripe.webhook',
+        accountId: applied.record.id,
+        tenantId: applied.record.primaryTenantId,
+        tenantKeyId: null,
+        planId: mappedPlan?.id ?? null,
+        monthlyRunQuota: null,
+        idempotencyKey: event.id,
+        requestHash: dedupe.payloadHash,
+        metadata: {
+          eventType: event.type,
+          matchReason: applied.matchReason,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripeSubscriptionStatus,
+          stripePriceId,
+          mappedPlanId: mappedPlan?.id ?? null,
+          previousAccountStatus: applied.previousStatus,
+          nextAccountStatus: applied.nextStatus,
+          previousBillingStatus: applied.previousBillingStatus,
+          nextBillingStatus: applied.nextBillingStatus,
+          sharedLedger: sharedBillingLedger,
+        },
+      });
+
+      return c.json({
+        received: true,
+        duplicate: false,
+        eventId: event.id,
+        eventType: event.type,
+        accountId: applied.record.id,
+        accountStatus: applied.record.status,
+        mappedPlanId: mappedPlan?.id ?? null,
+        billing: applied.record.billing,
+      });
+    }
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const stripeCheckoutSessionId = stripeReferenceId(session.id);
+      const stripeCustomerId = stripeReferenceId(session.customer);
+      const stripeSubscriptionId = stripeReferenceId(session.subscription);
+      const accountIdFromMetadata = metadataStringValue('attestorAccountId', session.metadata);
+      const planIdFromMetadata = metadataStringValue('attestorPlanId', session.metadata);
+      const mappedPlan = planIdFromMetadata
+        ? getHostedPlan(planIdFromMetadata)
+        : null;
+      const stripePriceId = mappedPlan ? resolvePlanStripePrice(mappedPlan.id).priceId : null;
+      const completedAt = unixSecondsToIso(session.created) ?? new Date().toISOString();
+
+      let applied;
+      try {
+        applied = applyStripeCheckoutCompletion({
+          accountId: accountIdFromMetadata,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripePriceId,
+          planId: mappedPlan?.id ?? planIdFromMetadata,
+          checkoutSessionId: stripeCheckoutSessionId ?? `checkout_missing_${event.id}`,
+          completedAt,
+          eventId: event.id,
+          eventType: event.type,
+        });
+      } catch (err) {
+        if (sharedBillingLedger && !finalizedSharedEvent) {
+          try {
+            await releaseStripeBillingEventClaim(event.id);
+          } catch {
+            // allow original error mapping to surface
+          }
+        }
+        const mapped = accountStoreErrorResponse(c, err);
+        if (mapped) return mapped;
+        throw err;
+      }
+
+      if (!applied.record) {
+        observeBillingWebhookEvent(event.type, 'ignored');
+        if (sharedBillingLedger) {
+          await finalizeStripeBillingEvent({
+            providerEventId: event.id,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+            stripeCheckoutSessionId,
+            stripeCustomerId,
+            stripeSubscriptionId,
+            stripePriceId,
+            mappedPlanId: mappedPlan?.id ?? planIdFromMetadata ?? null,
+            metadata: {
+              eventType: event.type,
+              checkoutMode: session.mode ?? null,
+            },
+          });
+          finalizedSharedEvent = true;
+        } else {
+          recordProcessedStripeWebhook({
+            eventId: event.id,
+            eventType: event.type,
+            accountId: null,
+            stripeCustomerId,
+            stripeSubscriptionId,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+            rawPayload,
+          });
+        }
+        return c.json({
+          received: true,
+          duplicate: false,
+          ignored: true,
+          eventId: event.id,
+          eventType: event.type,
+          reason: 'no_account_match',
+          stripeCustomerId,
+          stripeSubscriptionId,
+          checkoutSessionId: stripeCheckoutSessionId,
+        });
+      }
+
+      if (mappedPlan) {
+        const resolvedPlan = resolvePlanSpec({
+          planId: mappedPlan.id,
+          defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+        });
+        syncTenantPlanByTenantId(applied.record.primaryTenantId, {
+          planId: resolvedPlan.planId,
+          monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+        });
+      }
+
+      c.set('obs.accountId', applied.record.id);
+      c.set('obs.accountStatus', applied.record.status);
+      c.set('obs.tenantId', applied.record.primaryTenantId);
+      c.set('obs.planId', mappedPlan?.id ?? planIdFromMetadata ?? null);
+
+      if (sharedBillingLedger) {
+        await finalizeStripeBillingEvent({
+          providerEventId: event.id,
+          outcome: 'applied',
+          accountId: applied.record.id,
+          tenantId: applied.record.primaryTenantId,
+          stripeCheckoutSessionId,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripePriceId,
+          accountStatusBefore: applied.previousStatus,
+          accountStatusAfter: applied.nextStatus,
+          billingStatusBefore: applied.previousBillingStatus,
+          billingStatusAfter: applied.nextBillingStatus,
+          mappedPlanId: mappedPlan?.id ?? planIdFromMetadata ?? null,
+          metadata: {
+            eventType: event.type,
+            matchReason: applied.matchReason,
+            completedAt,
+            checkoutMode: session.mode ?? null,
+          },
+        });
+        finalizedSharedEvent = true;
+      } else {
+        recordProcessedStripeWebhook({
+          eventId: event.id,
+          eventType: event.type,
+          accountId: applied.record.id,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          outcome: 'applied',
+          reason: null,
+          rawPayload,
+        });
+      }
+
+      observeBillingWebhookEvent(event.type, 'applied');
+
+      appendAdminAuditRecord({
+        actorType: 'stripe_webhook',
+        actorLabel: 'stripe.webhooks',
+        action: 'billing.stripe.webhook_applied',
+        routeId: 'billing.stripe.webhook',
+        accountId: applied.record.id,
+        tenantId: applied.record.primaryTenantId,
+        tenantKeyId: null,
+        planId: mappedPlan?.id ?? planIdFromMetadata ?? null,
+        monthlyRunQuota: null,
+        idempotencyKey: event.id,
+        requestHash: dedupe.payloadHash,
+        metadata: {
+          eventType: event.type,
+          matchReason: applied.matchReason,
+          stripeCheckoutSessionId,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripePriceId,
+          completedAt,
+          sharedLedger: sharedBillingLedger,
+        },
+      });
+
+      return c.json({
+        received: true,
+        duplicate: false,
+        eventId: event.id,
+        eventType: event.type,
+        accountId: applied.record.id,
+        accountStatus: applied.record.status,
+        mappedPlanId: mappedPlan?.id ?? planIdFromMetadata ?? null,
+        billing: applied.record.billing,
+      });
+    }
+
+    const invoice = event.data.object as Stripe.Invoice & {
+      subscription?: unknown;
+      subscription_details?: { metadata?: Record<string, unknown> | null } | null;
+    };
+    const stripeCustomerId = stripeReferenceId(invoice.customer);
+    const stripeSubscriptionId = stripeReferenceId(invoice.subscription);
+    const stripePriceId = stripeInvoicePriceId(invoice);
+    const stripeInvoiceId = stripeReferenceId(invoice.id);
+    const stripeInvoiceStatus = parseStripeInvoiceStatus(
+      typeof invoice.status === 'string'
+        ? invoice.status
+        : event.type === 'invoice.paid'
+          ? 'paid'
+          : null,
+    );
+    const stripeInvoiceCurrency = typeof invoice.currency === 'string' ? invoice.currency : null;
+    const accountIdFromMetadata = metadataStringValue(
+      'attestorAccountId',
+      invoice.metadata,
+      invoice.subscription_details?.metadata ?? null,
+    );
 
     let applied;
     try {
-      applied = applyStripeSubscriptionState({
+      applied = applyStripeInvoiceState({
         accountId: accountIdFromMetadata,
         stripeCustomerId,
         stripeSubscriptionId,
-        stripeSubscriptionStatus,
         stripePriceId,
+        invoiceId: stripeInvoiceId ?? `invoice_missing_${event.id}`,
+        invoiceStatus: stripeInvoiceStatus,
+        currency: stripeInvoiceCurrency,
+        amountPaid: typeof invoice.amount_paid === 'number' ? invoice.amount_paid : null,
+        amountDue: typeof invoice.amount_due === 'number' ? invoice.amount_due : null,
+        paidAt: unixSecondsToIso((invoice.status_transitions as { paid_at?: unknown } | null | undefined)?.paid_at),
+        paymentFailedAt: event.type === 'invoice.payment_failed'
+          ? (unixSecondsToIso(event.created) ?? new Date().toISOString())
+          : null,
         eventId: event.id,
         eventType: event.type,
       });
@@ -845,9 +1264,14 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           stripeCustomerId,
           stripeSubscriptionId,
           stripePriceId,
-          billingStatusAfter: stripeSubscriptionStatus,
+          stripeInvoiceId,
+          stripeInvoiceStatus,
+          stripeInvoiceCurrency,
+          stripeInvoiceAmountPaid: typeof invoice.amount_paid === 'number' ? invoice.amount_paid : null,
+          stripeInvoiceAmountDue: typeof invoice.amount_due === 'number' ? invoice.amount_due : null,
           metadata: {
             eventType: event.type,
+            billingReason: invoice.billing_reason ?? null,
           },
         });
         finalizedSharedEvent = true;
@@ -872,6 +1296,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         reason: 'no_account_match',
         stripeCustomerId,
         stripeSubscriptionId,
+        invoiceId: stripeInvoiceId,
       });
     }
 
@@ -901,6 +1326,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         stripeCustomerId,
         stripeSubscriptionId,
         stripePriceId,
+        stripeInvoiceId,
+        stripeInvoiceStatus,
+        stripeInvoiceCurrency,
+        stripeInvoiceAmountPaid: typeof invoice.amount_paid === 'number' ? invoice.amount_paid : null,
+        stripeInvoiceAmountDue: typeof invoice.amount_due === 'number' ? invoice.amount_due : null,
         accountStatusBefore: applied.previousStatus,
         accountStatusAfter: applied.nextStatus,
         billingStatusBefore: applied.previousBillingStatus,
@@ -909,6 +1339,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         metadata: {
           eventType: event.type,
           matchReason: applied.matchReason,
+          billingReason: invoice.billing_reason ?? null,
         },
       });
       finalizedSharedEvent = true;
@@ -935,7 +1366,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       accountId: applied.record.id,
       tenantId: applied.record.primaryTenantId,
       tenantKeyId: null,
-      planId: null,
+      planId: mappedPlan?.id ?? null,
       monthlyRunQuota: null,
       idempotencyKey: event.id,
       requestHash: dedupe.payloadHash,
@@ -944,13 +1375,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         matchReason: applied.matchReason,
         stripeCustomerId,
         stripeSubscriptionId,
-        stripeSubscriptionStatus,
         stripePriceId,
-        mappedPlanId: mappedPlan?.id ?? null,
-        previousAccountStatus: applied.previousStatus,
-        nextAccountStatus: applied.nextStatus,
-        previousBillingStatus: applied.previousBillingStatus,
-        nextBillingStatus: applied.nextBillingStatus,
+        stripeInvoiceId,
+        stripeInvoiceStatus,
+        stripeInvoiceCurrency,
+        invoiceAmountPaid: typeof invoice.amount_paid === 'number' ? invoice.amount_paid : null,
+        invoiceAmountDue: typeof invoice.amount_due === 'number' ? invoice.amount_due : null,
+        billingReason: invoice.billing_reason ?? null,
         sharedLedger: sharedBillingLedger,
       },
     });

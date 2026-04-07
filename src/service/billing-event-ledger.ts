@@ -4,7 +4,7 @@
  * BOUNDARY:
  * - Optional PostgreSQL-backed shared ledger for billing webhook events
  * - Cross-node duplicate suppression via unique provider event ids
- * - No invoice line-item ledger or checkout-completion persistence yet
+ * - Captures checkout completion and invoice lifecycle summaries, not full invoice line items
  */
 
 import { randomUUID } from 'node:crypto';
@@ -24,6 +24,13 @@ export type BillingSubscriptionStatus =
   | 'unpaid'
   | 'paused'
   | null;
+export type BillingInvoiceStatus =
+  | 'draft'
+  | 'open'
+  | 'paid'
+  | 'uncollectible'
+  | 'void'
+  | null;
 
 export interface BillingEventRecord {
   id: string;
@@ -36,9 +43,15 @@ export interface BillingEventRecord {
   reason: string | null;
   accountId: string | null;
   tenantId: string | null;
+  stripeCheckoutSessionId: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
   stripePriceId: string | null;
+  stripeInvoiceId: string | null;
+  stripeInvoiceStatus: BillingInvoiceStatus;
+  stripeInvoiceCurrency: string | null;
+  stripeInvoiceAmountPaid: number | null;
+  stripeInvoiceAmountDue: number | null;
   accountStatusBefore: BillingAccountStatus;
   accountStatusAfter: BillingAccountStatus;
   billingStatusBefore: BillingSubscriptionStatus;
@@ -121,9 +134,15 @@ async function ensureSchema(): Promise<void> {
           reason TEXT NULL,
           account_id TEXT NULL,
           tenant_id TEXT NULL,
+          stripe_checkout_session_id TEXT NULL,
           stripe_customer_id TEXT NULL,
           stripe_subscription_id TEXT NULL,
           stripe_price_id TEXT NULL,
+          stripe_invoice_id TEXT NULL,
+          stripe_invoice_status TEXT NULL,
+          stripe_invoice_currency TEXT NULL,
+          stripe_invoice_amount_paid BIGINT NULL,
+          stripe_invoice_amount_due BIGINT NULL,
           account_status_before TEXT NULL,
           account_status_after TEXT NULL,
           billing_status_before TEXT NULL,
@@ -145,6 +164,14 @@ async function ensureSchema(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS billing_event_ledger_received_idx
           ON attestor_control_plane.billing_event_ledger (received_at DESC);
+
+        ALTER TABLE attestor_control_plane.billing_event_ledger
+          ADD COLUMN IF NOT EXISTS stripe_checkout_session_id TEXT NULL,
+          ADD COLUMN IF NOT EXISTS stripe_invoice_id TEXT NULL,
+          ADD COLUMN IF NOT EXISTS stripe_invoice_status TEXT NULL,
+          ADD COLUMN IF NOT EXISTS stripe_invoice_currency TEXT NULL,
+          ADD COLUMN IF NOT EXISTS stripe_invoice_amount_paid BIGINT NULL,
+          ADD COLUMN IF NOT EXISTS stripe_invoice_amount_due BIGINT NULL;
       `);
     })();
   }
@@ -159,6 +186,20 @@ function toNullableObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function toNullableInvoiceStatus(value: unknown): BillingInvoiceStatus {
+  if (value === null || value === undefined) return null;
+  switch (String(value)) {
+    case 'draft':
+    case 'open':
+    case 'paid':
+    case 'uncollectible':
+    case 'void':
+      return String(value) as BillingInvoiceStatus;
+    default:
+      return null;
+  }
+}
+
 function rowToRecord(row: Record<string, unknown>): BillingEventRecord {
   return {
     id: String(row.id),
@@ -171,9 +212,15 @@ function rowToRecord(row: Record<string, unknown>): BillingEventRecord {
     reason: row.reason === null ? null : String(row.reason),
     accountId: row.account_id === null ? null : String(row.account_id),
     tenantId: row.tenant_id === null ? null : String(row.tenant_id),
+    stripeCheckoutSessionId: row.stripe_checkout_session_id === null ? null : String(row.stripe_checkout_session_id),
     stripeCustomerId: row.stripe_customer_id === null ? null : String(row.stripe_customer_id),
     stripeSubscriptionId: row.stripe_subscription_id === null ? null : String(row.stripe_subscription_id),
     stripePriceId: row.stripe_price_id === null ? null : String(row.stripe_price_id),
+    stripeInvoiceId: row.stripe_invoice_id === null ? null : String(row.stripe_invoice_id),
+    stripeInvoiceStatus: toNullableInvoiceStatus(row.stripe_invoice_status),
+    stripeInvoiceCurrency: row.stripe_invoice_currency === null ? null : String(row.stripe_invoice_currency),
+    stripeInvoiceAmountPaid: row.stripe_invoice_amount_paid === null ? null : Number(row.stripe_invoice_amount_paid),
+    stripeInvoiceAmountDue: row.stripe_invoice_amount_due === null ? null : Number(row.stripe_invoice_amount_due),
     accountStatusBefore: row.account_status_before === null ? null : String(row.account_status_before) as BillingAccountStatus,
     accountStatusAfter: row.account_status_after === null ? null : String(row.account_status_after) as BillingAccountStatus,
     billingStatusBefore: row.billing_status_before === null ? null : String(row.billing_status_before) as BillingSubscriptionStatus,
@@ -219,9 +266,15 @@ export async function claimStripeBillingEvent(input: {
       reason,
       account_id,
       tenant_id,
+      stripe_checkout_session_id,
       stripe_customer_id,
       stripe_subscription_id,
       stripe_price_id,
+      stripe_invoice_id,
+      stripe_invoice_status,
+      stripe_invoice_currency,
+      stripe_invoice_amount_paid,
+      stripe_invoice_amount_due,
       account_status_before,
       account_status_after,
       billing_status_before,
@@ -238,6 +291,12 @@ export async function claimStripeBillingEvent(input: {
       $3,
       $4,
       'pending',
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
       NULL,
       NULL,
       NULL,
@@ -278,9 +337,15 @@ export async function finalizeStripeBillingEvent(input: {
   reason?: string | null;
   accountId?: string | null;
   tenantId?: string | null;
+  stripeCheckoutSessionId?: string | null;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   stripePriceId?: string | null;
+  stripeInvoiceId?: string | null;
+  stripeInvoiceStatus?: BillingInvoiceStatus;
+  stripeInvoiceCurrency?: string | null;
+  stripeInvoiceAmountPaid?: number | null;
+  stripeInvoiceAmountDue?: number | null;
   accountStatusBefore?: BillingAccountStatus;
   accountStatusAfter?: BillingAccountStatus;
   billingStatusBefore?: BillingSubscriptionStatus;
@@ -296,16 +361,22 @@ export async function finalizeStripeBillingEvent(input: {
             reason = $3,
             account_id = $4,
             tenant_id = $5,
-            stripe_customer_id = $6,
-            stripe_subscription_id = $7,
-            stripe_price_id = $8,
-            account_status_before = $9,
-            account_status_after = $10,
-            billing_status_before = $11,
-            billing_status_after = $12,
-            mapped_plan_id = $13,
+            stripe_checkout_session_id = $6,
+            stripe_customer_id = $7,
+            stripe_subscription_id = $8,
+            stripe_price_id = $9,
+            stripe_invoice_id = $10,
+            stripe_invoice_status = $11,
+            stripe_invoice_currency = $12,
+            stripe_invoice_amount_paid = $13,
+            stripe_invoice_amount_due = $14,
+            account_status_before = $15,
+            account_status_after = $16,
+            billing_status_before = $17,
+            billing_status_after = $18,
+            mapped_plan_id = $19,
             processed_at = NOW(),
-            metadata = $14::jsonb
+            metadata = $20::jsonb
       WHERE provider = 'stripe' AND provider_event_id = $1
       RETURNING *`,
     [
@@ -314,9 +385,15 @@ export async function finalizeStripeBillingEvent(input: {
       input.reason ?? null,
       input.accountId ?? null,
       input.tenantId ?? null,
+      input.stripeCheckoutSessionId ?? null,
       input.stripeCustomerId ?? null,
       input.stripeSubscriptionId ?? null,
       input.stripePriceId ?? null,
+      input.stripeInvoiceId ?? null,
+      input.stripeInvoiceStatus ?? null,
+      input.stripeInvoiceCurrency ?? null,
+      input.stripeInvoiceAmountPaid ?? null,
+      input.stripeInvoiceAmountDue ?? null,
       input.accountStatusBefore ?? null,
       input.accountStatusAfter ?? null,
       input.billingStatusBefore ?? null,
