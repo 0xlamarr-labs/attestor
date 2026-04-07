@@ -145,7 +145,14 @@ export function extractTenantContext(authHeader: string | undefined): TenantCont
  */
 export function tenantMiddleware() {
   return async (c: Context, next: Next) => {
-    if (c.req.path.startsWith('/api/v1/admin/') || c.req.path === '/api/v1/billing/stripe/webhook') {
+    if (
+      c.req.path.startsWith('/api/v1/admin/') ||
+      c.req.path === '/api/v1/billing/stripe/webhook' ||
+      c.req.path === '/api/v1/health' ||
+      c.req.path === '/api/v1/ready' ||
+      c.req.path === '/api/v1/domains' ||
+      c.req.path === '/api/v1/connectors'
+    ) {
       return next();
     }
 

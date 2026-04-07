@@ -19,6 +19,9 @@
  * - POST /api/v1/admin/accounts/:id/suspend|reactivate|archive — hosted account lifecycle
  * - GET  /api/v1/admin/plans         — hosted plan catalog + defaults
  * - GET  /api/v1/admin/audit         — tamper-evident hosted admin ledger
+ * - GET  /api/v1/admin/queue         — async queue summary + retry policy
+ * - GET  /api/v1/admin/queue/dlq     — failed-job / dead-letter inspection
+ * - POST /api/v1/admin/queue/jobs/:id/retry — manual retry of failed async jobs
  * - GET/POST /api/v1/admin/tenant-keys — hosted operator tenant key management
  * - POST /api/v1/admin/tenant-keys/:id/rotate — key rollover with overlap window
  * - POST /api/v1/admin/tenant-keys/:id/deactivate — safe cutover pause for old keys
@@ -52,7 +55,17 @@ import { xbrlCsvEbaAdapter } from '../filing/xbrl-csv-adapter.js';
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
-import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWorker } from './async-pipeline.js';
+import {
+  canEnqueueTenantAsyncJob,
+  createPipelineQueue,
+  createPipelineWorker,
+  getAsyncQueueSummary,
+  getAsyncRetryPolicy,
+  getJobStatus,
+  listFailedPipelineJobs,
+  retryFailedPipelineJob,
+  submitPipelineJob,
+} from './async-pipeline.js';
 import { tenantMiddleware, getTenantContextFromHeaders, type TenantContext } from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 import { canConsumePipelineRun, consumePipelineRun, getUsageContext, queryUsageLedger } from './usage-meter.js';
@@ -86,6 +99,7 @@ import {
   findHostedPlanByStripePriceId,
   getHostedPlan,
   listHostedPlans,
+  resolvePlanAsyncQueue,
   resolvePlanRateLimit,
   resolvePlanSpec,
   resolvePlanStripePrice,
@@ -291,6 +305,7 @@ function adminPlanView() {
     description: plan.description,
     defaultMonthlyRunQuota: plan.defaultMonthlyRunQuota,
     defaultPipelineRequestsPerWindow: resolvePlanRateLimit(plan.id).requestsPerWindow,
+    defaultAsyncPendingJobsPerTenant: resolvePlanAsyncQueue(plan.id).pendingJobsPerTenant,
     stripePriceConfigured: resolvePlanStripePrice(plan.id).configured,
     intendedFor: plan.intendedFor,
     defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
@@ -1076,6 +1091,142 @@ app.get('/api/v1/admin/metrics', (c) => {
     'content-type': 'text/plain; version=0.0.4; charset=utf-8',
     'cache-control': 'no-store',
   });
+});
+
+app.get('/api/v1/admin/queue', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const tenantId = c.req.query('tenantId')?.trim() || null;
+  const planId = c.req.query('planId')?.trim() || null;
+
+  if (asyncBackendMode === 'bullmq' && bullmqQueue) {
+    const summary = await getAsyncQueueSummary(bullmqQueue, tenantId, planId);
+    return c.json({
+      backendMode: 'bullmq',
+      queueName: summary.queueName,
+      counts: summary.counts,
+      retryPolicy: summary.retryPolicy,
+      tenant: summary.tenant,
+    });
+  }
+
+  const retryPolicy = getAsyncRetryPolicy();
+  return c.json({
+    backendMode: 'in_process',
+    queueName: null,
+    counts: {
+      waiting: Array.from(inProcessJobs.values()).filter((job) => job.status === 'queued').length,
+      active: Array.from(inProcessJobs.values()).filter((job) => job.status === 'running').length,
+      delayed: 0,
+      prioritized: 0,
+      completed: Array.from(inProcessJobs.values()).filter((job) => job.status === 'completed').length,
+      failed: Array.from(inProcessJobs.values()).filter((job) => job.status === 'failed').length,
+      paused: 0,
+    },
+    retryPolicy: {
+      ...retryPolicy,
+      attempts: 1,
+      backoffMs: 0,
+      maxStalledCount: 0,
+    },
+    tenant: tenantId ? inProcessTenantQueueSnapshot(tenantId, planId) : null,
+  });
+});
+
+app.get('/api/v1/admin/queue/dlq', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const tenantId = c.req.query('tenantId')?.trim() || null;
+  const limitRaw = c.req.query('limit')?.trim() || '';
+  const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25;
+
+  if (asyncBackendMode === 'bullmq' && bullmqQueue) {
+    const records = await listFailedPipelineJobs(bullmqQueue, { tenantId, limit });
+    return c.json({
+      records,
+      summary: {
+        backendMode: 'bullmq',
+        tenantFilter: tenantId,
+        limit,
+        recordCount: records.length,
+      },
+    });
+  }
+
+  const records = Array.from(inProcessJobs.values())
+    .filter((job) => job.status === 'failed')
+    .filter((job) => !tenantId || job.tenantId === tenantId)
+    .slice(0, limit)
+    .map((job) => ({
+      jobId: job.id,
+      name: 'pipeline-run',
+      tenantId: job.tenantId,
+      planId: job.planId,
+      state: 'failed',
+      failedReason: job.error,
+      attemptsMade: 0,
+      maxAttempts: 1,
+      requestedAt: job.submittedAt,
+      submittedAt: job.submittedAt,
+      processedAt: null,
+      failedAt: job.completedAt,
+    }));
+
+  return c.json({
+    records,
+    summary: {
+      backendMode: 'in_process',
+      tenantFilter: tenantId,
+      limit,
+      recordCount: records.length,
+    },
+  });
+});
+
+app.post('/api/v1/admin/queue/jobs/:id/retry', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const requestPayload = { jobId: c.req.param('id') };
+  const adminMutation = adminMutationRequest(c, 'admin.queue.jobs.retry', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  if (asyncBackendMode !== 'bullmq' || !bullmqQueue) {
+    return c.json({ error: 'Manual async retry is only available when BullMQ is active.' }, 409);
+  }
+
+  let retried;
+  try {
+    retried = await retryFailedPipelineJob(bullmqQueue, c.req.param('id'));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.queue.jobs.retry',
+    requestPayload,
+    statusCode: 202,
+    responseBody: {
+      job: retried,
+    },
+    audit: {
+      action: 'async_job.retried',
+      tenantId: retried.tenantId,
+      planId: retried.planId,
+      metadata: {
+        queueName: bullmqQueue.name,
+        attemptsMade: retried.attemptsMade,
+        maxAttempts: retried.maxAttempts,
+      },
+      requestHash: adminMutation.requestHash,
+    },
+  });
+
+  return c.json(responseBody, 202);
 });
 
 app.post('/api/v1/admin/accounts', async (c) => {
@@ -2039,10 +2190,57 @@ interface AsyncJob {
   status: 'queued' | 'running' | 'completed' | 'failed';
   submittedAt: string;
   completedAt: string | null;
+  tenantId: string;
+  planId: string | null;
   result: Record<string, unknown> | null;
   error: string | null;
 }
 const inProcessJobs = new Map<string, AsyncJob>();
+const asyncSubmissionReservations = new Map<string, number>();
+
+function currentAsyncSubmissionReservations(tenantId: string): number {
+  return asyncSubmissionReservations.get(tenantId) ?? 0;
+}
+
+function reserveAsyncSubmission(tenantId: string): void {
+  asyncSubmissionReservations.set(tenantId, currentAsyncSubmissionReservations(tenantId) + 1);
+}
+
+function releaseAsyncSubmission(tenantId: string): void {
+  const next = currentAsyncSubmissionReservations(tenantId) - 1;
+  if (next <= 0) {
+    asyncSubmissionReservations.delete(tenantId);
+    return;
+  }
+  asyncSubmissionReservations.set(tenantId, next);
+}
+
+function inProcessTenantQueueSnapshot(tenantId: string, planId: string | null) {
+  const states = {
+    waiting: 0,
+    active: 0,
+    delayed: 0,
+    prioritized: 0,
+    failed: 0,
+  };
+  for (const job of inProcessJobs.values()) {
+    if (job.tenantId !== tenantId) continue;
+    if (job.status === 'queued') states.waiting += 1;
+    if (job.status === 'running') states.active += 1;
+    if (job.status === 'failed') states.failed += 1;
+  }
+  const policy = resolvePlanAsyncQueue(planId);
+  return {
+    tenantId,
+    planId,
+    pendingJobs: states.waiting + states.active,
+    pendingLimit: policy.pendingJobsPerTenant,
+    enforced: policy.enforced,
+    scanLimit: Number.MAX_SAFE_INTEGER,
+    scanTruncated: false,
+    states,
+  };
+}
 
 // BullMQ initialization via 3-tier Redis auto-resolution:
 // 1. REDIS_URL env var (production)  2. localhost:6379 probe  3. embedded (dev/CI)
@@ -2114,11 +2312,30 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
     }
 
     const submittedAt = new Date().toISOString();
-    const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
-    applyRateLimitHeaders(c, rateLimit);
-    const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
 
     if (asyncBackendMode === 'bullmq' && bullmqQueue) {
+      const queueAllowance = await canEnqueueTenantAsyncJob(bullmqQueue, tenant.tenantId, tenant.planId);
+      const effectivePendingJobs = queueAllowance.snapshot.pendingJobs + currentAsyncSubmissionReservations(tenant.tenantId);
+      if (
+        !queueAllowance.allowed ||
+        (queueAllowance.snapshot.enforced &&
+          queueAllowance.snapshot.pendingLimit !== null &&
+          effectivePendingJobs >= queueAllowance.snapshot.pendingLimit)
+      ) {
+        return c.json({
+          error: 'Too many unfinished async jobs are already queued for this tenant.',
+          tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+          usage: quotaCheck.usage,
+          rateLimit: rateCheck.rateLimit,
+          asyncQueue: {
+            tenantPendingJobs: effectivePendingJobs,
+            tenantPendingLimit: queueAllowance.snapshot.pendingLimit,
+            tenantIsolationEnforced: queueAllowance.snapshot.enforced,
+            retryPolicy: getAsyncRetryPolicy(),
+          },
+        }, 429);
+      }
+
       // BullMQ path
       const input: FinancialPipelineInput = {
         runId: `async-bullmq-${Date.now().toString(36)}`,
@@ -2128,7 +2345,26 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         reportContract: body.reportContract,
         signingKeyPair: sign ? pki.signer.keyPair : undefined,
       };
-      const { jobId } = await submitPipelineJob(bullmqQueue, input, sign);
+      reserveAsyncSubmission(tenant.tenantId);
+      let jobId: string;
+      try {
+        ({ jobId } = await submitPipelineJob(
+          bullmqQueue,
+          input,
+          {
+            tenantId: tenant.tenantId,
+            planId: tenant.planId,
+            source: tenant.source,
+          },
+          sign,
+        ));
+      } finally {
+        releaseAsyncSubmission(tenant.tenantId);
+      }
+      const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+      applyRateLimitHeaders(c, rateLimit);
+      const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+      const asyncQueue = await getAsyncQueueSummary(bullmqQueue, tenant.tenantId, tenant.planId);
       return c.json({
         jobId,
         status: 'queued',
@@ -2137,12 +2373,53 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
         usage,
         rateLimit,
+        asyncQueue: {
+          tenantPendingJobs: asyncQueue.tenant?.pendingJobs ?? 0,
+          tenantPendingLimit: asyncQueue.tenant?.pendingLimit ?? null,
+          tenantIsolationEnforced: asyncQueue.tenant?.enforced ?? false,
+          retryPolicy: asyncQueue.retryPolicy,
+        },
       }, 202);
     }
 
     // In-process fallback (explicit about mode)
+    const inProcessSnapshot = inProcessTenantQueueSnapshot(tenant.tenantId, tenant.planId);
+    if (inProcessSnapshot.enforced && inProcessSnapshot.pendingLimit !== null && inProcessSnapshot.pendingJobs >= inProcessSnapshot.pendingLimit) {
+      return c.json({
+        error: 'Too many unfinished async jobs are already queued for this tenant.',
+        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+        usage: quotaCheck.usage,
+        rateLimit: rateCheck.rateLimit,
+        asyncQueue: {
+          tenantPendingJobs: inProcessSnapshot.pendingJobs,
+          tenantPendingLimit: inProcessSnapshot.pendingLimit,
+          tenantIsolationEnforced: inProcessSnapshot.enforced,
+          retryPolicy: {
+            attempts: 1,
+            backoffMs: 0,
+            maxStalledCount: 0,
+            workerConcurrency: 1,
+            completedTtlSeconds: 0,
+            failedTtlSeconds: 0,
+          },
+        },
+      }, 429);
+    }
+
+    const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    applyRateLimitHeaders(c, rateLimit);
+    const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
     const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const job: AsyncJob = { id: jobId, status: 'queued', submittedAt, completedAt: null, result: null, error: null };
+    const job: AsyncJob = {
+      id: jobId,
+      status: 'queued',
+      submittedAt,
+      completedAt: null,
+      tenantId: tenant.tenantId,
+      planId: tenant.planId,
+      result: null,
+      error: null,
+    };
     inProcessJobs.set(jobId, job);
 
     setImmediate(async () => {
@@ -2189,6 +2466,19 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
       usage,
       rateLimit,
+      asyncQueue: {
+        tenantPendingJobs: inProcessSnapshot.pendingJobs + 1,
+        tenantPendingLimit: inProcessSnapshot.pendingLimit,
+        tenantIsolationEnforced: inProcessSnapshot.enforced,
+        retryPolicy: {
+          attempts: 1,
+          backoffMs: 0,
+          maxStalledCount: 0,
+          workerConcurrency: 1,
+          completedTtlSeconds: 0,
+          failedTtlSeconds: 0,
+        },
+      },
     }, 202);
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
@@ -2202,7 +2492,25 @@ app.get('/api/v1/pipeline/status/:jobId', async (c) => {
   if (asyncBackendMode === 'bullmq' && bullmqQueue) {
     const bmStatus = await getJobStatus(bullmqQueue, jobId);
     if (bmStatus.status !== 'not_found') {
-      return c.json({ jobId, backendMode: 'bullmq', ...bmStatus });
+      return c.json({
+        jobId,
+        backendMode: 'bullmq',
+        status: bmStatus.status,
+        submittedAt: bmStatus.submittedAt,
+        completedAt: bmStatus.result?.completedAt ?? bmStatus.failedAt,
+        result: bmStatus.result,
+        error: bmStatus.error,
+        attemptsMade: bmStatus.attemptsMade,
+        maxAttempts: bmStatus.maxAttempts,
+        tenantContext: bmStatus.tenant
+          ? {
+              tenantId: bmStatus.tenant.tenantId,
+              source: bmStatus.tenant.source,
+              planId: bmStatus.tenant.planId,
+            }
+          : null,
+        failedAt: bmStatus.failedAt,
+      });
     }
   }
 
@@ -2217,6 +2525,10 @@ app.get('/api/v1/pipeline/status/:jobId', async (c) => {
     completedAt: job.completedAt,
     result: job.result,
     error: job.error,
+    attemptsMade: 0,
+    maxAttempts: 1,
+    tenantContext: { tenantId: job.tenantId, source: 'in_process', planId: job.planId },
+    failedAt: job.status === 'failed' ? job.completedAt : null,
   });
 });
 

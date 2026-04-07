@@ -54,6 +54,22 @@ async function reservePort(): Promise<number> {
   });
 }
 
+async function waitForJobStatus(
+  jobId: string,
+  expected: 'completed' | 'failed',
+  timeoutMs: number = 6000,
+  headers?: Record<string, string>,
+): Promise<any> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${BASE}/api/v1/pipeline/status/${jobId}`, { headers });
+    const body = await res.json();
+    if (body.status === expected) return body;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for async job ${jobId} to reach status '${expected}'.`);
+}
+
 function ok(condition: boolean, msg: string): void {
   assert(condition, msg);
   passed++;
@@ -87,6 +103,7 @@ async function run() {
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
   process.env.ATTESTOR_RATE_LIMIT_PRO_REQUESTS = '20';
+  process.env.ATTESTOR_ASYNC_PENDING_STARTER_JOBS = '1';
   process.env.ATTESTOR_STRIPE_USE_MOCK = 'true';
   process.env.STRIPE_API_KEY = 'sk_test_live_api_mock';
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_api_test';
@@ -403,6 +420,8 @@ async function run() {
       ok(body.jobId !== undefined, 'Async: jobId returned');
       ok(body.status === 'queued', 'Async: status=queued');
       ok(body.backendMode === 'in_process' || body.backendMode === 'bullmq', 'Async: backendMode truthful');
+      ok(typeof body.asyncQueue?.tenantPendingJobs === 'number', 'Async: queue snapshot present');
+      ok(body.asyncQueue?.retryPolicy?.attempts >= 1, 'Async: retry policy present');
       asyncJobId = body.jobId;
       console.log(`    jobId=${asyncJobId}, status=${body.status}, backend=${body.backendMode}`);
     }
@@ -422,6 +441,9 @@ async function run() {
       ok(body.result.certificateId !== null, 'Async: certificate issued');
       ok(body.result.certificate !== null, 'Async: full cert in result');
       ok(body.result.trustChain !== null, 'Async: trust chain in result');
+      ok(typeof body.attemptsMade === 'number', 'Async: attemptsMade returned');
+      ok(typeof body.maxAttempts === 'number' && body.maxAttempts >= 1, 'Async: maxAttempts returned');
+      ok(body.tenantContext?.tenantId === 'default', 'Async: tenant context returned in status');
       console.log(`    status=${body.status}, backend=${body.backendMode}, decision=${body.result.decision}, cert=${body.result.certificateId}`);
     }
 
@@ -433,12 +455,144 @@ async function run() {
       console.log(`    unknown job rejected`);
     }
 
+    console.log('\n  [Async Queue Hardening — tenant cap + DLQ + retry]');
+    {
+      const queueTenant = issueTenantApiKey({
+        tenantId: 'tenant-queue',
+        tenantName: 'Queue Tenant',
+        planId: 'starter',
+      });
+      const queueHeaders = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${queueTenant.apiKey}`,
+      };
+
+      const payload = JSON.stringify({
+        candidateSql: COUNTERPARTY_SQL,
+        intent: COUNTERPARTY_INTENT,
+        fixtures: [COUNTERPARTY_FIXTURE],
+        generatedReport: COUNTERPARTY_REPORT,
+        reportContract: COUNTERPARTY_REPORT_CONTRACT,
+        sign: false,
+      });
+      const [queueAttemptA, queueAttemptB] = await Promise.all([
+        fetch(`${BASE}/api/v1/pipeline/run-async`, {
+          method: 'POST',
+          headers: queueHeaders,
+          body: payload,
+        }),
+        fetch(`${BASE}/api/v1/pipeline/run-async`, {
+          method: 'POST',
+          headers: queueHeaders,
+          body: payload,
+        }),
+      ]);
+      const queueBodies = [
+        { status: queueAttemptA.status, body: await queueAttemptA.json() as any },
+        { status: queueAttemptB.status, body: await queueAttemptB.json() as any },
+      ];
+      const acceptedQueueJob = queueBodies.find((entry) => entry.status === 202);
+      const rejectedQueueJob = queueBodies.find((entry) => entry.status === 429);
+      ok(Boolean(acceptedQueueJob), 'Async Queue: one starter job accepted');
+      ok(Boolean(rejectedQueueJob), 'Async Queue: one starter job rejected at pending cap');
+      ok(acceptedQueueJob!.body.asyncQueue.tenantIsolationEnforced === true, 'Async Queue: starter tenant isolation enforced');
+      ok(acceptedQueueJob!.body.asyncQueue.tenantPendingLimit === 1, 'Async Queue: starter tenant pending cap = 1');
+      ok(rejectedQueueJob!.body.asyncQueue.tenantPendingJobs >= 1, 'Async Queue: rejected response reports pending jobs');
+      ok(rejectedQueueJob!.body.asyncQueue.tenantPendingLimit === 1, 'Async Queue: rejected response reports pending limit');
+
+      const failedTenant = issueTenantApiKey({
+        tenantId: 'tenant-dlq',
+        tenantName: 'DLQ Tenant',
+        planId: 'pro',
+      });
+      const failedSubmit = await fetch(`${BASE}/api/v1/pipeline/run-async`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${failedTenant.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: 123,
+          intent: 'bad-intent',
+          sign: false,
+        }),
+      });
+      ok(failedSubmit.status === 202, 'Async Queue: invalid payload still reaches worker for DLQ proof');
+      const failedSubmitBody = await failedSubmit.json() as any;
+      const failedStatus = await waitForJobStatus(
+        failedSubmitBody.jobId,
+        'failed',
+        6000,
+        { Authorization: `Bearer ${failedTenant.apiKey}` },
+      );
+      ok(failedStatus.error.includes('candidateSql') || failedStatus.error.includes('intent'), 'Async Queue: worker exposes validation failure');
+      ok(failedStatus.maxAttempts >= 1, 'Async Queue: failed status reports retry ceiling');
+      ok(failedStatus.tenantContext?.tenantId === 'tenant-dlq', 'Async Queue: failed status keeps tenant context');
+
+      const adminQueueNoAuth = await fetch(`${BASE}/api/v1/admin/queue`);
+      ok(adminQueueNoAuth.status === 401, 'Admin Queue: auth required');
+
+      const adminQueueRes = await fetch(`${BASE}/api/v1/admin/queue?tenantId=tenant-dlq&planId=pro`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(adminQueueRes.status === 200, 'Admin Queue: status 200');
+      const adminQueueBody = await adminQueueRes.json() as any;
+      ok(adminQueueBody.retryPolicy.attempts >= 1, 'Admin Queue: retry policy exposed');
+      ok(adminQueueBody.tenant?.tenantId === 'tenant-dlq', 'Admin Queue: tenant snapshot returned');
+      ok(adminQueueBody.counts.failed >= 1, 'Admin Queue: failed count reflected');
+
+      const dlqNoAuth = await fetch(`${BASE}/api/v1/admin/queue/dlq`);
+      ok(dlqNoAuth.status === 401, 'Admin DLQ: auth required');
+
+      const dlqRes = await fetch(`${BASE}/api/v1/admin/queue/dlq?tenantId=tenant-dlq&limit=10`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(dlqRes.status === 200, 'Admin DLQ: status 200');
+      const dlqBody = await dlqRes.json() as any;
+      ok(dlqBody.summary.recordCount >= 1, 'Admin DLQ: at least one failed job listed');
+      const dlqRecord = dlqBody.records.find((record: any) => record.jobId === failedSubmitBody.jobId);
+      ok(Boolean(dlqRecord), 'Admin DLQ: failed job record present');
+      ok(dlqRecord.failedReason.includes('candidateSql') || dlqRecord.failedReason.includes('intent'), 'Admin DLQ: failure reason preserved');
+
+      const retryNoAuth = await fetch(`${BASE}/api/v1/admin/queue/jobs/${failedSubmitBody.jobId}/retry`, {
+        method: 'POST',
+      });
+      ok(retryNoAuth.status === 401, 'Admin Queue Retry: auth required');
+
+      const retryRes = await fetch(`${BASE}/api/v1/admin/queue/jobs/${failedSubmitBody.jobId}/retry`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'queue-retry-live-api',
+        },
+      });
+      ok(retryRes.status === 202, 'Admin Queue Retry: status 202');
+      const retryBody = await retryRes.json() as any;
+      ok(retryBody.job.jobId === failedSubmitBody.jobId, 'Admin Queue Retry: same job retried');
+
+      const retryAuditRes = await fetch(`${BASE}/api/v1/admin/audit?action=async_job.retried`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(retryAuditRes.status === 200, 'Admin Queue Retry: audit status 200');
+      const retryAuditBody = await retryAuditRes.json() as any;
+      ok(retryAuditBody.summary.recordCount >= 1, 'Admin Queue Retry: retry action audited');
+      console.log(`    cap=1, failedJob=${failedSubmitBody.jobId}, dlqRecords=${dlqBody.summary.recordCount}`);
+    }
+
     // ═══ PIPELINE RUN — bad input ═══
     console.log('\n  [POST /api/v1/pipeline/run — missing fields]');
     {
+      const badInputTenant = issueTenantApiKey({
+        tenantId: 'tenant-bad-input',
+        tenantName: 'Bad Input Tenant',
+        planId: 'pro',
+      });
       const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${badInputTenant.apiKey}`,
+        },
         body: JSON.stringify({ candidateSql: null }),
       });
       ok(res.status === 400, 'Pipeline(bad): status 400');
@@ -463,7 +617,14 @@ async function run() {
     // ═══ 404 for unknown route ═══
     console.log('\n  [GET /api/v1/nonexistent]');
     {
-      const res = await fetch(`${BASE}/api/v1/nonexistent`);
+      const notFoundTenant = issueTenantApiKey({
+        tenantId: 'tenant-not-found',
+        tenantName: 'Not Found Tenant',
+        planId: 'pro',
+      });
+      const res = await fetch(`${BASE}/api/v1/nonexistent`, {
+        headers: { Authorization: `Bearer ${notFoundTenant.apiKey}` },
+      });
       ok(res.status === 404, '404: unknown route returns 404');
       console.log(`    status=${res.status}`);
     }

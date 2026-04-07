@@ -15,6 +15,7 @@ export interface HostedPlanDefinition {
   description: string;
   defaultMonthlyRunQuota: number | null;
   defaultPipelineRequestsPerWindow: number | null;
+  defaultAsyncPendingJobsPerTenant: number | null;
   intendedFor: 'self_host' | 'hosted' | 'enterprise';
   defaultForHostedProvisioning: boolean;
 }
@@ -31,6 +32,14 @@ export interface PlanRateLimitSpec {
   planId: string;
   windowSeconds: number;
   requestsPerWindow: number | null;
+  enforced: boolean;
+  knownPlan: boolean;
+  source: 'plan_default' | 'env_override' | 'custom_unlimited';
+}
+
+export interface PlanAsyncQueueSpec {
+  planId: string;
+  pendingJobsPerTenant: number | null;
   enforced: boolean;
   knownPlan: boolean;
   source: 'plan_default' | 'env_override' | 'custom_unlimited';
@@ -54,6 +63,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     description: 'Self-hosted evaluation and internal development.',
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: null,
+    defaultAsyncPendingJobsPerTenant: null,
     intendedFor: 'self_host',
     defaultForHostedProvisioning: false,
   },
@@ -63,6 +73,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     description: 'Entry hosted tenant with bounded monthly pipeline usage.',
     defaultMonthlyRunQuota: 100,
     defaultPipelineRequestsPerWindow: 10,
+    defaultAsyncPendingJobsPerTenant: 2,
     intendedFor: 'hosted',
     defaultForHostedProvisioning: true,
   },
@@ -72,6 +83,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     description: 'Higher-throughput hosted tenant for repeated operational use.',
     defaultMonthlyRunQuota: 1000,
     defaultPipelineRequestsPerWindow: 60,
+    defaultAsyncPendingJobsPerTenant: 8,
     intendedFor: 'hosted',
     defaultForHostedProvisioning: false,
   },
@@ -81,6 +93,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     description: 'Hosted or private deployment plan with negotiated limits.',
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: 300,
+    defaultAsyncPendingJobsPerTenant: 32,
     intendedFor: 'enterprise',
     defaultForHostedProvisioning: false,
   },
@@ -98,6 +111,10 @@ function normalizeRateLimit(limit: number | null | undefined): number | null {
 
 function envOverrideNameForPlan(planId: HostedPlanId): string {
   return `ATTESTOR_RATE_LIMIT_${planId.toUpperCase()}_REQUESTS`;
+}
+
+function asyncPendingEnvNameForPlan(planId: HostedPlanId): string {
+  return `ATTESTOR_ASYNC_PENDING_${planId.toUpperCase()}_JOBS`;
 }
 
 function stripePriceEnvNameForPlan(planId: HostedPlanId): string {
@@ -150,6 +167,33 @@ export function resolvePlanRateLimit(planId: string | null | undefined): PlanRat
     enforced: requestsPerWindow !== null,
     knownPlan: true,
     source: envOverride !== null ? 'env_override' : 'plan_default',
+  };
+}
+
+export function resolvePlanAsyncQueue(planId: string | null | undefined): PlanAsyncQueueSpec {
+  const resolvedPlanId = planId?.trim() || SELF_HOST_PLAN_ID;
+  const plan = getHostedPlan(resolvedPlanId);
+
+  if (!plan) {
+    return {
+      planId: resolvedPlanId,
+      pendingJobsPerTenant: null,
+      enforced: false,
+      knownPlan: false,
+      source: 'custom_unlimited',
+    };
+  }
+
+  const rawOverride = process.env[asyncPendingEnvNameForPlan(plan.id)]?.trim() ?? '';
+  const parsedOverride = rawOverride ? normalizeRateLimit(Number.parseInt(rawOverride, 10)) : null;
+  const pendingJobsPerTenant = parsedOverride ?? plan.defaultAsyncPendingJobsPerTenant;
+
+  return {
+    planId: plan.id,
+    pendingJobsPerTenant,
+    enforced: pendingJobsPerTenant !== null,
+    knownPlan: true,
+    source: parsedOverride !== null ? 'env_override' : 'plan_default',
   };
 }
 

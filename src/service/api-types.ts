@@ -69,13 +69,26 @@ export interface AsyncPipelineSubmitResponse {
   tenantContext: { tenantId: string; source: string; planId: string | null };
   usage: UsageContext;
   rateLimit: RateLimitContext;
+  asyncQueue: {
+    tenantPendingJobs: number;
+    tenantPendingLimit: number | null;
+    tenantIsolationEnforced: boolean;
+    retryPolicy: {
+      attempts: number;
+      backoffMs: number;
+      maxStalledCount: number;
+      workerConcurrency: number;
+      completedTtlSeconds: number;
+      failedTtlSeconds: number;
+    };
+  };
 }
 
 export interface AsyncPipelineStatusResponse {
   jobId: string;
   backendMode: 'bullmq' | 'in_process';
-  status: 'queued' | 'running' | 'waiting' | 'active' | 'completed' | 'failed';
-  submittedAt: string;
+  status: 'queued' | 'running' | 'waiting' | 'active' | 'delayed' | 'prioritized' | 'completed' | 'failed';
+  submittedAt: string | null;
   completedAt: string | null;
   result: {
     runId: string;
@@ -89,6 +102,10 @@ export interface AsyncPipelineStatusResponse {
     caPublicKeyPem: string | null;
   } | null;
   error: string | null;
+  attemptsMade: number;
+  maxAttempts: number;
+  tenantContext: { tenantId: string; source: string; planId: string | null } | null;
+  failedAt: string | null;
 }
 
 // ─── Verify ─────────────────────────────────────────────────────────────────
@@ -350,6 +367,7 @@ export interface HostedPlanSummary {
   description: string;
   defaultMonthlyRunQuota: number | null;
   defaultPipelineRequestsPerWindow: number | null;
+  defaultAsyncPendingJobsPerTenant: number | null;
   stripePriceConfigured: boolean;
   intendedFor: 'self_host' | 'hosted' | 'enterprise';
   defaultForHostedProvisioning: boolean;
@@ -375,6 +393,7 @@ export interface AdminAuditRecordResponse {
     | 'account.reactivated'
     | 'account.archived'
     | 'account.billing.attached'
+    | 'async_job.retried'
     | 'billing.stripe.webhook_applied'
     | 'tenant_key.issued'
     | 'tenant_key.rotated'
@@ -403,6 +422,7 @@ export interface AdminAuditResponse {
       | 'account.reactivated'
       | 'account.archived'
       | 'account.billing.attached'
+      | 'async_job.retried'
       | 'billing.stripe.webhook_applied'
       | 'tenant_key.issued'
       | 'tenant_key.rotated'
@@ -501,6 +521,75 @@ export interface AdminBillingEventsResponse {
   };
 }
 
+export interface AdminAsyncQueueTenantSnapshot {
+  tenantId: string;
+  planId: string | null;
+  pendingJobs: number;
+  pendingLimit: number | null;
+  enforced: boolean;
+  scanLimit: number;
+  scanTruncated: boolean;
+  states: {
+    waiting: number;
+    active: number;
+    delayed: number;
+    prioritized: number;
+    failed: number;
+  };
+}
+
+export interface AdminAsyncQueueSummaryResponse {
+  backendMode: 'bullmq' | 'in_process';
+  queueName: string | null;
+  counts: {
+    waiting: number;
+    active: number;
+    delayed: number;
+    prioritized: number;
+    completed: number;
+    failed: number;
+    paused: number;
+  };
+  retryPolicy: {
+    attempts: number;
+    backoffMs: number;
+    maxStalledCount: number;
+    workerConcurrency: number;
+    completedTtlSeconds: number;
+    failedTtlSeconds: number;
+  };
+  tenant: AdminAsyncQueueTenantSnapshot | null;
+}
+
+export interface AdminAsyncDeadLetterRecord {
+  jobId: string;
+  name: string;
+  tenantId: string | null;
+  planId: string | null;
+  state: string;
+  failedReason: string | null;
+  attemptsMade: number;
+  maxAttempts: number;
+  requestedAt: string | null;
+  submittedAt: string | null;
+  processedAt: string | null;
+  failedAt: string | null;
+}
+
+export interface AdminAsyncDeadLetterResponse {
+  records: AdminAsyncDeadLetterRecord[];
+  summary: {
+    backendMode: 'bullmq' | 'in_process';
+    tenantFilter: string | null;
+    limit: number;
+    recordCount: number;
+  };
+}
+
+export interface AdminAsyncRetryResponse {
+  job: AdminAsyncDeadLetterRecord;
+}
+
 export interface UsageContext {
   tenantId: string;
   planId: string;
@@ -546,6 +635,9 @@ export const API_ROUTES = {
   ADMIN_AUDIT: '/api/v1/admin/audit',
   ADMIN_BILLING_EVENTS: '/api/v1/admin/billing/events',
   ADMIN_METRICS: '/api/v1/admin/metrics',
+  ADMIN_QUEUE: '/api/v1/admin/queue',
+  ADMIN_QUEUE_DLQ: '/api/v1/admin/queue/dlq',
+  ADMIN_QUEUE_RETRY: '/api/v1/admin/queue/jobs/:id/retry',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
   ADMIN_TENANT_KEY_ROTATE: '/api/v1/admin/tenant-keys/:id/rotate',
   ADMIN_TENANT_KEY_DEACTIVATE: '/api/v1/admin/tenant-keys/:id/deactivate',

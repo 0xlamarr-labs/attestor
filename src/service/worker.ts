@@ -19,8 +19,9 @@
  * BOUNDARY:
  * - Single-queue, configurable concurrency (default 1)
  * - Shares Redis with API server
- * - No multi-tenant job isolation (jobs processed FIFO)
- * - No dead-letter queue or retry policy beyond BullMQ defaults
+ * - Tenant fairness comes from per-tenant pending-job caps at API submit time, not BullMQ Pro queue groups
+ * - Failed jobs remain inspectable in BullMQ's failed set / DLQ view and can be retried manually
+ * - No shared/distributed rate limiting, job priority scheduling policy, or multi-tenant queue groups yet
  *
  * Run: npm run worker
  * Run: REDIS_URL=redis://prod:6379 npm run worker

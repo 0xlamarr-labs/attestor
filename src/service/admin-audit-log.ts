@@ -18,6 +18,7 @@ export type AdminAuditAction =
   | 'account.reactivated'
   | 'account.archived'
   | 'account.billing.attached'
+  | 'async_job.retried'
   | 'billing.stripe.webhook_applied'
   | 'tenant_key.issued'
   | 'tenant_key.rotated'
