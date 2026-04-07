@@ -11,8 +11,12 @@
  * - Layer 5: Program validation (CMS program code in informationRecipient)
  * - Layer 6: Measure Period validation (date range within reporting year)
  *
- * NOT included:
- * - Layer 7: Value Set / VSAC validation (requires NLM credentials)
+ * NOT included in this local validator module:
+ * - Layer 7: Value Set / VSAC validation
+ *
+ * NOTE:
+ * - Attestor now wires a separate live VSAC FHIR client for the current demo slice
+ * - That path is env-gated because it requires a UMLS API key
  *
  * SCOPE: 'cypress_validators' — Cypress-equivalent validation layers 2-6
  */
@@ -310,7 +314,8 @@ function validateMeasurePeriod(xml: string): CypressLayerResult {
  * cqm-validators Ruby gem in TypeScript. Layer 1 (Schematron) is
  * handled separately by validateCmsSchematron().
  *
- * Layer 7 (Value Set / VSAC) is not included — requires NLM credentials.
+ * Layer 7 (Value Set / VSAC) is not included in this local module.
+ * Use the separate live VSAC client path when credentials are available.
  */
 export function validateCypressLayers(xml: string): CypressValidationResult {
   const measures = extractMeasures(xml);

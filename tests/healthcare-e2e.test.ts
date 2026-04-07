@@ -322,6 +322,33 @@ async function run() {
     console.log(`    layers=${result.layers.length}, errors=${result.totalErrors}, warnings=${result.totalWarnings}, scope=${result.scope}`);
   }
 
+  // ═══ VSAC Layer 7 Target Coverage ═══
+  console.log('\n  [VSAC Layer 7 Target Coverage]');
+  {
+    const {
+      CMS165_BLOOD_PRESSURE,
+      CMS122_DIABETES_A1C,
+      CMS130_COLORECTAL_SCREENING,
+    } = await import('../src/domains/healthcare-measures.js');
+    const { collectVsacLayer7Targets } = await import('../src/filing/vsac-api-client.js');
+
+    const targets = collectVsacLayer7Targets([
+      CMS165_BLOOD_PRESSURE,
+      CMS122_DIABETES_A1C,
+      CMS130_COLORECTAL_SCREENING,
+    ]);
+
+    ok(targets.length === 11, 'VSAC-L7: 11 unique curated value-set targets');
+    ok(targets.some(t => t.name === 'Essential Hypertension'), 'VSAC-L7: CMS165 hypertension target present');
+    ok(targets.some(t => t.name === 'Diabetes'), 'VSAC-L7: CMS122 diabetes target present');
+    ok(targets.some(t => t.name === 'Colonoscopy'), 'VSAC-L7: CMS130 colonoscopy target present');
+    ok(targets.some(t => t.name === 'Federal Administrative Sex'), 'VSAC-L7: common federal administrative sex target present');
+    ok(targets.some(t => t.name === 'Payer'), 'VSAC-L7: payer target present');
+    ok(targets.some(t => t.measureIds.length === 3 && t.category === 'supplemental'), 'VSAC-L7: shared supplemental targets span all 3 measures');
+
+    console.log(`    targets=${targets.length}, sharedSupplementals=${targets.filter(t => t.measureIds.length === 3).length}`);
+  }
+
   console.log(`\n  Healthcare E2E Tests: ${passed} passed, 0 failed\n`);
 }
 

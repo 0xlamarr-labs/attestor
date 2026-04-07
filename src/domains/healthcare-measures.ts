@@ -36,6 +36,14 @@ export interface QualityMeasure {
   stratifiers?: MeasureStratifier[];
   /** Supplemental data elements. */
   supplementalData?: string[];
+  /** Curated VSAC value sets used for live Layer 7 validation in the current demo slice. */
+  vsacValueSets?: VsacValueSetBinding[];
+}
+
+export interface VsacValueSetBinding {
+  oid: string;
+  name: string;
+  category: 'supplemental' | 'population' | 'screening';
 }
 
 export interface MeasurePopulation {
@@ -166,6 +174,13 @@ export function evaluateMeasure(
 // ─── CMS Top 3 Quality Measures ─────────────────────────────────────────────
 
 /** CMS165v12 — Controlling High Blood Pressure (largest population, MIPS/MSSP/HEDIS). */
+const COMMON_SUPPLEMENTAL_VSAC: VsacValueSetBinding[] = [
+  { oid: '2.16.840.1.114222.4.11.3591', name: 'Payer', category: 'supplemental' },
+  { oid: '2.16.840.1.114222.4.11.836', name: 'Race', category: 'supplemental' },
+  { oid: '2.16.840.1.114222.4.11.837', name: 'Ethnicity', category: 'supplemental' },
+  { oid: '2.16.840.1.113762.1.4.1021.121', name: 'Federal Administrative Sex', category: 'supplemental' },
+];
+
 export const CMS165_BLOOD_PRESSURE: QualityMeasure = {
   measureId: 'CMS165v12',
   nqfNumber: '0018',
@@ -177,6 +192,10 @@ export const CMS165_BLOOD_PRESSURE: QualityMeasure = {
     { type: 'denominator', description: 'Initial population', criteria: 'initial_population' },
     { type: 'denominator_exclusion', description: 'ESRD, dialysis, kidney transplant, pregnancy', criteria: 'has_exclusion = true' },
     { type: 'numerator', description: 'Most recent BP < 140/90', criteria: 'systolic < 140 AND diastolic < 90' },
+  ],
+  vsacValueSets: [
+    { oid: '2.16.840.1.113883.3.464.1003.104.12.1011', name: 'Essential Hypertension', category: 'population' },
+    ...COMMON_SUPPLEMENTAL_VSAC,
   ],
 };
 
@@ -193,6 +212,10 @@ export const CMS122_DIABETES_A1C: QualityMeasure = {
     { type: 'denominator_exclusion', description: 'Hospice, advanced illness', criteria: 'has_exclusion = true' },
     { type: 'numerator', description: 'Most recent HbA1c > 9%', criteria: 'hba1c > 9.0' },
   ],
+  vsacValueSets: [
+    { oid: '2.16.840.1.113883.3.464.1003.103.12.1001', name: 'Diabetes', category: 'population' },
+    ...COMMON_SUPPLEMENTAL_VSAC,
+  ],
 };
 
 /** CMS130v12 — Colorectal Cancer Screening (multi-pathway). */
@@ -207,6 +230,14 @@ export const CMS130_COLORECTAL_SCREENING: QualityMeasure = {
     { type: 'denominator', description: 'Initial population', criteria: 'initial_population' },
     { type: 'denominator_exclusion', description: 'Colorectal cancer, total colectomy', criteria: 'has_exclusion = true' },
     { type: 'numerator', description: 'Appropriate screening', criteria: 'colonoscopy_10yr OR fit_dna_3yr OR fobt_1yr' },
+  ],
+  vsacValueSets: [
+    { oid: '2.16.840.1.113883.3.464.1003.198.12.1011', name: 'Fecal Occult Blood Test (FOBT)', category: 'screening' },
+    { oid: '2.16.840.1.113883.3.464.1003.108.12.1020', name: 'Colonoscopy', category: 'screening' },
+    { oid: '2.16.840.1.113883.3.464.1003.198.12.1010', name: 'Flexible Sigmoidoscopy', category: 'screening' },
+    { oid: '2.16.840.1.113883.3.464.1003.108.12.1038', name: 'CT Colonography', category: 'screening' },
+    { oid: '2.16.840.1.113883.3.464.1003.108.12.1039', name: 'FIT DNA', category: 'screening' },
+    ...COMMON_SUPPLEMENTAL_VSAC,
   ],
 };
 

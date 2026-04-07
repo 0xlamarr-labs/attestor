@@ -1113,6 +1113,23 @@ async function runHealthcareDemo(): Promise<void> {
     for (const e of layer.errors) console.log(`      ✗ ${e}`);
   }
 
+  const { isVsacConfigured, validateVsacLayer7ForMeasures } = await import('../filing/vsac-api-client.js');
+  if (isVsacConfigured()) {
+    console.log(`  Expanding VSAC Layer 7 value sets...`);
+    const vsacResult = await validateVsacLayer7ForMeasures(cmsMeasures.map(entry => entry.measure));
+    const vsacIcon = vsacResult.valid ? '✓' : '✗';
+    console.log(`  VSAC L7: ${vsacIcon} ${vsacResult.expandedTargets}/${vsacResult.totalTargets} value sets expanded, ${vsacResult.totalCodes} codes (${vsacResult.scope})`);
+    if (!vsacResult.valid) {
+      const failedTargets = vsacResult.targets.filter(entry => !entry.valid);
+      for (const target of failedTargets.slice(0, 5)) {
+        console.log(`    - ${target.name} [${target.oid}] ${target.error ?? 'unknown VSAC error'}`);
+      }
+      if (failedTargets.length > 5) console.log(`    ... and ${failedTargets.length - 5} more`);
+    }
+  } else {
+    console.log(`  VSAC L7: ⊘ skipped (set VSAC_UMLS_API_KEY from the UMLS My Profile page for live value-set expansion)`);
+  }
+
   // ONC Cypress API validation (env-gated — only when UMLS credentials available)
   const { isCypressConfigured, validateViaCypressApi } = await import('../filing/cypress-api-client.js');
   if (isCypressConfigured()) {
