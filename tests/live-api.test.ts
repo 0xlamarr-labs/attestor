@@ -1263,6 +1263,47 @@ async function run() {
       ok(accountSummaryAfterWebhookBody.account.billing.delinquentSince === null, 'Account API: summary shows cleared delinquentSince');
       ok(accountSummaryAfterWebhookBody.tenantContext.planId === 'pro', 'Account API: summary shows synced plan');
 
+      const accountBillingExportRes = await fetch(`${BASE}/api/v1/account/billing/export?limit=5`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(accountBillingExportRes.status === 200, 'Account Billing Export: json status 200');
+      const accountBillingExportBody = await accountBillingExportRes.json() as any;
+      ok(accountBillingExportBody.accountId === createAccountBody.account.id, 'Account Billing Export: account id matches');
+      ok(accountBillingExportBody.checkout.sessionId === checkoutBody.checkoutSessionId, 'Account Billing Export: checkout session propagated');
+      ok(accountBillingExportBody.summary.dataSource === 'ledger_derived', 'Account Billing Export: ledger-derived source used when shared billing ledger available');
+      const exportedInvoice = accountBillingExportBody.invoices.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
+      ok(Boolean(exportedInvoice), 'Account Billing Export: paid invoice exported');
+      ok(exportedInvoice.amountPaid === 5000, 'Account Billing Export: paid invoice amount exported');
+      const exportedCharge = accountBillingExportBody.charges.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
+      ok(Boolean(exportedCharge), 'Account Billing Export: derived charge exported from invoice.paid');
+      ok(exportedCharge.status === 'succeeded', 'Account Billing Export: derived charge status succeeded');
+
+      const accountBillingExportCsvRes = await fetch(`${BASE}/api/v1/account/billing/export?format=csv&limit=5`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(accountBillingExportCsvRes.status === 200, 'Account Billing Export: csv status 200');
+      ok((accountBillingExportCsvRes.headers.get('content-type') ?? '').includes('text/csv'), 'Account Billing Export: csv content-type');
+      const accountBillingExportCsv = await accountBillingExportCsvRes.text();
+      ok(accountBillingExportCsv.includes('recordType,accountId,tenantId'), 'Account Billing Export: csv header present');
+      ok(accountBillingExportCsv.includes('invoice') && accountBillingExportCsv.includes('in_account_001_paid'), 'Account Billing Export: csv includes invoice row');
+
+      const adminBillingExportNoAuth = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export`);
+      ok(adminBillingExportNoAuth.status === 401, 'Admin Account Billing Export: auth required');
+
+      const adminBillingExportRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export?limit=5`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(adminBillingExportRes.status === 200, 'Admin Account Billing Export: json status 200');
+      const adminBillingExportBody = await adminBillingExportRes.json() as any;
+      ok(adminBillingExportBody.accountId === createAccountBody.account.id, 'Admin Account Billing Export: account id matches');
+      ok(adminBillingExportBody.summary.invoiceCount >= 1, 'Admin Account Billing Export: invoice count reported');
+
+      const adminBillingExportCsvRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export?format=csv&limit=5`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(adminBillingExportCsvRes.status === 200, 'Admin Account Billing Export: csv status 200');
+      ok((adminBillingExportCsvRes.headers.get('content-disposition') ?? '').includes(`${createAccountBody.account.id}-billing-export.csv`), 'Admin Account Billing Export: csv attachment filename');
+
       const billingEventsNoAuth = await fetch(`${BASE}/api/v1/admin/billing/events`);
       ok(billingEventsNoAuth.status === 401, 'Admin Billing Events: auth required');
 

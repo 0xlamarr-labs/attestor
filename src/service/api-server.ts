@@ -14,7 +14,9 @@
  * - GET  /api/v1/account/usage       — current hosted usage/rate-limit summary
  * - POST /api/v1/account/billing/checkout — create Stripe Checkout subscription session
  * - POST /api/v1/account/billing/portal — create Stripe Billing Portal session
+ * - GET  /api/v1/account/billing/export — export hosted billing summary/history as JSON or CSV
  * - GET/POST /api/v1/admin/accounts  — hosted operator account provisioning
+ * - GET  /api/v1/admin/accounts/:id/billing/export — operator billing export for a hosted account
  * - POST /api/v1/admin/accounts/:id/billing/stripe — attach Stripe billing ids/status
  * - POST /api/v1/admin/accounts/:id/suspend|reactivate|archive — hosted account lifecycle
  * - GET  /api/v1/admin/plans         — hosted plan catalog + defaults
@@ -89,6 +91,7 @@ import {
   applyStripeSubscriptionState,
   attachStripeBillingToAccount,
   createHostedAccount,
+  findHostedAccountById,
   findHostedAccountByTenantId,
   listHostedAccounts,
   setHostedAccountStatus,
@@ -130,6 +133,10 @@ import {
   createHostedBillingPortalSession,
   createHostedCheckoutSession,
 } from './stripe-billing.js';
+import {
+  buildHostedBillingExport,
+  renderHostedBillingExportCsv,
+} from './billing-export.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -753,6 +760,43 @@ app.post('/api/v1/account/billing/portal', async (c) => {
     portalUrl: portal.url,
     mock: portal.mock,
   });
+});
+
+app.get('/api/v1/account/billing/export', async (c) => {
+  const current = currentHostedAccount(c);
+  if (current instanceof Response) return current;
+
+  c.set('obs.accountId', current.account.id);
+  c.set('obs.accountStatus', current.account.status);
+  c.set('obs.tenantId', current.account.primaryTenantId);
+  c.set('obs.planId', current.tenant.planId ?? current.account.billing.lastCheckoutPlanId ?? null);
+
+  const format = (c.req.query('format')?.trim().toLowerCase() ?? 'json');
+  if (format !== 'json' && format !== 'csv') {
+    return c.json({ error: "format must be 'json' or 'csv'." }, 400);
+  }
+
+  const rawLimit = c.req.query('limit');
+  const parsedLimit = rawLimit === undefined
+    ? null
+    : Number.parseInt(rawLimit, 10);
+  if (rawLimit !== undefined && (parsedLimit === null || !Number.isFinite(parsedLimit) || parsedLimit <= 0)) {
+    return c.json({ error: 'limit must be a positive integer.' }, 400);
+  }
+
+  const payload = await buildHostedBillingExport({
+    account: current.account,
+    limit: parsedLimit ?? undefined,
+  });
+
+  if (format === 'csv') {
+    c.header('content-type', 'text/csv; charset=utf-8');
+    c.header('cache-control', 'no-store');
+    c.header('content-disposition', `attachment; filename="${current.account.id}-billing-export.csv"`);
+    return c.body(renderHostedBillingExportCsv(payload));
+  }
+
+  return c.json(payload);
 });
 
 app.post('/api/v1/billing/stripe/webhook', async (c) => {
@@ -1429,6 +1473,48 @@ app.get('/api/v1/admin/accounts', (c) => {
   return c.json({
     accounts: records.map(adminAccountView),
   });
+});
+
+app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const account = findHostedAccountById(c.req.param('id'));
+  if (!account) {
+    return c.json({ error: `Hosted account '${c.req.param('id')}' not found.` }, 404);
+  }
+
+  c.set('obs.accountId', account.id);
+  c.set('obs.accountStatus', account.status);
+  c.set('obs.tenantId', account.primaryTenantId);
+  c.set('obs.planId', account.billing.lastCheckoutPlanId ?? null);
+
+  const format = (c.req.query('format')?.trim().toLowerCase() ?? 'json');
+  if (format !== 'json' && format !== 'csv') {
+    return c.json({ error: "format must be 'json' or 'csv'." }, 400);
+  }
+
+  const rawLimit = c.req.query('limit');
+  const parsedLimit = rawLimit === undefined
+    ? null
+    : Number.parseInt(rawLimit, 10);
+  if (rawLimit !== undefined && (parsedLimit === null || !Number.isFinite(parsedLimit) || parsedLimit <= 0)) {
+    return c.json({ error: 'limit must be a positive integer.' }, 400);
+  }
+
+  const payload = await buildHostedBillingExport({
+    account,
+    limit: parsedLimit ?? undefined,
+  });
+
+  if (format === 'csv') {
+    c.header('content-type', 'text/csv; charset=utf-8');
+    c.header('cache-control', 'no-store');
+    c.header('content-disposition', `attachment; filename="${account.id}-billing-export.csv"`);
+    return c.body(renderHostedBillingExportCsv(payload));
+  }
+
+  return c.json(payload);
 });
 
 app.get('/api/v1/admin/plans', (c) => {

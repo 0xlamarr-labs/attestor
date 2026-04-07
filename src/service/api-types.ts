@@ -241,6 +241,57 @@ export interface AccountBillingPortalResponse {
   mock: boolean;
 }
 
+export interface BillingExportCheckoutSummary {
+  sessionId: string | null;
+  completedAt: string | null;
+  planId: string | null;
+}
+
+export interface BillingExportInvoiceRecord {
+  invoiceId: string;
+  status: string | null;
+  currency: string | null;
+  amountPaid: number | null;
+  amountDue: number | null;
+  subscriptionId: string | null;
+  priceId: string | null;
+  billingReason: string | null;
+  createdAt: string | null;
+  paidAt: string | null;
+  lastEventType: string | null;
+  source: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary';
+}
+
+export interface BillingExportChargeRecord {
+  chargeId: string | null;
+  invoiceId: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: 'succeeded' | 'pending' | 'failed' | null;
+  paid: boolean | null;
+  refunded: boolean | null;
+  createdAt: string | null;
+  source: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary';
+}
+
+export interface AccountBillingExportResponse {
+  accountId: string;
+  tenantId: string;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  checkout: BillingExportCheckoutSummary;
+  invoices: BillingExportInvoiceRecord[];
+  charges: BillingExportChargeRecord[];
+  summary: {
+    dataSource: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary' | 'empty';
+    mock: boolean;
+    sharedBillingLedger: boolean;
+    requestedLimit: number;
+    invoiceCount: number;
+    chargeCount: number;
+  };
+}
+
 export interface AdminTenantKeyRecord {
   id: string;
   tenantId: string;
@@ -540,6 +591,8 @@ export interface AdminBillingEventsResponse {
   };
 }
 
+export interface AdminAccountBillingExportResponse extends AccountBillingExportResponse {}
+
 export interface AdminAsyncQueueTenantSnapshot {
   tenantId: string;
   planId: string | null;
@@ -645,7 +698,9 @@ export const API_ROUTES = {
   ACCOUNT_SUMMARY: '/api/v1/account',
   ACCOUNT_BILLING_CHECKOUT: '/api/v1/account/billing/checkout',
   ACCOUNT_BILLING_PORTAL: '/api/v1/account/billing/portal',
+  ACCOUNT_BILLING_EXPORT: '/api/v1/account/billing/export',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
+  ADMIN_ACCOUNT_BILLING_EXPORT: '/api/v1/admin/accounts/:id/billing/export',
   ADMIN_ACCOUNT_SUSPEND: '/api/v1/admin/accounts/:id/suspend',
   ADMIN_ACCOUNT_REACTIVATE: '/api/v1/admin/accounts/:id/reactivate',
   ADMIN_ACCOUNT_ARCHIVE: '/api/v1/admin/accounts/:id/archive',
