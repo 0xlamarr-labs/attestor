@@ -72,9 +72,10 @@ docker run \
 | `REDIS_URL` | No | Auto-resolved | Redis connection URL (Tier 1 of 3-tier resolution) |
 | `ATTESTOR_PG_URL` | No | None | PostgreSQL for RLS tenant isolation |
 | `ATTESTOR_TENANT_KEYS` | No | `""` | API key to tenant-id mapping (`key:id:name[:plan][:quota],...`) |
+| `ATTESTOR_ACCOUNT_STORE_PATH` | No | `.attestor/accounts.json` | Local file-backed hosted account registry used by `/api/v1/admin/accounts` |
 | `ATTESTOR_TENANT_KEY_STORE_PATH` | No | `.attestor/tenant-keys.json` | Local file-backed tenant key store used by `npm run tenant:keys` and API key lookup |
 | `ATTESTOR_USAGE_LEDGER_PATH` | No | `.attestor/usage-ledger.json` | Local file-backed single-node usage ledger for hosted quota enforcement |
-| `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for tenant management and usage endpoints (`/api/v1/admin/tenant-keys`, `/api/v1/admin/usage`) |
+| `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for hosted account, tenant management, and usage endpoints (`/api/v1/admin/accounts`, `/api/v1/admin/tenant-keys`, `/api/v1/admin/usage`) |
 | `NODE_ENV` | No | `production` | Environment mode |
 
 ## Health and Readiness

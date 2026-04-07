@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { startServer } from '../src/service/api-server.js';
 import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } from '../src/service/tenant-key-store.js';
 import { readUsageLedgerSnapshot, resetUsageMeter } from '../src/service/usage-meter.js';
+import { resetAccountStoreForTests } from '../src/service/account-store.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
@@ -32,9 +33,11 @@ function ok(condition: boolean, msg: string): void {
 async function run() {
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(process.cwd(), '.attestor', 'live-api-usage-ledger.json');
+  process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-accounts.json');
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
   resetTenantKeyStoreForTests();
   resetUsageMeter();
+  resetAccountStoreForTests();
 
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE API INTEGRATION TESTS — Real HTTP, Real Server');
@@ -509,6 +512,43 @@ async function run() {
 
     console.log('\n  [Admin tenant key management API]');
     {
+      const accountsNoAuth = await fetch(`${BASE}/api/v1/admin/accounts`);
+      ok(accountsNoAuth.status === 401, 'Admin Accounts: auth required');
+
+      const createAccountRes = await fetch(`${BASE}/api/v1/admin/accounts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+        },
+        body: JSON.stringify({
+          accountName: 'Account Co',
+          contactEmail: 'ops@account.example',
+          tenantId: 'tenant-account',
+          tenantName: 'Account Tenant',
+          planId: 'starter',
+          monthlyRunQuota: 2,
+        }),
+      });
+      ok(createAccountRes.status === 201, 'Admin Accounts: create status 201');
+      const createAccountBody = await createAccountRes.json() as any;
+      ok(createAccountBody.account.accountName === 'Account Co', 'Admin Accounts: account name persisted');
+      ok(typeof createAccountBody.initialKey.apiKey === 'string', 'Admin Accounts: initial key returned');
+
+      const accountsListRes = await fetch(`${BASE}/api/v1/admin/accounts`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(accountsListRes.status === 200, 'Admin Accounts: list status 200');
+      const accountsListBody = await accountsListRes.json() as any;
+      const listedAccount = accountsListBody.accounts.find((entry: any) => entry.id === createAccountBody.account.id);
+      ok(Boolean(listedAccount), 'Admin Accounts: new account appears in list');
+      ok(listedAccount.primaryTenantId === 'tenant-account', 'Admin Accounts: primary tenant persisted');
+
+      const accountUsageRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(accountUsageRes.status === 200, 'Admin Accounts: initial key works on tenant route');
+
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
 
@@ -578,6 +618,32 @@ async function run() {
       ok(usageListed.used === 1, 'Admin Usage: used count tracked');
       ok(usageListBody.summary.totalUsed >= 1, 'Admin Usage: summary totalUsed present');
 
+      const accountRun = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(accountRun.status === 200, 'Admin Accounts: created account key can consume pipeline run');
+
+      const usageAccountFilterRes = await fetch(`${BASE}/api/v1/admin/usage?tenantId=tenant-account`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(usageAccountFilterRes.status === 200, 'Admin Usage: account tenant filter status 200');
+      const usageAccountFilterBody = await usageAccountFilterRes.json() as any;
+      ok(usageAccountFilterBody.records.length === 1, 'Admin Usage: account tenant appears in filter');
+      ok(usageAccountFilterBody.records[0].accountId === createAccountBody.account.id, 'Admin Usage: account id enriched');
+      ok(usageAccountFilterBody.records[0].accountName === 'Account Co', 'Admin Usage: account name enriched');
+
       const usageFilterRes = await fetch(`${BASE}/api/v1/admin/usage?tenantId=tenant-admin`, {
         headers: { Authorization: 'Bearer admin-secret' },
       });
@@ -598,11 +664,12 @@ async function run() {
         headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
       });
       ok(revokedTenantRes.status === 401, 'Admin API: revoked key no longer works');
-      console.log(`    issued=${issueBody.key.id}, usageUsed=${usageListed.used}, revoked=${revokeBody.key.status}`);
+      console.log(`    account=${createAccountBody.account.id}, issued=${issueBody.key.id}, usageUsed=${usageListed.used}, revoked=${revokeBody.key.status}`);
     }
 
     console.log(`\n  Live API Tests: ${passed} passed, 0 failed\n`);
   } finally {
+    resetAccountStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
     serverHandle.close();

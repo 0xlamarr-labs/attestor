@@ -223,9 +223,39 @@ export interface AdminRevokeTenantKeyResponse {
   key: AdminTenantKeyRecord;
 }
 
+export interface AdminAccountRecord {
+  id: string;
+  accountName: string;
+  contactEmail: string;
+  primaryTenantId: string;
+  status: 'active' | 'archived';
+  createdAt: string;
+  archivedAt: string | null;
+}
+
+export interface AdminListAccountsResponse {
+  accounts: AdminAccountRecord[];
+}
+
+export interface AdminCreateAccountRequest {
+  accountName: string;
+  contactEmail: string;
+  tenantId: string;
+  tenantName: string;
+  planId?: string;
+  monthlyRunQuota?: number | null;
+}
+
+export interface AdminCreateAccountResponse {
+  account: AdminAccountRecord;
+  initialKey: AdminTenantKeyRecord & { apiKey: string };
+}
+
 export interface AdminUsageRecord {
   tenantId: string;
   tenantName: string | null;
+  accountId: string | null;
+  accountName: string | null;
   planId: string | null;
   monthlyRunQuota: number | null;
   meter: 'monthly_pipeline_runs';
@@ -267,6 +297,7 @@ export const API_ROUTES = {
   VERIFY: '/api/v1/verify',
   FILING_EXPORT: '/api/v1/filing/export',
   ACCOUNT_USAGE: '/api/v1/account/usage',
+  ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',

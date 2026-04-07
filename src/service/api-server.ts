@@ -49,6 +49,7 @@ import {
   revokeTenantApiKey,
   type TenantKeyRecord,
 } from './tenant-key-store.js';
+import { createHostedAccount, findHostedAccountByTenantId, listHostedAccounts, type HostedAccountRecord } from './account-store.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -111,6 +112,18 @@ function adminTenantKeyView(record: TenantKeyRecord) {
     status: record.status,
     createdAt: record.createdAt,
     revokedAt: record.revokedAt,
+  };
+}
+
+function adminAccountView(record: HostedAccountRecord) {
+  return {
+    id: record.id,
+    accountName: record.accountName,
+    contactEmail: record.contactEmail,
+    primaryTenantId: record.primaryTenantId,
+    status: record.status,
+    createdAt: record.createdAt,
+    archivedAt: record.archivedAt,
   };
 }
 
@@ -196,6 +209,55 @@ app.get('/api/v1/admin/tenant-keys', (c) => {
   });
 });
 
+app.get('/api/v1/admin/accounts', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const { records } = listHostedAccounts();
+  return c.json({
+    accounts: records.map(adminAccountView),
+  });
+});
+
+app.post('/api/v1/admin/accounts', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json();
+  const accountName = typeof body.accountName === 'string' ? body.accountName.trim() : '';
+  const contactEmail = typeof body.contactEmail === 'string' ? body.contactEmail.trim() : '';
+  const tenantId = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
+  const tenantName = typeof body.tenantName === 'string' ? body.tenantName.trim() : '';
+  const planId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : 'community';
+  const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
+    ? body.monthlyRunQuota
+    : null;
+
+  if (!accountName || !contactEmail || !tenantId || !tenantName) {
+    return c.json({ error: 'accountName, contactEmail, tenantId, and tenantName are required' }, 400);
+  }
+
+  const account = createHostedAccount({
+    accountName,
+    contactEmail,
+    primaryTenantId: tenantId,
+  });
+  const issued = issueTenantApiKey({
+    tenantId,
+    tenantName,
+    planId,
+    monthlyRunQuota,
+  });
+
+  return c.json({
+    account: adminAccountView(account.record),
+    initialKey: {
+      ...adminTenantKeyView(issued.record),
+      apiKey: issued.apiKey,
+    },
+  }, 201);
+});
+
 app.post('/api/v1/admin/tenant-keys', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
@@ -249,10 +311,13 @@ app.get('/api/v1/admin/usage', (c) => {
   const period = c.req.query('period')?.trim() || null;
   const records = queryUsageLedger({ tenantId, period }).map((entry) => {
     const tenantRecord = findTenantRecordByTenantId(entry.tenantId);
+    const accountRecord = findHostedAccountByTenantId(entry.tenantId);
     const quota = tenantRecord?.monthlyRunQuota ?? null;
     return {
       tenantId: entry.tenantId,
       tenantName: tenantRecord?.tenantName ?? null,
+      accountId: accountRecord?.id ?? null,
+      accountName: accountRecord?.accountName ?? null,
       planId: tenantRecord?.planId ?? null,
       monthlyRunQuota: quota,
       meter: 'monthly_pipeline_runs' as const,
