@@ -13,6 +13,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { DEFAULT_HOSTED_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
 
 export interface TenantKeyRecord {
   id: string;
@@ -78,15 +79,18 @@ export function issueTenantApiKey(input: IssueTenantKeyInput): {
   record: TenantKeyRecord;
   path: string;
 } {
+  const resolvedPlan = resolvePlanSpec({
+    planId: input.planId,
+    monthlyRunQuota: input.monthlyRunQuota,
+    defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+  });
   const apiKey = `atk_${randomBytes(24).toString('hex')}`;
   const record: TenantKeyRecord = {
     id: `tkey_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
     tenantId: input.tenantId,
     tenantName: input.tenantName,
-    planId: input.planId ?? 'community',
-    monthlyRunQuota: typeof input.monthlyRunQuota === 'number' && input.monthlyRunQuota >= 0
-      ? input.monthlyRunQuota
-      : null,
+    planId: resolvedPlan.planId,
+    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
     apiKeyHash: hashApiKey(apiKey),
     apiKeyPreview: previewApiKey(apiKey),
     status: 'active',

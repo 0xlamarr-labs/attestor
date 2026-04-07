@@ -512,6 +512,20 @@ async function run() {
 
     console.log('\n  [Admin tenant key management API]');
     {
+      const plansNoAuth = await fetch(`${BASE}/api/v1/admin/plans`);
+      ok(plansNoAuth.status === 401, 'Admin Plans: auth required');
+
+      const plansRes = await fetch(`${BASE}/api/v1/admin/plans`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(plansRes.status === 200, 'Admin Plans: list status 200');
+      const plansBody = await plansRes.json() as any;
+      ok(plansBody.defaults.hostedProvisioningPlanId === 'starter', 'Admin Plans: hosted default = starter');
+      const starterPlan = plansBody.plans.find((entry: any) => entry.id === 'starter');
+      ok(Boolean(starterPlan), 'Admin Plans: starter plan present');
+      ok(starterPlan.defaultMonthlyRunQuota === 100, 'Admin Plans: starter quota = 100');
+      ok(starterPlan.defaultForHostedProvisioning === true, 'Admin Plans: starter is hosted default');
+
       const accountsNoAuth = await fetch(`${BASE}/api/v1/admin/accounts`);
       ok(accountsNoAuth.status === 401, 'Admin Accounts: auth required');
 
@@ -526,14 +540,14 @@ async function run() {
           contactEmail: 'ops@account.example',
           tenantId: 'tenant-account',
           tenantName: 'Account Tenant',
-          planId: 'starter',
-          monthlyRunQuota: 2,
         }),
       });
       ok(createAccountRes.status === 201, 'Admin Accounts: create status 201');
       const createAccountBody = await createAccountRes.json() as any;
       ok(createAccountBody.account.accountName === 'Account Co', 'Admin Accounts: account name persisted');
       ok(typeof createAccountBody.initialKey.apiKey === 'string', 'Admin Accounts: initial key returned');
+      ok(createAccountBody.initialKey.planId === 'starter', 'Admin Accounts: hosted default plan applied');
+      ok(createAccountBody.initialKey.monthlyRunQuota === 100, 'Admin Accounts: hosted default quota applied');
 
       const accountsListRes = await fetch(`${BASE}/api/v1/admin/accounts`, {
         headers: { Authorization: 'Bearer admin-secret' },
@@ -562,13 +576,29 @@ async function run() {
           tenantId: 'tenant-admin',
           tenantName: 'Admin Co',
           planId: 'pro',
-          monthlyRunQuota: 3,
         }),
       });
       ok(issueRes.status === 201, 'Admin API: issue key created');
       const issueBody = await issueRes.json() as any;
       ok(typeof issueBody.key.apiKey === 'string', 'Admin API: plaintext apiKey returned once');
       ok(issueBody.key.planId === 'pro', 'Admin API: plan persisted');
+      ok(issueBody.key.monthlyRunQuota === 1000, 'Admin API: plan default quota applied');
+
+      const invalidPlanRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+        },
+        body: JSON.stringify({
+          tenantId: 'tenant-invalid',
+          tenantName: 'Invalid Co',
+          planId: 'wrong-plan',
+        }),
+      });
+      ok(invalidPlanRes.status === 400, 'Admin API: invalid plan rejected');
+      const invalidPlanBody = await invalidPlanRes.json() as any;
+      ok(String(invalidPlanBody.error).includes('Valid plans'), 'Admin API: invalid plan error is actionable');
 
       const tenantUsage = await fetch(`${BASE}/api/v1/account/usage`, {
         headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },

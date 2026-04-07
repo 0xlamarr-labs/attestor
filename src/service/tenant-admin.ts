@@ -2,12 +2,14 @@
  * Tenant Admin CLI — Hosted API onboarding first slice
  *
  * Usage:
+ *   npm run tenant:keys -- plans
  *   npm run tenant:keys -- list
- *   npm run tenant:keys -- issue --tenant-id tenant-pro --name Acme --plan pro --quota 1000
+ *   npm run tenant:keys -- issue --tenant-id tenant-pro --name Acme [--plan pro] [--quota 1000]
  *   npm run tenant:keys -- revoke --id tkey_...
  */
 
 import { issueTenantApiKey, listTenantKeyRecords, revokeTenantApiKey } from './tenant-key-store.js';
+import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, validHostedPlanIds } from './plan-catalog.js';
 
 function readFlag(flag: string, fallback?: string): string | undefined {
   const index = process.argv.indexOf(flag);
@@ -19,6 +21,7 @@ function printUsage(): void {
   console.log('Tenant Admin CLI');
   console.log('');
   console.log('Commands:');
+  console.log('  plans');
   console.log('  list');
   console.log('  issue --tenant-id <id> --name <tenant name> [--plan <plan>] [--quota <n>]');
   console.log('  revoke --id <tenant-key-record-id>');
@@ -53,15 +56,33 @@ async function main() {
     return;
   }
 
+  if (command === 'plans') {
+    console.log('Built-in hosted plans:');
+    for (const plan of listHostedPlans()) {
+      console.log([
+        `id=${plan.id}`,
+        `name="${plan.displayName}"`,
+        `quota=${plan.defaultMonthlyRunQuota ?? 'unlimited'}`,
+        `defaultForHostedProvisioning=${plan.defaultForHostedProvisioning}`,
+        `scope=${plan.intendedFor}`,
+      ].join(' | '));
+    }
+    return;
+  }
+
   if (command === 'issue') {
     const tenantId = readFlag('--tenant-id') ?? readFlag('--tenant');
     const tenantName = readFlag('--name');
-    const planId = readFlag('--plan') ?? 'community';
+    const planId = readFlag('--plan') ?? DEFAULT_HOSTED_PLAN_ID;
     const quotaRaw = readFlag('--quota');
     const monthlyRunQuota = quotaRaw ? Number.parseInt(quotaRaw, 10) : null;
 
     if (!tenantId || !tenantName) {
       console.error('issue requires --tenant-id and --name');
+      process.exit(1);
+    }
+    if (!validHostedPlanIds().includes(planId as any)) {
+      console.error(`issue received unknown --plan '${planId}'. Valid plans: ${validHostedPlanIds().join(', ')}`);
       process.exit(1);
     }
 

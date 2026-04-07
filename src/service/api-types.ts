@@ -251,6 +251,22 @@ export interface AdminCreateAccountResponse {
   initialKey: AdminTenantKeyRecord & { apiKey: string };
 }
 
+export interface HostedPlanSummary {
+  id: 'community' | 'starter' | 'pro' | 'enterprise';
+  displayName: string;
+  description: string;
+  defaultMonthlyRunQuota: number | null;
+  intendedFor: 'self_host' | 'hosted' | 'enterprise';
+  defaultForHostedProvisioning: boolean;
+}
+
+export interface AdminListPlansResponse {
+  plans: HostedPlanSummary[];
+  defaults: {
+    hostedProvisioningPlanId: 'starter';
+  };
+}
+
 export interface AdminUsageRecord {
   tenantId: string;
   tenantName: string | null;
@@ -298,6 +314,7 @@ export const API_ROUTES = {
   FILING_EXPORT: '/api/v1/filing/export',
   ACCOUNT_USAGE: '/api/v1/account/usage',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
+  ADMIN_PLANS: '/api/v1/admin/plans',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',

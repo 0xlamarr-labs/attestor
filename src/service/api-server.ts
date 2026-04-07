@@ -50,6 +50,7 @@ import {
   type TenantKeyRecord,
 } from './tenant-key-store.js';
 import { createHostedAccount, findHostedAccountByTenantId, listHostedAccounts, type HostedAccountRecord } from './account-store.js';
+import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, resolvePlanSpec } from './plan-catalog.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -125,6 +126,17 @@ function adminAccountView(record: HostedAccountRecord) {
     createdAt: record.createdAt,
     archivedAt: record.archivedAt,
   };
+}
+
+function adminPlanView() {
+  return listHostedPlans().map((plan) => ({
+    id: plan.id,
+    displayName: plan.displayName,
+    description: plan.description,
+    defaultMonthlyRunQuota: plan.defaultMonthlyRunQuota,
+    intendedFor: plan.intendedFor,
+    defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
+  }));
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────
@@ -219,6 +231,18 @@ app.get('/api/v1/admin/accounts', (c) => {
   });
 });
 
+app.get('/api/v1/admin/plans', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  return c.json({
+    plans: adminPlanView(),
+    defaults: {
+      hostedProvisioningPlanId: DEFAULT_HOSTED_PLAN_ID,
+    },
+  });
+});
+
 app.post('/api/v1/admin/accounts', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
@@ -228,13 +252,24 @@ app.post('/api/v1/admin/accounts', async (c) => {
   const contactEmail = typeof body.contactEmail === 'string' ? body.contactEmail.trim() : '';
   const tenantId = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
   const tenantName = typeof body.tenantName === 'string' ? body.tenantName.trim() : '';
-  const planId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : 'community';
+  const requestedPlanId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : DEFAULT_HOSTED_PLAN_ID;
   const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
     ? body.monthlyRunQuota
     : null;
 
   if (!accountName || !contactEmail || !tenantId || !tenantName) {
     return c.json({ error: 'accountName, contactEmail, tenantId, and tenantName are required' }, 400);
+  }
+
+  let resolvedPlan;
+  try {
+    resolvedPlan = resolvePlanSpec({
+      planId: requestedPlanId,
+      monthlyRunQuota,
+      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
 
   const account = createHostedAccount({
@@ -245,8 +280,8 @@ app.post('/api/v1/admin/accounts', async (c) => {
   const issued = issueTenantApiKey({
     tenantId,
     tenantName,
-    planId,
-    monthlyRunQuota,
+    planId: resolvedPlan.planId,
+    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
   });
 
   return c.json({
@@ -265,7 +300,7 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
   const body = await c.req.json();
   const tenantId = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
   const tenantName = typeof body.tenantName === 'string' ? body.tenantName.trim() : '';
-  const planId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : 'community';
+  const requestedPlanId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : DEFAULT_HOSTED_PLAN_ID;
   const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
     ? body.monthlyRunQuota
     : null;
@@ -274,11 +309,22 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
     return c.json({ error: 'tenantId and tenantName are required' }, 400);
   }
 
+  let resolvedPlan;
+  try {
+    resolvedPlan = resolvePlanSpec({
+      planId: requestedPlanId,
+      monthlyRunQuota,
+      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+
   const issued = issueTenantApiKey({
     tenantId,
     tenantName,
-    planId,
-    monthlyRunQuota,
+    planId: resolvedPlan.planId,
+    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
   });
 
   return c.json({

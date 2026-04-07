@@ -205,6 +205,14 @@ API endpoints:
 - `GET /api/v1/ready` — orchestrator readiness probe (200 when ready, 503 when not)
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
+- `GET /api/v1/account/usage`
+- `GET /api/v1/admin/accounts`
+- `POST /api/v1/admin/accounts`
+- `GET /api/v1/admin/plans`
+- `GET /api/v1/admin/tenant-keys`
+- `POST /api/v1/admin/tenant-keys`
+- `POST /api/v1/admin/tenant-keys/:id/revoke`
+- `GET /api/v1/admin/usage`
 - `POST /api/v1/pipeline/run`
 - `POST /api/v1/pipeline/run-async`
 - `GET /api/v1/pipeline/status/:jobId`
@@ -289,11 +297,12 @@ What it does not prove yet:
 
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
-- Hosted API shell: API-key tenant plans + monthly pipeline-run quota enforcement + `/api/v1/account/usage` meter endpoint. Usage is now persisted in a local single-node file-backed ledger, but is not yet a shared billing datastore or Stripe-backed billing system.
-- Tenant onboarding CLI: `npm run tenant:keys -- issue|list|revoke` manages a local file-backed tenant key store for hosted operator workflows. Keys are hashed at rest and plaintext is only shown once on issuance.
+- Hosted API shell: built-in hosted plan catalog (`community`, `starter`, `pro`, `enterprise`) + API-key tenant plans + monthly pipeline-run quota enforcement + `/api/v1/account/usage` meter endpoint. Usage is now persisted in a local single-node file-backed ledger, but is not yet a shared billing datastore or Stripe-backed billing system.
+- Tenant onboarding CLI: `npm run tenant:keys -- plans|issue|list|revoke` manages a local file-backed tenant key store for hosted operator workflows. Built-in plans resolve default quotas centrally; keys are hashed at rest and plaintext is only shown once on issuance.
 - Account provisioning store: local file-backed hosted account registry with one primary tenant per account in this first slice.
-- Admin account API: `GET/POST /api/v1/admin/accounts` creates a hosted customer record and issues the first tenant API key in one operator call.
-- Admin tenant management API: `GET/POST /api/v1/admin/tenant-keys` plus `POST /api/v1/admin/tenant-keys/:id/revoke` behind `ATTESTOR_ADMIN_API_KEY`. Intended for operator/backoffice automation, not end-customer self-serve yet.
+- Admin account API: `GET/POST /api/v1/admin/accounts` creates a hosted customer record and issues the first tenant API key in one operator call. Hosted operator provisioning defaults to the `starter` plan unless overridden.
+- Admin plan catalog API: `GET /api/v1/admin/plans` returns the built-in hosted plan catalog and the current default provisioning plan for operator/backoffice automation.
+- Admin tenant management API: `GET/POST /api/v1/admin/tenant-keys` plus `POST /api/v1/admin/tenant-keys/:id/revoke` behind `ATTESTOR_ADMIN_API_KEY`. Built-in plan ids are validated server-side so operator typos cannot silently create the wrong quota boundary.
 - Admin usage reporting API: `GET /api/v1/admin/usage` returns tenant-level monthly usage from the local ledger, with optional `tenantId` / `period` filtering and best-effort tenant metadata enrichment.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
 - Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, rate limiting, or dead-letter queue.
@@ -356,7 +365,7 @@ What it does not prove yet:
 | `ATTESTOR_ACCOUNT_STORE_PATH` | Optional path for the local file-backed hosted account registry used by `GET/POST /api/v1/admin/accounts` |
 | `ATTESTOR_TENANT_KEY_STORE_PATH` | Optional path for the local file-backed tenant key store used by `npm run tenant:keys` and hosted API key lookup |
 | `ATTESTOR_USAGE_LEDGER_PATH` | Optional path for the local file-backed hosted usage ledger used by quota enforcement and `/api/v1/account/usage` |
-| `ATTESTOR_ADMIN_API_KEY` | Admin API key for `GET/POST /api/v1/admin/tenant-keys` and revoke operations |
+| `ATTESTOR_ADMIN_API_KEY` | Admin API key for hosted operator endpoints: accounts, plan catalog, tenant key management, and usage reporting |
 | `REDIS_URL` | Redis URL for BullMQ async backend |
 | `ATTESTOR_ALLOW_LEGACY_API` | Set `true` to allow flat Ed25519 at `/api/v1/verify` (deprecated) |
 | `CYPRESS_UMLS_USER` | UMLS username for ONC Cypress API validation (free from uts.nlm.nih.gov) |
@@ -369,6 +378,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 895 tests across 7 suites: 557 unit + 163 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
+| Expanded verification surface | 906 tests across 7 suites: 557 unit + 174 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

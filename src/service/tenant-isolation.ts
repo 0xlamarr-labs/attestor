@@ -21,6 +21,7 @@
 
 import type { Context, Next } from 'hono';
 import { findActiveTenantKey, hasActiveTenantKeys } from './tenant-key-store.js';
+import { SELF_HOST_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
 
 export interface TenantContext {
   tenantId: string;
@@ -50,7 +51,18 @@ export function registerTenantKey(
   planId: string | null = null,
   monthlyRunQuota: number | null = null,
 ): void {
-  tenantKeys.set(apiKey, { tenantId, tenantName, planId, monthlyRunQuota });
+  const resolvedPlan = resolvePlanSpec({
+    planId,
+    monthlyRunQuota,
+    defaultPlanId: SELF_HOST_PLAN_ID,
+    allowCustomPlan: true,
+  });
+  tenantKeys.set(apiKey, {
+    tenantId,
+    tenantName,
+    planId: resolvedPlan.planId,
+    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+  });
 }
 
 /**
@@ -150,12 +162,12 @@ export function tenantMiddleware() {
       tenantName: 'anonymous',
       authenticatedAt: new Date().toISOString(),
       source: 'anonymous' as const,
-      planId: 'community',
+      planId: SELF_HOST_PLAN_ID,
       monthlyRunQuota: null,
     };
     c.req.raw.headers.set('x-attestor-tenant-id', resolved.tenantId);
     c.req.raw.headers.set('x-attestor-tenant-source', resolved.source);
-    c.req.raw.headers.set('x-attestor-plan-id', resolved.planId ?? 'community');
+    c.req.raw.headers.set('x-attestor-plan-id', resolved.planId ?? SELF_HOST_PLAN_ID);
     if (resolved.monthlyRunQuota !== null) {
       c.req.raw.headers.set('x-attestor-monthly-run-quota', String(resolved.monthlyRunQuota));
     }
@@ -171,7 +183,7 @@ export function getTenantContextFromHeaders(headers: Headers): TenantContext {
     tenantName: null,
     authenticatedAt: new Date().toISOString(),
     source: (headers.get('x-attestor-tenant-source') as TenantContext['source'] | null) ?? 'anonymous',
-    planId: headers.get('x-attestor-plan-id') ?? 'community',
+    planId: headers.get('x-attestor-plan-id') ?? SELF_HOST_PLAN_ID,
     monthlyRunQuota: Number.isFinite(parsedQuota) ? parsedQuota : null,
   };
 }
