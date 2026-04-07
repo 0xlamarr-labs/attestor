@@ -74,6 +74,7 @@ docker run \
 | `ATTESTOR_TENANT_KEYS` | No | `""` | API key to tenant-id mapping (`key:id:name[:plan][:quota],...`) |
 | `ATTESTOR_TENANT_KEY_STORE_PATH` | No | `.attestor/tenant-keys.json` | Local file-backed tenant key store used by `npm run tenant:keys` and API key lookup |
 | `ATTESTOR_USAGE_LEDGER_PATH` | No | `.attestor/usage-ledger.json` | Local file-backed single-node usage ledger for hosted quota enforcement |
+| `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for tenant management endpoints (`/api/v1/admin/tenant-keys`) |
 | `NODE_ENV` | No | `production` | Environment mode |
 
 ## Health and Readiness

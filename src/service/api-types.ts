@@ -192,6 +192,37 @@ export interface AccountUsageResponse {
   usage: UsageContext;
 }
 
+export interface AdminTenantKeyRecord {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  planId: string | null;
+  monthlyRunQuota: number | null;
+  apiKeyPreview: string;
+  status: 'active' | 'revoked';
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+export interface AdminListTenantKeysResponse {
+  keys: AdminTenantKeyRecord[];
+}
+
+export interface AdminIssueTenantKeyRequest {
+  tenantId: string;
+  tenantName: string;
+  planId?: string;
+  monthlyRunQuota?: number | null;
+}
+
+export interface AdminIssueTenantKeyResponse {
+  key: AdminTenantKeyRecord & { apiKey: string };
+}
+
+export interface AdminRevokeTenantKeyResponse {
+  key: AdminTenantKeyRecord;
+}
+
 export interface UsageContext {
   tenantId: string;
   planId: string;
@@ -212,6 +243,8 @@ export const API_ROUTES = {
   VERIFY: '/api/v1/verify',
   FILING_EXPORT: '/api/v1/filing/export',
   ACCOUNT_USAGE: '/api/v1/account/usage',
+  ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
+  ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',
   CONNECTORS: '/api/v1/connectors',

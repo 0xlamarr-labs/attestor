@@ -2,7 +2,7 @@
  * Tenant Isolation — Bounded Multi-Tenant First Slice
  *
  * Provides request-level tenant identification and isolation
- * via Bearer token with tenant claims.
+ * via Bearer auth using API keys or tenant claims.
  *
  * ARCHITECTURE:
  * - Each request carries a Bearer token with optional tenantId
@@ -20,7 +20,7 @@
  */
 
 import type { Context, Next } from 'hono';
-import { findActiveTenantKey } from './tenant-key-store.js';
+import { findActiveTenantKey, hasActiveTenantKeys } from './tenant-key-store.js';
 
 export interface TenantContext {
   tenantId: string;
@@ -132,8 +132,12 @@ export function extractTenantContext(authHeader: string | undefined): TenantCont
  */
 export function tenantMiddleware() {
   return async (c: Context, next: Next) => {
+    if (c.req.path.startsWith('/api/v1/admin/')) {
+      return next();
+    }
+
     loadTenantKeysFromEnv();
-    const enforced = tenantKeys.size > 0;
+    const enforced = tenantKeys.size > 0 || hasActiveTenantKeys();
     const tenant = extractTenantContext(c.req.header('authorization'));
 
     if (enforced && !tenant) {

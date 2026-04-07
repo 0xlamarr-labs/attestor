@@ -128,6 +128,11 @@ export function findActiveTenantKey(apiKey: string): TenantKeyRecord | null {
   return store.records.find((entry) => entry.status === 'active' && entry.apiKeyHash === hashed) ?? null;
 }
 
+export function hasActiveTenantKeys(): boolean {
+  const store = loadStore();
+  return store.records.some((entry) => entry.status === 'active');
+}
+
 export function resetTenantKeyStoreForTests(): void {
   const path = storePath();
   if (existsSync(path)) rmSync(path, { force: true });

@@ -32,6 +32,7 @@ function ok(condition: boolean, msg: string): void {
 async function run() {
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(process.cwd(), '.attestor', 'live-api-usage-ledger.json');
+  process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
   resetTenantKeyStoreForTests();
   resetUsageMeter();
 
@@ -494,6 +495,9 @@ async function run() {
       ok(usageBody.tenantContext.planId === 'starter', 'File store: plan propagated');
       ok(usageBody.usage.quota === 1, 'File store: quota propagated');
 
+      const anonymousRes = await fetch(`${BASE}/api/v1/account/usage`);
+      ok(anonymousRes.status === 401, 'File store: active keys enforce auth');
+
       revokeTenantApiKey(issued.record.id);
 
       const revokedRes = await fetch(`${BASE}/api/v1/account/usage`, {
@@ -501,6 +505,60 @@ async function run() {
       });
       ok(revokedRes.status === 401, 'File store: revoked key rejected');
       console.log(`    issued=${issued.record.id}, preview=${issued.record.apiKeyPreview}, revokedStatus=${revokedRes.status}`);
+    }
+
+    console.log('\n  [Admin tenant key management API]');
+    {
+      const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
+      ok(noAuth.status === 401, 'Admin API: auth required');
+
+      const issueRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+        },
+        body: JSON.stringify({
+          tenantId: 'tenant-admin',
+          tenantName: 'Admin Co',
+          planId: 'pro',
+          monthlyRunQuota: 3,
+        }),
+      });
+      ok(issueRes.status === 201, 'Admin API: issue key created');
+      const issueBody = await issueRes.json() as any;
+      ok(typeof issueBody.key.apiKey === 'string', 'Admin API: plaintext apiKey returned once');
+      ok(issueBody.key.planId === 'pro', 'Admin API: plan persisted');
+
+      const tenantUsage = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
+      });
+      ok(tenantUsage.status === 200, 'Admin API: issued key works on tenant route');
+      const tenantUsageBody = await tenantUsage.json() as any;
+      ok(tenantUsageBody.tenantContext.tenantId === 'tenant-admin', 'Admin API: tenant route resolves issued key');
+
+      const listRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(listRes.status === 200, 'Admin API: list status 200');
+      const listBody = await listRes.json() as any;
+      const listed = listBody.keys.find((entry: any) => entry.id === issueBody.key.id);
+      ok(Boolean(listed), 'Admin API: issued key appears in list');
+      ok(!('apiKeyHash' in listed), 'Admin API: hash not exposed');
+
+      const revokeRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/revoke`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(revokeRes.status === 200, 'Admin API: revoke status 200');
+      const revokeBody = await revokeRes.json() as any;
+      ok(revokeBody.key.status === 'revoked', 'Admin API: revoke marks record revoked');
+
+      const revokedTenantRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
+      });
+      ok(revokedTenantRes.status === 401, 'Admin API: revoked key no longer works');
+      console.log(`    issued=${issueBody.key.id}, listed=${listed.id}, revoked=${revokeBody.key.status}`);
     }
 
     console.log(`\n  Live API Tests: ${passed} passed, 0 failed\n`);

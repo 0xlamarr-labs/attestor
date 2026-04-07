@@ -10,6 +10,7 @@
  * - GET  /api/v1/health              — service health + PKI + registries
  * - GET  /api/v1/domains             — registered domain packs
  * - GET  /api/v1/connectors          — registered database connectors
+ * - GET/POST /api/v1/admin/tenant-keys — hosted operator tenant key management
  *
  * This is a real server. It binds to a port and accepts real HTTP requests.
  * Integration tests hit it over the network.
@@ -40,6 +41,12 @@ import { createPipelineQueue, submitPipelineJob, getJobStatus, createPipelineWor
 import { tenantMiddleware, getTenantContextFromHeaders, type TenantContext } from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 import { canConsumePipelineRun, consumePipelineRun, getUsageContext } from './usage-meter.js';
+import {
+  issueTenantApiKey,
+  listTenantKeyRecords,
+  revokeTenantApiKey,
+  type TenantKeyRecord,
+} from './tenant-key-store.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -72,6 +79,37 @@ function createRequestSigners(identitySource: string, reviewerName?: string) {
 
 function currentTenant(c: Context): TenantContext {
   return getTenantContextFromHeaders(c.req.raw.headers);
+}
+
+function currentAdminAuthorized(c: Context): Response | null {
+  const configured = process.env.ATTESTOR_ADMIN_API_KEY?.trim();
+  if (!configured) {
+    return c.json({
+      error: 'Admin API disabled. Set ATTESTOR_ADMIN_API_KEY to enable tenant management endpoints.',
+    }, 503);
+  }
+
+  const authHeader = c.req.header('authorization') ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token || token !== configured) {
+    return c.json({ error: 'Valid admin API key required in Authorization header.' }, 401);
+  }
+
+  return null;
+}
+
+function adminTenantKeyView(record: TenantKeyRecord) {
+  return {
+    id: record.id,
+    tenantId: record.tenantId,
+    tenantName: record.tenantName,
+    planId: record.planId,
+    monthlyRunQuota: record.monthlyRunQuota,
+    apiKeyPreview: record.apiKeyPreview,
+    status: record.status,
+    createdAt: record.createdAt,
+    revokedAt: record.revokedAt,
+  };
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────
@@ -143,6 +181,61 @@ app.get('/api/v1/account/usage', (c) => {
       planId: tenant.planId,
     },
     usage,
+  });
+});
+
+app.get('/api/v1/admin/tenant-keys', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const { records } = listTenantKeyRecords();
+  return c.json({
+    keys: records.map(adminTenantKeyView),
+  });
+});
+
+app.post('/api/v1/admin/tenant-keys', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json();
+  const tenantId = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
+  const tenantName = typeof body.tenantName === 'string' ? body.tenantName.trim() : '';
+  const planId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : 'community';
+  const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
+    ? body.monthlyRunQuota
+    : null;
+
+  if (!tenantId || !tenantName) {
+    return c.json({ error: 'tenantId and tenantName are required' }, 400);
+  }
+
+  const issued = issueTenantApiKey({
+    tenantId,
+    tenantName,
+    planId,
+    monthlyRunQuota,
+  });
+
+  return c.json({
+    key: {
+      ...adminTenantKeyView(issued.record),
+      apiKey: issued.apiKey,
+    },
+  }, 201);
+});
+
+app.post('/api/v1/admin/tenant-keys/:id/revoke', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const result = revokeTenantApiKey(c.req.param('id'));
+  if (!result.record) {
+    return c.json({ error: 'Tenant key record not found' }, 404);
+  }
+
+  return c.json({
+    key: adminTenantKeyView(result.record),
   });
 });
 
