@@ -95,6 +95,13 @@ import { lookupAdminIdempotency, recordAdminIdempotency } from './admin-idempote
 import { hashJsonValue } from './json-stable.js';
 import { lookupProcessedStripeWebhook, recordProcessedStripeWebhook } from './stripe-webhook-store.js';
 import {
+  claimStripeBillingEvent,
+  finalizeStripeBillingEvent,
+  isBillingEventLedgerConfigured,
+  listBillingEvents,
+  releaseStripeBillingEventClaim,
+} from './billing-event-ledger.js';
+import {
   StripeBillingError,
   createHostedBillingPortalSession,
   createHostedCheckoutSession,
@@ -325,6 +332,32 @@ function adminAuditView(record: {
     metadata: record.metadata,
     previousHash: record.previousHash,
     eventHash: record.eventHash,
+  };
+}
+
+function billingEventView(record: Awaited<ReturnType<typeof listBillingEvents>>[number]) {
+  return {
+    id: record.id,
+    provider: record.provider,
+    source: record.source,
+    providerEventId: record.providerEventId,
+    eventType: record.eventType,
+    payloadHash: record.payloadHash,
+    outcome: record.outcome,
+    reason: record.reason,
+    accountId: record.accountId,
+    tenantId: record.tenantId,
+    stripeCustomerId: record.stripeCustomerId,
+    stripeSubscriptionId: record.stripeSubscriptionId,
+    stripePriceId: record.stripePriceId,
+    accountStatusBefore: record.accountStatusBefore,
+    accountStatusAfter: record.accountStatusAfter,
+    billingStatusBefore: record.billingStatusBefore,
+    billingStatusAfter: record.billingStatusAfter,
+    mappedPlanId: record.mappedPlanId,
+    receivedAt: record.receivedAt,
+    processedAt: record.processedAt,
+    metadata: record.metadata,
   };
 }
 
@@ -594,7 +627,14 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
   }
 
   c.header('x-attestor-stripe-event-id', event.id);
-  const dedupe = lookupProcessedStripeWebhook(event.id, rawPayload);
+  const sharedBillingLedger = isBillingEventLedgerConfigured();
+  const dedupe = sharedBillingLedger
+    ? await claimStripeBillingEvent({
+      providerEventId: event.id,
+      eventType: event.type,
+      rawPayload,
+    })
+    : lookupProcessedStripeWebhook(event.id, rawPayload);
   if (dedupe.kind === 'conflict') {
     return c.json({
       error: `Stripe event '${event.id}' was already recorded with a different payload hash.`,
@@ -615,152 +655,224 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     });
   }
 
-  const supportedEvent =
-    event.type === 'customer.subscription.created'
-    || event.type === 'customer.subscription.updated'
-    || event.type === 'customer.subscription.deleted'
-    || event.type === 'customer.subscription.paused'
-    || event.type === 'customer.subscription.resumed';
+  let finalizedSharedEvent = false;
+  try {
+    const supportedEvent =
+      event.type === 'customer.subscription.created'
+      || event.type === 'customer.subscription.updated'
+      || event.type === 'customer.subscription.deleted'
+      || event.type === 'customer.subscription.paused'
+      || event.type === 'customer.subscription.resumed';
 
-  if (!supportedEvent) {
-    recordProcessedStripeWebhook({
-      eventId: event.id,
-      eventType: event.type,
-      accountId: null,
-      stripeCustomerId: null,
-      stripeSubscriptionId: null,
-      outcome: 'ignored',
-      reason: 'unsupported_event_type',
-      rawPayload,
+    if (!supportedEvent) {
+      if (sharedBillingLedger) {
+        await finalizeStripeBillingEvent({
+          providerEventId: event.id,
+          outcome: 'ignored',
+          reason: 'unsupported_event_type',
+          metadata: {
+            eventType: event.type,
+          },
+        });
+        finalizedSharedEvent = true;
+      } else {
+        recordProcessedStripeWebhook({
+          eventId: event.id,
+          eventType: event.type,
+          accountId: null,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          outcome: 'ignored',
+          reason: 'unsupported_event_type',
+          rawPayload,
+        });
+      }
+      return c.json({
+        received: true,
+        duplicate: false,
+        ignored: true,
+        eventId: event.id,
+        eventType: event.type,
+        reason: 'unsupported_event_type',
+      });
+    }
+
+    const subscription = event.data.object as Stripe.Subscription;
+    const stripeCustomerId =
+      typeof subscription.customer === 'string'
+        ? subscription.customer
+        : subscription.customer?.id ?? null;
+    const stripeSubscriptionId = typeof subscription.id === 'string' ? subscription.id : null;
+    const stripeSubscriptionStatus =
+      typeof subscription.status === 'string'
+        ? subscription.status
+        : event.type === 'customer.subscription.deleted'
+          ? 'canceled'
+          : null;
+    const stripePriceId = typeof subscription.items?.data?.[0]?.price?.id === 'string'
+      ? subscription.items.data[0].price.id
+      : null;
+    const accountIdFromMetadata =
+      typeof subscription.metadata?.attestorAccountId === 'string' && subscription.metadata.attestorAccountId.trim() !== ''
+        ? subscription.metadata.attestorAccountId.trim()
+        : null;
+
+    let applied;
+    try {
+      applied = applyStripeSubscriptionState({
+        accountId: accountIdFromMetadata,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        stripeSubscriptionStatus,
+        stripePriceId,
+        eventId: event.id,
+        eventType: event.type,
+      });
+    } catch (err) {
+      if (sharedBillingLedger && !finalizedSharedEvent) {
+        try {
+          await releaseStripeBillingEventClaim(event.id);
+        } catch {
+          // allow original error mapping to surface
+        }
+      }
+      const mapped = accountStoreErrorResponse(c, err);
+      if (mapped) return mapped;
+      throw err;
+    }
+
+    if (!applied.record) {
+      if (sharedBillingLedger) {
+        await finalizeStripeBillingEvent({
+          providerEventId: event.id,
+          outcome: 'ignored',
+          reason: 'no_account_match',
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripePriceId,
+          billingStatusAfter: stripeSubscriptionStatus,
+          metadata: {
+            eventType: event.type,
+          },
+        });
+        finalizedSharedEvent = true;
+      } else {
+        recordProcessedStripeWebhook({
+          eventId: event.id,
+          eventType: event.type,
+          accountId: null,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          outcome: 'ignored',
+          reason: 'no_account_match',
+          rawPayload,
+        });
+      }
+      return c.json({
+        received: true,
+        duplicate: false,
+        ignored: true,
+        eventId: event.id,
+        eventType: event.type,
+        reason: 'no_account_match',
+        stripeCustomerId,
+        stripeSubscriptionId,
+      });
+    }
+
+    const mappedPlan = findHostedPlanByStripePriceId(stripePriceId);
+    if (mappedPlan) {
+      const resolvedPlan = resolvePlanSpec({
+        planId: mappedPlan.id,
+        defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+      });
+      syncTenantPlanByTenantId(applied.record.primaryTenantId, {
+        planId: resolvedPlan.planId,
+        monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+      });
+    }
+
+    if (sharedBillingLedger) {
+      await finalizeStripeBillingEvent({
+        providerEventId: event.id,
+        outcome: 'applied',
+        accountId: applied.record.id,
+        tenantId: applied.record.primaryTenantId,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        stripePriceId,
+        accountStatusBefore: applied.previousStatus,
+        accountStatusAfter: applied.nextStatus,
+        billingStatusBefore: applied.previousBillingStatus,
+        billingStatusAfter: applied.nextBillingStatus,
+        mappedPlanId: mappedPlan?.id ?? null,
+        metadata: {
+          eventType: event.type,
+          matchReason: applied.matchReason,
+        },
+      });
+      finalizedSharedEvent = true;
+    } else {
+      recordProcessedStripeWebhook({
+        eventId: event.id,
+        eventType: event.type,
+        accountId: applied.record.id,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        outcome: 'applied',
+        reason: null,
+        rawPayload,
+      });
+    }
+
+    appendAdminAuditRecord({
+      actorType: 'stripe_webhook',
+      actorLabel: 'stripe.webhooks',
+      action: 'billing.stripe.webhook_applied',
+      routeId: 'billing.stripe.webhook',
+      accountId: applied.record.id,
+      tenantId: applied.record.primaryTenantId,
+      tenantKeyId: null,
+      planId: null,
+      monthlyRunQuota: null,
+      idempotencyKey: event.id,
+      requestHash: dedupe.payloadHash,
+      metadata: {
+        eventType: event.type,
+        matchReason: applied.matchReason,
+        stripeCustomerId,
+        stripeSubscriptionId,
+        stripeSubscriptionStatus,
+        stripePriceId,
+        mappedPlanId: mappedPlan?.id ?? null,
+        previousAccountStatus: applied.previousStatus,
+        nextAccountStatus: applied.nextStatus,
+        previousBillingStatus: applied.previousBillingStatus,
+        nextBillingStatus: applied.nextBillingStatus,
+        sharedLedger: sharedBillingLedger,
+      },
     });
+
     return c.json({
       received: true,
       duplicate: false,
-      ignored: true,
       eventId: event.id,
       eventType: event.type,
-      reason: 'unsupported_event_type',
-    });
-  }
-
-  const subscription = event.data.object as Stripe.Subscription;
-  const stripeCustomerId =
-    typeof subscription.customer === 'string'
-      ? subscription.customer
-      : subscription.customer?.id ?? null;
-  const stripeSubscriptionId = typeof subscription.id === 'string' ? subscription.id : null;
-  const stripeSubscriptionStatus =
-    typeof subscription.status === 'string'
-      ? subscription.status
-      : event.type === 'customer.subscription.deleted'
-        ? 'canceled'
-        : null;
-  const stripePriceId = typeof subscription.items?.data?.[0]?.price?.id === 'string'
-    ? subscription.items.data[0].price.id
-    : null;
-  const accountIdFromMetadata =
-    typeof subscription.metadata?.attestorAccountId === 'string' && subscription.metadata.attestorAccountId.trim() !== ''
-      ? subscription.metadata.attestorAccountId.trim()
-      : null;
-
-  let applied;
-  try {
-    applied = applyStripeSubscriptionState({
-      accountId: accountIdFromMetadata,
-      stripeCustomerId,
-      stripeSubscriptionId,
-      stripeSubscriptionStatus,
-      stripePriceId,
-      eventId: event.id,
-      eventType: event.type,
+      accountId: applied.record.id,
+      accountStatus: applied.record.status,
+      mappedPlanId: mappedPlan?.id ?? null,
+      billing: applied.record.billing,
     });
   } catch (err) {
-    const mapped = accountStoreErrorResponse(c, err);
-    if (mapped) return mapped;
+    if (sharedBillingLedger && !finalizedSharedEvent) {
+      try {
+        await releaseStripeBillingEventClaim(event.id);
+      } catch {
+        // allow original failure to surface
+      }
+    }
     throw err;
   }
-
-  if (!applied.record) {
-    recordProcessedStripeWebhook({
-      eventId: event.id,
-      eventType: event.type,
-      accountId: null,
-      stripeCustomerId,
-      stripeSubscriptionId,
-      outcome: 'ignored',
-      reason: 'no_account_match',
-      rawPayload,
-    });
-    return c.json({
-      received: true,
-      duplicate: false,
-      ignored: true,
-      eventId: event.id,
-      eventType: event.type,
-      reason: 'no_account_match',
-      stripeCustomerId,
-      stripeSubscriptionId,
-    });
-  }
-
-  const mappedPlan = findHostedPlanByStripePriceId(stripePriceId);
-  if (mappedPlan) {
-    const resolvedPlan = resolvePlanSpec({
-      planId: mappedPlan.id,
-      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
-    });
-    syncTenantPlanByTenantId(applied.record.primaryTenantId, {
-      planId: resolvedPlan.planId,
-      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
-    });
-  }
-
-  recordProcessedStripeWebhook({
-    eventId: event.id,
-    eventType: event.type,
-    accountId: applied.record.id,
-    stripeCustomerId,
-    stripeSubscriptionId,
-    outcome: 'applied',
-    reason: null,
-    rawPayload,
-  });
-
-  appendAdminAuditRecord({
-    actorType: 'stripe_webhook',
-    actorLabel: 'stripe.webhooks',
-    action: 'billing.stripe.webhook_applied',
-    routeId: 'billing.stripe.webhook',
-    accountId: applied.record.id,
-    tenantId: applied.record.primaryTenantId,
-    tenantKeyId: null,
-    planId: null,
-    monthlyRunQuota: null,
-    idempotencyKey: event.id,
-    requestHash: dedupe.payloadHash,
-    metadata: {
-      eventType: event.type,
-      matchReason: applied.matchReason,
-      stripeCustomerId,
-      stripeSubscriptionId,
-      stripeSubscriptionStatus,
-      stripePriceId,
-      mappedPlanId: mappedPlan?.id ?? null,
-      previousAccountStatus: applied.previousStatus,
-      nextAccountStatus: applied.nextStatus,
-    },
-  });
-
-  return c.json({
-    received: true,
-    duplicate: false,
-    eventId: event.id,
-    eventType: event.type,
-    accountId: applied.record.id,
-    accountStatus: applied.record.status,
-    mappedPlanId: mappedPlan?.id ?? null,
-    billing: applied.record.billing,
-  });
 });
 
 app.get('/api/v1/admin/tenant-keys', (c) => {
@@ -827,6 +939,50 @@ app.get('/api/v1/admin/audit', (c) => {
       recordCount: result.records.length,
       chainIntact: result.chainIntact,
       latestHash: result.latestHash,
+    },
+  });
+});
+
+app.get('/api/v1/admin/billing/events', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  if (!isBillingEventLedgerConfigured()) {
+    return c.json({
+      error: 'Billing event ledger disabled. Set ATTESTOR_BILLING_LEDGER_PG_URL to enable shared billing event storage.',
+    }, 503);
+  }
+
+  const provider = c.req.query('provider')?.trim() as 'stripe' | undefined;
+  const accountId = c.req.query('accountId')?.trim() || null;
+  const tenantId = c.req.query('tenantId')?.trim() || null;
+  const eventType = c.req.query('eventType')?.trim() || null;
+  const outcome = c.req.query('outcome')?.trim() as 'applied' | 'ignored' | undefined;
+  const limitRaw = c.req.query('limit')?.trim() || '';
+  const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
+
+  const records = await listBillingEvents({
+    provider: provider ?? null,
+    accountId,
+    tenantId,
+    eventType,
+    outcome: outcome ?? null,
+    limit,
+  });
+
+  return c.json({
+    records: records.map(billingEventView),
+    summary: {
+      providerFilter: provider ?? null,
+      accountFilter: accountId,
+      tenantFilter: tenantId,
+      eventTypeFilter: eventType,
+      outcomeFilter: outcome ?? null,
+      recordCount: records.length,
+      appliedCount: records.filter((record) => record.outcome === 'applied').length,
+      ignoredCount: records.filter((record) => record.outcome === 'ignored').length,
+      pendingCount: records.filter((record) => record.outcome === 'pending').length,
     },
   });
 });

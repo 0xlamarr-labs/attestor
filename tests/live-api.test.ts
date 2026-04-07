@@ -11,6 +11,9 @@
  */
 
 import { strict as assert } from 'node:assert';
+import EmbeddedPostgres from 'embedded-postgres';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import Stripe from 'stripe';
 import { startServer } from '../src/service/api-server.js';
@@ -21,6 +24,7 @@ import { resetAccountStoreForTests } from '../src/service/account-store.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
+import { resetBillingEventLedgerForTests } from '../src/service/billing-event-ledger.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
@@ -31,12 +35,46 @@ const stripe = new Stripe('sk_test_live_api');
 let serverHandle: { close: () => void };
 let passed = 0;
 
+async function reservePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Could not reserve a TCP port.'));
+        return;
+      }
+      const { port } = address;
+      server.close((err) => err ? reject(err) : resolve(port));
+    });
+  });
+}
+
 function ok(condition: boolean, msg: string): void {
   assert(condition, msg);
   passed++;
 }
 
 async function run() {
+  mkdirSync('.attestor', { recursive: true });
+  const billingPgDataDir = mkdtempSync(join(process.cwd(), '.attestor', 'live-api-billing-pg-'));
+  const billingPgPort = await reservePort();
+  const billingPg = new EmbeddedPostgres({
+    databaseDir: billingPgDataDir,
+    user: 'live_api_billing',
+    password: 'live_api_billing',
+    port: billingPgPort,
+    persistent: false,
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
+  });
+  await billingPg.initialise();
+  await billingPg.start();
+  await billingPg.createDatabase('attestor_billing');
+  process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `postgres://live_api_billing:live_api_billing@localhost:${billingPgPort}/attestor_billing`;
+
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(process.cwd(), '.attestor', 'live-api-usage-ledger.json');
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-accounts.json');
@@ -63,6 +101,7 @@ async function run() {
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
+  await resetBillingEventLedgerForTests();
 
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE API INTEGRATION TESTS — Real HTTP, Real Server');
@@ -876,6 +915,33 @@ async function run() {
       ok(accountSummaryAfterWebhookBody.account.billing.stripeSubscriptionStatus === 'active', 'Account API: summary shows restored Stripe status');
       ok(accountSummaryAfterWebhookBody.tenantContext.planId === 'pro', 'Account API: summary shows synced plan');
 
+      const billingEventsNoAuth = await fetch(`${BASE}/api/v1/admin/billing/events`);
+      ok(billingEventsNoAuth.status === 401, 'Admin Billing Events: auth required');
+
+      const billingEventsRes = await fetch(`${BASE}/api/v1/admin/billing/events?accountId=${createAccountBody.account.id}&limit=10`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(billingEventsRes.status === 200, 'Admin Billing Events: list status 200');
+      const billingEventsBody = await billingEventsRes.json() as any;
+      ok(billingEventsBody.summary.recordCount === 2, 'Admin Billing Events: two webhook events stored for account');
+      ok(billingEventsBody.summary.appliedCount === 2, 'Admin Billing Events: both stored events applied');
+      const pastDueLedger = billingEventsBody.records.find((entry: any) => entry.providerEventId === 'evt_sub_account_001_past_due');
+      ok(Boolean(pastDueLedger), 'Admin Billing Events: past_due event present');
+      ok(pastDueLedger.accountStatusAfter === 'suspended', 'Admin Billing Events: past_due captures suspended status');
+      ok(pastDueLedger.billingStatusAfter === 'past_due', 'Admin Billing Events: past_due captures billing status');
+      const activeLedger = billingEventsBody.records.find((entry: any) => entry.providerEventId === 'evt_sub_account_001_active');
+      ok(Boolean(activeLedger), 'Admin Billing Events: active event present');
+      ok(activeLedger.accountStatusBefore === 'suspended', 'Admin Billing Events: active event captures previous status');
+      ok(activeLedger.accountStatusAfter === 'active', 'Admin Billing Events: active event captures restored status');
+      ok(activeLedger.mappedPlanId === 'pro', 'Admin Billing Events: active event captures mapped plan');
+
+      const billingEventTypeRes = await fetch(`${BASE}/api/v1/admin/billing/events?eventType=customer.subscription.updated`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(billingEventTypeRes.status === 200, 'Admin Billing Events: eventType filter status 200');
+      const billingEventTypeBody = await billingEventTypeRes.json() as any;
+      ok(billingEventTypeBody.records.length >= 2, 'Admin Billing Events: eventType filter returns Stripe subscription updates');
+
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
 
@@ -1343,7 +1409,10 @@ async function run() {
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
+    await resetBillingEventLedgerForTests();
     serverHandle.close();
+    await billingPg.stop();
+    try { rmSync(billingPgDataDir, { recursive: true, force: true }); } catch {}
     console.log('  Server stopped.\n');
     // Force exit: embedded Redis / BullMQ connections keep the event loop alive
     process.exit(0);

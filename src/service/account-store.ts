@@ -377,6 +377,8 @@ export function applyStripeSubscriptionState(options: {
   record: HostedAccountRecord | null;
   previousStatus: HostedAccountStatus | null;
   nextStatus: HostedAccountStatus | null;
+  previousBillingStatus: StripeSubscriptionStatus;
+  nextBillingStatus: StripeSubscriptionStatus;
   path: string | null;
   matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
 } {
@@ -402,6 +404,8 @@ export function applyStripeSubscriptionState(options: {
       record: null,
       previousStatus: null,
       nextStatus: null,
+      previousBillingStatus: null,
+      nextBillingStatus: normalizedStatus,
       path: null,
       matchReason: 'none',
     };
@@ -413,6 +417,7 @@ export function applyStripeSubscriptionState(options: {
   }, record.id);
 
   const previousStatus = record.status;
+  const previousBillingStatus = record.billing.stripeSubscriptionStatus;
   record.billing = {
     provider: 'stripe',
     stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
@@ -440,6 +445,8 @@ export function applyStripeSubscriptionState(options: {
     record,
     previousStatus,
     nextStatus: record.status,
+    previousBillingStatus,
+    nextBillingStatus: record.billing.stripeSubscriptionStatus,
     path: storePath(),
     matchReason,
   };

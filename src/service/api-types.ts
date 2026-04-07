@@ -444,6 +444,63 @@ export interface AdminUsageResponse {
   };
 }
 
+export interface AdminBillingEventRecord {
+  id: string;
+  provider: 'stripe';
+  source: 'stripe_webhook';
+  providerEventId: string;
+  eventType: string;
+  payloadHash: string;
+  outcome: 'pending' | 'applied' | 'ignored';
+  reason: string | null;
+  accountId: string | null;
+  tenantId: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+  accountStatusBefore: 'active' | 'suspended' | 'archived' | null;
+  accountStatusAfter: 'active' | 'suspended' | 'archived' | null;
+  billingStatusBefore:
+    | 'trialing'
+    | 'active'
+    | 'incomplete'
+    | 'incomplete_expired'
+    | 'past_due'
+    | 'canceled'
+    | 'unpaid'
+    | 'paused'
+    | null;
+  billingStatusAfter:
+    | 'trialing'
+    | 'active'
+    | 'incomplete'
+    | 'incomplete_expired'
+    | 'past_due'
+    | 'canceled'
+    | 'unpaid'
+    | 'paused'
+    | null;
+  mappedPlanId: string | null;
+  receivedAt: string;
+  processedAt: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface AdminBillingEventsResponse {
+  records: AdminBillingEventRecord[];
+  summary: {
+    providerFilter: 'stripe' | null;
+    accountFilter: string | null;
+    tenantFilter: string | null;
+    eventTypeFilter: string | null;
+    outcomeFilter: 'applied' | 'ignored' | null;
+    recordCount: number;
+    appliedCount: number;
+    ignoredCount: number;
+    pendingCount: number;
+  };
+}
+
 export interface UsageContext {
   tenantId: string;
   planId: string;
@@ -487,6 +544,7 @@ export const API_ROUTES = {
   ADMIN_ACCOUNT_ATTACH_STRIPE: '/api/v1/admin/accounts/:id/billing/stripe',
   ADMIN_PLANS: '/api/v1/admin/plans',
   ADMIN_AUDIT: '/api/v1/admin/audit',
+  ADMIN_BILLING_EVENTS: '/api/v1/admin/billing/events',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
   ADMIN_TENANT_KEY_ROTATE: '/api/v1/admin/tenant-keys/:id/rotate',
   ADMIN_TENANT_KEY_DEACTIVATE: '/api/v1/admin/tenant-keys/:id/deactivate',
