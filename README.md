@@ -207,7 +207,7 @@ API endpoints:
 - `GET /api/v1/connectors`
 - `GET /api/v1/account`
 - `GET /api/v1/account/usage`
-- `POST /api/v1/account/billing/checkout`
+- `POST /api/v1/account/billing/checkout` (`Idempotency-Key` required)
 - `POST /api/v1/account/billing/portal`
 - `GET /api/v1/admin/accounts`
 - `POST /api/v1/admin/accounts`
@@ -244,7 +244,7 @@ Current service capabilities:
 - Readiness probe (`/api/v1/ready`) checking async backend, PKI, domains, and Redis state
 - SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
 - Plan-aware tenant rate limiting on pipeline routes with `429` + `Retry-After` and per-plan runtime defaults
-- Async queue hardening first slice: bounded BullMQ retry/backoff, tenant-aware pending-job caps, admin queue summary/DLQ inspection, and manual failed-job retry
+- Async queue hardening first slice: bounded BullMQ retry/backoff, exact paginated tenant-aware pending-job caps, admin queue summary/DLQ inspection, and manual failed-job retry
 - Structured observability first slice: W3C `traceparent`/trace-id response headers on API routes, Prometheus-text metrics at `GET /api/v1/admin/metrics`, and optional JSONL request logging via `ATTESTOR_OBSERVABILITY_LOG_PATH`
 - Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or local file-backed tenant key store, plus overlap-capped key rotation (`rotate` -> `deactivate/reactivate` -> `revoke`), plan-aware tenant rate limiting on pipeline routes, and admin account/tenant provisioning behind `ATTESTOR_ADMIN_API_KEY`, with database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
@@ -328,9 +328,9 @@ What it does not prove yet:
 - Admin billing event API: `GET /api/v1/admin/billing/events` exposes the shared PostgreSQL-backed billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured, with account/tenant/event filters and deduplicated Stripe webhook history.
 - Admin usage reporting API: `GET /api/v1/admin/usage` returns tenant-level monthly usage from the local ledger, with optional `tenantId` / `period` filtering and best-effort tenant metadata enrichment.
 - Stripe reconciliation first slice: `POST /api/v1/billing/stripe/webhook` verifies Stripe signatures, de-duplicates by `event.id`, reconciles hosted account billing state from `customer.subscription.*`, and suspends/reactivates account access based on subscription status. When `ATTESTOR_BILLING_LEDGER_PG_URL` is set, the webhook path also claims and finalizes events in a shared PostgreSQL-backed billing ledger instead of relying only on the local processed-event file. Checkout and Billing Portal entrypoints now exist, but this is still not an internal invoice ledger or checkout-completion ledger.
-- Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices, and `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account. In runtime, `customer.subscription.*` webhooks can also sync Stripe price ids back into Attestor hosted plan/quota state for the tenant key store.
+- Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices and a required `Idempotency-Key`, and `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account. In runtime, `customer.subscription.*` webhooks can also sync Stripe price ids back into Attestor hosted plan/quota state for the tenant key store.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
-- Async: BullMQ with split worker process, bounded retry/backoff, tenant-aware per-tenant pending-job caps on async submit, admin queue/DLQ introspection (`GET /api/v1/admin/queue`, `GET /api/v1/admin/queue/dlq`) and manual failed-job retry (`POST /api/v1/admin/queue/jobs/:id/retry`). In-process fallback remains explicit when Redis unavailable. No BullMQ Pro queue groups, distributed/shared rate limiting, or broader scheduling policy yet.
+- Async: BullMQ with split worker process, bounded retry/backoff, exact paginated tenant-aware per-tenant pending-job caps on async submit, admin queue/DLQ introspection (`GET /api/v1/admin/queue`, `GET /api/v1/admin/queue/dlq`) and manual failed-job retry (`POST /api/v1/admin/queue/jobs/:id/retry`). In-process fallback remains explicit when Redis unavailable. No BullMQ Pro queue groups, distributed/shared rate limiting, or broader scheduling policy yet.
 - Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the local file-backed tenant key store is configured; optional plan/quota metadata and rate-limit context now propagate into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
@@ -400,7 +400,7 @@ What it does not prove yet:
 | `ATTESTOR_ASYNC_WORKER_CONCURRENCY` | Optional worker concurrency for BullMQ async processing (default `1`) |
 | `ATTESTOR_ASYNC_JOB_TTL_SECONDS` | Optional completed-job retention in BullMQ (default `3600`) |
 | `ATTESTOR_ASYNC_FAILED_TTL_SECONDS` | Optional failed-job / DLQ retention in BullMQ (default `86400`) |
-| `ATTESTOR_ASYNC_TENANT_SCAN_LIMIT` | Optional inspection cap for per-tenant async pending-job scans used by the first-slice fairness logic (default `200`) |
+| `ATTESTOR_ASYNC_TENANT_SCAN_LIMIT` | Optional BullMQ page size used by exact per-tenant async pending-job inspection (default `200`) |
 | `ATTESTOR_ADMIN_API_KEY` | Admin API key for hosted operator endpoints: accounts, plan catalog, audit, billing events, tenant key lifecycle management, and usage reporting |
 | `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | Optional path for the local tamper-evident admin mutation ledger used by `/api/v1/admin/audit` |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | Optional path for the short-lived encrypted admin idempotency replay store |
@@ -433,6 +433,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1103 tests across 8 suites: 557 unit + 361 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1111 tests across 8 suites: 557 unit + 369 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

@@ -85,7 +85,7 @@ docker run \
 | `ATTESTOR_ASYNC_WORKER_CONCURRENCY` | No | `1` | BullMQ worker concurrency |
 | `ATTESTOR_ASYNC_JOB_TTL_SECONDS` | No | `3600` | Completed-job retention in BullMQ |
 | `ATTESTOR_ASYNC_FAILED_TTL_SECONDS` | No | `86400` | Failed-job / DLQ retention in BullMQ |
-| `ATTESTOR_ASYNC_TENANT_SCAN_LIMIT` | No | `200` | Max BullMQ job scan size used by first-slice per-tenant pending-job inspection |
+| `ATTESTOR_ASYNC_TENANT_SCAN_LIMIT` | No | `200` | BullMQ page size used by exact per-tenant pending-job inspection |
 | `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for hosted account, plan catalog, audit, queue, DLQ, billing event, tenant lifecycle, billing attach, idempotent provisioning, and usage endpoints (`/api/v1/admin/accounts`, `/api/v1/admin/accounts/:id/billing/stripe`, `/api/v1/admin/accounts/:id/suspend|reactivate|archive`, `/api/v1/admin/plans`, `/api/v1/admin/audit`, `/api/v1/admin/queue`, `/api/v1/admin/queue/dlq`, `/api/v1/admin/queue/jobs/:id/retry`, `/api/v1/admin/billing/events`, `/api/v1/admin/tenant-keys`, `/api/v1/admin/usage`) |
 | `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | No | `.attestor/admin-audit-log.json` | Local hash-linked admin mutation ledger |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | No | `.attestor/admin-idempotency.json` | Local encrypted idempotency replay store for admin `POST` routes |
@@ -151,9 +151,9 @@ What is deployed today:
 - Tenant-aware in-memory pipeline throttling with plan defaults, `Retry-After`, and `429` responses
 - Local file-backed hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*` processing with duplicate-event suppression and account suspend/reactivate sync, plus an optional shared PostgreSQL-backed billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
-- Async queue hardening first slice: bounded BullMQ retry/backoff, tenant-aware pending-job caps on async submit, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry
+- Async queue hardening first slice: bounded BullMQ retry/backoff, exact paginated tenant-aware pending-job caps on async submit, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry
 - Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, and optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`
-- Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids and webhook-driven plan/quota sync back into hosted tenant records
+- Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, and webhook-driven plan/quota sync back into hosted tenant records
 - Health + readiness probes
 
 What is not yet implemented:

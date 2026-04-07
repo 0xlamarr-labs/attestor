@@ -91,15 +91,27 @@ export async function createHostedCheckoutSession(options: {
   account: HostedAccountRecord;
   tenant: TenantContext;
   plan: HostedPlanDefinition;
+  idempotencyKey: string;
 }): Promise<HostedCheckoutSessionResult> {
   const { planId, priceId } = planPriceOrThrow(options.plan.id);
   const successUrl = requiredUrl('ATTESTOR_BILLING_SUCCESS_URL');
   const cancelUrl = requiredUrl('ATTESTOR_BILLING_CANCEL_URL');
+  const idempotencyKey = options.idempotencyKey.trim();
+  if (!idempotencyKey) {
+    throw new StripeBillingError(
+      'CONFIG',
+      'Idempotency-Key header is required for hosted checkout session creation.',
+    );
+  }
 
   if (useMockStripeBilling()) {
+    const token = Buffer.from(
+      `${options.account.id}:${planId}:${idempotencyKey}`,
+      'utf8',
+    ).toString('base64url').slice(0, 32);
     return {
-      sessionId: `cs_mock_${options.account.id}_${planId}`,
-      url: `https://billing.stripe.test/checkout/${options.account.id}/${planId}`,
+      sessionId: `cs_mock_${token}`,
+      url: `https://billing.stripe.test/checkout/${token}`,
       planId,
       stripePriceId: priceId,
       mode: 'subscription',
@@ -123,6 +135,8 @@ export async function createHostedCheckoutSession(options: {
     metadata,
     subscription_data: { metadata },
     allow_promotion_codes: true,
+  }, {
+    idempotencyKey,
   });
 
   if (!session.url) {

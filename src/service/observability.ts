@@ -197,10 +197,8 @@ export function renderPrometheusMetrics(version: string): string {
   lines.push('# TYPE attestor_http_request_duration_seconds histogram');
   for (const [key, state] of [...httpRequestDuration.entries()].sort()) {
     const [method, route] = key.split('|');
-    let cumulative = 0;
     HTTP_DURATION_BUCKETS.forEach((bucket, index) => {
-      cumulative += state.bucketCounts[index];
-      lines.push(`attestor_http_request_duration_seconds_bucket${labels({ method, route, le: String(bucket) })} ${cumulative}`);
+      lines.push(`attestor_http_request_duration_seconds_bucket${labels({ method, route, le: String(bucket) })} ${state.bucketCounts[index]}`);
     });
     lines.push(`attestor_http_request_duration_seconds_bucket${labels({ method, route, le: '+Inf' })} ${state.count}`);
     lines.push(`attestor_http_request_duration_seconds_sum${labels({ method, route })} ${state.sum}`);

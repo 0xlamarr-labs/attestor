@@ -626,6 +626,10 @@ app.post('/api/v1/account/billing/checkout', async (c) => {
   if (current instanceof Response) return current;
 
   const body = await c.req.json().catch(() => ({}));
+  const idempotencyKey = c.req.header('Idempotency-Key')?.trim() ?? '';
+  if (!idempotencyKey) {
+    return c.json({ error: 'Idempotency-Key header is required for hosted checkout.' }, 400);
+  }
   const requestedPlanId = typeof body.planId === 'string' ? body.planId.trim() : '';
   if (!requestedPlanId) {
     return c.json({ error: 'planId is required.' }, 400);
@@ -644,6 +648,7 @@ app.post('/api/v1/account/billing/checkout', async (c) => {
       account: current.account,
       tenant: current.tenant,
       plan,
+      idempotencyKey,
     });
   } catch (err) {
     const mapped = stripeBillingErrorResponse(c, err);
@@ -651,6 +656,7 @@ app.post('/api/v1/account/billing/checkout', async (c) => {
     throw err;
   }
 
+  c.header('x-attestor-idempotency-key', idempotencyKey);
   return c.json({
     accountId: current.account.id,
     tenantId: current.tenant.tenantId,

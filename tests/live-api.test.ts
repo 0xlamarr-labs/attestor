@@ -75,6 +75,19 @@ function ok(condition: boolean, msg: string): void {
   passed++;
 }
 
+function metricSamples(metrics: string, metricName: string, labels: Record<string, string>): number[] {
+  const labelMatcher = Object.entries(labels).map(([key, value]) => `${key}="${value}"`);
+  return metrics
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(metricName))
+    .filter((line) => labelMatcher.every((part) => line.includes(part)))
+    .map((line) => {
+      const value = Number.parseFloat(line.trim().split(/\s+/).pop() ?? 'NaN');
+      return value;
+    })
+    .filter((value) => Number.isFinite(value));
+}
+
 async function run() {
   mkdirSync('.attestor', { recursive: true });
   const billingPgDataDir = mkdtempSync(join(process.cwd(), '.attestor', 'live-api-billing-pg-'));
@@ -845,11 +858,22 @@ async function run() {
       ok(accountSummaryBody.account.id === createAccountBody.account.id, 'Account API: summary returns hosted account');
       ok(accountSummaryBody.account.billing.provider === null, 'Account API: billing starts empty');
 
+      const checkoutMissingKeyRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({ planId: 'pro' }),
+      });
+      ok(checkoutMissingKeyRes.status === 400, 'Account Billing: checkout requires Idempotency-Key');
+
       const checkoutNoPlanRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+          'Idempotency-Key': 'checkout-no-plan-1',
         },
         body: JSON.stringify({}),
       });
@@ -860,6 +884,7 @@ async function run() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+          'Idempotency-Key': 'checkout-account-1',
         },
         body: JSON.stringify({ planId: 'pro' }),
       });
@@ -869,6 +894,21 @@ async function run() {
       ok(checkoutBody.stripePriceId === 'price_pro_monthly', 'Account Billing: checkout uses mapped Stripe price');
       ok(String(checkoutBody.checkoutUrl).includes('/checkout/'), 'Account Billing: checkout URL returned');
       ok(checkoutBody.mock === true, 'Account Billing: checkout mock mode surfaced');
+      ok(checkoutRes.headers.get('x-attestor-idempotency-key') === 'checkout-account-1', 'Account Billing: checkout echoes idempotency key');
+
+      const checkoutReplayRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+          'Idempotency-Key': 'checkout-account-1',
+        },
+        body: JSON.stringify({ planId: 'pro' }),
+      });
+      ok(checkoutReplayRes.status === 200, 'Account Billing: checkout replay preserves status 200');
+      const checkoutReplayBody = await checkoutReplayRes.json() as any;
+      ok(checkoutReplayBody.checkoutSessionId === checkoutBody.checkoutSessionId, 'Account Billing: checkout replay returns same session id');
+      ok(checkoutReplayBody.checkoutUrl === checkoutBody.checkoutUrl, 'Account Billing: checkout replay returns same URL');
 
       const portalMissingCustomerRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
         method: 'POST',
@@ -1121,6 +1161,22 @@ async function run() {
       ok(metricsBody.includes('route=\"/api/v1/health\"'), 'Admin Metrics: health route labeled');
       ok(metricsBody.includes('attestor_trace_context_requests_total'), 'Admin Metrics: trace context counter exposed');
       ok(metricsBody.includes('attestor_billing_webhook_events_total'), 'Admin Metrics: billing webhook counter exposed');
+      const durationBuckets = metricSamples(metricsBody, 'attestor_http_request_duration_seconds_bucket', {
+        method: 'GET',
+        route: '/api/v1/health',
+      });
+      ok(durationBuckets.length >= 2, 'Admin Metrics: duration histogram buckets exposed');
+      ok(durationBuckets.every((value, index) => index === 0 || value >= durationBuckets[index - 1]), 'Admin Metrics: duration histogram buckets are monotonic');
+      const durationCount = metricSamples(metricsBody, 'attestor_http_request_duration_seconds_count', {
+        method: 'GET',
+        route: '/api/v1/health',
+      })[0];
+      const plusInfBucket = metricSamples(metricsBody, 'attestor_http_request_duration_seconds_bucket', {
+        method: 'GET',
+        route: '/api/v1/health',
+        le: '+Inf',
+      })[0];
+      ok(typeof durationCount === 'number' && typeof plusInfBucket === 'number' && plusInfBucket === durationCount, 'Admin Metrics: +Inf bucket matches histogram count');
 
       const observabilityLog = readFileSync(process.env.ATTESTOR_OBSERVABILITY_LOG_PATH!, 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line));
       ok(observabilityLog.some((entry: any) => entry.route === '/api/v1/health' && entry.traceId), 'Observability Log: health request captured with trace id');

@@ -197,14 +197,27 @@ function ensureValidPipelineJobData(data: PipelineJobData): void {
 
 type InspectableState = 'waiting' | 'active' | 'delayed' | 'prioritized' | 'failed';
 
-async function loadTenantJobs(
+async function countTenantJobsByState(
   queue: Queue<PipelineJobData, PipelineJobResult>,
-  states: InspectableState[],
-  limit?: number,
-): Promise<Job<PipelineJobData, PipelineJobResult>[]> {
-  const scanLimit = limit ?? normalizeTenantScanLimit();
-  if (scanLimit <= 0) return [];
-  return queue.getJobs(states, 0, scanLimit - 1, true);
+  tenantId: string,
+  state: InspectableState,
+): Promise<number> {
+  const pageSize = normalizeTenantScanLimit();
+  if (pageSize <= 0) return 0;
+
+  let start = 0;
+  let count = 0;
+  while (true) {
+    const jobs = await queue.getJobs([state], start, start + pageSize - 1, true);
+    if (jobs.length === 0) break;
+    for (const job of jobs) {
+      if (job.data.tenant?.tenantId === tenantId) count += 1;
+    }
+    if (jobs.length < pageSize) break;
+    start += pageSize;
+  }
+
+  return count;
 }
 
 function tenantStateCounter(): TenantAsyncQueueSnapshot['states'] {
@@ -332,16 +345,19 @@ export async function getTenantAsyncQueueSnapshot(
   planId: string | null,
 ): Promise<TenantAsyncQueueSnapshot> {
   const scanLimit = normalizeTenantScanLimit();
+  const [waiting, active, delayed, prioritized, failed] = await Promise.all([
+    countTenantJobsByState(queue, tenantId, 'waiting'),
+    countTenantJobsByState(queue, tenantId, 'active'),
+    countTenantJobsByState(queue, tenantId, 'delayed'),
+    countTenantJobsByState(queue, tenantId, 'prioritized'),
+    countTenantJobsByState(queue, tenantId, 'failed'),
+  ]);
   const states = tenantStateCounter();
-  const jobs = await loadTenantJobs(queue, ['waiting', 'active', 'delayed', 'prioritized', 'failed'], scanLimit);
-  const scanTruncated = jobs.length >= scanLimit;
-  for (const job of jobs) {
-    if (job.data.tenant?.tenantId !== tenantId) continue;
-    const state = await job.getState();
-    if (state === 'waiting' || state === 'active' || state === 'delayed' || state === 'prioritized' || state === 'failed') {
-      states[state] += 1;
-    }
-  }
+  states.waiting = waiting;
+  states.active = active;
+  states.delayed = delayed;
+  states.prioritized = prioritized;
+  states.failed = failed;
 
   const policy = resolvePlanAsyncQueue(planId);
   return {
@@ -351,7 +367,7 @@ export async function getTenantAsyncQueueSnapshot(
     pendingLimit: policy.pendingJobsPerTenant,
     enforced: policy.enforced,
     scanLimit,
-    scanTruncated,
+    scanTruncated: false,
     states,
   };
 }
@@ -399,24 +415,35 @@ export async function listFailedPipelineJobs(
   options?: { tenantId?: string | null; limit?: number | null },
 ): Promise<AsyncDeadLetterJobRecord[]> {
   const limit = options?.limit && options.limit > 0 ? options.limit : 25;
-  const jobs = await queue.getJobs(['failed'], 0, limit - 1, true);
   const records: AsyncDeadLetterJobRecord[] = [];
-  for (const job of jobs) {
-    if (options?.tenantId && job.data.tenant?.tenantId !== options.tenantId) continue;
-    records.push({
-      jobId: String(job.id),
-      name: job.name,
-      tenantId: job.data.tenant?.tenantId ?? null,
-      planId: job.data.tenant?.planId ?? null,
-      state: await job.getState(),
-      failedReason: job.failedReason ?? null,
-      attemptsMade: job.attemptsMade,
-      maxAttempts: job.opts.attempts ?? resolveRetryPolicy().attempts,
-      requestedAt: job.data.requestedAt ?? null,
-      submittedAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
-      processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
-      failedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
-    });
+  const pageSize = Math.max(limit, normalizeTenantScanLimit());
+
+  let start = 0;
+  while (records.length < limit) {
+    const jobs = await queue.getJobs(['failed'], start, start + pageSize - 1, true);
+    if (jobs.length === 0) break;
+
+    for (const job of jobs) {
+      if (options?.tenantId && job.data.tenant?.tenantId !== options.tenantId) continue;
+      records.push({
+        jobId: String(job.id),
+        name: job.name,
+        tenantId: job.data.tenant?.tenantId ?? null,
+        planId: job.data.tenant?.planId ?? null,
+        state: await job.getState(),
+        failedReason: job.failedReason ?? null,
+        attemptsMade: job.attemptsMade,
+        maxAttempts: job.opts.attempts ?? resolveRetryPolicy().attempts,
+        requestedAt: job.data.requestedAt ?? null,
+        submittedAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
+        processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
+        failedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
+      });
+      if (records.length >= limit) break;
+    }
+
+    if (jobs.length < pageSize) break;
+    start += pageSize;
   }
   return records;
 }
@@ -433,12 +460,22 @@ export async function retryFailedPipelineJob(
   if (state !== 'failed') {
     throw new Error(`Async job '${jobId}' is not in failed state (current: ${state}).`);
   }
+  const tenantId = job.data.tenant?.tenantId ?? null;
+  const planId = job.data.tenant?.planId ?? null;
+  if (tenantId) {
+    const gate = await canEnqueueTenantAsyncJob(queue, tenantId, planId);
+    if (!gate.allowed) {
+      throw new Error(
+        `Async job '${jobId}' cannot be retried because tenant '${tenantId}' is already at the pending-job limit (${gate.snapshot.pendingLimit}).`,
+      );
+    }
+  }
   await job.retry();
   return {
     jobId: String(job.id),
     name: job.name,
-    tenantId: job.data.tenant?.tenantId ?? null,
-    planId: job.data.tenant?.planId ?? null,
+    tenantId,
+    planId,
     state: 'waiting',
     failedReason: null,
     attemptsMade: job.attemptsMade,
