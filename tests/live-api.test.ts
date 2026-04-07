@@ -12,7 +12,7 @@
 
 import { strict as assert } from 'node:assert';
 import EmbeddedPostgres from 'embedded-postgres';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import Stripe from 'stripe';
@@ -25,6 +25,7 @@ import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
 import { resetBillingEventLedgerForTests } from '../src/service/billing-event-ledger.js';
+import { resetObservabilityForTests } from '../src/service/observability.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
@@ -81,6 +82,7 @@ async function run() {
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-stripe-webhooks.json');
+  process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-observability.jsonl');
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
@@ -102,6 +104,7 @@ async function run() {
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
   await resetBillingEventLedgerForTests();
+  resetObservabilityForTests();
 
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE API INTEGRATION TESTS — Real HTTP, Real Server');
@@ -120,6 +123,8 @@ async function run() {
     {
       const res = await fetch(`${BASE}/api/v1/health`);
       ok(res.status === 200, 'Health: status 200');
+      ok(Boolean(res.headers.get('x-attestor-trace-id')), 'Health: trace id header present');
+      ok(Boolean(res.headers.get('traceparent')), 'Health: traceparent header present');
       const body = await res.json() as any;
       ok(body.status === 'healthy', 'Health: status=healthy');
       ok(body.version === '0.1.0', 'Health: version correct');
@@ -942,6 +947,24 @@ async function run() {
       const billingEventTypeBody = await billingEventTypeRes.json() as any;
       ok(billingEventTypeBody.records.length >= 2, 'Admin Billing Events: eventType filter returns Stripe subscription updates');
 
+      const metricsNoAuth = await fetch(`${BASE}/api/v1/admin/metrics`);
+      ok(metricsNoAuth.status === 401, 'Admin Metrics: auth required');
+
+      const metricsRes = await fetch(`${BASE}/api/v1/admin/metrics`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(metricsRes.status === 200, 'Admin Metrics: status 200');
+      ok((metricsRes.headers.get('content-type') ?? '').includes('text/plain'), 'Admin Metrics: content type is text/plain');
+      const metricsBody = await metricsRes.text();
+      ok(metricsBody.includes('attestor_http_requests_total'), 'Admin Metrics: http request counter exposed');
+      ok(metricsBody.includes('route=\"/api/v1/health\"'), 'Admin Metrics: health route labeled');
+      ok(metricsBody.includes('attestor_trace_context_requests_total'), 'Admin Metrics: trace context counter exposed');
+      ok(metricsBody.includes('attestor_billing_webhook_events_total'), 'Admin Metrics: billing webhook counter exposed');
+
+      const observabilityLog = readFileSync(process.env.ATTESTOR_OBSERVABILITY_LOG_PATH!, 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line));
+      ok(observabilityLog.some((entry: any) => entry.route === '/api/v1/health' && entry.traceId), 'Observability Log: health request captured with trace id');
+      ok(observabilityLog.some((entry: any) => entry.route === '/api/v1/billing/stripe/webhook' && entry.accountId === createAccountBody.account.id), 'Observability Log: billing webhook captured with account context');
+
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
 
@@ -1410,17 +1433,21 @@ async function run() {
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
     await resetBillingEventLedgerForTests();
+    resetObservabilityForTests();
     serverHandle.close();
     await billingPg.stop();
     try { rmSync(billingPgDataDir, { recursive: true, force: true }); } catch {}
     console.log('  Server stopped.\n');
-    // Force exit: embedded Redis / BullMQ connections keep the event loop alive
-    process.exit(0);
   }
 }
 
-run().catch(err => {
-  console.error('  LIVE TEST CRASHED:', err);
-  try { serverHandle?.close(); } catch {}
-  process.exit(1);
-});
+run()
+  .then(() => {
+    // Force exit after assertions completed and cleanup finished.
+    process.exit(0);
+  })
+  .catch(err => {
+    console.error('  LIVE TEST CRASHED:', err);
+    try { serverHandle?.close(); } catch {}
+    process.exit(1);
+  });

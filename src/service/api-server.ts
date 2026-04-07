@@ -102,6 +102,14 @@ import {
   releaseStripeBillingEventClaim,
 } from './billing-event-ledger.js';
 import {
+  appendStructuredRequestLog,
+  beginRequestTrace,
+  observeBillingWebhookEvent,
+  observeRequestComplete,
+  observeRequestStart,
+  renderPrometheusMetrics,
+} from './observability.js';
+import {
   StripeBillingError,
   createHostedBillingPortalSession,
   createHostedCheckoutSession,
@@ -120,6 +128,67 @@ if (!filingRegistry.has('xbrl-csv-eba-dpm2')) filingRegistry.register(xbrlCsvEba
 
 const app = new Hono();
 const startTime = Date.now();
+
+app.use('/api/*', async (c, next) => {
+  const trace = beginRequestTrace(c.req.header('traceparent'));
+  const startedAt = process.hrtime.bigint();
+  observeRequestStart();
+
+  let statusCode = 500;
+  let route = c.req.path;
+  let rateLimited = false;
+  let quotaRejected = false;
+
+  try {
+    await next();
+    statusCode = c.res.status;
+    route = c.req.routePath || c.req.path;
+    rateLimited = c.res.headers.get('retry-after') !== null;
+    quotaRejected = statusCode === 429 && route === '/api/v1/pipeline/run';
+  } catch (err) {
+    route = c.req.routePath || c.req.path;
+    throw err;
+  } finally {
+    const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
+    const tenant = getTenantContextFromHeaders(c.req.raw.headers);
+    const account = findHostedAccountByTenantId(tenant.tenantId);
+    const observedTenantId = c.get('obs.tenantId') as string | null | undefined;
+    const observedPlanId = c.get('obs.planId') as string | null | undefined;
+    const observedAccountId = c.get('obs.accountId') as string | null | undefined;
+    const observedAccountStatus = c.get('obs.accountStatus') as string | null | undefined;
+    observeRequestComplete({
+      route,
+      method: c.req.method,
+      statusCode,
+      durationSeconds,
+      traceContextStatus: trace.incomingStatus,
+    });
+
+    appendStructuredRequestLog({
+      occurredAt: new Date().toISOString(),
+      route,
+      path: c.req.path,
+      method: c.req.method,
+      statusCode,
+      durationMs: Math.round(durationSeconds * 1000),
+      traceId: trace.traceId,
+      spanId: trace.spanId,
+      parentSpanId: trace.parentSpanId,
+      tenantId: observedTenantId ?? tenant.tenantId ?? null,
+      planId: observedPlanId ?? tenant.planId ?? null,
+      accountId: observedAccountId ?? account?.id ?? null,
+      accountStatus: observedAccountStatus ?? account?.status ?? null,
+      rateLimited,
+      quotaRejected,
+      remoteAddress: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+      userAgent: c.req.header('user-agent') ?? null,
+    });
+
+    c.header('traceparent', trace.responseTraceparent);
+    c.header('x-attestor-trace-id', trace.traceId);
+    c.header('x-attestor-span-id', trace.spanId);
+  }
+});
 
 // Apply tenant isolation middleware to all API routes
 app.use('/api/*', tenantMiddleware());
@@ -620,6 +689,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
   try {
     event = stripeClient().webhooks.constructEvent(rawPayload, signature, webhookSecret);
   } catch (err) {
+    observeBillingWebhookEvent('signature_verification', 'signature_invalid');
     return c.json({
       error: 'Stripe webhook signature verification failed.',
       detail: err instanceof Error ? err.message : String(err),
@@ -636,6 +706,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     })
     : lookupProcessedStripeWebhook(event.id, rawPayload);
   if (dedupe.kind === 'conflict') {
+    observeBillingWebhookEvent(event.type, 'conflict');
     return c.json({
       error: `Stripe event '${event.id}' was already recorded with a different payload hash.`,
       eventType: dedupe.record.eventType,
@@ -643,6 +714,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     }, 409);
   }
   if (dedupe.kind === 'duplicate') {
+    observeBillingWebhookEvent(dedupe.record.eventType, 'duplicate');
     c.header('x-attestor-stripe-replay', 'true');
     return c.json({
       received: true,
@@ -665,6 +737,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       || event.type === 'customer.subscription.resumed';
 
     if (!supportedEvent) {
+      observeBillingWebhookEvent(event.type, 'ignored');
       if (sharedBillingLedger) {
         await finalizeStripeBillingEvent({
           providerEventId: event.id,
@@ -742,6 +815,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     }
 
     if (!applied.record) {
+      observeBillingWebhookEvent(event.type, 'ignored');
       if (sharedBillingLedger) {
         await finalizeStripeBillingEvent({
           providerEventId: event.id,
@@ -792,6 +866,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       });
     }
 
+    c.set('obs.accountId', applied.record.id);
+    c.set('obs.accountStatus', applied.record.status);
+    c.set('obs.tenantId', applied.record.primaryTenantId);
+    c.set('obs.planId', mappedPlan?.id ?? null);
+
     if (sharedBillingLedger) {
       await finalizeStripeBillingEvent({
         providerEventId: event.id,
@@ -824,6 +903,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         rawPayload,
       });
     }
+
+    observeBillingWebhookEvent(event.type, 'applied');
 
     appendAdminAuditRecord({
       actorType: 'stripe_webhook',
@@ -984,6 +1065,16 @@ app.get('/api/v1/admin/billing/events', async (c) => {
       ignoredCount: records.filter((record) => record.outcome === 'ignored').length,
       pendingCount: records.filter((record) => record.outcome === 'pending').length,
     },
+  });
+});
+
+app.get('/api/v1/admin/metrics', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  return c.body(renderPrometheusMetrics('0.1.0'), 200, {
+    'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    'cache-control': 'no-store',
   });
 });
 

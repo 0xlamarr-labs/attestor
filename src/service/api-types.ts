@@ -545,6 +545,7 @@ export const API_ROUTES = {
   ADMIN_PLANS: '/api/v1/admin/plans',
   ADMIN_AUDIT: '/api/v1/admin/audit',
   ADMIN_BILLING_EVENTS: '/api/v1/admin/billing/events',
+  ADMIN_METRICS: '/api/v1/admin/metrics',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
   ADMIN_TENANT_KEY_ROTATE: '/api/v1/admin/tenant-keys/:id/rotate',
   ADMIN_TENANT_KEY_DEACTIVATE: '/api/v1/admin/tenant-keys/:id/deactivate',

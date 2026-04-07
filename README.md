@@ -218,6 +218,7 @@ API endpoints:
 - `GET /api/v1/admin/plans`
 - `GET /api/v1/admin/audit`
 - `GET /api/v1/admin/billing/events`
+- `GET /api/v1/admin/metrics`
 - `GET /api/v1/admin/tenant-keys`
 - `POST /api/v1/admin/tenant-keys`
 - `POST /api/v1/admin/tenant-keys/:id/rotate`
@@ -240,6 +241,7 @@ Current service capabilities:
 - Readiness probe (`/api/v1/ready`) checking async backend, PKI, domains, and Redis state
 - SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
 - Plan-aware tenant rate limiting on pipeline routes with `429` + `Retry-After` and per-plan runtime defaults
+- Structured observability first slice: W3C `traceparent`/trace-id response headers on API routes, Prometheus-text metrics at `GET /api/v1/admin/metrics`, and optional JSONL request logging via `ATTESTOR_OBSERVABILITY_LOG_PATH`
 - Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or local file-backed tenant key store, plus overlap-capped key rotation (`rotate` -> `deactivate/reactivate` -> `revoke`), plan-aware tenant rate limiting on pipeline routes, and admin account/tenant provisioning behind `ATTESTOR_ADMIN_API_KEY`, with database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
 - XBRL filing export auto-summary in signed pipeline responses
@@ -250,7 +252,7 @@ Current service boundaries:
 - Single-node API + worker split (no multi-instance horizontal scaling or load balancer)
 - In-process async fallback when all Redis tiers unavailable (jobs lost on restart)
 - No persistent long-term job store, job priority, or dead-letter queue
-- No centralized logging, metrics, or tracing
+- No external log/metrics collector, OTLP exporter, or full distributed trace backend yet
 
 ## Reviewer Authority
 
@@ -392,6 +394,7 @@ What it does not prove yet:
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | Optional path for the short-lived encrypted admin idempotency replay store |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | Optional retention window for encrypted admin replay payloads (default `24`) |
 | `ATTESTOR_BILLING_LEDGER_PG_URL` | Optional PostgreSQL connection URL for the shared Stripe billing event ledger used by `/api/v1/admin/billing/events` and cross-node webhook dedupe |
+| `ATTESTOR_OBSERVABILITY_LOG_PATH` | Optional JSONL path for structured API request logs with trace correlation and tenant/account context |
 | `STRIPE_API_KEY` | Stripe secret API key for hosted Checkout and Billing Portal session creation |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret for `POST /api/v1/billing/stripe/webhook` |
 | `ATTESTOR_STRIPE_PRICE_STARTER` | Stripe recurring price id for the hosted `starter` plan |
@@ -418,6 +421,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1062 tests across 8 suites: 557 unit + 320 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1073 tests across 8 suites: 557 unit + 331 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |
