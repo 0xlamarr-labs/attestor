@@ -361,6 +361,11 @@ export function hasActiveTenantKeys(): boolean {
   return store.records.some((entry) => entry.status === 'active');
 }
 
+export function hasTenantKeyRecords(): boolean {
+  const store = loadStore();
+  return store.records.length > 0;
+}
+
 function statusRank(status: TenantKeyStatus): number {
   if (status === 'active') return 0;
   if (status === 'inactive') return 1;

@@ -244,14 +244,37 @@ export interface AdminTenantKeyStatusResponse {
   key: AdminTenantKeyRecord;
 }
 
+export interface AdminAccountBillingSummary {
+  provider: 'stripe' | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripeSubscriptionStatus:
+    | 'trialing'
+    | 'active'
+    | 'incomplete'
+    | 'incomplete_expired'
+    | 'past_due'
+    | 'canceled'
+    | 'unpaid'
+    | 'paused'
+    | null;
+  stripePriceId: string | null;
+  lastWebhookEventId: string | null;
+  lastWebhookEventType: string | null;
+  lastWebhookProcessedAt: string | null;
+}
+
 export interface AdminAccountRecord {
   id: string;
   accountName: string;
   contactEmail: string;
   primaryTenantId: string;
-  status: 'active' | 'archived';
+  status: 'active' | 'suspended' | 'archived';
   createdAt: string;
+  updatedAt: string;
+  suspendedAt: string | null;
   archivedAt: string | null;
+  billing: AdminAccountBillingSummary;
 }
 
 export interface AdminListAccountsResponse {
@@ -270,6 +293,26 @@ export interface AdminCreateAccountRequest {
 export interface AdminCreateAccountResponse {
   account: AdminAccountRecord;
   initialKey: AdminTenantKeyRecord & { apiKey: string };
+}
+
+export interface AdminAttachStripeBillingRequest {
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  stripeSubscriptionStatus?:
+    | 'trialing'
+    | 'active'
+    | 'incomplete'
+    | 'incomplete_expired'
+    | 'past_due'
+    | 'canceled'
+    | 'unpaid'
+    | 'paused'
+    | null;
+  stripePriceId?: string | null;
+}
+
+export interface AdminAccountLifecycleResponse {
+  account: AdminAccountRecord;
 }
 
 export interface HostedPlanSummary {
@@ -294,9 +337,20 @@ export interface AdminListPlansResponse {
 export interface AdminAuditRecordResponse {
   id: string;
   occurredAt: string;
-  actorType: 'admin_api_key';
+  actorType: 'admin_api_key' | 'stripe_webhook';
   actorLabel: string;
-  action: 'account.created' | 'tenant_key.issued' | 'tenant_key.rotated' | 'tenant_key.deactivated' | 'tenant_key.reactivated' | 'tenant_key.revoked';
+  action:
+    | 'account.created'
+    | 'account.suspended'
+    | 'account.reactivated'
+    | 'account.archived'
+    | 'account.billing.attached'
+    | 'billing.stripe.webhook_applied'
+    | 'tenant_key.issued'
+    | 'tenant_key.rotated'
+    | 'tenant_key.deactivated'
+    | 'tenant_key.reactivated'
+    | 'tenant_key.revoked';
   routeId: string;
   accountId: string | null;
   tenantId: string | null;
@@ -313,7 +367,19 @@ export interface AdminAuditRecordResponse {
 export interface AdminAuditResponse {
   records: AdminAuditRecordResponse[];
   summary: {
-    actionFilter: 'account.created' | 'tenant_key.issued' | 'tenant_key.rotated' | 'tenant_key.deactivated' | 'tenant_key.reactivated' | 'tenant_key.revoked' | null;
+    actionFilter:
+      | 'account.created'
+      | 'account.suspended'
+      | 'account.reactivated'
+      | 'account.archived'
+      | 'account.billing.attached'
+      | 'billing.stripe.webhook_applied'
+      | 'tenant_key.issued'
+      | 'tenant_key.rotated'
+      | 'tenant_key.deactivated'
+      | 'tenant_key.reactivated'
+      | 'tenant_key.revoked'
+      | null;
     tenantFilter: string | null;
     accountFilter: string | null;
     recordCount: number;
@@ -382,6 +448,10 @@ export const API_ROUTES = {
   FILING_EXPORT: '/api/v1/filing/export',
   ACCOUNT_USAGE: '/api/v1/account/usage',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
+  ADMIN_ACCOUNT_SUSPEND: '/api/v1/admin/accounts/:id/suspend',
+  ADMIN_ACCOUNT_REACTIVATE: '/api/v1/admin/accounts/:id/reactivate',
+  ADMIN_ACCOUNT_ARCHIVE: '/api/v1/admin/accounts/:id/archive',
+  ADMIN_ACCOUNT_ATTACH_STRIPE: '/api/v1/admin/accounts/:id/billing/stripe',
   ADMIN_PLANS: '/api/v1/admin/plans',
   ADMIN_AUDIT: '/api/v1/admin/audit',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
@@ -390,6 +460,7 @@ export const API_ROUTES = {
   ADMIN_TENANT_KEY_REACTIVATE: '/api/v1/admin/tenant-keys/:id/reactivate',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',
+  BILLING_STRIPE_WEBHOOK: '/api/v1/billing/stripe/webhook',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',
   CONNECTORS: '/api/v1/connectors',

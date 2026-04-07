@@ -11,6 +11,8 @@
  * - GET  /api/v1/domains             — registered domain packs
  * - GET  /api/v1/connectors          — registered database connectors
  * - GET/POST /api/v1/admin/accounts  — hosted operator account provisioning
+ * - POST /api/v1/admin/accounts/:id/billing/stripe — attach Stripe billing ids/status
+ * - POST /api/v1/admin/accounts/:id/suspend|reactivate|archive — hosted account lifecycle
  * - GET  /api/v1/admin/plans         — hosted plan catalog + defaults
  * - GET  /api/v1/admin/audit         — tamper-evident hosted admin ledger
  * - GET/POST /api/v1/admin/tenant-keys — hosted operator tenant key management
@@ -18,6 +20,7 @@
  * - POST /api/v1/admin/tenant-keys/:id/deactivate — safe cutover pause for old keys
  * - POST /api/v1/admin/tenant-keys/:id/reactivate — rollback support during cutover
  * - GET  /api/v1/admin/usage         — hosted operator usage reporting
+ * - POST /api/v1/billing/stripe/webhook — Stripe billing state reconciliation
  *
  * This is a real server. It binds to a port and accepts real HTTP requests.
  * Integration tests hit it over the network.
@@ -25,6 +28,7 @@
 
 import { Hono, type Context } from 'hono';
 import { serve } from '@hono/node-server';
+import Stripe from 'stripe';
 import { runFinancialPipeline } from '../financial/pipeline.js';
 import { generateKeyPair } from '../signing/keys.js';
 import { verifyCertificate } from '../signing/certificate.js';
@@ -60,11 +64,22 @@ import {
   TenantKeyStoreError,
   type TenantKeyRecord,
 } from './tenant-key-store.js';
-import { createHostedAccount, findHostedAccountByTenantId, listHostedAccounts, type HostedAccountRecord } from './account-store.js';
+import {
+  AccountStoreError,
+  applyStripeSubscriptionState,
+  attachStripeBillingToAccount,
+  createHostedAccount,
+  findHostedAccountByTenantId,
+  listHostedAccounts,
+  setHostedAccountStatus,
+  type HostedAccountRecord,
+  type StripeSubscriptionStatus,
+} from './account-store.js';
 import { DEFAULT_HOSTED_PLAN_ID, defaultRateLimitWindowSeconds, listHostedPlans, resolvePlanRateLimit, resolvePlanSpec } from './plan-catalog.js';
 import { appendAdminAuditRecord, listAdminAuditRecords, type AdminAuditAction } from './admin-audit-log.js';
 import { lookupAdminIdempotency, recordAdminIdempotency } from './admin-idempotency-store.js';
 import { hashJsonValue } from './json-stable.js';
+import { lookupProcessedStripeWebhook, recordProcessedStripeWebhook } from './stripe-webhook-store.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -116,6 +131,30 @@ function currentAdminAuthorized(c: Context): Response | null {
   return null;
 }
 
+function stripeClient(): Stripe {
+  return new Stripe(process.env.STRIPE_API_KEY?.trim() || 'sk_test_attestor_local');
+}
+
+function parseStripeSubscriptionStatus(raw: unknown): StripeSubscriptionStatus {
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  const value = raw.trim();
+  switch (value) {
+    case 'trialing':
+    case 'active':
+    case 'incomplete':
+    case 'incomplete_expired':
+    case 'past_due':
+    case 'canceled':
+    case 'unpaid':
+    case 'paused':
+      return value as StripeSubscriptionStatus;
+    default:
+      throw new Error(
+        "stripeSubscriptionStatus must be one of: trialing, active, incomplete, incomplete_expired, past_due, canceled, unpaid, paused.",
+      );
+  }
+}
+
 function adminTenantKeyView(record: TenantKeyRecord) {
   return {
     id: record.id,
@@ -143,7 +182,10 @@ function adminAccountView(record: HostedAccountRecord) {
     primaryTenantId: record.primaryTenantId,
     status: record.status,
     createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    suspendedAt: record.suspendedAt,
     archivedAt: record.archivedAt,
+    billing: record.billing,
   };
 }
 
@@ -161,6 +203,14 @@ function adminPlanView() {
 
 function tenantKeyStoreErrorResponse(c: Context, err: unknown): Response | null {
   if (!(err instanceof TenantKeyStoreError)) return null;
+  if (err.code === 'NOT_FOUND') {
+    return c.json({ error: err.message }, 404);
+  }
+  return c.json({ error: err.message }, 409);
+}
+
+function accountStoreErrorResponse(c: Context, err: unknown): Response | null {
+  if (!(err instanceof AccountStoreError)) return null;
   if (err.code === 'NOT_FOUND') {
     return c.json({ error: err.message }, 404);
   }
@@ -190,7 +240,7 @@ function applyRateLimitHeaders(
 function adminAuditView(record: {
   id: string;
   occurredAt: string;
-  actorType: 'admin_api_key';
+  actorType: 'admin_api_key' | 'stripe_webhook';
   actorLabel: string;
   action: AdminAuditAction;
   routeId: string;
@@ -386,6 +436,184 @@ app.get('/api/v1/account/usage', (c) => {
   });
 });
 
+app.post('/api/v1/billing/stripe/webhook', async (c) => {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  if (!webhookSecret) {
+    return c.json({
+      error: 'Stripe webhook disabled. Set STRIPE_WEBHOOK_SECRET to enable billing reconciliation.',
+    }, 503);
+  }
+
+  const signature = c.req.header('stripe-signature')?.trim() ?? '';
+  if (!signature) {
+    return c.json({ error: 'Stripe-Signature header is required.' }, 400);
+  }
+
+  const rawPayload = await c.req.text();
+  let event: Stripe.Event;
+  try {
+    event = stripeClient().webhooks.constructEvent(rawPayload, signature, webhookSecret);
+  } catch (err) {
+    return c.json({
+      error: 'Stripe webhook signature verification failed.',
+      detail: err instanceof Error ? err.message : String(err),
+    }, 400);
+  }
+
+  c.header('x-attestor-stripe-event-id', event.id);
+  const dedupe = lookupProcessedStripeWebhook(event.id, rawPayload);
+  if (dedupe.kind === 'conflict') {
+    return c.json({
+      error: `Stripe event '${event.id}' was already recorded with a different payload hash.`,
+      eventType: dedupe.record.eventType,
+      recordedAt: dedupe.record.receivedAt,
+    }, 409);
+  }
+  if (dedupe.kind === 'duplicate') {
+    c.header('x-attestor-stripe-replay', 'true');
+    return c.json({
+      received: true,
+      duplicate: true,
+      eventId: event.id,
+      eventType: dedupe.record.eventType,
+      outcome: dedupe.record.outcome,
+      accountId: dedupe.record.accountId,
+      reason: dedupe.record.reason,
+    });
+  }
+
+  const supportedEvent =
+    event.type === 'customer.subscription.created'
+    || event.type === 'customer.subscription.updated'
+    || event.type === 'customer.subscription.deleted';
+
+  if (!supportedEvent) {
+    recordProcessedStripeWebhook({
+      eventId: event.id,
+      eventType: event.type,
+      accountId: null,
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      outcome: 'ignored',
+      reason: 'unsupported_event_type',
+      rawPayload,
+    });
+    return c.json({
+      received: true,
+      duplicate: false,
+      ignored: true,
+      eventId: event.id,
+      eventType: event.type,
+      reason: 'unsupported_event_type',
+    });
+  }
+
+  const subscription = event.data.object as Stripe.Subscription;
+  const stripeCustomerId =
+    typeof subscription.customer === 'string'
+      ? subscription.customer
+      : subscription.customer?.id ?? null;
+  const stripeSubscriptionId = typeof subscription.id === 'string' ? subscription.id : null;
+  const stripeSubscriptionStatus =
+    typeof subscription.status === 'string'
+      ? subscription.status
+      : event.type === 'customer.subscription.deleted'
+        ? 'canceled'
+        : null;
+  const stripePriceId = typeof subscription.items?.data?.[0]?.price?.id === 'string'
+    ? subscription.items.data[0].price.id
+    : null;
+  const accountIdFromMetadata =
+    typeof subscription.metadata?.attestorAccountId === 'string' && subscription.metadata.attestorAccountId.trim() !== ''
+      ? subscription.metadata.attestorAccountId.trim()
+      : null;
+
+  let applied;
+  try {
+    applied = applyStripeSubscriptionState({
+      accountId: accountIdFromMetadata,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      stripeSubscriptionStatus,
+      stripePriceId,
+      eventId: event.id,
+      eventType: event.type,
+    });
+  } catch (err) {
+    const mapped = accountStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  if (!applied.record) {
+    recordProcessedStripeWebhook({
+      eventId: event.id,
+      eventType: event.type,
+      accountId: null,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      outcome: 'ignored',
+      reason: 'no_account_match',
+      rawPayload,
+    });
+    return c.json({
+      received: true,
+      duplicate: false,
+      ignored: true,
+      eventId: event.id,
+      eventType: event.type,
+      reason: 'no_account_match',
+      stripeCustomerId,
+      stripeSubscriptionId,
+    });
+  }
+
+  recordProcessedStripeWebhook({
+    eventId: event.id,
+    eventType: event.type,
+    accountId: applied.record.id,
+    stripeCustomerId,
+    stripeSubscriptionId,
+    outcome: 'applied',
+    reason: null,
+    rawPayload,
+  });
+
+  appendAdminAuditRecord({
+    actorType: 'stripe_webhook',
+    actorLabel: 'stripe.webhooks',
+    action: 'billing.stripe.webhook_applied',
+    routeId: 'billing.stripe.webhook',
+    accountId: applied.record.id,
+    tenantId: applied.record.primaryTenantId,
+    tenantKeyId: null,
+    planId: null,
+    monthlyRunQuota: null,
+    idempotencyKey: event.id,
+    requestHash: dedupe.payloadHash,
+    metadata: {
+      eventType: event.type,
+      matchReason: applied.matchReason,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      stripeSubscriptionStatus,
+      stripePriceId,
+      previousAccountStatus: applied.previousStatus,
+      nextAccountStatus: applied.nextStatus,
+    },
+  });
+
+  return c.json({
+    received: true,
+    duplicate: false,
+    eventId: event.id,
+    eventType: event.type,
+    accountId: applied.record.id,
+    accountStatus: applied.record.status,
+    billing: applied.record.billing,
+  });
+});
+
 app.get('/api/v1/admin/tenant-keys', (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
@@ -494,11 +722,18 @@ app.post('/api/v1/admin/accounts', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
 
-  const account = createHostedAccount({
-    accountName,
-    contactEmail,
-    primaryTenantId: tenantId,
-  });
+  let account;
+  try {
+    account = createHostedAccount({
+      accountName,
+      contactEmail,
+      primaryTenantId: tenantId,
+    });
+  } catch (err) {
+    const mapped = accountStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
   let issued;
   try {
     issued = issueTenantApiKey({
@@ -541,6 +776,202 @@ app.post('/api/v1/admin/accounts', async (c) => {
   });
 
   return c.json(responseBody, 201);
+});
+
+app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({}));
+  let stripeSubscriptionStatus: StripeSubscriptionStatus;
+  try {
+    stripeSubscriptionStatus = parseStripeSubscriptionStatus(body.stripeSubscriptionStatus);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+
+  const requestPayload = {
+    id: c.req.param('id'),
+    stripeCustomerId: typeof body.stripeCustomerId === 'string' ? body.stripeCustomerId.trim() : '',
+    stripeSubscriptionId: typeof body.stripeSubscriptionId === 'string' ? body.stripeSubscriptionId.trim() : '',
+    stripeSubscriptionStatus,
+    stripePriceId: typeof body.stripePriceId === 'string' ? body.stripePriceId.trim() : '',
+  };
+  if (!requestPayload.stripeCustomerId && !requestPayload.stripeSubscriptionId) {
+    return c.json({ error: 'stripeCustomerId or stripeSubscriptionId is required.' }, 400);
+  }
+
+  const adminMutation = adminMutationRequest(c, 'admin.accounts.attach_stripe_billing', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let attached;
+  try {
+    attached = attachStripeBillingToAccount(c.req.param('id'), {
+      stripeCustomerId: requestPayload.stripeCustomerId || null,
+      stripeSubscriptionId: requestPayload.stripeSubscriptionId || null,
+      stripeSubscriptionStatus,
+      stripePriceId: requestPayload.stripePriceId || null,
+    });
+  } catch (err) {
+    const mapped = accountStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.accounts.attach_stripe_billing',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      account: adminAccountView(attached.record),
+    },
+    audit: {
+      action: 'account.billing.attached',
+      accountId: attached.record.id,
+      tenantId: attached.record.primaryTenantId,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        stripeCustomerId: attached.record.billing.stripeCustomerId,
+        stripeSubscriptionId: attached.record.billing.stripeSubscriptionId,
+        stripeSubscriptionStatus: attached.record.billing.stripeSubscriptionStatus,
+        stripePriceId: attached.record.billing.stripePriceId,
+      },
+    },
+  });
+
+  return c.json(responseBody);
+});
+
+app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({}));
+  const requestPayload = {
+    id: c.req.param('id'),
+    reason: typeof body.reason === 'string' ? body.reason.trim() : '',
+  };
+  const adminMutation = adminMutationRequest(c, 'admin.accounts.suspend', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let result;
+  try {
+    result = setHostedAccountStatus(c.req.param('id'), 'suspended');
+  } catch (err) {
+    const mapped = accountStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.accounts.suspend',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      account: adminAccountView(result.record),
+    },
+    audit: {
+      action: 'account.suspended',
+      accountId: result.record.id,
+      tenantId: result.record.primaryTenantId,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        reason: requestPayload.reason || null,
+        suspendedAt: result.record.suspendedAt,
+      },
+    },
+  });
+
+  return c.json(responseBody);
+});
+
+app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({}));
+  const requestPayload = {
+    id: c.req.param('id'),
+    reason: typeof body.reason === 'string' ? body.reason.trim() : '',
+  };
+  const adminMutation = adminMutationRequest(c, 'admin.accounts.reactivate', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let result;
+  try {
+    result = setHostedAccountStatus(c.req.param('id'), 'active');
+  } catch (err) {
+    const mapped = accountStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.accounts.reactivate',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      account: adminAccountView(result.record),
+    },
+    audit: {
+      action: 'account.reactivated',
+      accountId: result.record.id,
+      tenantId: result.record.primaryTenantId,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        reason: requestPayload.reason || null,
+      },
+    },
+  });
+
+  return c.json(responseBody);
+});
+
+app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({}));
+  const requestPayload = {
+    id: c.req.param('id'),
+    reason: typeof body.reason === 'string' ? body.reason.trim() : '',
+  };
+  const adminMutation = adminMutationRequest(c, 'admin.accounts.archive', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let result;
+  try {
+    result = setHostedAccountStatus(c.req.param('id'), 'archived');
+  } catch (err) {
+    const mapped = accountStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.accounts.archive',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      account: adminAccountView(result.record),
+    },
+    audit: {
+      action: 'account.archived',
+      accountId: result.record.id,
+      tenantId: result.record.primaryTenantId,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        reason: requestPayload.reason || null,
+        archivedAt: result.record.archivedAt,
+      },
+    },
+  });
+
+  return c.json(responseBody);
 });
 
 app.post('/api/v1/admin/tenant-keys', async (c) => {

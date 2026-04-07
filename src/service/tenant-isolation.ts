@@ -20,7 +20,8 @@
  */
 
 import type { Context, Next } from 'hono';
-import { findActiveTenantKey, hasActiveTenantKeys } from './tenant-key-store.js';
+import { findActiveTenantKey, hasTenantKeyRecords } from './tenant-key-store.js';
+import { findHostedAccountByTenantId } from './account-store.js';
 import { SELF_HOST_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
 
 export interface TenantContext {
@@ -144,12 +145,12 @@ export function extractTenantContext(authHeader: string | undefined): TenantCont
  */
 export function tenantMiddleware() {
   return async (c: Context, next: Next) => {
-    if (c.req.path.startsWith('/api/v1/admin/')) {
+    if (c.req.path.startsWith('/api/v1/admin/') || c.req.path === '/api/v1/billing/stripe/webhook') {
       return next();
     }
 
     loadTenantKeysFromEnv();
-    const enforced = tenantKeys.size > 0 || hasActiveTenantKeys();
+    const enforced = tenantKeys.size > 0 || hasTenantKeyRecords();
     const tenant = extractTenantContext(c.req.header('authorization'));
 
     if (enforced && !tenant) {
@@ -170,6 +171,22 @@ export function tenantMiddleware() {
     c.req.raw.headers.set('x-attestor-plan-id', resolved.planId ?? SELF_HOST_PLAN_ID);
     if (resolved.monthlyRunQuota !== null) {
       c.req.raw.headers.set('x-attestor-monthly-run-quota', String(resolved.monthlyRunQuota));
+    }
+
+    const account = findHostedAccountByTenantId(resolved.tenantId);
+    if (account?.status === 'suspended') {
+      return c.json({
+        error: 'Hosted account is suspended. Restore billing or reactivate the account before using tenant APIs.',
+        accountId: account.id,
+        accountStatus: account.status,
+      }, 403);
+    }
+    if (account?.status === 'archived') {
+      return c.json({
+        error: 'Hosted account is archived and no longer allowed to use tenant APIs.',
+        accountId: account.id,
+        accountStatus: account.status,
+      }, 403);
     }
     await next();
   };

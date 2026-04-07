@@ -14,6 +14,11 @@ import { hashJsonValue } from './json-stable.js';
 
 export type AdminAuditAction =
   | 'account.created'
+  | 'account.suspended'
+  | 'account.reactivated'
+  | 'account.archived'
+  | 'account.billing.attached'
+  | 'billing.stripe.webhook_applied'
   | 'tenant_key.issued'
   | 'tenant_key.rotated'
   | 'tenant_key.deactivated'
@@ -23,7 +28,7 @@ export type AdminAuditAction =
 export interface AdminAuditRecord {
   id: string;
   occurredAt: string;
-  actorType: 'admin_api_key';
+  actorType: 'admin_api_key' | 'stripe_webhook';
   actorLabel: string;
   action: AdminAuditAction;
   routeId: string;

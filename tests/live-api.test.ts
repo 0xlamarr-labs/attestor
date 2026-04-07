@@ -12,6 +12,7 @@
 
 import { strict as assert } from 'node:assert';
 import { join } from 'node:path';
+import Stripe from 'stripe';
 import { startServer } from '../src/service/api-server.js';
 import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } from '../src/service/tenant-key-store.js';
 import { readUsageLedgerSnapshot, resetUsageMeter } from '../src/service/usage-meter.js';
@@ -19,12 +20,14 @@ import { resetTenantRateLimiterForTests } from '../src/service/rate-limit.js';
 import { resetAccountStoreForTests } from '../src/service/account-store.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
+import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
 } from '../src/financial/fixtures/scenarios.js';
 
 const BASE = 'http://localhost:3700';
+const stripe = new Stripe('sk_test_live_api');
 let serverHandle: { close: () => void };
 let passed = 0;
 
@@ -39,16 +42,19 @@ async function run() {
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-accounts.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
+  process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-stripe-webhooks.json');
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
   process.env.ATTESTOR_RATE_LIMIT_PRO_REQUESTS = '20';
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_api_test';
   resetTenantKeyStoreForTests();
   resetUsageMeter();
   resetTenantRateLimiterForTests();
   resetAccountStoreForTests();
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
+  resetStripeWebhookStoreForTests();
 
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE API INTEGRATION TESTS — Real HTTP, Real Server');
@@ -617,6 +623,182 @@ async function run() {
       const accountUsageBody = await accountUsageRes.json() as any;
       ok(accountUsageBody.rateLimit.requestsPerWindow === 3, 'Admin Accounts: starter rate limit visible on account usage');
 
+      ok(listedAccount.status === 'active', 'Admin Accounts: new account starts active');
+      ok(listedAccount.billing.provider === null, 'Admin Accounts: billing starts empty');
+
+      const attachBillingRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/stripe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-billing-attach-1',
+        },
+        body: JSON.stringify({
+          stripeCustomerId: 'cus_account_001',
+          stripeSubscriptionId: 'sub_account_001',
+          stripeSubscriptionStatus: 'active',
+          stripePriceId: 'price_pro_monthly',
+        }),
+      });
+      ok(attachBillingRes.status === 200, 'Admin Accounts: attach stripe billing status 200');
+      const attachBillingBody = await attachBillingRes.json() as any;
+      ok(attachBillingBody.account.billing.provider === 'stripe', 'Admin Accounts: stripe provider persisted');
+      ok(attachBillingBody.account.billing.stripeCustomerId === 'cus_account_001', 'Admin Accounts: stripe customer persisted');
+      ok(attachBillingBody.account.billing.stripeSubscriptionId === 'sub_account_001', 'Admin Accounts: stripe subscription persisted');
+      ok(attachBillingBody.account.billing.stripeSubscriptionStatus === 'active', 'Admin Accounts: stripe status persisted');
+
+      const attachBillingReplayRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/stripe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-billing-attach-1',
+        },
+        body: JSON.stringify({
+          stripeCustomerId: 'cus_account_001',
+          stripeSubscriptionId: 'sub_account_001',
+          stripeSubscriptionStatus: 'active',
+          stripePriceId: 'price_pro_monthly',
+        }),
+      });
+      ok(attachBillingReplayRes.status === 200, 'Admin Accounts: attach stripe replay preserves status');
+      ok(attachBillingReplayRes.headers.get('x-attestor-idempotent-replay') === 'true', 'Admin Accounts: attach stripe replay header set');
+
+      const suspendAccountRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/suspend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-suspend-1',
+        },
+        body: JSON.stringify({ reason: 'manual hold' }),
+      });
+      ok(suspendAccountRes.status === 200, 'Admin Accounts: suspend status 200');
+      const suspendAccountBody = await suspendAccountRes.json() as any;
+      ok(suspendAccountBody.account.status === 'suspended', 'Admin Accounts: suspend marks account suspended');
+      ok(typeof suspendAccountBody.account.suspendedAt === 'string', 'Admin Accounts: suspend captures suspendedAt');
+
+      const suspendedAccountUsageRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(suspendedAccountUsageRes.status === 403, 'Admin Accounts: suspended account key blocked');
+      const suspendedAccountUsageBody = await suspendedAccountUsageRes.json() as any;
+      ok(suspendedAccountUsageBody.accountStatus === 'suspended', 'Admin Accounts: suspended account status surfaced');
+
+      const reactivateAccountRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/reactivate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-reactivate-1',
+        },
+        body: JSON.stringify({ reason: 'billing fixed' }),
+      });
+      ok(reactivateAccountRes.status === 200, 'Admin Accounts: reactivate status 200');
+      const reactivateAccountBody = await reactivateAccountRes.json() as any;
+      ok(reactivateAccountBody.account.status === 'active', 'Admin Accounts: reactivate restores active status');
+      ok(reactivateAccountBody.account.suspendedAt === null, 'Admin Accounts: reactivate clears suspendedAt');
+
+      const reactivatedAccountUsageRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(reactivatedAccountUsageRes.status === 200, 'Admin Accounts: reactivated account key works again');
+
+      const pastDuePayload = JSON.stringify({
+        id: 'evt_sub_account_001_past_due',
+        object: 'event',
+        type: 'customer.subscription.updated',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            id: 'sub_account_001',
+            object: 'subscription',
+            customer: 'cus_account_001',
+            status: 'past_due',
+            metadata: {},
+            items: {
+              object: 'list',
+              data: [{ price: { id: 'price_pro_monthly' } }],
+            },
+          },
+        },
+      });
+      const pastDueSignature = stripe.webhooks.generateTestHeaderString({
+        payload: pastDuePayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET!,
+      });
+      const pastDueWebhookRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': pastDueSignature,
+        },
+        body: pastDuePayload,
+      });
+      ok(pastDueWebhookRes.status === 200, 'Stripe Webhook: past_due event accepted');
+      const pastDueWebhookBody = await pastDueWebhookRes.json() as any;
+      ok(pastDueWebhookBody.accountStatus === 'suspended', 'Stripe Webhook: past_due suspends account');
+      ok(pastDueWebhookBody.billing.stripeSubscriptionStatus === 'past_due', 'Stripe Webhook: billing status updated to past_due');
+
+      const blockedAfterWebhookRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(blockedAfterWebhookRes.status === 403, 'Stripe Webhook: suspended account blocked after webhook');
+
+      const pastDueWebhookReplayRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': pastDueSignature,
+        },
+        body: pastDuePayload,
+      });
+      ok(pastDueWebhookReplayRes.status === 200, 'Stripe Webhook: duplicate event preserves 200');
+      ok(pastDueWebhookReplayRes.headers.get('x-attestor-stripe-replay') === 'true', 'Stripe Webhook: duplicate header set');
+      const pastDueWebhookReplayBody = await pastDueWebhookReplayRes.json() as any;
+      ok(pastDueWebhookReplayBody.duplicate === true, 'Stripe Webhook: duplicate replay flagged');
+
+      const activePayload = JSON.stringify({
+        id: 'evt_sub_account_001_active',
+        object: 'event',
+        type: 'customer.subscription.updated',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            id: 'sub_account_001',
+            object: 'subscription',
+            customer: 'cus_account_001',
+            status: 'active',
+            metadata: {},
+            items: {
+              object: 'list',
+              data: [{ price: { id: 'price_pro_monthly' } }],
+            },
+          },
+        },
+      });
+      const activeSignature = stripe.webhooks.generateTestHeaderString({
+        payload: activePayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET!,
+      });
+      const activeWebhookRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': activeSignature,
+        },
+        body: activePayload,
+      });
+      ok(activeWebhookRes.status === 200, 'Stripe Webhook: active event accepted');
+      const activeWebhookBody = await activeWebhookRes.json() as any;
+      ok(activeWebhookBody.accountStatus === 'active', 'Stripe Webhook: active event restores account');
+      ok(activeWebhookBody.billing.stripeSubscriptionStatus === 'active', 'Stripe Webhook: billing status restored to active');
+
+      const allowedAfterActiveWebhookRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(allowedAfterActiveWebhookRes.status === 200, 'Stripe Webhook: active account key works again');
+
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
 
@@ -836,6 +1018,54 @@ async function run() {
       ok(accountRunBody.rateLimit.requestsPerWindow === 3, 'Admin Accounts: run response includes rate limit');
       ok(accountRunBody.rateLimit.used >= 1, 'Admin Accounts: run rate limit usage increments');
 
+      const archiveAccountRes = await fetch(`${BASE}/api/v1/admin/accounts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-create-archive-1',
+        },
+        body: JSON.stringify({
+          accountName: 'Archive Co',
+          contactEmail: 'ops@archive.example',
+          tenantId: 'tenant-archive',
+          tenantName: 'Archive Tenant',
+        }),
+      });
+      ok(archiveAccountRes.status === 201, 'Admin Accounts: archive test account created');
+      const archiveAccountBody = await archiveAccountRes.json() as any;
+
+      const archiveRes = await fetch(`${BASE}/api/v1/admin/accounts/${archiveAccountBody.account.id}/archive`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-archive-1',
+        },
+        body: JSON.stringify({ reason: 'customer offboarded' }),
+      });
+      ok(archiveRes.status === 200, 'Admin Accounts: archive status 200');
+      const archiveBody = await archiveRes.json() as any;
+      ok(archiveBody.account.status === 'archived', 'Admin Accounts: archive marks account archived');
+      ok(typeof archiveBody.account.archivedAt === 'string', 'Admin Accounts: archive captures archivedAt');
+
+      const archivedUsageRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${archiveAccountBody.initialKey.apiKey}` },
+      });
+      ok(archivedUsageRes.status === 403, 'Admin Accounts: archived account key blocked');
+      const archivedUsageBody = await archivedUsageRes.json() as any;
+      ok(archivedUsageBody.accountStatus === 'archived', 'Admin Accounts: archived account status surfaced');
+
+      const archivedReactivateRes = await fetch(`${BASE}/api/v1/admin/accounts/${archiveAccountBody.account.id}/reactivate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+        },
+        body: JSON.stringify({ reason: 'should fail' }),
+      });
+      ok(archivedReactivateRes.status === 409, 'Admin Accounts: archived account cannot reactivate');
+
       const rateTenantRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
         method: 'POST',
         headers: {
@@ -985,16 +1215,27 @@ async function run() {
       const auditNoAuth = await fetch(`${BASE}/api/v1/admin/audit`);
       ok(auditNoAuth.status === 401, 'Admin Audit: auth required');
 
-      const auditRes = await fetch(`${BASE}/api/v1/admin/audit?limit=10`, {
+      const auditRes = await fetch(`${BASE}/api/v1/admin/audit?limit=30`, {
         headers: { Authorization: 'Bearer admin-secret' },
       });
       ok(auditRes.status === 200, 'Admin Audit: list status 200');
       const auditBody = await auditRes.json() as any;
       ok(auditBody.summary.chainIntact === true, 'Admin Audit: chain intact');
-      ok(auditBody.summary.recordCount >= 6, 'Admin Audit: expected records present');
+      ok(auditBody.summary.recordCount >= 12, 'Admin Audit: expected records present');
       const accountAudit = auditBody.records.find((entry: any) => entry.action === 'account.created' && entry.accountId === createAccountBody.account.id);
       ok(Boolean(accountAudit), 'Admin Audit: account create event present');
       ok(accountAudit.idempotencyKey === 'idem-account-create-1', 'Admin Audit: account create idempotency captured');
+      const accountBillingAudit = auditBody.records.find((entry: any) => entry.action === 'account.billing.attached' && entry.accountId === createAccountBody.account.id);
+      ok(Boolean(accountBillingAudit), 'Admin Audit: account billing attach event present');
+      const accountSuspendAudit = auditBody.records.find((entry: any) => entry.action === 'account.suspended' && entry.accountId === createAccountBody.account.id);
+      ok(Boolean(accountSuspendAudit), 'Admin Audit: account suspend event present');
+      const accountReactivateAudit = auditBody.records.find((entry: any) => entry.action === 'account.reactivated' && entry.accountId === createAccountBody.account.id);
+      ok(Boolean(accountReactivateAudit), 'Admin Audit: account reactivate event present');
+      const accountArchiveAudit = auditBody.records.find((entry: any) => entry.action === 'account.archived' && entry.accountId === archiveAccountBody.account.id);
+      ok(Boolean(accountArchiveAudit), 'Admin Audit: account archive event present');
+      const stripeWebhookAudit = auditBody.records.find((entry: any) => entry.action === 'billing.stripe.webhook_applied' && entry.accountId === createAccountBody.account.id);
+      ok(Boolean(stripeWebhookAudit), 'Admin Audit: stripe webhook event present');
+      ok(stripeWebhookAudit.actorType === 'stripe_webhook', 'Admin Audit: stripe webhook actor type captured');
       const issueAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.issued' && entry.tenantKeyId === issueBody.key.id);
       ok(Boolean(issueAudit), 'Admin Audit: tenant key issue event present');
       const rotateAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.rotated' && entry.tenantKeyId === rotateBody.newKey.id);
@@ -1024,6 +1265,7 @@ async function run() {
     resetTenantRateLimiterForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
+    resetStripeWebhookStoreForTests();
     serverHandle.close();
     console.log('  Server stopped.\n');
     // Force exit: embedded Redis / BullMQ connections keep the event loop alive

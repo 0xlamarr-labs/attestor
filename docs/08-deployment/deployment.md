@@ -78,10 +78,12 @@ docker run \
 | `ATTESTOR_USAGE_LEDGER_PATH` | No | `.attestor/usage-ledger.json` | Local file-backed single-node usage ledger for hosted quota enforcement |
 | `ATTESTOR_RATE_LIMIT_WINDOW_SECONDS` | No | `60` | Tenant pipeline rate-limit window size in seconds |
 | `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | No | Plan defaults | Per-plan request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
-| `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for hosted account, plan catalog, audit, tenant lifecycle, idempotent provisioning, and usage endpoints (`/api/v1/admin/accounts`, `/api/v1/admin/plans`, `/api/v1/admin/audit`, `/api/v1/admin/tenant-keys`, `/api/v1/admin/usage`) |
+| `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for hosted account, plan catalog, audit, tenant lifecycle, billing attach, idempotent provisioning, and usage endpoints (`/api/v1/admin/accounts`, `/api/v1/admin/accounts/:id/billing/stripe`, `/api/v1/admin/accounts/:id/suspend|reactivate|archive`, `/api/v1/admin/plans`, `/api/v1/admin/audit`, `/api/v1/admin/tenant-keys`, `/api/v1/admin/usage`) |
 | `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | No | `.attestor/admin-audit-log.json` | Local hash-linked admin mutation ledger |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | No | `.attestor/admin-idempotency.json` | Local encrypted idempotency replay store for admin `POST` routes |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | No | `24` | Replay retention window for admin idempotency records |
+| `STRIPE_WEBHOOK_SECRET` | No | None | Stripe signing secret for `POST /api/v1/billing/stripe/webhook` |
+| `ATTESTOR_STRIPE_WEBHOOK_STORE_PATH` | No | `.attestor/stripe-webhooks.json` | Local processed-event ledger for Stripe webhook duplicate suppression |
 | `NODE_ENV` | No | `production` | Environment mode |
 
 ## Health and Readiness
@@ -129,6 +131,8 @@ What is deployed today:
 - PostgreSQL RLS tenant isolation
 - Local file-backed tenant key lifecycle with rotate -> deactivate/reactivate -> revoke, `lastUsedAt`, and max-2 active overlap
 - Tenant-aware in-memory pipeline throttling with plan defaults, `Retry-After`, and `429` responses
+- Local file-backed hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
+- Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*` processing with duplicate-event suppression and account suspend/reactivate sync
 - Health + readiness probes
 
 What is not yet implemented:
@@ -138,3 +142,4 @@ What is not yet implemented:
 - Multi-tenant job isolation in the queue
 - Centralized logging / metrics / tracing
 - External KMS-backed tenant key storage or shared multi-node key ledger
+- Stripe checkout/customer portal, invoice ledger, or shared multi-node billing datastore

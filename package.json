@@ -46,6 +46,7 @@
     "redis-memory-server": "^0.16.0",
     "saxon-js": "^2.7.0",
     "snowflake-sdk": "^2.3.6",
+    "stripe": "^22.0.0",
     "typescript": "^5.7.3",
     "xmlbuilder2": "^4.0.3",
     "xslt3": "^2.7.0"
