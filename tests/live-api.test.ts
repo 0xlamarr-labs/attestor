@@ -693,9 +693,103 @@ async function run() {
       });
       ok(listRes.status === 200, 'Admin API: list status 200');
       const listBody = await listRes.json() as any;
+      ok(listBody.defaults.maxActiveKeysPerTenant === 2, 'Admin API: list exposes active-key policy');
       const listed = listBody.keys.find((entry: any) => entry.id === issueBody.key.id);
       ok(Boolean(listed), 'Admin API: issued key appears in list');
       ok(!('apiKeyHash' in listed), 'Admin API: hash not exposed');
+      ok(typeof listed.lastUsedAt === 'string', 'Admin API: lastUsedAt captured after tenant use');
+
+      const rotateRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/rotate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-rotate-1',
+        },
+        body: JSON.stringify({}),
+      });
+      ok(rotateRes.status === 201, 'Admin API: rotate status 201');
+      const rotateBody = await rotateRes.json() as any;
+      ok(typeof rotateBody.newKey.apiKey === 'string', 'Admin API: rotate returns new plaintext API key');
+      ok(rotateBody.newKey.rotatedFromKeyId === issueBody.key.id, 'Admin API: new key points to previous key');
+      ok(rotateBody.previousKey.supersededByKeyId === rotateBody.newKey.id, 'Admin API: previous key points to replacement');
+
+      const rotateReplayRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/rotate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-rotate-1',
+        },
+        body: JSON.stringify({}),
+      });
+      ok(rotateReplayRes.status === 201, 'Admin API: rotate replay preserves status');
+      ok(rotateReplayRes.headers.get('x-attestor-idempotent-replay') === 'true', 'Admin API: rotate replay header set');
+      const rotateReplayBody = await rotateReplayRes.json() as any;
+      ok(rotateReplayBody.newKey.id === rotateBody.newKey.id, 'Admin API: rotate replay preserves new key id');
+      ok(rotateReplayBody.newKey.apiKey === rotateBody.newKey.apiKey, 'Admin API: rotate replay preserves plaintext API key');
+
+      const overlapOldRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
+      });
+      ok(overlapOldRes.status === 200, 'Admin API: previous key stays active during overlap');
+      const overlapNewRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${rotateBody.newKey.apiKey}` },
+      });
+      ok(overlapNewRes.status === 200, 'Admin API: rotated key becomes active immediately');
+
+      const thirdKeyRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+        },
+        body: JSON.stringify({
+          tenantId: 'tenant-admin',
+          tenantName: 'Admin Co',
+          planId: 'pro',
+        }),
+      });
+      ok(thirdKeyRes.status === 409, 'Admin API: third active key for tenant rejected');
+
+      const deactivateRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/deactivate`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-deactivate-1',
+        },
+      });
+      ok(deactivateRes.status === 200, 'Admin API: deactivate status 200');
+      const deactivateBody = await deactivateRes.json() as any;
+      ok(deactivateBody.key.status === 'inactive', 'Admin API: deactivate marks key inactive');
+      ok(typeof deactivateBody.key.deactivatedAt === 'string', 'Admin API: deactivate captures deactivatedAt');
+
+      const deactivatedTenantRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
+      });
+      ok(deactivatedTenantRes.status === 401, 'Admin API: inactive key no longer works');
+
+      const reactivateRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/reactivate`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-reactivate-1',
+        },
+      });
+      ok(reactivateRes.status === 200, 'Admin API: reactivate status 200');
+      const reactivateBody = await reactivateRes.json() as any;
+      ok(reactivateBody.key.status === 'active', 'Admin API: reactivate restores active status');
+      ok(reactivateBody.key.deactivatedAt === null, 'Admin API: reactivate clears deactivatedAt');
+
+      const reactivatedTenantRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
+      });
+      ok(reactivatedTenantRes.status === 200, 'Admin API: reactivated key works again');
+
+      await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/deactivate`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
 
       const usageNoAuth = await fetch(`${BASE}/api/v1/admin/usage`);
       ok(usageNoAuth.status === 401, 'Admin Usage: auth required');
@@ -775,6 +869,11 @@ async function run() {
       });
       ok(revokedTenantRes.status === 401, 'Admin API: revoked key no longer works');
 
+      const replacementTenantRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${rotateBody.newKey.apiKey}` },
+      });
+      ok(replacementTenantRes.status === 200, 'Admin API: replacement key stays active after old revoke');
+
       const auditNoAuth = await fetch(`${BASE}/api/v1/admin/audit`);
       ok(auditNoAuth.status === 401, 'Admin Audit: auth required');
 
@@ -784,12 +883,18 @@ async function run() {
       ok(auditRes.status === 200, 'Admin Audit: list status 200');
       const auditBody = await auditRes.json() as any;
       ok(auditBody.summary.chainIntact === true, 'Admin Audit: chain intact');
-      ok(auditBody.summary.recordCount >= 3, 'Admin Audit: expected records present');
+      ok(auditBody.summary.recordCount >= 6, 'Admin Audit: expected records present');
       const accountAudit = auditBody.records.find((entry: any) => entry.action === 'account.created' && entry.accountId === createAccountBody.account.id);
       ok(Boolean(accountAudit), 'Admin Audit: account create event present');
       ok(accountAudit.idempotencyKey === 'idem-account-create-1', 'Admin Audit: account create idempotency captured');
       const issueAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.issued' && entry.tenantKeyId === issueBody.key.id);
       ok(Boolean(issueAudit), 'Admin Audit: tenant key issue event present');
+      const rotateAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.rotated' && entry.tenantKeyId === rotateBody.newKey.id);
+      ok(Boolean(rotateAudit), 'Admin Audit: tenant key rotate event present');
+      const deactivateAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.deactivated' && entry.tenantKeyId === issueBody.key.id);
+      ok(Boolean(deactivateAudit), 'Admin Audit: tenant key deactivate event present');
+      const reactivateAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.reactivated' && entry.tenantKeyId === issueBody.key.id);
+      ok(Boolean(reactivateAudit), 'Admin Audit: tenant key reactivate event present');
       const revokeAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.revoked' && entry.tenantKeyId === issueBody.key.id);
       ok(Boolean(revokeAudit), 'Admin Audit: tenant key revoke event present');
 

@@ -5,10 +5,21 @@
  *   npm run tenant:keys -- plans
  *   npm run tenant:keys -- list
  *   npm run tenant:keys -- issue --tenant-id tenant-pro --name Acme [--plan pro] [--quota 1000]
+ *   npm run tenant:keys -- rotate --id tkey_... [--plan pro] [--quota 1000]
+ *   npm run tenant:keys -- deactivate --id tkey_...
+ *   npm run tenant:keys -- reactivate --id tkey_...
  *   npm run tenant:keys -- revoke --id tkey_...
  */
 
-import { issueTenantApiKey, listTenantKeyRecords, revokeTenantApiKey } from './tenant-key-store.js';
+import {
+  issueTenantApiKey,
+  listTenantKeyRecords,
+  revokeTenantApiKey,
+  rotateTenantApiKey,
+  setTenantApiKeyStatus,
+  tenantKeyStorePolicy,
+  TenantKeyStoreError,
+} from './tenant-key-store.js';
 import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, validHostedPlanIds } from './plan-catalog.js';
 
 function readFlag(flag: string, fallback?: string): string | undefined {
@@ -24,6 +35,9 @@ function printUsage(): void {
   console.log('  plans');
   console.log('  list');
   console.log('  issue --tenant-id <id> --name <tenant name> [--plan <plan>] [--quota <n>]');
+  console.log('  rotate --id <tenant-key-record-id> [--plan <plan>] [--quota <n>]');
+  console.log('  deactivate --id <tenant-key-record-id>');
+  console.log('  reactivate --id <tenant-key-record-id>');
   console.log('  revoke --id <tenant-key-record-id>');
 }
 
@@ -51,12 +65,16 @@ async function main() {
         `quota=${record.monthlyRunQuota ?? 'unlimited'}`,
         `preview=${record.apiKeyPreview}`,
         `status=${record.status}`,
+        `lastUsed=${record.lastUsedAt ?? 'never'}`,
+        `rotatedFrom=${record.rotatedFromKeyId ?? '-'}`,
+        `replacedBy=${record.supersededByKeyId ?? '-'}`,
       ].join(' | '));
     }
     return;
   }
 
   if (command === 'plans') {
+    console.log(`Policy: maxActiveKeysPerTenant=${tenantKeyStorePolicy().maxActiveKeysPerTenant}`);
     console.log('Built-in hosted plans:');
     for (const plan of listHostedPlans()) {
       console.log([
@@ -104,6 +122,46 @@ async function main() {
     return;
   }
 
+  if (command === 'rotate') {
+    const id = readFlag('--id');
+    const planId = readFlag('--plan');
+    const quotaRaw = readFlag('--quota');
+    const monthlyRunQuota = quotaRaw ? Number.parseInt(quotaRaw, 10) : null;
+    if (!id) {
+      console.error('rotate requires --id');
+      process.exit(1);
+    }
+    if (planId && !validHostedPlanIds().includes(planId as any)) {
+      console.error(`rotate received unknown --plan '${planId}'. Valid plans: ${validHostedPlanIds().join(', ')}`);
+      process.exit(1);
+    }
+    const { apiKey, record, previousRecord, path } = rotateTenantApiKey(id, {
+      planId: planId ?? null,
+      monthlyRunQuota: Number.isFinite(monthlyRunQuota as number) ? monthlyRunQuota : null,
+    });
+    console.log(`Store: ${path}`);
+    console.log(`Rotated ${previousRecord.id} -> ${record.id} for tenant ${record.tenantId}`);
+    console.log(`Plan: ${record.planId ?? 'community'}`);
+    console.log(`Quota: ${record.monthlyRunQuota ?? 'unlimited'}`);
+    console.log('');
+    console.log('New API key — show once and copy now:');
+    console.log(apiKey);
+    return;
+  }
+
+  if (command === 'deactivate' || command === 'reactivate') {
+    const id = readFlag('--id');
+    if (!id) {
+      console.error(`${command} requires --id`);
+      process.exit(1);
+    }
+    const nextStatus = command === 'deactivate' ? 'inactive' : 'active';
+    const { record, path } = setTenantApiKeyStatus(id, nextStatus);
+    console.log(`Store: ${path}`);
+    console.log(`${command}d ${record.id} (${record.apiKeyPreview}) -> status=${record.status}`);
+    return;
+  }
+
   if (command === 'revoke') {
     const id = readFlag('--id');
     if (!id) {
@@ -126,6 +184,10 @@ async function main() {
 }
 
 main().catch((err) => {
+  if (err instanceof TenantKeyStoreError) {
+    console.error(err.message);
+    process.exit(1);
+  }
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 });

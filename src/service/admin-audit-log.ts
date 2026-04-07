@@ -15,6 +15,9 @@ import { hashJsonValue } from './json-stable.js';
 export type AdminAuditAction =
   | 'account.created'
   | 'tenant_key.issued'
+  | 'tenant_key.rotated'
+  | 'tenant_key.deactivated'
+  | 'tenant_key.reactivated'
   | 'tenant_key.revoked';
 
 export interface AdminAuditRecord {

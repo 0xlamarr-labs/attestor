@@ -104,7 +104,7 @@ export function extractTenantContext(authHeader: string | undefined): TenantCont
       };
     }
 
-  const fileBackedTenant = findActiveTenantKey(token);
+  const fileBackedTenant = findActiveTenantKey(token, { markUsed: true });
   if (fileBackedTenant) {
     return {
       tenantId: fileBackedTenant.tenantId,

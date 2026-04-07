@@ -199,13 +199,21 @@ export interface AdminTenantKeyRecord {
   planId: string | null;
   monthlyRunQuota: number | null;
   apiKeyPreview: string;
-  status: 'active' | 'revoked';
+  status: 'active' | 'inactive' | 'revoked';
   createdAt: string;
+  lastUsedAt: string | null;
+  deactivatedAt: string | null;
   revokedAt: string | null;
+  rotatedFromKeyId: string | null;
+  supersededByKeyId: string | null;
+  supersededAt: string | null;
 }
 
 export interface AdminListTenantKeysResponse {
   keys: AdminTenantKeyRecord[];
+  defaults: {
+    maxActiveKeysPerTenant: number;
+  };
 }
 
 export interface AdminIssueTenantKeyRequest {
@@ -219,7 +227,17 @@ export interface AdminIssueTenantKeyResponse {
   key: AdminTenantKeyRecord & { apiKey: string };
 }
 
-export interface AdminRevokeTenantKeyResponse {
+export interface AdminRotateTenantKeyRequest {
+  planId?: string;
+  monthlyRunQuota?: number | null;
+}
+
+export interface AdminRotateTenantKeyResponse {
+  previousKey: AdminTenantKeyRecord;
+  newKey: AdminTenantKeyRecord & { apiKey: string };
+}
+
+export interface AdminTenantKeyStatusResponse {
   key: AdminTenantKeyRecord;
 }
 
@@ -264,6 +282,7 @@ export interface AdminListPlansResponse {
   plans: HostedPlanSummary[];
   defaults: {
     hostedProvisioningPlanId: 'starter';
+    maxActiveKeysPerTenant: number;
   };
 }
 
@@ -272,7 +291,7 @@ export interface AdminAuditRecordResponse {
   occurredAt: string;
   actorType: 'admin_api_key';
   actorLabel: string;
-  action: 'account.created' | 'tenant_key.issued' | 'tenant_key.revoked';
+  action: 'account.created' | 'tenant_key.issued' | 'tenant_key.rotated' | 'tenant_key.deactivated' | 'tenant_key.reactivated' | 'tenant_key.revoked';
   routeId: string;
   accountId: string | null;
   tenantId: string | null;
@@ -289,7 +308,7 @@ export interface AdminAuditRecordResponse {
 export interface AdminAuditResponse {
   records: AdminAuditRecordResponse[];
   summary: {
-    actionFilter: 'account.created' | 'tenant_key.issued' | 'tenant_key.revoked' | null;
+    actionFilter: 'account.created' | 'tenant_key.issued' | 'tenant_key.rotated' | 'tenant_key.deactivated' | 'tenant_key.reactivated' | 'tenant_key.revoked' | null;
     tenantFilter: string | null;
     accountFilter: string | null;
     recordCount: number;
@@ -348,6 +367,9 @@ export const API_ROUTES = {
   ADMIN_PLANS: '/api/v1/admin/plans',
   ADMIN_AUDIT: '/api/v1/admin/audit',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
+  ADMIN_TENANT_KEY_ROTATE: '/api/v1/admin/tenant-keys/:id/rotate',
+  ADMIN_TENANT_KEY_DEACTIVATE: '/api/v1/admin/tenant-keys/:id/deactivate',
+  ADMIN_TENANT_KEY_REACTIVATE: '/api/v1/admin/tenant-keys/:id/reactivate',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',
   HEALTH: '/api/v1/health',

@@ -10,7 +10,13 @@
  * - GET  /api/v1/health              — service health + PKI + registries
  * - GET  /api/v1/domains             — registered domain packs
  * - GET  /api/v1/connectors          — registered database connectors
+ * - GET/POST /api/v1/admin/accounts  — hosted operator account provisioning
+ * - GET  /api/v1/admin/plans         — hosted plan catalog + defaults
+ * - GET  /api/v1/admin/audit         — tamper-evident hosted admin ledger
  * - GET/POST /api/v1/admin/tenant-keys — hosted operator tenant key management
+ * - POST /api/v1/admin/tenant-keys/:id/rotate — key rollover with overlap window
+ * - POST /api/v1/admin/tenant-keys/:id/deactivate — safe cutover pause for old keys
+ * - POST /api/v1/admin/tenant-keys/:id/reactivate — rollback support during cutover
  * - GET  /api/v1/admin/usage         — hosted operator usage reporting
  *
  * This is a real server. It binds to a port and accepts real HTTP requests.
@@ -47,6 +53,10 @@ import {
   issueTenantApiKey,
   listTenantKeyRecords,
   revokeTenantApiKey,
+  rotateTenantApiKey,
+  setTenantApiKeyStatus,
+  tenantKeyStorePolicy,
+  TenantKeyStoreError,
   type TenantKeyRecord,
 } from './tenant-key-store.js';
 import { createHostedAccount, findHostedAccountByTenantId, listHostedAccounts, type HostedAccountRecord } from './account-store.js';
@@ -115,7 +125,12 @@ function adminTenantKeyView(record: TenantKeyRecord) {
     apiKeyPreview: record.apiKeyPreview,
     status: record.status,
     createdAt: record.createdAt,
+    lastUsedAt: record.lastUsedAt,
+    deactivatedAt: record.deactivatedAt,
     revokedAt: record.revokedAt,
+    rotatedFromKeyId: record.rotatedFromKeyId,
+    supersededByKeyId: record.supersededByKeyId,
+    supersededAt: record.supersededAt,
   };
 }
 
@@ -140,6 +155,14 @@ function adminPlanView() {
     intendedFor: plan.intendedFor,
     defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
   }));
+}
+
+function tenantKeyStoreErrorResponse(c: Context, err: unknown): Response | null {
+  if (!(err instanceof TenantKeyStoreError)) return null;
+  if (err.code === 'NOT_FOUND') {
+    return c.json({ error: err.message }, 404);
+  }
+  return c.json({ error: err.message }, 409);
 }
 
 function adminAuditView(record: {
@@ -346,6 +369,9 @@ app.get('/api/v1/admin/tenant-keys', (c) => {
   const { records } = listTenantKeyRecords();
   return c.json({
     keys: records.map(adminTenantKeyView),
+    defaults: {
+      maxActiveKeysPerTenant: tenantKeyStorePolicy().maxActiveKeysPerTenant,
+    },
   });
 });
 
@@ -367,6 +393,7 @@ app.get('/api/v1/admin/plans', (c) => {
     plans: adminPlanView(),
     defaults: {
       hostedProvisioningPlanId: DEFAULT_HOSTED_PLAN_ID,
+      maxActiveKeysPerTenant: tenantKeyStorePolicy().maxActiveKeysPerTenant,
     },
   });
 });
@@ -447,12 +474,19 @@ app.post('/api/v1/admin/accounts', async (c) => {
     contactEmail,
     primaryTenantId: tenantId,
   });
-  const issued = issueTenantApiKey({
-    tenantId,
-    tenantName,
-    planId: resolvedPlan.planId,
-    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
-  });
+  let issued;
+  try {
+    issued = issueTenantApiKey({
+      tenantId,
+      tenantName,
+      planId: resolvedPlan.planId,
+      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+    });
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
 
   const responseBody = finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -520,12 +554,19 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
 
-  const issued = issueTenantApiKey({
-    tenantId,
-    tenantName,
-    planId: resolvedPlan.planId,
-    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
-  });
+  let issued;
+  try {
+    issued = issueTenantApiKey({
+      tenantId,
+      tenantName,
+      planId: resolvedPlan.planId,
+      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+    });
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
 
   const responseBody = finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -552,6 +593,149 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
   });
 
   return c.json(responseBody, 201);
+});
+
+app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({}));
+  const requestedPlanId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : null;
+  const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
+    ? body.monthlyRunQuota
+    : null;
+  const requestPayload = {
+    id: c.req.param('id'),
+    planId: requestedPlanId,
+    monthlyRunQuota,
+  };
+  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.rotate', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let rotated;
+  try {
+    rotated = rotateTenantApiKey(c.req.param('id'), {
+      planId: requestedPlanId,
+      monthlyRunQuota,
+    });
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.tenant_keys.rotate',
+    requestPayload,
+    statusCode: 201,
+    responseBody: {
+      previousKey: adminTenantKeyView(rotated.previousRecord),
+      newKey: {
+        ...adminTenantKeyView(rotated.record),
+        apiKey: rotated.apiKey,
+      },
+    },
+    audit: {
+      action: 'tenant_key.rotated',
+      tenantId: rotated.record.tenantId,
+      tenantKeyId: rotated.record.id,
+      planId: rotated.record.planId,
+      monthlyRunQuota: rotated.record.monthlyRunQuota,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        previousKeyId: rotated.previousRecord.id,
+        supersededKeyId: rotated.previousRecord.id,
+        replacementKeyId: rotated.record.id,
+        previousLastUsedAt: rotated.previousRecord.lastUsedAt,
+      },
+    },
+  });
+
+  return c.json(responseBody, 201);
+});
+
+app.post('/api/v1/admin/tenant-keys/:id/deactivate', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const requestPayload = { id: c.req.param('id') };
+  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.deactivate', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let result;
+  try {
+    result = setTenantApiKeyStatus(c.req.param('id'), 'inactive');
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.tenant_keys.deactivate',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      key: adminTenantKeyView(result.record),
+    },
+    audit: {
+      action: 'tenant_key.deactivated',
+      tenantId: result.record.tenantId,
+      tenantKeyId: result.record.id,
+      planId: result.record.planId,
+      monthlyRunQuota: result.record.monthlyRunQuota,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        tenantName: result.record.tenantName,
+        deactivatedAt: result.record.deactivatedAt,
+      },
+    },
+  });
+
+  return c.json(responseBody);
+});
+
+app.post('/api/v1/admin/tenant-keys/:id/reactivate', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const requestPayload = { id: c.req.param('id') };
+  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.reactivate', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let result;
+  try {
+    result = setTenantApiKeyStatus(c.req.param('id'), 'active');
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.tenant_keys.reactivate',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      key: adminTenantKeyView(result.record),
+    },
+    audit: {
+      action: 'tenant_key.reactivated',
+      tenantId: result.record.tenantId,
+      tenantKeyId: result.record.id,
+      planId: result.record.planId,
+      monthlyRunQuota: result.record.monthlyRunQuota,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        tenantName: result.record.tenantName,
+      },
+    },
+  });
+
+  return c.json(responseBody);
 });
 
 app.post('/api/v1/admin/tenant-keys/:id/revoke', (c) => {
