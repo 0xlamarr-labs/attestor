@@ -76,6 +76,14 @@ export interface BillingEventListFilters {
   limit?: number | null;
 }
 
+export interface BillingEventLedgerSnapshot {
+  version: 1;
+  provider: 'stripe';
+  exportedAt: string;
+  recordCount: number;
+  records: BillingEventRecord[];
+}
+
 type PgPool = {
   query: (sql: string, params?: unknown[]) => Promise<{ rows: Record<string, unknown>[] }>;
   end: () => Promise<void>;
@@ -458,6 +466,130 @@ export async function listBillingEvents(filters: BillingEventListFilters = {}): 
   `;
   const result = await pool.query(sql, params);
   return result.rows.map(rowToRecord);
+}
+
+export async function exportBillingEventLedgerSnapshot(): Promise<BillingEventLedgerSnapshot> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(`
+    SELECT *
+      FROM attestor_control_plane.billing_event_ledger
+      ORDER BY received_at ASC, provider_event_id ASC
+  `);
+  const records = result.rows.map(rowToRecord);
+  return {
+    version: 1,
+    provider: 'stripe',
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreBillingEventLedgerSnapshot(
+  snapshot: BillingEventLedgerSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.billing_event_ledger');
+  }
+
+  for (const record of snapshot.records) {
+    await pool.query(
+      `INSERT INTO attestor_control_plane.billing_event_ledger (
+        id,
+        provider,
+        source,
+        provider_event_id,
+        event_type,
+        payload_hash,
+        outcome,
+        reason,
+        account_id,
+        tenant_id,
+        stripe_checkout_session_id,
+        stripe_customer_id,
+        stripe_subscription_id,
+        stripe_price_id,
+        stripe_invoice_id,
+        stripe_invoice_status,
+        stripe_invoice_currency,
+        stripe_invoice_amount_paid,
+        stripe_invoice_amount_due,
+        account_status_before,
+        account_status_after,
+        billing_status_before,
+        billing_status_after,
+        mapped_plan_id,
+        received_at,
+        processed_at,
+        metadata
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+        $21, $22, $23, $24, $25::timestamptz, $26::timestamptz, $27::jsonb
+      )
+      ON CONFLICT (provider, provider_event_id) DO UPDATE SET
+        id = EXCLUDED.id,
+        source = EXCLUDED.source,
+        event_type = EXCLUDED.event_type,
+        payload_hash = EXCLUDED.payload_hash,
+        outcome = EXCLUDED.outcome,
+        reason = EXCLUDED.reason,
+        account_id = EXCLUDED.account_id,
+        tenant_id = EXCLUDED.tenant_id,
+        stripe_checkout_session_id = EXCLUDED.stripe_checkout_session_id,
+        stripe_customer_id = EXCLUDED.stripe_customer_id,
+        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+        stripe_price_id = EXCLUDED.stripe_price_id,
+        stripe_invoice_id = EXCLUDED.stripe_invoice_id,
+        stripe_invoice_status = EXCLUDED.stripe_invoice_status,
+        stripe_invoice_currency = EXCLUDED.stripe_invoice_currency,
+        stripe_invoice_amount_paid = EXCLUDED.stripe_invoice_amount_paid,
+        stripe_invoice_amount_due = EXCLUDED.stripe_invoice_amount_due,
+        account_status_before = EXCLUDED.account_status_before,
+        account_status_after = EXCLUDED.account_status_after,
+        billing_status_before = EXCLUDED.billing_status_before,
+        billing_status_after = EXCLUDED.billing_status_after,
+        mapped_plan_id = EXCLUDED.mapped_plan_id,
+        received_at = EXCLUDED.received_at,
+        processed_at = EXCLUDED.processed_at,
+        metadata = EXCLUDED.metadata`,
+      [
+        record.id,
+        record.provider,
+        record.source,
+        record.providerEventId,
+        record.eventType,
+        record.payloadHash,
+        record.outcome,
+        record.reason,
+        record.accountId,
+        record.tenantId,
+        record.stripeCheckoutSessionId,
+        record.stripeCustomerId,
+        record.stripeSubscriptionId,
+        record.stripePriceId,
+        record.stripeInvoiceId,
+        record.stripeInvoiceStatus,
+        record.stripeInvoiceCurrency,
+        record.stripeInvoiceAmountPaid,
+        record.stripeInvoiceAmountDue,
+        record.accountStatusBefore,
+        record.accountStatusAfter,
+        record.billingStatusBefore,
+        record.billingStatusAfter,
+        record.mappedPlanId,
+        record.receivedAt,
+        record.processedAt,
+        JSON.stringify(record.metadata ?? {}),
+      ],
+    );
+  }
+
+  return { recordCount: snapshot.records.length };
 }
 
 export async function resetBillingEventLedgerForTests(): Promise<void> {

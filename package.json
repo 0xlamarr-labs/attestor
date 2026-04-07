@@ -17,6 +17,8 @@
     "test:live-pg": "tsx tests/live-postgres.test.ts",
     "test:live-snowflake": "tsx tests/live-snowflake.test.ts",
     "test:live-vsac": "tsx tests/live-vsac.test.ts",
+    "backup:control-plane": "tsx scripts/control-plane-backup.ts",
+    "restore:control-plane": "tsx scripts/control-plane-restore.ts",
     "tenant:keys": "tsx src/service/tenant-admin.ts",
     "start": "tsx src/financial/cli.ts",
     "list": "tsx src/financial/cli.ts list",

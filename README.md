@@ -183,6 +183,7 @@ npm run verify:full
 npx tsx tests/live-api.test.ts
 npx tsx tests/live-postgres.test.ts
 npx tsx tests/connectors-and-filing.test.ts
+npx tsx tests/control-plane-backup.test.ts
 npx tsx tests/live-snowflake.test.ts
 ```
 
@@ -329,6 +330,7 @@ What it does not prove yet:
 - Admin audit ledger: `GET /api/v1/admin/audit` exposes a local tamper-evident, hash-linked log of hosted operator mutations plus Stripe-applied billing reconciliations (`account.created`, `account.billing.attached`, `account.suspended`, `account.reactivated`, `account.archived`, `async_job.retried`, `billing.stripe.webhook_applied`, `tenant_key.*`).
 - Admin billing event API: `GET /api/v1/admin/billing/events` exposes the shared PostgreSQL-backed billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured, with account/tenant/event filters and deduplicated Stripe subscription, checkout-completion, and invoice lifecycle history.
 - Admin usage reporting API: `GET /api/v1/admin/usage` returns tenant-level monthly usage from the local ledger, with optional `tenantId` / `period` filtering and best-effort tenant metadata enrichment.
+- Control-plane backup / restore first slice: `npm run backup:control-plane` creates a logical snapshot of critical hosted control-plane files plus the shared PostgreSQL billing event ledger when configured, and `npm run restore:control-plane -- --input-dir <snapshot> --replace-existing` restores that snapshot. Ephemeral stores can be included explicitly for DR drills, but this is still a logical snapshot path, not PostgreSQL PITR or Redis queue recovery.
 - Stripe reconciliation first slice: `POST /api/v1/billing/stripe/webhook` verifies Stripe signatures, de-duplicates by `event.id`, reconciles hosted account billing state from `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed`, and suspends/reactivates account access based on subscription status. When `ATTESTOR_BILLING_LEDGER_PG_URL` is set, the webhook path also claims and finalizes events in a shared PostgreSQL-backed billing ledger instead of relying only on the local processed-event file. This now persists checkout-completion and last-invoice summary truth, and backs hosted billing export with shared event history, but it is still not a full internal invoice line-item or entitlement ledger.
 - Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices and a required `Idempotency-Key`, `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account, and `GET /api/v1/account/billing/export` returns customer-visible billing export in JSON or CSV. In runtime, `customer.subscription.*`, `checkout.session.completed`, and invoice webhooks sync Stripe billing truth back into Attestor hosted account and tenant state.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
@@ -372,6 +374,7 @@ What it does not prove yet:
 | [Signing and verification](docs/06-signing/signing-verification.md) | Certificates, kits, reviewer endorsements |
 | [PostgreSQL and connectors](docs/07-connectors/postgres-connectors.md) | PostgreSQL proof path and connector safety |
 | [Deployment](docs/08-deployment/deployment.md) | Service topology, container usage, health/readiness |
+| [Backup, restore, and DR](docs/08-deployment/backup-restore-dr.md) | Logical control-plane snapshot, restore flow, and DR drill |
 
 ## Environment Variables
 
@@ -435,6 +438,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1159 tests across 8 suites: 557 unit + 417 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1182 tests across 9 suites: 557 unit + 417 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 23 control-plane backup/restore + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

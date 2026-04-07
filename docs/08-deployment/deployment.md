@@ -154,6 +154,7 @@ What is deployed today:
 - Async queue hardening first slice: bounded BullMQ retry/backoff, exact paginated tenant-aware pending-job caps on async submit, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry
 - Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, and optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`
 - Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, webhook-driven plan/quota sync back into hosted tenant records, customer-visible checkout/invoice summary at `GET /api/v1/account`, and hosted billing export at `GET /api/v1/account/billing/export` (`format=json|csv`) with live Stripe or shared-ledger/mock-summary fallback
+- Control-plane backup/restore first slice: `npm run backup:control-plane` writes a logical snapshot of critical file-backed control-plane state plus the shared billing ledger export when configured, and `npm run restore:control-plane` restores that snapshot for DR drills. See [backup-restore-dr.md](backup-restore-dr.md)
 - Health + readiness probes
 
 What is not yet implemented:
