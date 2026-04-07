@@ -195,6 +195,35 @@ export interface AccountUsageResponse {
   rateLimit: RateLimitContext;
 }
 
+export interface AccountSummaryResponse {
+  account: AdminAccountRecord;
+  tenantContext: { tenantId: string; source: string; planId: string | null };
+  usage: UsageContext;
+  rateLimit: RateLimitContext;
+}
+
+export interface AccountBillingCheckoutRequest {
+  planId: 'starter' | 'pro' | 'enterprise';
+}
+
+export interface AccountBillingCheckoutResponse {
+  accountId: string;
+  tenantId: string;
+  planId: 'starter' | 'pro' | 'enterprise';
+  stripePriceId: string;
+  checkoutSessionId: string;
+  checkoutUrl: string;
+  mock: boolean;
+}
+
+export interface AccountBillingPortalResponse {
+  accountId: string;
+  tenantId: string;
+  portalSessionId: string;
+  portalUrl: string;
+  mock: boolean;
+}
+
 export interface AdminTenantKeyRecord {
   id: string;
   tenantId: string;
@@ -321,6 +350,7 @@ export interface HostedPlanSummary {
   description: string;
   defaultMonthlyRunQuota: number | null;
   defaultPipelineRequestsPerWindow: number | null;
+  stripePriceConfigured: boolean;
   intendedFor: 'self_host' | 'hosted' | 'enterprise';
   defaultForHostedProvisioning: boolean;
 }
@@ -447,6 +477,9 @@ export const API_ROUTES = {
   VERIFY: '/api/v1/verify',
   FILING_EXPORT: '/api/v1/filing/export',
   ACCOUNT_USAGE: '/api/v1/account/usage',
+  ACCOUNT_SUMMARY: '/api/v1/account',
+  ACCOUNT_BILLING_CHECKOUT: '/api/v1/account/billing/checkout',
+  ACCOUNT_BILLING_PORTAL: '/api/v1/account/billing/portal',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
   ADMIN_ACCOUNT_SUSPEND: '/api/v1/admin/accounts/:id/suspend',
   ADMIN_ACCOUNT_REACTIVATE: '/api/v1/admin/accounts/:id/reactivate',

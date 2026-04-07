@@ -10,6 +10,10 @@
  * - GET  /api/v1/health              — service health + PKI + registries
  * - GET  /api/v1/domains             — registered domain packs
  * - GET  /api/v1/connectors          — registered database connectors
+ * - GET  /api/v1/account             — current hosted account summary for tenant-authenticated callers
+ * - GET  /api/v1/account/usage       — current hosted usage/rate-limit summary
+ * - POST /api/v1/account/billing/checkout — create Stripe Checkout subscription session
+ * - POST /api/v1/account/billing/portal — create Stripe Billing Portal session
  * - GET/POST /api/v1/admin/accounts  — hosted operator account provisioning
  * - POST /api/v1/admin/accounts/:id/billing/stripe — attach Stripe billing ids/status
  * - POST /api/v1/admin/accounts/:id/suspend|reactivate|archive — hosted account lifecycle
@@ -60,6 +64,7 @@ import {
   revokeTenantApiKey,
   rotateTenantApiKey,
   setTenantApiKeyStatus,
+  syncTenantPlanByTenantId,
   tenantKeyStorePolicy,
   TenantKeyStoreError,
   type TenantKeyRecord,
@@ -75,11 +80,25 @@ import {
   type HostedAccountRecord,
   type StripeSubscriptionStatus,
 } from './account-store.js';
-import { DEFAULT_HOSTED_PLAN_ID, defaultRateLimitWindowSeconds, listHostedPlans, resolvePlanRateLimit, resolvePlanSpec } from './plan-catalog.js';
+import {
+  DEFAULT_HOSTED_PLAN_ID,
+  defaultRateLimitWindowSeconds,
+  findHostedPlanByStripePriceId,
+  getHostedPlan,
+  listHostedPlans,
+  resolvePlanRateLimit,
+  resolvePlanSpec,
+  resolvePlanStripePrice,
+} from './plan-catalog.js';
 import { appendAdminAuditRecord, listAdminAuditRecords, type AdminAuditAction } from './admin-audit-log.js';
 import { lookupAdminIdempotency, recordAdminIdempotency } from './admin-idempotency-store.js';
 import { hashJsonValue } from './json-stable.js';
 import { lookupProcessedStripeWebhook, recordProcessedStripeWebhook } from './stripe-webhook-store.js';
+import {
+  StripeBillingError,
+  createHostedBillingPortalSession,
+  createHostedCheckoutSession,
+} from './stripe-billing.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -196,6 +215,7 @@ function adminPlanView() {
     description: plan.description,
     defaultMonthlyRunQuota: plan.defaultMonthlyRunQuota,
     defaultPipelineRequestsPerWindow: resolvePlanRateLimit(plan.id).requestsPerWindow,
+    stripePriceConfigured: resolvePlanStripePrice(plan.id).configured,
     intendedFor: plan.intendedFor,
     defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
   }));
@@ -215,6 +235,39 @@ function accountStoreErrorResponse(c: Context, err: unknown): Response | null {
     return c.json({ error: err.message }, 404);
   }
   return c.json({ error: err.message }, 409);
+}
+
+function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
+  if (!(err instanceof StripeBillingError)) return null;
+  if (err.code === 'DISABLED') return c.json({ error: err.message }, 503);
+  if (err.code === 'NO_CUSTOMER') return c.json({ error: err.message }, 409);
+  return c.json({ error: err.message }, 400);
+}
+
+function currentHostedAccount(c: Context): {
+  tenant: TenantContext;
+  account: HostedAccountRecord;
+  usage: ReturnType<typeof getUsageContext>;
+  rateLimit: ReturnType<typeof getTenantPipelineRateLimit>;
+} | Response {
+  const tenant = currentTenant(c);
+  const account = findHostedAccountByTenantId(tenant.tenantId);
+  if (!account) {
+    return c.json({
+      error: `Hosted account not found for tenant '${tenant.tenantId}'.`,
+      tenantContext: {
+        tenantId: tenant.tenantId,
+        source: tenant.source,
+        planId: tenant.planId,
+      },
+    }, 404);
+  }
+  return {
+    tenant,
+    account,
+    usage: getUsageContext(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota),
+    rateLimit: getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
+  };
 }
 
 function applyRateLimitHeaders(
@@ -436,6 +489,86 @@ app.get('/api/v1/account/usage', (c) => {
   });
 });
 
+app.get('/api/v1/account', (c) => {
+  const current = currentHostedAccount(c);
+  if (current instanceof Response) return current;
+  return c.json({
+    account: adminAccountView(current.account),
+    tenantContext: {
+      tenantId: current.tenant.tenantId,
+      source: current.tenant.source,
+      planId: current.tenant.planId,
+    },
+    usage: current.usage,
+    rateLimit: current.rateLimit,
+  });
+});
+
+app.post('/api/v1/account/billing/checkout', async (c) => {
+  const current = currentHostedAccount(c);
+  if (current instanceof Response) return current;
+
+  const body = await c.req.json().catch(() => ({}));
+  const requestedPlanId = typeof body.planId === 'string' ? body.planId.trim() : '';
+  if (!requestedPlanId) {
+    return c.json({ error: 'planId is required.' }, 400);
+  }
+
+  const plan = getHostedPlan(requestedPlanId);
+  if (!plan || plan.intendedFor === 'self_host') {
+    return c.json({
+      error: `Hosted billing checkout only supports hosted/enterprise plans. Valid hosted plans: starter, pro, enterprise.`,
+    }, 400);
+  }
+
+  let checkout;
+  try {
+    checkout = await createHostedCheckoutSession({
+      account: current.account,
+      tenant: current.tenant,
+      plan,
+    });
+  } catch (err) {
+    const mapped = stripeBillingErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  return c.json({
+    accountId: current.account.id,
+    tenantId: current.tenant.tenantId,
+    planId: checkout.planId,
+    stripePriceId: checkout.stripePriceId,
+    checkoutSessionId: checkout.sessionId,
+    checkoutUrl: checkout.url,
+    mock: checkout.mock,
+  });
+});
+
+app.post('/api/v1/account/billing/portal', async (c) => {
+  const current = currentHostedAccount(c);
+  if (current instanceof Response) return current;
+
+  let portal;
+  try {
+    portal = await createHostedBillingPortalSession({
+      account: current.account,
+    });
+  } catch (err) {
+    const mapped = stripeBillingErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+
+  return c.json({
+    accountId: current.account.id,
+    tenantId: current.tenant.tenantId,
+    portalSessionId: portal.sessionId,
+    portalUrl: portal.url,
+    mock: portal.mock,
+  });
+});
+
 app.post('/api/v1/billing/stripe/webhook', async (c) => {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
   if (!webhookSecret) {
@@ -485,7 +618,9 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
   const supportedEvent =
     event.type === 'customer.subscription.created'
     || event.type === 'customer.subscription.updated'
-    || event.type === 'customer.subscription.deleted';
+    || event.type === 'customer.subscription.deleted'
+    || event.type === 'customer.subscription.paused'
+    || event.type === 'customer.subscription.resumed';
 
   if (!supportedEvent) {
     recordProcessedStripeWebhook({
@@ -568,6 +703,18 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     });
   }
 
+  const mappedPlan = findHostedPlanByStripePriceId(stripePriceId);
+  if (mappedPlan) {
+    const resolvedPlan = resolvePlanSpec({
+      planId: mappedPlan.id,
+      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+    });
+    syncTenantPlanByTenantId(applied.record.primaryTenantId, {
+      planId: resolvedPlan.planId,
+      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+    });
+  }
+
   recordProcessedStripeWebhook({
     eventId: event.id,
     eventType: event.type,
@@ -598,6 +745,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       stripeSubscriptionId,
       stripeSubscriptionStatus,
       stripePriceId,
+      mappedPlanId: mappedPlan?.id ?? null,
       previousAccountStatus: applied.previousStatus,
       nextAccountStatus: applied.nextStatus,
     },
@@ -610,6 +758,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     eventType: event.type,
     accountId: applied.record.id,
     accountStatus: applied.record.status,
+    mappedPlanId: mappedPlan?.id ?? null,
     billing: applied.record.billing,
   });
 });

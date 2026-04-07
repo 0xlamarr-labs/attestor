@@ -174,7 +174,12 @@ export function tenantMiddleware() {
     }
 
     const account = findHostedAccountByTenantId(resolved.tenantId);
+    const isBillingSelfService = c.req.path.startsWith('/api/v1/account/billing/');
     if (account?.status === 'suspended') {
+      if (isBillingSelfService) {
+        await next();
+        return;
+      }
       return c.json({
         error: 'Hosted account is suspended. Restore billing or reactivate the account before using tenant APIs.',
         accountId: account.id,

@@ -36,6 +36,14 @@ export interface PlanRateLimitSpec {
   source: 'plan_default' | 'env_override' | 'custom_unlimited';
 }
 
+export interface PlanStripePriceSpec {
+  planId: string;
+  priceId: string | null;
+  configured: boolean;
+  knownPlan: boolean;
+  source: 'env' | 'unconfigured' | 'custom_unconfigured';
+}
+
 export const SELF_HOST_PLAN_ID: HostedPlanId = 'community';
 export const DEFAULT_HOSTED_PLAN_ID: HostedPlanId = 'starter';
 
@@ -92,6 +100,10 @@ function envOverrideNameForPlan(planId: HostedPlanId): string {
   return `ATTESTOR_RATE_LIMIT_${planId.toUpperCase()}_REQUESTS`;
 }
 
+function stripePriceEnvNameForPlan(planId: HostedPlanId): string {
+  return `ATTESTOR_STRIPE_PRICE_${planId.toUpperCase()}`;
+}
+
 export function defaultRateLimitWindowSeconds(): number {
   const raw = Number.parseInt(process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS ?? '60', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : 60;
@@ -139,6 +151,41 @@ export function resolvePlanRateLimit(planId: string | null | undefined): PlanRat
     knownPlan: true,
     source: envOverride !== null ? 'env_override' : 'plan_default',
   };
+}
+
+export function resolvePlanStripePrice(planId: string | null | undefined): PlanStripePriceSpec {
+  const resolvedPlanId = planId?.trim() || SELF_HOST_PLAN_ID;
+  const plan = getHostedPlan(resolvedPlanId);
+
+  if (!plan) {
+    return {
+      planId: resolvedPlanId,
+      priceId: null,
+      configured: false,
+      knownPlan: false,
+      source: 'custom_unconfigured',
+    };
+  }
+
+  const priceId = process.env[stripePriceEnvNameForPlan(plan.id)]?.trim() || null;
+  return {
+    planId: plan.id,
+    priceId,
+    configured: Boolean(priceId),
+    knownPlan: true,
+    source: priceId ? 'env' : 'unconfigured',
+  };
+}
+
+export function findHostedPlanByStripePriceId(priceId: string | null | undefined): HostedPlanDefinition | null {
+  const resolvedPriceId = priceId?.trim();
+  if (!resolvedPriceId) return null;
+  for (const plan of PLAN_CATALOG) {
+    if (resolvePlanStripePrice(plan.id).priceId === resolvedPriceId) {
+      return { ...plan };
+    }
+  }
+  return null;
 }
 
 export function resolvePlanSpec(options?: {

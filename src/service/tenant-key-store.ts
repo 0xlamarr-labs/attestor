@@ -384,6 +384,33 @@ export function findTenantRecordByTenantId(tenantId: string): TenantKeyRecord | 
   return candidates[0] ?? null;
 }
 
+export function syncTenantPlanByTenantId(tenantId: string, options: {
+  planId: string;
+  monthlyRunQuota: number | null;
+}): {
+  records: TenantKeyRecord[];
+  path: string;
+} {
+  const store = loadStore();
+  const records = store.records.filter((entry) => entry.tenantId === tenantId && entry.status !== 'revoked');
+  if (records.length === 0) {
+    return { records: [], path: storePath() };
+  }
+
+  const resolvedPlan = resolvePlanSpec({
+    planId: options.planId,
+    monthlyRunQuota: options.monthlyRunQuota,
+    defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+  });
+
+  for (const record of records) {
+    record.planId = resolvedPlan.planId;
+    record.monthlyRunQuota = resolvedPlan.monthlyRunQuota;
+  }
+  saveStore(store);
+  return { records, path: storePath() };
+}
+
 export function resetTenantKeyStoreForTests(): void {
   const path = storePath();
   if (existsSync(path)) rmSync(path, { force: true });

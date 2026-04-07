@@ -47,7 +47,15 @@ async function run() {
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
   process.env.ATTESTOR_RATE_LIMIT_PRO_REQUESTS = '20';
+  process.env.ATTESTOR_STRIPE_USE_MOCK = 'true';
+  process.env.STRIPE_API_KEY = 'sk_test_live_api_mock';
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_api_test';
+  process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://attestor.dev/billing/success';
+  process.env.ATTESTOR_BILLING_CANCEL_URL = 'https://attestor.dev/billing/cancel';
+  process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://attestor.dev/app';
+  process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_monthly';
+  process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_monthly';
+  process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_monthly';
   resetTenantKeyStoreForTests();
   resetUsageMeter();
   resetTenantRateLimiterForTests();
@@ -544,6 +552,7 @@ async function run() {
       ok(Boolean(starterPlan), 'Admin Plans: starter plan present');
       ok(starterPlan.defaultMonthlyRunQuota === 100, 'Admin Plans: starter quota = 100');
       ok(starterPlan.defaultPipelineRequestsPerWindow === 3, 'Admin Plans: starter rate limit = 3');
+      ok(starterPlan.stripePriceConfigured === true, 'Admin Plans: starter Stripe price configured');
       ok(starterPlan.defaultForHostedProvisioning === true, 'Admin Plans: starter is hosted default');
 
       const accountsNoAuth = await fetch(`${BASE}/api/v1/admin/accounts`);
@@ -622,6 +631,45 @@ async function run() {
       ok(accountUsageRes.status === 200, 'Admin Accounts: initial key works on tenant route');
       const accountUsageBody = await accountUsageRes.json() as any;
       ok(accountUsageBody.rateLimit.requestsPerWindow === 3, 'Admin Accounts: starter rate limit visible on account usage');
+
+      const accountSummaryRes = await fetch(`${BASE}/api/v1/account`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(accountSummaryRes.status === 200, 'Account API: summary status 200');
+      const accountSummaryBody = await accountSummaryRes.json() as any;
+      ok(accountSummaryBody.account.id === createAccountBody.account.id, 'Account API: summary returns hosted account');
+      ok(accountSummaryBody.account.billing.provider === null, 'Account API: billing starts empty');
+
+      const checkoutNoPlanRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({}),
+      });
+      ok(checkoutNoPlanRes.status === 400, 'Account Billing: checkout requires planId');
+
+      const checkoutRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({ planId: 'pro' }),
+      });
+      ok(checkoutRes.status === 200, 'Account Billing: checkout status 200');
+      const checkoutBody = await checkoutRes.json() as any;
+      ok(checkoutBody.planId === 'pro', 'Account Billing: checkout plan echoed');
+      ok(checkoutBody.stripePriceId === 'price_pro_monthly', 'Account Billing: checkout uses mapped Stripe price');
+      ok(String(checkoutBody.checkoutUrl).includes('/checkout/'), 'Account Billing: checkout URL returned');
+      ok(checkoutBody.mock === true, 'Account Billing: checkout mock mode surfaced');
+
+      const portalMissingCustomerRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(portalMissingCustomerRes.status === 409, 'Account Billing: portal requires Stripe customer');
 
       ok(listedAccount.status === 'active', 'Admin Accounts: new account starts active');
       ok(listedAccount.billing.provider === null, 'Admin Accounts: billing starts empty');
@@ -745,6 +793,12 @@ async function run() {
       });
       ok(blockedAfterWebhookRes.status === 403, 'Stripe Webhook: suspended account blocked after webhook');
 
+      const suspendedPortalRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(suspendedPortalRes.status === 200, 'Stripe Webhook: suspended account may still open billing portal');
+
       const pastDueWebhookReplayRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
         method: 'POST',
         headers: {
@@ -793,11 +847,34 @@ async function run() {
       const activeWebhookBody = await activeWebhookRes.json() as any;
       ok(activeWebhookBody.accountStatus === 'active', 'Stripe Webhook: active event restores account');
       ok(activeWebhookBody.billing.stripeSubscriptionStatus === 'active', 'Stripe Webhook: billing status restored to active');
+      ok(activeWebhookBody.mappedPlanId === 'pro', 'Stripe Webhook: Stripe price maps back to hosted plan');
 
       const allowedAfterActiveWebhookRes = await fetch(`${BASE}/api/v1/account/usage`, {
         headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
       });
       ok(allowedAfterActiveWebhookRes.status === 200, 'Stripe Webhook: active account key works again');
+      const allowedAfterActiveWebhookBody = await allowedAfterActiveWebhookRes.json() as any;
+      ok(allowedAfterActiveWebhookBody.tenantContext.planId === 'pro', 'Stripe Webhook: tenant plan updated from Stripe price');
+      ok(allowedAfterActiveWebhookBody.usage.quota === 1000, 'Stripe Webhook: tenant quota updated from Stripe price');
+
+      const portalReadyRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(portalReadyRes.status === 200, 'Account Billing: portal status 200 once customer exists');
+      const portalReadyBody = await portalReadyRes.json() as any;
+      ok(String(portalReadyBody.portalUrl).includes('/portal/'), 'Account Billing: portal URL returned');
+      ok(portalReadyBody.mock === true, 'Account Billing: portal mock mode surfaced');
+
+      const accountSummaryAfterWebhookRes = await fetch(`${BASE}/api/v1/account`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(accountSummaryAfterWebhookRes.status === 200, 'Account API: summary still available after webhook');
+      const accountSummaryAfterWebhookBody = await accountSummaryAfterWebhookRes.json() as any;
+      ok(accountSummaryAfterWebhookBody.account.billing.stripeCustomerId === 'cus_account_001', 'Account API: summary shows Stripe customer');
+      ok(accountSummaryAfterWebhookBody.account.billing.stripeSubscriptionId === 'sub_account_001', 'Account API: summary shows Stripe subscription');
+      ok(accountSummaryAfterWebhookBody.account.billing.stripeSubscriptionStatus === 'active', 'Account API: summary shows restored Stripe status');
+      ok(accountSummaryAfterWebhookBody.tenantContext.planId === 'pro', 'Account API: summary shows synced plan');
 
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
@@ -1015,7 +1092,7 @@ async function run() {
       });
       ok(accountRun.status === 200, 'Admin Accounts: created account key can consume pipeline run');
       const accountRunBody = await accountRun.json() as any;
-      ok(accountRunBody.rateLimit.requestsPerWindow === 3, 'Admin Accounts: run response includes rate limit');
+      ok(accountRunBody.rateLimit.requestsPerWindow === 20, 'Admin Accounts: run response reflects synced pro rate limit');
       ok(accountRunBody.rateLimit.used >= 1, 'Admin Accounts: run rate limit usage increments');
 
       const archiveAccountRes = await fetch(`${BASE}/api/v1/admin/accounts`, {

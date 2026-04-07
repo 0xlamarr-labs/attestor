@@ -205,7 +205,10 @@ API endpoints:
 - `GET /api/v1/ready` — orchestrator readiness probe (200 when ready, 503 when not)
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
+- `GET /api/v1/account`
 - `GET /api/v1/account/usage`
+- `POST /api/v1/account/billing/checkout`
+- `POST /api/v1/account/billing/portal`
 - `GET /api/v1/admin/accounts`
 - `POST /api/v1/admin/accounts`
 - `POST /api/v1/admin/accounts/:id/billing/stripe`
@@ -307,16 +310,17 @@ What it does not prove yet:
 
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
-- Hosted API shell: built-in hosted plan catalog (`community`, `starter`, `pro`, `enterprise`) + API-key tenant plans + monthly pipeline-run quota enforcement + plan-aware tenant rate limiting on expensive pipeline routes + `/api/v1/account/usage` meter endpoint. Usage is now persisted in a local single-node file-backed ledger, tenant keys record `lastUsedAt`, and suspended/archived hosted accounts are blocked at tenant-auth time. This is still not a shared billing datastore or customer self-serve billing system.
+- Hosted API shell: built-in hosted plan catalog (`community`, `starter`, `pro`, `enterprise`) + API-key tenant plans + monthly pipeline-run quota enforcement + plan-aware tenant rate limiting on expensive pipeline routes + `/api/v1/account` and `/api/v1/account/usage` hosted-customer endpoints. Usage is persisted in a local single-node file-backed ledger, tenant keys record `lastUsedAt`, suspended/archived hosted accounts are blocked at tenant-auth time, and suspended accounts can still reach billing self-service entrypoints. This is still not a shared billing datastore.
 - Tenant onboarding CLI: `npm run tenant:keys -- plans|issue|list|rotate|deactivate|reactivate|revoke` manages a local file-backed tenant key store for hosted operator workflows. Built-in plans resolve default quotas centrally; keys are hashed at rest and plaintext is only shown once on issuance.
 - Account provisioning store: local file-backed hosted account registry with one primary tenant per account, explicit `active/suspended/archived` lifecycle, and Stripe billing metadata in this first slice.
 - Admin account API: `GET/POST /api/v1/admin/accounts` creates a hosted customer record and issues the first tenant API key in one operator call. `POST /api/v1/admin/accounts/:id/billing/stripe|suspend|reactivate|archive` adds operator billing attachment and account lifecycle controls. Hosted operator provisioning defaults to the `starter` plan unless overridden.
-- Admin plan catalog API: `GET /api/v1/admin/plans` returns the built-in hosted plan catalog, the current default provisioning plan, and the active pipeline rate-limit window/defaults for operator/backoffice automation.
+- Admin plan catalog API: `GET /api/v1/admin/plans` returns the built-in hosted plan catalog, the current default provisioning plan, the active pipeline rate-limit window/defaults, and whether each plan has a Stripe price configured.
 - Admin tenant management API: `GET/POST /api/v1/admin/tenant-keys` plus `POST /api/v1/admin/tenant-keys/:id/rotate|deactivate|reactivate|revoke` behind `ATTESTOR_ADMIN_API_KEY`. Built-in plan ids are validated server-side so operator typos cannot silently create the wrong quota boundary, and active overlap is capped to two keys per tenant by default.
 - Admin mutation idempotency: account create, Stripe billing attach, account suspend/reactivate/archive, tenant key issue, rotate, deactivate, reactivate, and revoke accept `Idempotency-Key` for safe operator retries. Replay payloads are encrypted at rest in a short-lived local store derived from `ATTESTOR_ADMIN_API_KEY`.
 - Admin audit ledger: `GET /api/v1/admin/audit` exposes a local tamper-evident, hash-linked log of hosted operator mutations plus Stripe-applied billing reconciliations (`account.created`, `account.billing.attached`, `account.suspended`, `account.reactivated`, `account.archived`, `billing.stripe.webhook_applied`, `tenant_key.*`).
 - Admin usage reporting API: `GET /api/v1/admin/usage` returns tenant-level monthly usage from the local ledger, with optional `tenantId` / `period` filtering and best-effort tenant metadata enrichment.
-- Stripe reconciliation first slice: `POST /api/v1/billing/stripe/webhook` verifies Stripe signatures, de-duplicates by `event.id`, reconciles hosted account billing state from `customer.subscription.*`, and suspends/reactivates account access based on subscription status. This is webhook/state sync only — no checkout, invoice ledger, or customer portal yet.
+- Stripe reconciliation first slice: `POST /api/v1/billing/stripe/webhook` verifies Stripe signatures, de-duplicates by `event.id`, reconciles hosted account billing state from `customer.subscription.*`, and suspends/reactivates account access based on subscription status. Checkout and Billing Portal entrypoints now exist, but this is still not an internal invoice ledger or shared multi-node billing datastore.
+- Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices, and `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account. In runtime, `customer.subscription.*` webhooks can also sync Stripe price ids back into Attestor hosted plan/quota state for the tenant key store.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
 - Async: BullMQ with split worker process, in-process fallback when Redis unavailable. No job priority, distributed/shared rate limiting, or dead-letter queue.
 - Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the local file-backed tenant key store is configured; optional plan/quota metadata and rate-limit context now propagate into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
@@ -385,8 +389,16 @@ What it does not prove yet:
 | `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | Optional path for the local tamper-evident admin mutation ledger used by `/api/v1/admin/audit` |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | Optional path for the short-lived encrypted admin idempotency replay store |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | Optional retention window for encrypted admin replay payloads (default `24`) |
+| `STRIPE_API_KEY` | Stripe secret API key for hosted Checkout and Billing Portal session creation |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret for `POST /api/v1/billing/stripe/webhook` |
+| `ATTESTOR_STRIPE_PRICE_STARTER` | Stripe recurring price id for the hosted `starter` plan |
+| `ATTESTOR_STRIPE_PRICE_PRO` | Stripe recurring price id for the hosted `pro` plan |
+| `ATTESTOR_STRIPE_PRICE_ENTERPRISE` | Stripe recurring price id for the hosted `enterprise` plan |
+| `ATTESTOR_BILLING_SUCCESS_URL` | Hosted return URL for successful Stripe Checkout sessions |
+| `ATTESTOR_BILLING_CANCEL_URL` | Hosted return URL for canceled Stripe Checkout sessions |
+| `ATTESTOR_BILLING_PORTAL_RETURN_URL` | Hosted return URL for Stripe Billing Portal sessions |
 | `ATTESTOR_STRIPE_WEBHOOK_STORE_PATH` | Optional path for the local processed-event ledger used to de-duplicate Stripe webhook deliveries |
+| `ATTESTOR_STRIPE_USE_MOCK` | Set `true` only in local/test environments to return deterministic mock Checkout/Portal sessions without hitting Stripe |
 | `REDIS_URL` | Redis URL for BullMQ async backend |
 | `ATTESTOR_ALLOW_LEGACY_API` | Set `true` to allow flat Ed25519 at `/api/v1/verify` (deprecated) |
 | `CYPRESS_UMLS_USER` | UMLS username for ONC Cypress API validation (free from uts.nlm.nih.gov) |
@@ -399,6 +411,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1016 tests across 7 suites: 557 unit + 284 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
+| Expanded verification surface | 1039 tests across 7 suites: 557 unit + 307 live API + 43 live PostgreSQL + 38 connector/filing + 91 healthcare E2E + 3 live Cypress connectivity, plus env-gated live Snowflake and Cypress full validation |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

@@ -82,8 +82,16 @@ docker run \
 | `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | No | `.attestor/admin-audit-log.json` | Local hash-linked admin mutation ledger |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | No | `.attestor/admin-idempotency.json` | Local encrypted idempotency replay store for admin `POST` routes |
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | No | `24` | Replay retention window for admin idempotency records |
+| `STRIPE_API_KEY` | No | None | Stripe secret API key for hosted Checkout and Billing Portal session creation |
 | `STRIPE_WEBHOOK_SECRET` | No | None | Stripe signing secret for `POST /api/v1/billing/stripe/webhook` |
+| `ATTESTOR_STRIPE_PRICE_STARTER` | No | None | Stripe recurring price id for the hosted `starter` plan |
+| `ATTESTOR_STRIPE_PRICE_PRO` | No | None | Stripe recurring price id for the hosted `pro` plan |
+| `ATTESTOR_STRIPE_PRICE_ENTERPRISE` | No | None | Stripe recurring price id for the hosted `enterprise` plan |
+| `ATTESTOR_BILLING_SUCCESS_URL` | No | None | Return URL for successful Stripe Checkout sessions |
+| `ATTESTOR_BILLING_CANCEL_URL` | No | None | Return URL for canceled Stripe Checkout sessions |
+| `ATTESTOR_BILLING_PORTAL_RETURN_URL` | No | None | Return URL for Stripe Billing Portal sessions |
 | `ATTESTOR_STRIPE_WEBHOOK_STORE_PATH` | No | `.attestor/stripe-webhooks.json` | Local processed-event ledger for Stripe webhook duplicate suppression |
+| `ATTESTOR_STRIPE_USE_MOCK` | No | `false` | Local/test-only deterministic mock mode for Checkout and Billing Portal sessions |
 | `NODE_ENV` | No | `production` | Environment mode |
 
 ## Health and Readiness
@@ -133,6 +141,7 @@ What is deployed today:
 - Tenant-aware in-memory pipeline throttling with plan defaults, `Retry-After`, and `429` responses
 - Local file-backed hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*` processing with duplicate-event suppression and account suspend/reactivate sync
+- Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids and webhook-driven plan/quota sync back into hosted tenant records
 - Health + readiness probes
 
 What is not yet implemented:
@@ -142,4 +151,4 @@ What is not yet implemented:
 - Multi-tenant job isolation in the queue
 - Centralized logging / metrics / tracing
 - External KMS-backed tenant key storage or shared multi-node key ledger
-- Stripe checkout/customer portal, invoice ledger, or shared multi-node billing datastore
+- Internal invoice ledger, Stripe checkout completion persistence outside webhooks, or shared multi-node billing datastore
