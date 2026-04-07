@@ -20,8 +20,11 @@
  */
 
 import type { Context, Next } from 'hono';
-import { findActiveTenantKey, hasTenantKeyRecords } from './tenant-key-store.js';
-import { findHostedAccountByTenantId } from './account-store.js';
+import {
+  findActiveTenantKeyState,
+  findHostedAccountByTenantIdState,
+  hasTenantKeyRecordsState,
+} from './control-plane-store.js';
 import { SELF_HOST_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
 
 export interface TenantContext {
@@ -87,7 +90,7 @@ export function loadTenantKeysFromEnv(): void {
 /**
  * Extract tenant context from a request.
  */
-export function extractTenantContext(authHeader: string | undefined): TenantContext | null {
+export async function extractTenantContext(authHeader: string | undefined): Promise<TenantContext | null> {
   if (!authHeader) return null;
 
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
@@ -105,7 +108,7 @@ export function extractTenantContext(authHeader: string | undefined): TenantCont
       };
     }
 
-  const fileBackedTenant = findActiveTenantKey(token, { markUsed: true });
+  const fileBackedTenant = await findActiveTenantKeyState(token, { markUsed: true });
   if (fileBackedTenant) {
     return {
       tenantId: fileBackedTenant.tenantId,
@@ -157,8 +160,8 @@ export function tenantMiddleware() {
     }
 
     loadTenantKeysFromEnv();
-    const enforced = tenantKeys.size > 0 || hasTenantKeyRecords();
-    const tenant = extractTenantContext(c.req.header('authorization'));
+    const enforced = tenantKeys.size > 0 || await hasTenantKeyRecordsState();
+    const tenant = await extractTenantContext(c.req.header('authorization'));
 
     if (enforced && !tenant) {
       return c.json({ error: 'Valid tenant API key required in Authorization header' }, 401);
@@ -180,7 +183,7 @@ export function tenantMiddleware() {
       c.req.raw.headers.set('x-attestor-monthly-run-quota', String(resolved.monthlyRunQuota));
     }
 
-    const account = findHostedAccountByTenantId(resolved.tenantId);
+    const account = await findHostedAccountByTenantIdState(resolved.tenantId);
     const isBillingSelfService = c.req.path.startsWith('/api/v1/account/billing/');
     if (account?.status === 'suspended') {
       if (isBillingSelfService) {

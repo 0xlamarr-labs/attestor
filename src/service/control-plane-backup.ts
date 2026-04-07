@@ -24,6 +24,19 @@ import {
   restoreBillingEventLedgerSnapshot,
   type BillingEventLedgerSnapshot,
 } from './billing-event-ledger.js';
+import {
+  controlPlaneStoreMode,
+  controlPlaneStoreSource,
+  exportHostedAccountStoreSnapshot,
+  exportTenantKeyStoreSnapshot,
+  exportUsageLedgerStoreSnapshot,
+  restoreHostedAccountStoreSnapshot,
+  restoreTenantKeyStoreSnapshot,
+  restoreUsageLedgerStoreSnapshot,
+  type HostedAccountStoreSnapshot,
+  type TenantKeyStoreSnapshot,
+  type UsageLedgerStoreSnapshot,
+} from './control-plane-store.js';
 
 type ControlPlaneComponentTier = 'critical' | 'ephemeral' | 'shared_postgres';
 
@@ -53,10 +66,11 @@ export interface ControlPlaneBackupManifestComponent {
 }
 
 export interface ControlPlaneBackupManifest {
-  version: 1;
+  version: 2;
   snapshotId: string;
   generatedAt: string;
   includeEphemeral: boolean;
+  sharedControlPlaneMode: 'postgres' | 'file';
   sharedBillingLedgerConfigured: boolean;
   components: ControlPlaneBackupManifestComponent[];
 }
@@ -71,24 +85,35 @@ function defaultPath(envName: string, fallback: string): string {
   return resolve(process.env[envName]?.trim() || fallback);
 }
 
+function redactedConnectionSource(value: string | null): string | null {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return 'postgres://configured';
+  }
+}
+
 function componentSpecs(includeEphemeral: boolean): ControlPlaneComponentSpec[] {
+  const sharedControlPlane = controlPlaneStoreMode() === 'postgres';
   const base: ControlPlaneComponentSpec[] = [
     {
       id: 'account_store',
-      tier: 'critical',
-      sourcePath: defaultPath('ATTESTOR_ACCOUNT_STORE_PATH', '.attestor/accounts.json'),
+      tier: sharedControlPlane ? 'shared_postgres' : 'critical',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ACCOUNT_STORE_PATH', '.attestor/accounts.json'),
       snapshotFilename: 'account-store.json',
     },
     {
       id: 'tenant_key_store',
-      tier: 'critical',
-      sourcePath: defaultPath('ATTESTOR_TENANT_KEY_STORE_PATH', '.attestor/tenant-keys.json'),
+      tier: sharedControlPlane ? 'shared_postgres' : 'critical',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_TENANT_KEY_STORE_PATH', '.attestor/tenant-keys.json'),
       snapshotFilename: 'tenant-key-store.json',
     },
     {
       id: 'usage_ledger',
-      tier: 'critical',
-      sourcePath: defaultPath('ATTESTOR_USAGE_LEDGER_PATH', '.attestor/usage-ledger.json'),
+      tier: sharedControlPlane ? 'shared_postgres' : 'critical',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_USAGE_LEDGER_PATH', '.attestor/usage-ledger.json'),
       snapshotFilename: 'usage-ledger.json',
     },
     {
@@ -182,16 +207,46 @@ export async function createControlPlaneBackupSnapshot(options?: {
   const sharedBillingLedgerConfigured = isBillingEventLedgerConfigured();
   const components: ControlPlaneBackupManifestComponent[] = [];
   const manifest: ControlPlaneBackupManifest = {
-    version: 1,
+    version: 2,
     snapshotId: `cpbak_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
     generatedAt: new Date().toISOString(),
     includeEphemeral,
+    sharedControlPlaneMode: controlPlaneStoreMode(),
     sharedBillingLedgerConfigured,
     components,
   };
 
   for (const component of componentSpecs(includeEphemeral)) {
     const snapshotPath = join(snapshotDir, snapshotSubdirForTier(component.tier), component.snapshotFilename);
+    if (
+      component.tier === 'shared_postgres' &&
+      (component.id === 'account_store' || component.id === 'tenant_key_store' || component.id === 'usage_ledger')
+    ) {
+      let snapshot:
+        | HostedAccountStoreSnapshot
+        | TenantKeyStoreSnapshot
+        | UsageLedgerStoreSnapshot;
+      if (component.id === 'account_store') {
+        snapshot = await exportHostedAccountStoreSnapshot();
+      } else if (component.id === 'tenant_key_store') {
+        snapshot = await exportTenantKeyStoreSnapshot();
+      } else {
+        snapshot = await exportUsageLedgerStoreSnapshot();
+      }
+      writeJsonFile(snapshotPath, snapshot);
+      components.push({
+        id: component.id,
+        tier: component.tier,
+        sourcePath: redactedConnectionSource(controlPlaneStoreSource()),
+        snapshotPath: relative(snapshotDir, snapshotPath),
+        present: true,
+        sha256: sha256File(snapshotPath),
+        bytes: statSync(snapshotPath).size,
+        recordCount: snapshot.recordCount,
+      });
+      continue;
+    }
+
     if (component.id === 'billing_event_ledger') {
       if (!sharedBillingLedgerConfigured) {
         components.push({
@@ -212,7 +267,7 @@ export async function createControlPlaneBackupSnapshot(options?: {
       components.push({
         id: component.id,
         tier: component.tier,
-        sourcePath: process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim() ?? null,
+        sourcePath: redactedConnectionSource(process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim() ?? null),
         snapshotPath: relative(snapshotDir, snapshotPath),
         present: true,
         sha256: sha256File(snapshotPath),
@@ -261,9 +316,18 @@ export async function createControlPlaneBackupSnapshot(options?: {
 
 function loadManifest(snapshotDir: string): ControlPlaneBackupManifest {
   const manifestPath = join(snapshotDir, 'manifest.json');
-  const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as ControlPlaneBackupManifest;
-  if (parsed.version !== 1 || !Array.isArray(parsed.components)) {
+  const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as
+    | ControlPlaneBackupManifest
+    | (Omit<ControlPlaneBackupManifest, 'version' | 'sharedControlPlaneMode'> & { version: 1 });
+  if ((parsed.version !== 1 && parsed.version !== 2) || !Array.isArray(parsed.components)) {
     throw new Error(`Unsupported control-plane backup manifest at '${manifestPath}'.`);
+  }
+  if (parsed.version === 1) {
+    return {
+      ...parsed,
+      version: 2,
+      sharedControlPlaneMode: 'file',
+    };
   }
   return parsed;
 }
@@ -310,6 +374,29 @@ export async function restoreControlPlaneBackupSnapshot(options: {
     }
 
     const absoluteSnapshotPath = verifySnapshotFile(snapshotDir, component);
+    if (
+      component.tier === 'shared_postgres' &&
+      (component.id === 'account_store' || component.id === 'tenant_key_store' || component.id === 'usage_ledger')
+    ) {
+      if (controlPlaneStoreMode() !== 'postgres') {
+        throw new Error(
+          'Shared control-plane snapshot present, but ATTESTOR_CONTROL_PLANE_PG_URL (or shared fallback) is not configured for restore.',
+        );
+      }
+      if (component.id === 'account_store') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as HostedAccountStoreSnapshot;
+        await restoreHostedAccountStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else if (component.id === 'tenant_key_store') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as TenantKeyStoreSnapshot;
+        await restoreTenantKeyStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as UsageLedgerStoreSnapshot;
+        await restoreUsageLedgerStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      }
+      restoredComponents.push(component.id);
+      continue;
+    }
+
     if (component.id === 'billing_event_ledger') {
       if (!isBillingEventLedgerConfigured()) {
         throw new Error(

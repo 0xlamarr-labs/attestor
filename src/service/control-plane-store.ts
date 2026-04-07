@@ -1,0 +1,1422 @@
+/**
+ * Shared Control Plane Store — optional PostgreSQL-backed hosted state.
+ *
+ * BOUNDARY:
+ * - Optional shared PostgreSQL first slice for hosted accounts, tenant keys, and usage
+ * - File-backed stores remain the fallback for self-host/dev and existing operator flows
+ * - Record JSON is preserved so hosted runtime behavior stays aligned with the local stores
+ * - This is a control-plane state slice, not full multi-region HA or entitlement service
+ */
+
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import {
+  AccountStoreError,
+  applyStripeCheckoutCompletion as applyStripeCheckoutCompletionFile,
+  applyStripeInvoiceState as applyStripeInvoiceStateFile,
+  applyStripeSubscriptionState as applyStripeSubscriptionStateFile,
+  attachStripeBillingToAccount as attachStripeBillingToAccountFile,
+  createHostedAccount as createHostedAccountFile,
+  deriveHostedAccountStatusFromStripeSubscriptionStatus,
+  findHostedAccountById as findHostedAccountByIdFile,
+  findHostedAccountByTenantId as findHostedAccountByTenantIdFile,
+  listHostedAccounts as listHostedAccountsFile,
+  setHostedAccountStatus as setHostedAccountStatusFile,
+  type AttachStripeBillingInput,
+  type CreateHostedAccountInput,
+  type HostedAccountBillingState,
+  type HostedAccountRecord,
+  type HostedAccountStatus,
+  type StripeInvoiceStatus,
+  type StripeSubscriptionStatus,
+} from './account-store.js';
+import {
+  findActiveTenantKey as findActiveTenantKeyFile,
+  findTenantRecordByTenantId as findTenantRecordByTenantIdFile,
+  hasTenantKeyRecords as hasTenantKeyRecordsFile,
+  issueTenantApiKey as issueTenantApiKeyFile,
+  listTenantKeyRecords as listTenantKeyRecordsFile,
+  revokeTenantApiKey as revokeTenantApiKeyFile,
+  rotateTenantApiKey as rotateTenantApiKeyFile,
+  setTenantApiKeyStatus as setTenantApiKeyStatusFile,
+  syncTenantPlanByTenantId as syncTenantPlanByTenantIdFile,
+  tenantKeyStorePolicy,
+  TenantKeyStoreError,
+  type IssueTenantKeyInput,
+  type RotateTenantKeyInput,
+  type TenantKeyRecord,
+  type TenantKeyStatus,
+} from './tenant-key-store.js';
+import {
+  canConsumePipelineRun as canConsumePipelineRunFile,
+  consumePipelineRun as consumePipelineRunFile,
+  getUsageContext as getUsageContextFile,
+  queryUsageLedger as queryUsageLedgerFile,
+  readUsageLedgerSnapshot,
+  type UsageContext,
+  type UsageLedgerRecord,
+} from './usage-meter.js';
+import { DEFAULT_HOSTED_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
+
+type PgQueryResultRow = Record<string, unknown>;
+type PgClient = {
+  query: (sql: string, params?: unknown[]) => Promise<{ rows: PgQueryResultRow[] }>;
+  release: () => void;
+};
+type PgPool = {
+  query: (sql: string, params?: unknown[]) => Promise<{ rows: PgQueryResultRow[] }>;
+  connect: () => Promise<PgClient>;
+  end: () => Promise<void>;
+};
+
+export interface HostedAccountStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  records: HostedAccountRecord[];
+}
+
+export interface TenantKeyStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  records: TenantKeyRecord[];
+}
+
+export interface UsageLedgerStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  monthlyPipelineRuns: UsageLedgerRecord[];
+}
+
+let poolPromise: Promise<PgPool> | null = null;
+let initPromise: Promise<void> | null = null;
+
+function connectionString(): string | null {
+  const dedicated = process.env.ATTESTOR_CONTROL_PLANE_PG_URL?.trim();
+  if (dedicated) return dedicated;
+  const fallback = process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim();
+  return fallback || null;
+}
+
+export function controlPlaneStoreMode(): 'postgres' | 'file' {
+  return connectionString() ? 'postgres' : 'file';
+}
+
+export function isSharedControlPlaneConfigured(): boolean {
+  return controlPlaneStoreMode() === 'postgres';
+}
+
+export function controlPlaneStoreSource(): string | null {
+  return connectionString();
+}
+
+async function getPool(): Promise<PgPool> {
+  const connectionUrl = connectionString();
+  if (!connectionUrl) {
+    throw new Error('Shared control-plane store is disabled. Set ATTESTOR_CONTROL_PLANE_PG_URL.');
+  }
+  if (!poolPromise) {
+    poolPromise = (async () => {
+      const pg = await (Function('return import("pg")')() as Promise<any>);
+      const Pool = pg.Pool ?? pg.default?.Pool;
+      if (!Pool) {
+        throw new Error('pg.Pool is not available for the shared control-plane store.');
+      }
+      return new Pool({ connectionString: connectionUrl }) as PgPool;
+    })();
+  }
+  return poolPromise;
+}
+
+async function ensureSchema(): Promise<void> {
+  if (!initPromise) {
+    initPromise = (async () => {
+      const pool = await getPool();
+      await pool.query(`
+        CREATE SCHEMA IF NOT EXISTS attestor_control_plane;
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.hosted_accounts (
+          account_id TEXT PRIMARY KEY,
+          primary_tenant_id TEXT NOT NULL UNIQUE,
+          account_status TEXT NOT NULL CHECK (account_status IN ('active', 'suspended', 'archived')),
+          stripe_customer_id TEXT NULL,
+          stripe_subscription_id TEXT NULL,
+          updated_at TIMESTAMPTZ NOT NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS hosted_accounts_stripe_customer_uidx
+          ON attestor_control_plane.hosted_accounts (stripe_customer_id)
+          WHERE stripe_customer_id IS NOT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS hosted_accounts_stripe_subscription_uidx
+          ON attestor_control_plane.hosted_accounts (stripe_subscription_id)
+          WHERE stripe_subscription_id IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS hosted_accounts_updated_idx
+          ON attestor_control_plane.hosted_accounts (updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.tenant_api_keys (
+          key_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          tenant_name TEXT NOT NULL,
+          plan_id TEXT NULL,
+          monthly_run_quota INTEGER NULL,
+          api_key_hash TEXT NOT NULL UNIQUE,
+          api_key_preview TEXT NOT NULL,
+          key_status TEXT NOT NULL CHECK (key_status IN ('active', 'inactive', 'revoked')),
+          created_at TIMESTAMPTZ NOT NULL,
+          last_used_at TIMESTAMPTZ NULL,
+          deactivated_at TIMESTAMPTZ NULL,
+          revoked_at TIMESTAMPTZ NULL,
+          rotated_from_key_id TEXT NULL,
+          superseded_by_key_id TEXT NULL,
+          superseded_at TIMESTAMPTZ NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS tenant_api_keys_tenant_status_created_idx
+          ON attestor_control_plane.tenant_api_keys (tenant_id, key_status, created_at DESC);
+
+        CREATE INDEX IF NOT EXISTS tenant_api_keys_tenant_created_idx
+          ON attestor_control_plane.tenant_api_keys (tenant_id, created_at ASC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.usage_ledger (
+          tenant_id TEXT NOT NULL,
+          period TEXT NOT NULL,
+          used INTEGER NOT NULL CHECK (used >= 0),
+          updated_at TIMESTAMPTZ NOT NULL,
+          PRIMARY KEY (tenant_id, period)
+        );
+
+        CREATE INDEX IF NOT EXISTS usage_ledger_period_used_idx
+          ON attestor_control_plane.usage_ledger (period DESC, used DESC, tenant_id ASC);
+      `);
+    })();
+  }
+  await initPromise;
+}
+
+function hashApiKey(apiKey: string): string {
+  return createHash('sha256').update(apiKey).digest('hex');
+}
+
+function previewApiKey(apiKey: string): string {
+  return `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}`;
+}
+
+function currentPeriod(): string {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function normalizeStripeSubscriptionStatus(raw: string | null | undefined): StripeSubscriptionStatus {
+  if (!raw) return null;
+  switch (raw) {
+    case 'trialing':
+    case 'active':
+    case 'incomplete':
+    case 'incomplete_expired':
+    case 'past_due':
+    case 'canceled':
+    case 'unpaid':
+    case 'paused':
+      return raw;
+    default:
+      return null;
+  }
+}
+
+function normalizeStripeInvoiceStatus(raw: string | null | undefined): StripeInvoiceStatus {
+  if (!raw) return null;
+  switch (raw) {
+    case 'draft':
+    case 'open':
+    case 'paid':
+    case 'uncollectible':
+    case 'void':
+      return raw;
+    default:
+      return null;
+  }
+}
+
+function defaultBillingState(): HostedAccountBillingState {
+  return {
+    provider: null,
+    stripeCustomerId: null,
+    stripeSubscriptionId: null,
+    stripeSubscriptionStatus: null,
+    stripePriceId: null,
+    lastCheckoutSessionId: null,
+    lastCheckoutCompletedAt: null,
+    lastCheckoutPlanId: null,
+    lastInvoiceId: null,
+    lastInvoiceStatus: null,
+    lastInvoiceCurrency: null,
+    lastInvoiceAmountPaid: null,
+    lastInvoiceAmountDue: null,
+    lastInvoiceEventId: null,
+    lastInvoiceEventType: null,
+    lastInvoiceProcessedAt: null,
+    lastInvoicePaidAt: null,
+    delinquentSince: null,
+    lastWebhookEventId: null,
+    lastWebhookEventType: null,
+    lastWebhookProcessedAt: null,
+  };
+}
+
+function normalizeHostedAccountRecord(record: HostedAccountRecord): HostedAccountRecord {
+  return {
+    ...record,
+    updatedAt: record.updatedAt ?? record.archivedAt ?? record.suspendedAt ?? record.createdAt,
+    suspendedAt: record.suspendedAt ?? null,
+    archivedAt: record.archivedAt ?? null,
+    billing: {
+      ...defaultBillingState(),
+      ...(record.billing ?? {}),
+      provider: record.billing?.provider === 'stripe' ? 'stripe' : null,
+      stripeSubscriptionStatus: normalizeStripeSubscriptionStatus(record.billing?.stripeSubscriptionStatus ?? null),
+      lastInvoiceStatus: normalizeStripeInvoiceStatus(record.billing?.lastInvoiceStatus ?? null),
+    },
+  };
+}
+
+function normalizeTenantKeyRecord(record: TenantKeyRecord): TenantKeyRecord {
+  return {
+    ...record,
+    planId: record.planId ?? null,
+    monthlyRunQuota: typeof record.monthlyRunQuota === 'number' ? record.monthlyRunQuota : null,
+    lastUsedAt: record.lastUsedAt ?? null,
+    deactivatedAt: record.deactivatedAt ?? null,
+    revokedAt: record.revokedAt ?? null,
+    rotatedFromKeyId: record.rotatedFromKeyId ?? null,
+    supersededByKeyId: record.supersededByKeyId ?? null,
+    supersededAt: record.supersededAt ?? null,
+  };
+}
+
+function coerceHostedAccountRecord(value: unknown): HostedAccountRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid hosted account record in shared control-plane store.');
+  }
+  return normalizeHostedAccountRecord(value as HostedAccountRecord);
+}
+
+function coerceTenantKeyRecord(value: unknown): TenantKeyRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid tenant key record in shared control-plane store.');
+  }
+  return normalizeTenantKeyRecord(value as TenantKeyRecord);
+}
+
+function rowToHostedAccount(row: PgQueryResultRow): HostedAccountRecord {
+  return coerceHostedAccountRecord(row.record_json);
+}
+
+function rowToTenantKey(row: PgQueryResultRow): TenantKeyRecord {
+  return coerceTenantKeyRecord(row.record_json);
+}
+
+function rowToUsageRecord(row: PgQueryResultRow): UsageLedgerRecord {
+  return {
+    tenantId: String(row.tenant_id),
+    period: String(row.period),
+    used: Number(row.used),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function touchRecord(record: HostedAccountRecord): void {
+  record.updatedAt = new Date().toISOString();
+}
+
+function resolveStripeAccountMatch(
+  records: HostedAccountRecord[],
+  options: {
+    accountId?: string | null;
+    stripeSubscriptionId?: string | null;
+    stripeCustomerId?: string | null;
+  },
+): {
+  record: HostedAccountRecord | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+} {
+  if (options.accountId) {
+    const record = records.find((entry) => entry.id === options.accountId) ?? null;
+    if (record) return { record, matchReason: 'account_id' };
+  }
+  if (options.stripeSubscriptionId) {
+    const record = records.find((entry) => entry.billing.stripeSubscriptionId === options.stripeSubscriptionId) ?? null;
+    if (record) return { record, matchReason: 'subscription_id' };
+  }
+  if (options.stripeCustomerId) {
+    const record = records.find((entry) => entry.billing.stripeCustomerId === options.stripeCustomerId) ?? null;
+    if (record) return { record, matchReason: 'customer_id' };
+  }
+  return { record: null, matchReason: 'none' };
+}
+
+function activeReplacementExists(records: TenantKeyRecord[], record: TenantKeyRecord): boolean {
+  if (!record.supersededByKeyId) return false;
+  const replacement = records.find((entry) => entry.id === record.supersededByKeyId);
+  return Boolean(replacement && replacement.status !== 'revoked');
+}
+
+function statusRank(status: TenantKeyStatus): number {
+  if (status === 'active') return 0;
+  if (status === 'inactive') return 1;
+  return 2;
+}
+
+function buildTenantKeyRecord(options: {
+  tenantId: string;
+  tenantName: string;
+  planId: string | null;
+  monthlyRunQuota: number | null;
+  apiKey: string;
+  createdAt: string;
+  rotatedFromKeyId?: string | null;
+}): TenantKeyRecord {
+  return {
+    id: `tkey_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    tenantId: options.tenantId,
+    tenantName: options.tenantName,
+    planId: options.planId,
+    monthlyRunQuota: options.monthlyRunQuota,
+    apiKeyHash: hashApiKey(options.apiKey),
+    apiKeyPreview: previewApiKey(options.apiKey),
+    status: 'active',
+    createdAt: options.createdAt,
+    lastUsedAt: null,
+    deactivatedAt: null,
+    revokedAt: null,
+    rotatedFromKeyId: options.rotatedFromKeyId ?? null,
+    supersededByKeyId: null,
+    supersededAt: null,
+  };
+}
+
+function usageContextFromRecord(
+  tenantId: string,
+  planId: string | null | undefined,
+  quota: number | null | undefined,
+  used: number,
+  period: string,
+): UsageContext {
+  const resolvedQuota = typeof quota === 'number' && quota >= 0 ? quota : null;
+  return {
+    tenantId,
+    planId: planId ?? 'community',
+    meter: 'monthly_pipeline_runs',
+    period,
+    used,
+    quota: resolvedQuota,
+    remaining: resolvedQuota === null ? null : Math.max(0, resolvedQuota - used),
+    enforced: resolvedQuota !== null,
+  };
+}
+
+function mapPgErrorToAccountStoreError(err: unknown): AccountStoreError | null {
+  const pgErr = err as { code?: string; constraint?: string };
+  if (pgErr?.code !== '23505') return null;
+  switch (pgErr.constraint) {
+    case 'hosted_accounts_primary_tenant_id_key':
+      return new AccountStoreError('CONFLICT', 'Primary tenant is already assigned to another hosted account.');
+    case 'hosted_accounts_stripe_customer_uidx':
+      return new AccountStoreError('CONFLICT', 'Stripe customer is already linked to another hosted account.');
+    case 'hosted_accounts_stripe_subscription_uidx':
+      return new AccountStoreError('CONFLICT', 'Stripe subscription is already linked to another hosted account.');
+    default:
+      return new AccountStoreError('CONFLICT', 'Hosted account uniqueness constraint violated.');
+  }
+}
+
+async function listHostedAccountsPg(): Promise<HostedAccountRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(`
+    SELECT record_json
+      FROM attestor_control_plane.hosted_accounts
+      ORDER BY updated_at ASC, account_id ASC
+  `);
+  return result.rows.map(rowToHostedAccount);
+}
+
+async function findHostedAccountByIdPg(id: string): Promise<HostedAccountRecord | null> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.hosted_accounts
+      WHERE account_id = $1
+      LIMIT 1`,
+    [id],
+  );
+  return result.rows[0] ? rowToHostedAccount(result.rows[0]) : null;
+}
+
+async function findHostedAccountByTenantIdPg(primaryTenantId: string): Promise<HostedAccountRecord | null> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.hosted_accounts
+      WHERE primary_tenant_id = $1
+      LIMIT 1`,
+    [primaryTenantId],
+  );
+  return result.rows[0] ? rowToHostedAccount(result.rows[0]) : null;
+}
+
+async function upsertHostedAccountPg(record: HostedAccountRecord, executor?: PgPool | PgClient): Promise<void> {
+  await ensureSchema();
+  const target = executor ?? await getPool();
+  try {
+    await target.query(
+      `INSERT INTO attestor_control_plane.hosted_accounts (
+        account_id, primary_tenant_id, account_status, stripe_customer_id, stripe_subscription_id, updated_at, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6::timestamptz, $7::jsonb
+      )
+      ON CONFLICT (account_id) DO UPDATE SET
+        primary_tenant_id = EXCLUDED.primary_tenant_id,
+        account_status = EXCLUDED.account_status,
+        stripe_customer_id = EXCLUDED.stripe_customer_id,
+        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+        updated_at = EXCLUDED.updated_at,
+        record_json = EXCLUDED.record_json`,
+      [
+        record.id,
+        record.primaryTenantId,
+        record.status,
+        record.billing.stripeCustomerId,
+        record.billing.stripeSubscriptionId,
+        record.updatedAt,
+        JSON.stringify(record),
+      ],
+    );
+  } catch (err) {
+    const mapped = mapPgErrorToAccountStoreError(err);
+    if (mapped) throw mapped;
+    throw err;
+  }
+}
+
+async function listTenantKeyRecordsPg(): Promise<TenantKeyRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(`
+    SELECT record_json
+      FROM attestor_control_plane.tenant_api_keys
+      ORDER BY created_at ASC, key_id ASC
+  `);
+  return result.rows.map(rowToTenantKey);
+}
+
+async function upsertTenantKeyPg(record: TenantKeyRecord, executor?: PgPool | PgClient): Promise<void> {
+  await ensureSchema();
+  const target = executor ?? await getPool();
+  try {
+    await target.query(
+      `INSERT INTO attestor_control_plane.tenant_api_keys (
+        key_id, tenant_id, tenant_name, plan_id, monthly_run_quota, api_key_hash, api_key_preview, key_status,
+        created_at, last_used_at, deactivated_at, revoked_at, rotated_from_key_id, superseded_by_key_id, superseded_at, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9::timestamptz, $10::timestamptz, $11::timestamptz, $12::timestamptz, $13, $14, $15::timestamptz, $16::jsonb
+      )
+      ON CONFLICT (key_id) DO UPDATE SET
+        tenant_id = EXCLUDED.tenant_id,
+        tenant_name = EXCLUDED.tenant_name,
+        plan_id = EXCLUDED.plan_id,
+        monthly_run_quota = EXCLUDED.monthly_run_quota,
+        api_key_hash = EXCLUDED.api_key_hash,
+        api_key_preview = EXCLUDED.api_key_preview,
+        key_status = EXCLUDED.key_status,
+        created_at = EXCLUDED.created_at,
+        last_used_at = EXCLUDED.last_used_at,
+        deactivated_at = EXCLUDED.deactivated_at,
+        revoked_at = EXCLUDED.revoked_at,
+        rotated_from_key_id = EXCLUDED.rotated_from_key_id,
+        superseded_by_key_id = EXCLUDED.superseded_by_key_id,
+        superseded_at = EXCLUDED.superseded_at,
+        record_json = EXCLUDED.record_json`,
+      [
+        record.id,
+        record.tenantId,
+        record.tenantName,
+        record.planId,
+        record.monthlyRunQuota,
+        record.apiKeyHash,
+        record.apiKeyPreview,
+        record.status,
+        record.createdAt,
+        record.lastUsedAt,
+        record.deactivatedAt,
+        record.revokedAt,
+        record.rotatedFromKeyId,
+        record.supersededByKeyId,
+        record.supersededAt,
+        JSON.stringify(record),
+      ],
+    );
+  } catch (err) {
+    const pgErr = err as { code?: string };
+    if (pgErr?.code === '23505') {
+      throw new TenantKeyStoreError('INVALID_STATE', 'Tenant key uniqueness constraint violated.');
+    }
+    throw err;
+  }
+}
+
+async function listUsageLedgerPg(filters?: { tenantId?: string | null; period?: string | null }): Promise<UsageLedgerRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const where: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+  if (filters?.tenantId) {
+    where.push(`tenant_id = $${idx++}`);
+    params.push(filters.tenantId);
+  }
+  if (filters?.period) {
+    where.push(`period = $${idx++}`);
+    params.push(filters.period);
+  }
+  const sql = `
+    SELECT tenant_id, period, used, updated_at
+      FROM attestor_control_plane.usage_ledger
+      ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY period DESC, used DESC, tenant_id ASC
+  `;
+  const result = await pool.query(sql, params);
+  return result.rows.map(rowToUsageRecord);
+}
+
+async function readUsageCountPg(tenantId: string, period: string): Promise<number> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT used
+       FROM attestor_control_plane.usage_ledger
+      WHERE tenant_id = $1 AND period = $2
+      LIMIT 1`,
+    [tenantId, period],
+  );
+  return result.rows.length > 0 ? Number(result.rows[0].used) : 0;
+}
+
+async function consumeUsagePg(tenantId: string, period: string): Promise<number> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `INSERT INTO attestor_control_plane.usage_ledger (
+      tenant_id, period, used, updated_at
+    ) VALUES (
+      $1, $2, 1, NOW()
+    )
+    ON CONFLICT (tenant_id, period) DO UPDATE SET
+      used = attestor_control_plane.usage_ledger.used + 1,
+      updated_at = NOW()
+    RETURNING used`,
+    [tenantId, period],
+  );
+  return Number(result.rows[0].used);
+}
+
+export async function listHostedAccountsState(): Promise<{
+  records: HostedAccountRecord[];
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return listHostedAccountsFile();
+  return {
+    records: await listHostedAccountsPg(),
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function findHostedAccountByIdState(id: string): Promise<HostedAccountRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findHostedAccountByIdFile(id);
+  return findHostedAccountByIdPg(id);
+}
+
+export async function findHostedAccountByTenantIdState(primaryTenantId: string): Promise<HostedAccountRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findHostedAccountByTenantIdFile(primaryTenantId);
+  return findHostedAccountByTenantIdPg(primaryTenantId);
+}
+
+export async function createHostedAccountState(input: CreateHostedAccountInput): Promise<{
+  record: HostedAccountRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return createHostedAccountFile(input);
+
+  const now = new Date().toISOString();
+  const record = normalizeHostedAccountRecord({
+    id: `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    accountName: input.accountName,
+    contactEmail: input.contactEmail,
+    primaryTenantId: input.primaryTenantId,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+    suspendedAt: null,
+    archivedAt: null,
+    billing: defaultBillingState(),
+  });
+  await upsertHostedAccountPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function provisionHostedAccountState(input: {
+  account: CreateHostedAccountInput;
+  key: IssueTenantKeyInput;
+}): Promise<{
+  account: HostedAccountRecord;
+  initialKey: TenantKeyRecord;
+  apiKey: string;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) {
+    const account = createHostedAccountFile(input.account);
+    const issued = issueTenantApiKeyFile(input.key);
+    return {
+      account: account.record,
+      initialKey: issued.record,
+      apiKey: issued.apiKey,
+      path: account.path,
+    };
+  }
+
+  await ensureSchema();
+  const pool = await getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const now = new Date().toISOString();
+    const accountRecord = normalizeHostedAccountRecord({
+      id: `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      accountName: input.account.accountName,
+      contactEmail: input.account.contactEmail,
+      primaryTenantId: input.account.primaryTenantId,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+      suspendedAt: null,
+      archivedAt: null,
+      billing: defaultBillingState(),
+    });
+    await upsertHostedAccountPg(accountRecord, client);
+
+    const resolvedPlan = resolvePlanSpec({
+      planId: input.key.planId,
+      monthlyRunQuota: input.key.monthlyRunQuota,
+      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+    });
+    const existing = await client.query(
+      `SELECT COUNT(*)::int AS active_count
+         FROM attestor_control_plane.tenant_api_keys
+        WHERE tenant_id = $1 AND key_status = 'active'`,
+      [input.key.tenantId],
+    );
+    const activeCount = Number(existing.rows[0]?.active_count ?? 0);
+    const maxActive = tenantKeyStorePolicy().maxActiveKeysPerTenant;
+    if (activeCount >= maxActive) {
+      throw new TenantKeyStoreError(
+        'LIMIT_EXCEEDED',
+        `Tenant '${input.key.tenantId}' already has ${activeCount} active keys. Deactivate or revoke one before issuing another. Max active keys per tenant: ${maxActive}.`,
+      );
+    }
+
+    const apiKey = `atk_${randomBytes(24).toString('hex')}`;
+    const keyRecord = buildTenantKeyRecord({
+      tenantId: input.key.tenantId,
+      tenantName: input.key.tenantName,
+      planId: resolvedPlan.planId,
+      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+      apiKey,
+      createdAt: now,
+    });
+    await upsertTenantKeyPg(keyRecord, client);
+    await client.query('COMMIT');
+    return {
+      account: accountRecord,
+      initialKey: keyRecord,
+      apiKey,
+      path: controlPlaneStoreSource(),
+    };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    const mappedAccount = mapPgErrorToAccountStoreError(err);
+    if (mappedAccount) throw mappedAccount;
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function attachStripeBillingToAccountState(id: string, billing: AttachStripeBillingInput): Promise<{
+  record: HostedAccountRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return attachStripeBillingToAccountFile(id, billing);
+  const record = await findHostedAccountByIdPg(id);
+  if (!record) {
+    throw new AccountStoreError('NOT_FOUND', `Hosted account '${id}' was not found.`);
+  }
+  record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
+    provider: billing.stripeCustomerId || billing.stripeSubscriptionId ? 'stripe' : record.billing.provider,
+    stripeCustomerId: billing.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: billing.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripeSubscriptionStatus: normalizeStripeSubscriptionStatus(
+      billing.stripeSubscriptionStatus ?? record.billing.stripeSubscriptionStatus,
+    ),
+    stripePriceId: billing.stripePriceId ?? record.billing.stripePriceId,
+    lastWebhookEventId: billing.lastWebhookEventId ?? record.billing.lastWebhookEventId,
+    lastWebhookEventType: billing.lastWebhookEventType ?? record.billing.lastWebhookEventType,
+    lastWebhookProcessedAt: billing.lastWebhookProcessedAt ?? record.billing.lastWebhookProcessedAt,
+  };
+  touchRecord(record);
+  await upsertHostedAccountPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function setHostedAccountStatusState(id: string, nextStatus: HostedAccountStatus): Promise<{
+  record: HostedAccountRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return setHostedAccountStatusFile(id, nextStatus);
+  const record = await findHostedAccountByIdPg(id);
+  if (!record) {
+    throw new AccountStoreError('NOT_FOUND', `Hosted account '${id}' was not found.`);
+  }
+  if (record.status === 'archived' && nextStatus !== 'archived') {
+    throw new AccountStoreError(
+      'INVALID_STATE',
+      `Hosted account '${id}' is archived and cannot transition back to ${nextStatus}.`,
+    );
+  }
+  if (record.status === nextStatus) {
+    return { record, path: controlPlaneStoreSource() };
+  }
+  record.status = nextStatus;
+  if (nextStatus === 'active') {
+    record.suspendedAt = null;
+  } else if (nextStatus === 'suspended') {
+    record.suspendedAt = new Date().toISOString();
+  } else if (nextStatus === 'archived') {
+    record.archivedAt = new Date().toISOString();
+  }
+  touchRecord(record);
+  await upsertHostedAccountPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function applyStripeSubscriptionStateState(options: {
+  accountId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeSubscriptionStatus?: string | null;
+  stripePriceId?: string | null;
+  eventId: string;
+  eventType: string;
+}): Promise<{
+  record: HostedAccountRecord | null;
+  previousStatus: HostedAccountStatus | null;
+  nextStatus: HostedAccountStatus | null;
+  previousBillingStatus: StripeSubscriptionStatus;
+  nextBillingStatus: StripeSubscriptionStatus;
+  path: string | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+}> {
+  if (!isSharedControlPlaneConfigured()) return applyStripeSubscriptionStateFile(options);
+  const normalizedStatus = normalizeStripeSubscriptionStatus(options.stripeSubscriptionStatus ?? null);
+  const records = await listHostedAccountsPg();
+  const match = resolveStripeAccountMatch(records, options);
+  if (!match.record) {
+    return {
+      record: null,
+      previousStatus: null,
+      nextStatus: null,
+      previousBillingStatus: null,
+      nextBillingStatus: normalizedStatus,
+      path: null,
+      matchReason: 'none',
+    };
+  }
+  const record = match.record;
+  const previousStatus = record.status;
+  const previousBillingStatus = record.billing.stripeSubscriptionStatus;
+  record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
+    provider: 'stripe',
+    stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripeSubscriptionStatus: normalizedStatus,
+    stripePriceId: options.stripePriceId ?? record.billing.stripePriceId,
+    lastWebhookEventId: options.eventId,
+    lastWebhookEventType: options.eventType,
+    lastWebhookProcessedAt: new Date().toISOString(),
+  };
+  const derivedStatus = deriveHostedAccountStatusFromStripeSubscriptionStatus(normalizedStatus);
+  if (record.status !== 'archived' && derivedStatus && record.status !== derivedStatus) {
+    record.status = derivedStatus;
+    if (derivedStatus === 'active') {
+      record.suspendedAt = null;
+    } else if (derivedStatus === 'suspended') {
+      record.suspendedAt = new Date().toISOString();
+    }
+  }
+  touchRecord(record);
+  await upsertHostedAccountPg(record);
+  return {
+    record,
+    previousStatus,
+    nextStatus: record.status,
+    previousBillingStatus,
+    nextBillingStatus: record.billing.stripeSubscriptionStatus,
+    path: controlPlaneStoreSource(),
+    matchReason: match.matchReason,
+  };
+}
+
+export async function applyStripeCheckoutCompletionState(options: {
+  accountId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  planId?: string | null;
+  checkoutSessionId: string;
+  completedAt?: string | null;
+  eventId: string;
+  eventType: string;
+}): Promise<{
+  record: HostedAccountRecord | null;
+  previousStatus: HostedAccountStatus | null;
+  nextStatus: HostedAccountStatus | null;
+  previousBillingStatus: StripeSubscriptionStatus;
+  nextBillingStatus: StripeSubscriptionStatus;
+  path: string | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+}> {
+  if (!isSharedControlPlaneConfigured()) return applyStripeCheckoutCompletionFile(options);
+  const records = await listHostedAccountsPg();
+  const match = resolveStripeAccountMatch(records, options);
+  if (!match.record) {
+    return {
+      record: null,
+      previousStatus: null,
+      nextStatus: null,
+      previousBillingStatus: null,
+      nextBillingStatus: null,
+      path: null,
+      matchReason: 'none',
+    };
+  }
+  const record = match.record;
+  const previousStatus = record.status;
+  const previousBillingStatus = record.billing.stripeSubscriptionStatus;
+  record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
+    provider: 'stripe',
+    stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripePriceId: options.stripePriceId ?? record.billing.stripePriceId,
+    lastCheckoutSessionId: options.checkoutSessionId,
+    lastCheckoutCompletedAt: options.completedAt ?? new Date().toISOString(),
+    lastCheckoutPlanId: options.planId ?? record.billing.lastCheckoutPlanId,
+    lastWebhookEventId: options.eventId,
+    lastWebhookEventType: options.eventType,
+    lastWebhookProcessedAt: new Date().toISOString(),
+  };
+  touchRecord(record);
+  await upsertHostedAccountPg(record);
+  return {
+    record,
+    previousStatus,
+    nextStatus: record.status,
+    previousBillingStatus,
+    nextBillingStatus: record.billing.stripeSubscriptionStatus,
+    path: controlPlaneStoreSource(),
+    matchReason: match.matchReason,
+  };
+}
+
+export async function applyStripeInvoiceStateState(options: {
+  accountId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripePriceId?: string | null;
+  invoiceId: string;
+  invoiceStatus?: string | null;
+  currency?: string | null;
+  amountPaid?: number | null;
+  amountDue?: number | null;
+  paidAt?: string | null;
+  paymentFailedAt?: string | null;
+  eventId: string;
+  eventType: string;
+}): Promise<{
+  record: HostedAccountRecord | null;
+  previousStatus: HostedAccountStatus | null;
+  nextStatus: HostedAccountStatus | null;
+  previousBillingStatus: StripeSubscriptionStatus;
+  nextBillingStatus: StripeSubscriptionStatus;
+  path: string | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+}> {
+  if (!isSharedControlPlaneConfigured()) return applyStripeInvoiceStateFile(options);
+  const normalizedInvoiceStatus = normalizeStripeInvoiceStatus(options.invoiceStatus ?? null);
+  const records = await listHostedAccountsPg();
+  const match = resolveStripeAccountMatch(records, options);
+  if (!match.record) {
+    return {
+      record: null,
+      previousStatus: null,
+      nextStatus: null,
+      previousBillingStatus: null,
+      nextBillingStatus: null,
+      path: null,
+      matchReason: 'none',
+    };
+  }
+  const record = match.record;
+  const previousStatus = record.status;
+  const previousBillingStatus = record.billing.stripeSubscriptionStatus;
+  const paidAt = options.eventType === 'invoice.paid'
+    ? (options.paidAt ?? new Date().toISOString())
+    : record.billing.lastInvoicePaidAt;
+  const delinquentSince = options.eventType === 'invoice.payment_failed'
+    ? (record.billing.delinquentSince ?? options.paymentFailedAt ?? new Date().toISOString())
+    : options.eventType === 'invoice.paid'
+      ? null
+      : record.billing.delinquentSince;
+  record.billing = {
+    ...defaultBillingState(),
+    ...record.billing,
+    provider: 'stripe',
+    stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
+    stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripePriceId: options.stripePriceId ?? record.billing.stripePriceId,
+    lastInvoiceId: options.invoiceId,
+    lastInvoiceStatus: normalizedInvoiceStatus,
+    lastInvoiceCurrency: options.currency ?? record.billing.lastInvoiceCurrency,
+    lastInvoiceAmountPaid: options.amountPaid ?? record.billing.lastInvoiceAmountPaid,
+    lastInvoiceAmountDue: options.amountDue ?? record.billing.lastInvoiceAmountDue,
+    lastInvoiceEventId: options.eventId,
+    lastInvoiceEventType: options.eventType,
+    lastInvoiceProcessedAt: new Date().toISOString(),
+    lastInvoicePaidAt: paidAt,
+    delinquentSince,
+    lastWebhookEventId: options.eventId,
+    lastWebhookEventType: options.eventType,
+    lastWebhookProcessedAt: new Date().toISOString(),
+  };
+  touchRecord(record);
+  await upsertHostedAccountPg(record);
+  return {
+    record,
+    previousStatus,
+    nextStatus: record.status,
+    previousBillingStatus,
+    nextBillingStatus: record.billing.stripeSubscriptionStatus,
+    path: controlPlaneStoreSource(),
+    matchReason: match.matchReason,
+  };
+}
+
+export async function listTenantKeyRecordsState(): Promise<{
+  records: TenantKeyRecord[];
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return listTenantKeyRecordsFile();
+  return {
+    records: await listTenantKeyRecordsPg(),
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function issueTenantApiKeyState(input: IssueTenantKeyInput): Promise<{
+  apiKey: string;
+  record: TenantKeyRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return issueTenantApiKeyFile(input);
+  const resolvedPlan = resolvePlanSpec({
+    planId: input.planId,
+    monthlyRunQuota: input.monthlyRunQuota,
+    defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+  });
+  const records = await listTenantKeyRecordsPg();
+  const activeCount = records.filter((entry) => entry.tenantId === input.tenantId && entry.status === 'active').length;
+  const maxActive = tenantKeyStorePolicy().maxActiveKeysPerTenant;
+  if (activeCount >= maxActive) {
+    throw new TenantKeyStoreError(
+      'LIMIT_EXCEEDED',
+      `Tenant '${input.tenantId}' already has ${activeCount} active keys. Deactivate or revoke one before issuing another. Max active keys per tenant: ${maxActive}.`,
+    );
+  }
+  const apiKey = `atk_${randomBytes(24).toString('hex')}`;
+  const record = buildTenantKeyRecord({
+    tenantId: input.tenantId,
+    tenantName: input.tenantName,
+    planId: resolvedPlan.planId,
+    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+    apiKey,
+    createdAt: new Date().toISOString(),
+  });
+  await upsertTenantKeyPg(record);
+  return { apiKey, record, path: controlPlaneStoreSource() };
+}
+
+export async function rotateTenantApiKeyState(id: string, input?: RotateTenantKeyInput): Promise<{
+  apiKey: string;
+  record: TenantKeyRecord;
+  previousRecord: TenantKeyRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return rotateTenantApiKeyFile(id, input);
+  const records = await listTenantKeyRecordsPg();
+  const sourceRecord = records.find((entry) => entry.id === id);
+  if (!sourceRecord) {
+    throw new TenantKeyStoreError('NOT_FOUND', `Tenant key record not found: ${id}`);
+  }
+  if (sourceRecord.status !== 'active') {
+    throw new TenantKeyStoreError(
+      'INVALID_STATE',
+      `Tenant key '${id}' must be active before rotation. Current status: ${sourceRecord.status}.`,
+    );
+  }
+  if (activeReplacementExists(records, sourceRecord)) {
+    throw new TenantKeyStoreError(
+      'INVALID_STATE',
+      `Tenant key '${id}' already has an unreconciled replacement key. Reuse or revoke the replacement before rotating again.`,
+    );
+  }
+  const activeCount = records.filter((entry) => entry.tenantId === sourceRecord.tenantId && entry.status === 'active').length;
+  const maxActive = tenantKeyStorePolicy().maxActiveKeysPerTenant;
+  if (activeCount >= maxActive) {
+    throw new TenantKeyStoreError(
+      'LIMIT_EXCEEDED',
+      `Tenant '${sourceRecord.tenantId}' already has ${activeCount} active keys. Deactivate or revoke one before issuing another. Max active keys per tenant: ${maxActive}.`,
+    );
+  }
+  const resolvedPlan = resolvePlanSpec({
+    planId: input?.planId ?? sourceRecord.planId,
+    monthlyRunQuota: input?.monthlyRunQuota ?? sourceRecord.monthlyRunQuota,
+    defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+  });
+  const apiKey = `atk_${randomBytes(24).toString('hex')}`;
+  const createdAt = new Date().toISOString();
+  const record = buildTenantKeyRecord({
+    tenantId: sourceRecord.tenantId,
+    tenantName: sourceRecord.tenantName,
+    planId: resolvedPlan.planId,
+    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+    apiKey,
+    createdAt,
+    rotatedFromKeyId: sourceRecord.id,
+  });
+  sourceRecord.supersededByKeyId = record.id;
+  sourceRecord.supersededAt = createdAt;
+  await upsertTenantKeyPg(sourceRecord);
+  await upsertTenantKeyPg(record);
+  return {
+    apiKey,
+    record,
+    previousRecord: sourceRecord,
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function setTenantApiKeyStatusState(id: string, nextStatus: 'active' | 'inactive'): Promise<{
+  record: TenantKeyRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return setTenantApiKeyStatusFile(id, nextStatus);
+  const records = await listTenantKeyRecordsPg();
+  const record = records.find((entry) => entry.id === id);
+  if (!record) {
+    throw new TenantKeyStoreError('NOT_FOUND', `Tenant key record not found: ${id}`);
+  }
+  if (record.status === 'revoked') {
+    throw new TenantKeyStoreError(
+      'INVALID_STATE',
+      `Tenant key '${id}' is revoked and cannot transition back to ${nextStatus}.`,
+    );
+  }
+  if (nextStatus === 'inactive') {
+    if (record.status === 'inactive') return { record, path: controlPlaneStoreSource() };
+    record.status = 'inactive';
+    record.deactivatedAt = new Date().toISOString();
+    await upsertTenantKeyPg(record);
+    return { record, path: controlPlaneStoreSource() };
+  }
+  if (record.status === 'active') return { record, path: controlPlaneStoreSource() };
+  const activeCount = records.filter((entry) => entry.tenantId === record.tenantId && entry.status === 'active').length;
+  const maxActive = tenantKeyStorePolicy().maxActiveKeysPerTenant;
+  if (activeCount >= maxActive) {
+    throw new TenantKeyStoreError(
+      'LIMIT_EXCEEDED',
+      `Tenant '${record.tenantId}' already has ${activeCount} active keys. Deactivate or revoke one before issuing another. Max active keys per tenant: ${maxActive}.`,
+    );
+  }
+  record.status = 'active';
+  record.deactivatedAt = null;
+  await upsertTenantKeyPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function revokeTenantApiKeyState(id: string): Promise<{
+  record: TenantKeyRecord | null;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return revokeTenantApiKeyFile(id);
+  const records = await listTenantKeyRecordsPg();
+  const record = records.find((entry) => entry.id === id) ?? null;
+  if (!record) return { record: null, path: controlPlaneStoreSource() };
+  if (record.status === 'revoked') return { record, path: controlPlaneStoreSource() };
+  record.status = 'revoked';
+  record.revokedAt = new Date().toISOString();
+  await upsertTenantKeyPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function findActiveTenantKeyState(
+  apiKey: string,
+  options?: { markUsed?: boolean },
+): Promise<TenantKeyRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findActiveTenantKeyFile(apiKey, options);
+  await ensureSchema();
+  const pool = await getPool();
+  const hashed = hashApiKey(apiKey);
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.tenant_api_keys
+      WHERE api_key_hash = $1 AND key_status = 'active'
+      LIMIT 1`,
+    [hashed],
+  );
+  const record = result.rows[0] ? rowToTenantKey(result.rows[0]) : null;
+  if (!record) return null;
+  if (options?.markUsed) {
+    record.lastUsedAt = new Date().toISOString();
+    await upsertTenantKeyPg(record);
+  }
+  return record;
+}
+
+export async function hasTenantKeyRecordsState(): Promise<boolean> {
+  if (!isSharedControlPlaneConfigured()) return hasTenantKeyRecordsFile();
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(`SELECT EXISTS(SELECT 1 FROM attestor_control_plane.tenant_api_keys) AS present`);
+  return Boolean(result.rows[0]?.present);
+}
+
+export async function findTenantRecordByTenantIdState(tenantId: string): Promise<TenantKeyRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findTenantRecordByTenantIdFile(tenantId);
+  const records = await listTenantKeyRecordsPg();
+  const candidates = records.filter((entry) => entry.tenantId === tenantId);
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    const statusDelta = statusRank(a.status) - statusRank(b.status);
+    if (statusDelta !== 0) return statusDelta;
+    return a.createdAt > b.createdAt ? -1 : 1;
+  });
+  return candidates[0] ?? null;
+}
+
+export async function syncTenantPlanByTenantIdState(tenantId: string, options: {
+  planId: string;
+  monthlyRunQuota: number | null;
+}): Promise<{
+  records: TenantKeyRecord[];
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return syncTenantPlanByTenantIdFile(tenantId, options);
+  const records = await listTenantKeyRecordsPg();
+  const matching = records.filter((entry) => entry.tenantId === tenantId && entry.status !== 'revoked');
+  if (matching.length === 0) return { records: [], path: controlPlaneStoreSource() };
+  const resolvedPlan = resolvePlanSpec({
+    planId: options.planId,
+    monthlyRunQuota: options.monthlyRunQuota,
+    defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+  });
+  for (const record of matching) {
+    record.planId = resolvedPlan.planId;
+    record.monthlyRunQuota = resolvedPlan.monthlyRunQuota;
+    await upsertTenantKeyPg(record);
+  }
+  return { records: matching, path: controlPlaneStoreSource() };
+}
+
+export async function getUsageContextState(
+  tenantId: string,
+  planId: string | null | undefined,
+  quota: number | null | undefined,
+): Promise<UsageContext> {
+  if (!isSharedControlPlaneConfigured()) return getUsageContextFile(tenantId, planId, quota);
+  const period = currentPeriod();
+  const used = await readUsageCountPg(tenantId, period);
+  return usageContextFromRecord(tenantId, planId, quota, used, period);
+}
+
+export async function canConsumePipelineRunState(
+  tenantId: string,
+  planId: string | null | undefined,
+  quota: number | null | undefined,
+): Promise<{ allowed: boolean; usage: UsageContext }> {
+  if (!isSharedControlPlaneConfigured()) return canConsumePipelineRunFile(tenantId, planId, quota);
+  const usage = await getUsageContextState(tenantId, planId, quota);
+  if (!usage.enforced) return { allowed: true, usage };
+  return { allowed: usage.used < (usage.quota ?? 0), usage };
+}
+
+export async function consumePipelineRunState(
+  tenantId: string,
+  planId: string | null | undefined,
+  quota: number | null | undefined,
+): Promise<UsageContext> {
+  if (!isSharedControlPlaneConfigured()) return consumePipelineRunFile(tenantId, planId, quota);
+  const period = currentPeriod();
+  const used = await consumeUsagePg(tenantId, period);
+  return usageContextFromRecord(tenantId, planId, quota, used, period);
+}
+
+export async function queryUsageLedgerState(filters?: {
+  tenantId?: string | null;
+  period?: string | null;
+}): Promise<UsageLedgerRecord[]> {
+  if (!isSharedControlPlaneConfigured()) return queryUsageLedgerFile(filters);
+  return listUsageLedgerPg(filters);
+}
+
+export async function exportHostedAccountStoreSnapshot(): Promise<HostedAccountStoreSnapshot> {
+  const records = isSharedControlPlaneConfigured()
+    ? await listHostedAccountsPg()
+    : listHostedAccountsFile().records;
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreHostedAccountStoreSnapshot(
+  snapshot: HostedAccountStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for hosted account restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.hosted_accounts');
+  }
+  for (const record of snapshot.records) {
+    await upsertHostedAccountPg(normalizeHostedAccountRecord(record));
+  }
+  return { recordCount: snapshot.records.length };
+}
+
+export async function exportTenantKeyStoreSnapshot(): Promise<TenantKeyStoreSnapshot> {
+  const records = isSharedControlPlaneConfigured()
+    ? await listTenantKeyRecordsPg()
+    : listTenantKeyRecordsFile().records;
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreTenantKeyStoreSnapshot(
+  snapshot: TenantKeyStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for tenant key restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.tenant_api_keys');
+  }
+  for (const record of snapshot.records) {
+    await upsertTenantKeyPg(normalizeTenantKeyRecord(record));
+  }
+  return { recordCount: snapshot.records.length };
+}
+
+export async function exportUsageLedgerStoreSnapshot(): Promise<UsageLedgerStoreSnapshot> {
+  const records = isSharedControlPlaneConfigured()
+    ? await listUsageLedgerPg()
+    : readUsageLedgerSnapshot().records;
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    monthlyPipelineRuns: records,
+  };
+}
+
+export async function restoreUsageLedgerStoreSnapshot(
+  snapshot: UsageLedgerStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for usage ledger restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.usage_ledger');
+  }
+  for (const record of snapshot.monthlyPipelineRuns) {
+    await pool.query(
+      `INSERT INTO attestor_control_plane.usage_ledger (
+        tenant_id, period, used, updated_at
+      ) VALUES (
+        $1, $2, $3, $4::timestamptz
+      )
+      ON CONFLICT (tenant_id, period) DO UPDATE SET
+        used = EXCLUDED.used,
+        updated_at = EXCLUDED.updated_at`,
+      [record.tenantId, record.period, record.used, record.updatedAt],
+    );
+  }
+  return { recordCount: snapshot.monthlyPipelineRuns.length };
+}
+
+export async function resetSharedControlPlaneStoreForTests(): Promise<void> {
+  if (!poolPromise && !connectionString()) return;
+  if (!isSharedControlPlaneConfigured()) {
+    if (poolPromise) {
+      const pool = await poolPromise;
+      await pool.end();
+    }
+    poolPromise = null;
+    initPromise = null;
+    return;
+  }
+  const pool = await getPool();
+  await pool.query(`
+    DROP TABLE IF EXISTS attestor_control_plane.usage_ledger;
+    DROP TABLE IF EXISTS attestor_control_plane.tenant_api_keys;
+    DROP TABLE IF EXISTS attestor_control_plane.hosted_accounts;
+  `);
+  await pool.end();
+  poolPromise = null;
+  initPromise = null;
+}

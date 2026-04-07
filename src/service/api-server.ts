@@ -70,34 +70,39 @@ import {
 } from './async-pipeline.js';
 import { tenantMiddleware, getTenantContextFromHeaders, type TenantContext } from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
-import { canConsumePipelineRun, consumePipelineRun, getUsageContext, queryUsageLedger } from './usage-meter.js';
 import { canConsumeTenantPipelineRequest, consumeTenantPipelineRequest, getTenantPipelineRateLimit } from './rate-limit.js';
 import {
-  findTenantRecordByTenantId,
-  issueTenantApiKey,
-  listTenantKeyRecords,
-  revokeTenantApiKey,
-  rotateTenantApiKey,
-  setTenantApiKeyStatus,
-  syncTenantPlanByTenantId,
   tenantKeyStorePolicy,
   TenantKeyStoreError,
   type TenantKeyRecord,
 } from './tenant-key-store.js';
 import {
   AccountStoreError,
-  applyStripeCheckoutCompletion,
-  applyStripeInvoiceState,
-  applyStripeSubscriptionState,
-  attachStripeBillingToAccount,
-  createHostedAccount,
-  findHostedAccountById,
-  findHostedAccountByTenantId,
-  listHostedAccounts,
-  setHostedAccountStatus,
   type HostedAccountRecord,
   type StripeSubscriptionStatus,
 } from './account-store.js';
+import {
+  applyStripeCheckoutCompletionState,
+  applyStripeInvoiceStateState,
+  applyStripeSubscriptionStateState,
+  attachStripeBillingToAccountState,
+  canConsumePipelineRunState,
+  consumePipelineRunState,
+  findHostedAccountByIdState,
+  findHostedAccountByTenantIdState,
+  findTenantRecordByTenantIdState,
+  getUsageContextState,
+  issueTenantApiKeyState,
+  listHostedAccountsState,
+  listTenantKeyRecordsState,
+  provisionHostedAccountState,
+  queryUsageLedgerState,
+  revokeTenantApiKeyState,
+  rotateTenantApiKeyState,
+  setHostedAccountStatusState,
+  setTenantApiKeyStatusState,
+  syncTenantPlanByTenantIdState,
+} from './control-plane-store.js';
 import {
   DEFAULT_HOSTED_PLAN_ID,
   defaultRateLimitWindowSeconds,
@@ -174,7 +179,7 @@ app.use('/api/*', async (c, next) => {
   } finally {
     const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
     const tenant = getTenantContextFromHeaders(c.req.raw.headers);
-    const account = findHostedAccountByTenantId(tenant.tenantId);
+    const account = await findHostedAccountByTenantIdState(tenant.tenantId);
     const observedTenantId = c.get('obs.tenantId') as string | null | undefined;
     const observedPlanId = c.get('obs.planId') as string | null | undefined;
     const observedAccountId = c.get('obs.accountId') as string | null | undefined;
@@ -399,14 +404,14 @@ function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
   return c.json({ error: err.message }, 400);
 }
 
-function currentHostedAccount(c: Context): {
+async function currentHostedAccount(c: Context): Promise<{
   tenant: TenantContext;
   account: HostedAccountRecord;
-  usage: ReturnType<typeof getUsageContext>;
+  usage: Awaited<ReturnType<typeof getUsageContextState>>;
   rateLimit: ReturnType<typeof getTenantPipelineRateLimit>;
-} | Response {
+} | Response> {
   const tenant = currentTenant(c);
-  const account = findHostedAccountByTenantId(tenant.tenantId);
+  const account = await findHostedAccountByTenantIdState(tenant.tenantId);
   if (!account) {
     return c.json({
       error: `Hosted account not found for tenant '${tenant.tenantId}'.`,
@@ -420,7 +425,7 @@ function currentHostedAccount(c: Context): {
   return {
     tenant,
     account,
-    usage: getUsageContext(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota),
+    usage: await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota),
     rateLimit: getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
   };
 }
@@ -661,9 +666,9 @@ app.get('/api/v1/connectors', async (c) => {
   return c.json({ connectors });
 });
 
-app.get('/api/v1/account/usage', (c) => {
+app.get('/api/v1/account/usage', async (c) => {
   const tenant = currentTenant(c);
-  const usage = getUsageContext(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+  const usage = await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
   const rateLimit = getTenantPipelineRateLimit(tenant.tenantId, tenant.planId);
   return c.json({
     tenantContext: {
@@ -676,8 +681,8 @@ app.get('/api/v1/account/usage', (c) => {
   });
 });
 
-app.get('/api/v1/account', (c) => {
-  const current = currentHostedAccount(c);
+app.get('/api/v1/account', async (c) => {
+  const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
   return c.json({
     account: adminAccountView(current.account),
@@ -692,7 +697,7 @@ app.get('/api/v1/account', (c) => {
 });
 
 app.post('/api/v1/account/billing/checkout', async (c) => {
-  const current = currentHostedAccount(c);
+  const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
 
   const body = await c.req.json().catch(() => ({}));
@@ -739,7 +744,7 @@ app.post('/api/v1/account/billing/checkout', async (c) => {
 });
 
 app.post('/api/v1/account/billing/portal', async (c) => {
-  const current = currentHostedAccount(c);
+  const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
 
   let portal;
@@ -763,7 +768,7 @@ app.post('/api/v1/account/billing/portal', async (c) => {
 });
 
 app.get('/api/v1/account/billing/export', async (c) => {
-  const current = currentHostedAccount(c);
+  const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
 
   c.set('obs.accountId', current.account.id);
@@ -918,7 +923,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
       let applied;
       try {
-        applied = applyStripeSubscriptionState({
+      applied = await applyStripeSubscriptionStateState({
           accountId: accountIdFromMetadata,
           stripeCustomerId,
           stripeSubscriptionId,
@@ -986,7 +991,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           planId: mappedPlan.id,
           defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
         });
-        syncTenantPlanByTenantId(applied.record.primaryTenantId, {
+        await syncTenantPlanByTenantIdState(applied.record.primaryTenantId, {
           planId: resolvedPlan.planId,
           monthlyRunQuota: resolvedPlan.monthlyRunQuota,
         });
@@ -1087,7 +1092,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
       let applied;
       try {
-        applied = applyStripeCheckoutCompletion({
+      applied = await applyStripeCheckoutCompletionState({
           accountId: accountIdFromMetadata,
           stripeCustomerId,
           stripeSubscriptionId,
@@ -1159,7 +1164,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           planId: mappedPlan.id,
           defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
         });
-        syncTenantPlanByTenantId(applied.record.primaryTenantId, {
+        await syncTenantPlanByTenantIdState(applied.record.primaryTenantId, {
           planId: resolvedPlan.planId,
           monthlyRunQuota: resolvedPlan.monthlyRunQuota,
         });
@@ -1268,7 +1273,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
     let applied;
     try {
-      applied = applyStripeInvoiceState({
+      applied = await applyStripeInvoiceStateState({
         accountId: accountIdFromMetadata,
         stripeCustomerId,
         stripeSubscriptionId,
@@ -1350,7 +1355,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         planId: mappedPlan.id,
         defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
       });
-      syncTenantPlanByTenantId(applied.record.primaryTenantId, {
+        await syncTenantPlanByTenantIdState(applied.record.primaryTenantId, {
         planId: resolvedPlan.planId,
         monthlyRunQuota: resolvedPlan.monthlyRunQuota,
       });
@@ -1452,11 +1457,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
   }
 });
 
-app.get('/api/v1/admin/tenant-keys', (c) => {
+app.get('/api/v1/admin/tenant-keys', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const { records } = listTenantKeyRecords();
+  const { records } = await listTenantKeyRecordsState();
   return c.json({
     keys: records.map(adminTenantKeyView),
     defaults: {
@@ -1465,11 +1470,11 @@ app.get('/api/v1/admin/tenant-keys', (c) => {
   });
 });
 
-app.get('/api/v1/admin/accounts', (c) => {
+app.get('/api/v1/admin/accounts', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const { records } = listHostedAccounts();
+  const { records } = await listHostedAccountsState();
   return c.json({
     accounts: records.map(adminAccountView),
   });
@@ -1479,7 +1484,7 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const account = findHostedAccountById(c.req.param('id'));
+  const account = await findHostedAccountByIdState(c.req.param('id'));
   if (!account) {
     return c.json({ error: `Hosted account '${c.req.param('id')}' not found.` }, 404);
   }
@@ -1792,27 +1797,24 @@ app.post('/api/v1/admin/accounts', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
 
-  let account;
+  let provisioned;
   try {
-    account = createHostedAccount({
-      accountName,
-      contactEmail,
-      primaryTenantId: tenantId,
+    provisioned = await provisionHostedAccountState({
+      account: {
+        accountName,
+        contactEmail,
+        primaryTenantId: tenantId,
+      },
+      key: {
+        tenantId,
+        tenantName,
+        planId: resolvedPlan.planId,
+        monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+      },
     });
   } catch (err) {
-    const mapped = accountStoreErrorResponse(c, err);
-    if (mapped) return mapped;
-    throw err;
-  }
-  let issued;
-  try {
-    issued = issueTenantApiKey({
-      tenantId,
-      tenantName,
-      planId: resolvedPlan.planId,
-      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
-    });
-  } catch (err) {
+    const mappedAccount = accountStoreErrorResponse(c, err);
+    if (mappedAccount) return mappedAccount;
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1824,23 +1826,23 @@ app.post('/api/v1/admin/accounts', async (c) => {
     requestPayload,
     statusCode: 201,
     responseBody: {
-      account: adminAccountView(account.record),
+      account: adminAccountView(provisioned.account),
       initialKey: {
-        ...adminTenantKeyView(issued.record),
-        apiKey: issued.apiKey,
+        ...adminTenantKeyView(provisioned.initialKey),
+        apiKey: provisioned.apiKey,
       },
     },
     audit: {
       action: 'account.created',
-      accountId: account.record.id,
-      tenantId: issued.record.tenantId,
-      tenantKeyId: issued.record.id,
-      planId: issued.record.planId,
-      monthlyRunQuota: issued.record.monthlyRunQuota,
+      accountId: provisioned.account.id,
+      tenantId: provisioned.initialKey.tenantId,
+      tenantKeyId: provisioned.initialKey.id,
+      planId: provisioned.initialKey.planId,
+      monthlyRunQuota: provisioned.initialKey.monthlyRunQuota,
       requestHash: adminMutation.requestHash,
       metadata: {
-        accountName: account.record.accountName,
-        contactEmail: account.record.contactEmail,
+        accountName: provisioned.account.accountName,
+        contactEmail: provisioned.account.contactEmail,
       },
     },
   });
@@ -1876,7 +1878,7 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
 
   let attached;
   try {
-    attached = attachStripeBillingToAccount(c.req.param('id'), {
+    attached = await attachStripeBillingToAccountState(c.req.param('id'), {
       stripeCustomerId: requestPayload.stripeCustomerId || null,
       stripeSubscriptionId: requestPayload.stripeSubscriptionId || null,
       stripeSubscriptionStatus,
@@ -1927,7 +1929,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
 
   let result;
   try {
-    result = setHostedAccountStatus(c.req.param('id'), 'suspended');
+    result = await setHostedAccountStatusState(c.req.param('id'), 'suspended');
   } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
@@ -1971,7 +1973,7 @@ app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
 
   let result;
   try {
-    result = setHostedAccountStatus(c.req.param('id'), 'active');
+    result = await setHostedAccountStatusState(c.req.param('id'), 'active');
   } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
@@ -2014,7 +2016,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
 
   let result;
   try {
-    result = setHostedAccountStatus(c.req.param('id'), 'archived');
+    result = await setHostedAccountStatusState(c.req.param('id'), 'archived');
   } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
@@ -2082,7 +2084,7 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
 
   let issued;
   try {
-    issued = issueTenantApiKey({
+    issued = await issueTenantApiKeyState({
       tenantId,
       tenantName,
       planId: resolvedPlan.planId,
@@ -2140,7 +2142,7 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
 
   let rotated;
   try {
-    rotated = rotateTenantApiKey(c.req.param('id'), {
+    rotated = await rotateTenantApiKeyState(c.req.param('id'), {
       planId: requestedPlanId,
       monthlyRunQuota,
     });
@@ -2181,7 +2183,7 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
   return c.json(responseBody, 201);
 });
 
-app.post('/api/v1/admin/tenant-keys/:id/deactivate', (c) => {
+app.post('/api/v1/admin/tenant-keys/:id/deactivate', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
@@ -2191,7 +2193,7 @@ app.post('/api/v1/admin/tenant-keys/:id/deactivate', (c) => {
 
   let result;
   try {
-    result = setTenantApiKeyStatus(c.req.param('id'), 'inactive');
+    result = await setTenantApiKeyStatusState(c.req.param('id'), 'inactive');
   } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
@@ -2223,7 +2225,7 @@ app.post('/api/v1/admin/tenant-keys/:id/deactivate', (c) => {
   return c.json(responseBody);
 });
 
-app.post('/api/v1/admin/tenant-keys/:id/reactivate', (c) => {
+app.post('/api/v1/admin/tenant-keys/:id/reactivate', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
@@ -2233,7 +2235,7 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', (c) => {
 
   let result;
   try {
-    result = setTenantApiKeyStatus(c.req.param('id'), 'active');
+    result = await setTenantApiKeyStatusState(c.req.param('id'), 'active');
   } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
@@ -2264,7 +2266,7 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', (c) => {
   return c.json(responseBody);
 });
 
-app.post('/api/v1/admin/tenant-keys/:id/revoke', (c) => {
+app.post('/api/v1/admin/tenant-keys/:id/revoke', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
@@ -2272,7 +2274,7 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', (c) => {
   const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.revoke', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
-  const result = revokeTenantApiKey(c.req.param('id'));
+  const result = await revokeTenantApiKeyState(c.req.param('id'));
   if (!result.record) {
     return c.json({ error: 'Tenant key record not found' }, 404);
   }
@@ -2302,15 +2304,16 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', (c) => {
   return c.json(responseBody);
 });
 
-app.get('/api/v1/admin/usage', (c) => {
+app.get('/api/v1/admin/usage', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
   const tenantId = c.req.query('tenantId')?.trim() || null;
   const period = c.req.query('period')?.trim() || null;
-  const records = queryUsageLedger({ tenantId, period }).map((entry) => {
-    const tenantRecord = findTenantRecordByTenantId(entry.tenantId);
-    const accountRecord = findHostedAccountByTenantId(entry.tenantId);
+  const usageRecords = await queryUsageLedgerState({ tenantId, period });
+  const records = await Promise.all(usageRecords.map(async (entry) => {
+    const tenantRecord = await findTenantRecordByTenantIdState(entry.tenantId);
+    const accountRecord = await findHostedAccountByTenantIdState(entry.tenantId);
     const quota = tenantRecord?.monthlyRunQuota ?? null;
     return {
       tenantId: entry.tenantId,
@@ -2326,7 +2329,7 @@ app.get('/api/v1/admin/usage', (c) => {
       enforced: quota !== null,
       updatedAt: entry.updatedAt,
     };
-  });
+  }));
 
   return c.json({
     records,
@@ -2352,7 +2355,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
     }
 
     const tenant = currentTenant(c);
-    const quotaCheck = canConsumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const quotaCheck = await canConsumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
     if (!quotaCheck.allowed) {
       return c.json({
         error: 'Monthly pipeline run quota exceeded for this tenant plan.',
@@ -2486,7 +2489,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       );
     }
 
-    const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
 
     return c.json({
       runId: report.runId,
@@ -2815,7 +2818,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
     }
 
     const tenant = currentTenant(c);
-    const quotaCheck = canConsumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const quotaCheck = await canConsumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
     if (!quotaCheck.allowed) {
       return c.json({
         error: 'Monthly pipeline run quota exceeded for this tenant plan.',
@@ -2886,7 +2889,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       }
       const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
       applyRateLimitHeaders(c, rateLimit);
-      const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+      const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
       const asyncQueue = await getAsyncQueueSummary(bullmqQueue, tenant.tenantId, tenant.planId);
       return c.json({
         jobId,
@@ -2931,7 +2934,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
 
     const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
     applyRateLimitHeaders(c, rateLimit);
-    const usage = consumePipelineRun(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
     const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const job: AsyncJob = {
       id: jobId,
