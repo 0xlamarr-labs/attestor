@@ -71,7 +71,8 @@ docker run \
 | `PORT` | No | `3700` | API listen port |
 | `REDIS_URL` | No | Auto-resolved | Redis connection URL (Tier 1 of 3-tier resolution) |
 | `ATTESTOR_PG_URL` | No | None | PostgreSQL for RLS tenant isolation |
-| `ATTESTOR_TENANT_KEYS` | No | `""` | API key to tenant-id mapping (JSON or comma-separated) |
+| `ATTESTOR_TENANT_KEYS` | No | `""` | API key to tenant-id mapping (`key:id:name[:plan][:quota],...`) |
+| `ATTESTOR_TENANT_KEY_STORE_PATH` | No | `.attestor/tenant-keys.json` | Local file-backed tenant key store used by `npm run tenant:keys` and API key lookup |
 | `NODE_ENV` | No | `production` | Environment mode |
 
 ## Health and Readiness

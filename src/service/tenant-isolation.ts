@@ -12,12 +12,15 @@
  *
  * BOUNDARY:
  * - Token-based tenant identification (not database isolation)
- * - No per-tenant storage, quotas, or rate limiting yet
- * - No schema-per-tenant or RLS yet
+ * - API key lookup can come from env or local file-backed operator store
+ * - Plan/quota metadata can ride with API keys for hosted enforcement
+ * - No rate limiting or shared multi-node tenant datastore yet
+ * - Request routing remains distinct from optional database-level RLS
  * - This is the first request-routing slice
  */
 
 import type { Context, Next } from 'hono';
+import { findActiveTenantKey } from './tenant-key-store.js';
 
 export interface TenantContext {
   tenantId: string;
@@ -88,6 +91,18 @@ export function extractTenantContext(authHeader: string | undefined): TenantCont
         monthlyRunQuota: tenant.monthlyRunQuota,
       };
     }
+
+  const fileBackedTenant = findActiveTenantKey(token);
+  if (fileBackedTenant) {
+    return {
+      tenantId: fileBackedTenant.tenantId,
+      tenantName: fileBackedTenant.tenantName,
+      authenticatedAt: new Date().toISOString(),
+      source: 'api_key',
+      planId: fileBackedTenant.planId,
+      monthlyRunQuota: fileBackedTenant.monthlyRunQuota,
+    };
+  }
 
   // Try JWT decode for tenantId claim
   try {

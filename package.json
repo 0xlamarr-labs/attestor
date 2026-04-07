@@ -16,6 +16,7 @@
     "test:live-cypress": "tsx tests/live-cypress.test.ts",
     "test:live-pg": "tsx tests/live-postgres.test.ts",
     "test:live-snowflake": "tsx tests/live-snowflake.test.ts",
+    "tenant:keys": "tsx src/service/tenant-admin.ts",
     "start": "tsx src/financial/cli.ts",
     "list": "tsx src/financial/cli.ts list",
     "scenario": "tsx src/financial/cli.ts scenario",

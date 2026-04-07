@@ -11,7 +11,9 @@
  */
 
 import { strict as assert } from 'node:assert';
+import { join } from 'node:path';
 import { startServer } from '../src/service/api-server.js';
+import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } from '../src/service/tenant-key-store.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
@@ -27,6 +29,9 @@ function ok(condition: boolean, msg: string): void {
 }
 
 async function run() {
+  process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-tenant-keys.json');
+  resetTenantKeyStoreForTests();
+
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE API INTEGRATION TESTS — Real HTTP, Real Server');
   console.log('══════════════════════════════════════════════════════════════\n');
@@ -461,8 +466,38 @@ async function run() {
       console.log(`    quota enforced: used=${thirdBody.usage.used}/${thirdBody.usage.quota}, status=${third.status}`);
     }
 
+    process.env.ATTESTOR_TENANT_KEYS = '';
+
+    console.log('\n  [File-backed tenant key issuance + revoke]');
+    {
+      const issued = issueTenantApiKey({
+        tenantId: 'tenant-file',
+        tenantName: 'File Co',
+        planId: 'starter',
+        monthlyRunQuota: 1,
+      });
+
+      const usageRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${issued.apiKey}` },
+      });
+      ok(usageRes.status === 200, 'File store: issued key is accepted');
+      const usageBody = await usageRes.json() as any;
+      ok(usageBody.tenantContext.tenantId === 'tenant-file', 'File store: tenant id propagated');
+      ok(usageBody.tenantContext.planId === 'starter', 'File store: plan propagated');
+      ok(usageBody.usage.quota === 1, 'File store: quota propagated');
+
+      revokeTenantApiKey(issued.record.id);
+
+      const revokedRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${issued.apiKey}` },
+      });
+      ok(revokedRes.status === 401, 'File store: revoked key rejected');
+      console.log(`    issued=${issued.record.id}, preview=${issued.record.apiKeyPreview}, revokedStatus=${revokedRes.status}`);
+    }
+
     console.log(`\n  Live API Tests: ${passed} passed, 0 failed\n`);
   } finally {
+    resetTenantKeyStoreForTests();
     serverHandle.close();
     console.log('  Server stopped.\n');
     // Force exit: embedded Redis / BullMQ connections keep the event loop alive
