@@ -75,7 +75,10 @@ docker run \
 | `ATTESTOR_ACCOUNT_STORE_PATH` | No | `.attestor/accounts.json` | Local file-backed hosted account registry used by `/api/v1/admin/accounts` |
 | `ATTESTOR_TENANT_KEY_STORE_PATH` | No | `.attestor/tenant-keys.json` | Local file-backed tenant key store used by `npm run tenant:keys` and API key lookup |
 | `ATTESTOR_USAGE_LEDGER_PATH` | No | `.attestor/usage-ledger.json` | Local file-backed single-node usage ledger for hosted quota enforcement |
-| `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for hosted account, plan catalog, tenant management, and usage endpoints (`/api/v1/admin/accounts`, `/api/v1/admin/plans`, `/api/v1/admin/tenant-keys`, `/api/v1/admin/usage`) |
+| `ATTESTOR_ADMIN_API_KEY` | No | None | Admin API key for hosted account, plan catalog, audit, tenant management, idempotent provisioning, and usage endpoints (`/api/v1/admin/accounts`, `/api/v1/admin/plans`, `/api/v1/admin/audit`, `/api/v1/admin/tenant-keys`, `/api/v1/admin/usage`) |
+| `ATTESTOR_ADMIN_AUDIT_LOG_PATH` | No | `.attestor/admin-audit-log.json` | Local hash-linked admin mutation ledger |
+| `ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH` | No | `.attestor/admin-idempotency.json` | Local encrypted idempotency replay store for admin `POST` routes |
+| `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | No | `24` | Replay retention window for admin idempotency records |
 | `NODE_ENV` | No | `production` | Environment mode |
 
 ## Health and Readiness

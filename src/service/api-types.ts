@@ -267,6 +267,37 @@ export interface AdminListPlansResponse {
   };
 }
 
+export interface AdminAuditRecordResponse {
+  id: string;
+  occurredAt: string;
+  actorType: 'admin_api_key';
+  actorLabel: string;
+  action: 'account.created' | 'tenant_key.issued' | 'tenant_key.revoked';
+  routeId: string;
+  accountId: string | null;
+  tenantId: string | null;
+  tenantKeyId: string | null;
+  planId: string | null;
+  monthlyRunQuota: number | null;
+  idempotencyKey: string | null;
+  requestHash: string;
+  metadata: Record<string, unknown>;
+  previousHash: string | null;
+  eventHash: string;
+}
+
+export interface AdminAuditResponse {
+  records: AdminAuditRecordResponse[];
+  summary: {
+    actionFilter: 'account.created' | 'tenant_key.issued' | 'tenant_key.revoked' | null;
+    tenantFilter: string | null;
+    accountFilter: string | null;
+    recordCount: number;
+    chainIntact: boolean;
+    latestHash: string | null;
+  };
+}
+
 export interface AdminUsageRecord {
   tenantId: string;
   tenantName: string | null;
@@ -315,6 +346,7 @@ export const API_ROUTES = {
   ACCOUNT_USAGE: '/api/v1/account/usage',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
   ADMIN_PLANS: '/api/v1/admin/plans',
+  ADMIN_AUDIT: '/api/v1/admin/audit',
   ADMIN_TENANT_KEYS: '/api/v1/admin/tenant-keys',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',

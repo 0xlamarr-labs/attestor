@@ -120,6 +120,9 @@ export function revokeTenantApiKey(id: string): {
   const store = loadStore();
   const record = store.records.find((entry) => entry.id === id);
   if (!record) return { record: null, path: storePath() };
+  if (record.status === 'revoked') {
+    return { record, path: storePath() };
+  }
   record.status = 'revoked';
   record.revokedAt = new Date().toISOString();
   saveStore(store);

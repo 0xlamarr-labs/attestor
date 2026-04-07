@@ -16,6 +16,8 @@ import { startServer } from '../src/service/api-server.js';
 import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } from '../src/service/tenant-key-store.js';
 import { readUsageLedgerSnapshot, resetUsageMeter } from '../src/service/usage-meter.js';
 import { resetAccountStoreForTests } from '../src/service/account-store.js';
+import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
+import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
@@ -34,10 +36,14 @@ async function run() {
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(process.cwd(), '.attestor', 'live-api-usage-ledger.json');
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-accounts.json');
+  process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
+  process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
   resetTenantKeyStoreForTests();
   resetUsageMeter();
   resetAccountStoreForTests();
+  resetAdminAuditLogForTests();
+  resetAdminIdempotencyStoreForTests();
 
   console.log('\n══════════════════════════════════════════════════════════════');
   console.log('  LIVE API INTEGRATION TESTS — Real HTTP, Real Server');
@@ -534,6 +540,7 @@ async function run() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-create-1',
         },
         body: JSON.stringify({
           accountName: 'Account Co',
@@ -548,6 +555,43 @@ async function run() {
       ok(typeof createAccountBody.initialKey.apiKey === 'string', 'Admin Accounts: initial key returned');
       ok(createAccountBody.initialKey.planId === 'starter', 'Admin Accounts: hosted default plan applied');
       ok(createAccountBody.initialKey.monthlyRunQuota === 100, 'Admin Accounts: hosted default quota applied');
+
+      const createAccountReplayRes = await fetch(`${BASE}/api/v1/admin/accounts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-create-1',
+        },
+        body: JSON.stringify({
+          accountName: 'Account Co',
+          contactEmail: 'ops@account.example',
+          tenantId: 'tenant-account',
+          tenantName: 'Account Tenant',
+        }),
+      });
+      ok(createAccountReplayRes.status === 201, 'Admin Accounts: idempotent replay preserves status');
+      ok(createAccountReplayRes.headers.get('x-attestor-idempotent-replay') === 'true', 'Admin Accounts: replay header set');
+      const createAccountReplayBody = await createAccountReplayRes.json() as any;
+      ok(createAccountReplayBody.account.id === createAccountBody.account.id, 'Admin Accounts: replay preserves account id');
+      ok(createAccountReplayBody.initialKey.id === createAccountBody.initialKey.id, 'Admin Accounts: replay preserves initial key id');
+      ok(createAccountReplayBody.initialKey.apiKey === createAccountBody.initialKey.apiKey, 'Admin Accounts: replay preserves plaintext API key');
+
+      const createAccountConflictRes = await fetch(`${BASE}/api/v1/admin/accounts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-account-create-1',
+        },
+        body: JSON.stringify({
+          accountName: 'Account Co Changed',
+          contactEmail: 'ops@account.example',
+          tenantId: 'tenant-account',
+          tenantName: 'Account Tenant',
+        }),
+      });
+      ok(createAccountConflictRes.status === 409, 'Admin Accounts: mismatched idempotent request rejected');
 
       const accountsListRes = await fetch(`${BASE}/api/v1/admin/accounts`, {
         headers: { Authorization: 'Bearer admin-secret' },
@@ -571,6 +615,7 @@ async function run() {
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-issue-1',
         },
         body: JSON.stringify({
           tenantId: 'tenant-admin',
@@ -583,6 +628,25 @@ async function run() {
       ok(typeof issueBody.key.apiKey === 'string', 'Admin API: plaintext apiKey returned once');
       ok(issueBody.key.planId === 'pro', 'Admin API: plan persisted');
       ok(issueBody.key.monthlyRunQuota === 1000, 'Admin API: plan default quota applied');
+
+      const issueReplayRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-issue-1',
+        },
+        body: JSON.stringify({
+          tenantId: 'tenant-admin',
+          tenantName: 'Admin Co',
+          planId: 'pro',
+        }),
+      });
+      ok(issueReplayRes.status === 201, 'Admin API: tenant issue replay preserves status');
+      ok(issueReplayRes.headers.get('x-attestor-idempotent-replay') === 'true', 'Admin API: tenant issue replay header set');
+      const issueReplayBody = await issueReplayRes.json() as any;
+      ok(issueReplayBody.key.id === issueBody.key.id, 'Admin API: tenant issue replay preserves key id');
+      ok(issueReplayBody.key.apiKey === issueBody.key.apiKey, 'Admin API: tenant issue replay preserves api key');
 
       const invalidPlanRes = await fetch(`${BASE}/api/v1/admin/tenant-keys`, {
         method: 'POST',
@@ -684,16 +748,58 @@ async function run() {
 
       const revokeRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/revoke`, {
         method: 'POST',
-        headers: { Authorization: 'Bearer admin-secret' },
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-revoke-1',
+        },
       });
       ok(revokeRes.status === 200, 'Admin API: revoke status 200');
       const revokeBody = await revokeRes.json() as any;
       ok(revokeBody.key.status === 'revoked', 'Admin API: revoke marks record revoked');
 
+      const revokeReplayRes = await fetch(`${BASE}/api/v1/admin/tenant-keys/${issueBody.key.id}/revoke`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'idem-tenant-revoke-1',
+        },
+      });
+      ok(revokeReplayRes.status === 200, 'Admin API: revoke replay preserves status');
+      ok(revokeReplayRes.headers.get('x-attestor-idempotent-replay') === 'true', 'Admin API: revoke replay header set');
+      const revokeReplayBody = await revokeReplayRes.json() as any;
+      ok(revokeReplayBody.key.id === revokeBody.key.id, 'Admin API: revoke replay preserves key id');
+      ok(revokeReplayBody.key.status === 'revoked', 'Admin API: revoke replay preserves status');
+
       const revokedTenantRes = await fetch(`${BASE}/api/v1/account/usage`, {
         headers: { Authorization: `Bearer ${issueBody.key.apiKey}` },
       });
       ok(revokedTenantRes.status === 401, 'Admin API: revoked key no longer works');
+
+      const auditNoAuth = await fetch(`${BASE}/api/v1/admin/audit`);
+      ok(auditNoAuth.status === 401, 'Admin Audit: auth required');
+
+      const auditRes = await fetch(`${BASE}/api/v1/admin/audit?limit=10`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(auditRes.status === 200, 'Admin Audit: list status 200');
+      const auditBody = await auditRes.json() as any;
+      ok(auditBody.summary.chainIntact === true, 'Admin Audit: chain intact');
+      ok(auditBody.summary.recordCount >= 3, 'Admin Audit: expected records present');
+      const accountAudit = auditBody.records.find((entry: any) => entry.action === 'account.created' && entry.accountId === createAccountBody.account.id);
+      ok(Boolean(accountAudit), 'Admin Audit: account create event present');
+      ok(accountAudit.idempotencyKey === 'idem-account-create-1', 'Admin Audit: account create idempotency captured');
+      const issueAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.issued' && entry.tenantKeyId === issueBody.key.id);
+      ok(Boolean(issueAudit), 'Admin Audit: tenant key issue event present');
+      const revokeAudit = auditBody.records.find((entry: any) => entry.action === 'tenant_key.revoked' && entry.tenantKeyId === issueBody.key.id);
+      ok(Boolean(revokeAudit), 'Admin Audit: tenant key revoke event present');
+
+      const auditTenantFilterRes = await fetch(`${BASE}/api/v1/admin/audit?tenantId=tenant-admin`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(auditTenantFilterRes.status === 200, 'Admin Audit: tenant filter status 200');
+      const auditTenantFilterBody = await auditTenantFilterRes.json() as any;
+      ok(auditTenantFilterBody.records.every((entry: any) => entry.tenantId === 'tenant-admin'), 'Admin Audit: tenant filter narrows records');
+
       console.log(`    account=${createAccountBody.account.id}, issued=${issueBody.key.id}, usageUsed=${usageListed.used}, revoked=${revokeBody.key.status}`);
     }
 
@@ -702,6 +808,8 @@ async function run() {
     resetAccountStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
+    resetAdminAuditLogForTests();
+    resetAdminIdempotencyStoreForTests();
     serverHandle.close();
     console.log('  Server stopped.\n');
     // Force exit: embedded Redis / BullMQ connections keep the event loop alive

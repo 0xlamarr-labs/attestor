@@ -51,6 +51,9 @@ import {
 } from './tenant-key-store.js';
 import { createHostedAccount, findHostedAccountByTenantId, listHostedAccounts, type HostedAccountRecord } from './account-store.js';
 import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, resolvePlanSpec } from './plan-catalog.js';
+import { appendAdminAuditRecord, listAdminAuditRecords, type AdminAuditAction } from './admin-audit-log.js';
+import { lookupAdminIdempotency, recordAdminIdempotency } from './admin-idempotency-store.js';
+import { hashJsonValue } from './json-stable.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -137,6 +140,131 @@ function adminPlanView() {
     intendedFor: plan.intendedFor,
     defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
   }));
+}
+
+function adminAuditView(record: {
+  id: string;
+  occurredAt: string;
+  actorType: 'admin_api_key';
+  actorLabel: string;
+  action: AdminAuditAction;
+  routeId: string;
+  accountId: string | null;
+  tenantId: string | null;
+  tenantKeyId: string | null;
+  planId: string | null;
+  monthlyRunQuota: number | null;
+  idempotencyKey: string | null;
+  requestHash: string;
+  metadata: Record<string, unknown>;
+  previousHash: string | null;
+  eventHash: string;
+}) {
+  return {
+    id: record.id,
+    occurredAt: record.occurredAt,
+    actorType: record.actorType,
+    actorLabel: record.actorLabel,
+    action: record.action,
+    routeId: record.routeId,
+    accountId: record.accountId,
+    tenantId: record.tenantId,
+    tenantKeyId: record.tenantKeyId,
+    planId: record.planId,
+    monthlyRunQuota: record.monthlyRunQuota,
+    idempotencyKey: record.idempotencyKey,
+    requestHash: record.requestHash,
+    metadata: record.metadata,
+    previousHash: record.previousHash,
+    eventHash: record.eventHash,
+  };
+}
+
+function adminMutationRequest(c: Context, routeId: string, requestPayload: unknown):
+  | { idempotencyKey: string | null; requestHash: string }
+  | Response {
+  const idempotencyKey = c.req.header('Idempotency-Key')?.trim() ?? null;
+  if (!idempotencyKey) {
+    return {
+      idempotencyKey: null,
+      requestHash: hashJsonValue({ routeId, payload: requestPayload }),
+    };
+  }
+
+  const lookup = lookupAdminIdempotency({
+    idempotencyKey,
+    routeId,
+    requestPayload,
+  });
+
+  if (lookup.kind === 'conflict') {
+    return c.json({
+      error: `Idempotency-Key '${idempotencyKey}' was already used for a different admin mutation.`,
+      routeId: lookup.record.routeId,
+      createdAt: lookup.record.createdAt,
+    }, 409);
+  }
+
+  if (lookup.kind === 'replay') {
+    return new Response(JSON.stringify(lookup.response), {
+      status: lookup.record.statusCode,
+      headers: {
+        'content-type': 'application/json; charset=UTF-8',
+        'x-attestor-idempotent-replay': 'true',
+        'x-attestor-idempotency-key': idempotencyKey,
+      },
+    });
+  }
+
+  return {
+    idempotencyKey,
+    requestHash: lookup.requestHash,
+  };
+}
+
+function finalizeAdminMutation(options: {
+  idempotencyKey: string | null;
+  routeId: string;
+  requestPayload: unknown;
+  statusCode: number;
+  responseBody: Record<string, unknown>;
+  audit: {
+    action: AdminAuditAction;
+    accountId?: string | null;
+    tenantId?: string | null;
+    tenantKeyId?: string | null;
+    planId?: string | null;
+    monthlyRunQuota?: number | null;
+    requestHash?: string;
+    metadata?: Record<string, unknown>;
+  };
+}): Record<string, unknown> {
+  if (options.idempotencyKey) {
+    recordAdminIdempotency({
+      idempotencyKey: options.idempotencyKey,
+      routeId: options.routeId,
+      requestPayload: options.requestPayload,
+      statusCode: options.statusCode,
+      response: options.responseBody,
+    });
+  }
+
+  appendAdminAuditRecord({
+    actorType: 'admin_api_key',
+    actorLabel: 'ATTESTOR_ADMIN_API_KEY',
+    action: options.audit.action,
+    routeId: options.routeId,
+    accountId: options.audit.accountId ?? null,
+    tenantId: options.audit.tenantId ?? null,
+    tenantKeyId: options.audit.tenantKeyId ?? null,
+    planId: options.audit.planId ?? null,
+    monthlyRunQuota: options.audit.monthlyRunQuota ?? null,
+    idempotencyKey: options.idempotencyKey,
+    requestHash: options.audit.requestHash ?? '',
+    metadata: options.audit.metadata ?? {},
+  });
+
+  return options.responseBody;
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────
@@ -243,6 +371,37 @@ app.get('/api/v1/admin/plans', (c) => {
   });
 });
 
+app.get('/api/v1/admin/audit', (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const action = c.req.query('action')?.trim() as AdminAuditAction | undefined;
+  const tenantId = c.req.query('tenantId')?.trim() || null;
+  const accountId = c.req.query('accountId')?.trim() || null;
+  const limitRaw = c.req.query('limit')?.trim() || '';
+  const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
+
+  const result = listAdminAuditRecords({
+    action: action ?? null,
+    tenantId,
+    accountId,
+    limit,
+  });
+
+  return c.json({
+    records: result.records.map(adminAuditView),
+    summary: {
+      actionFilter: action ?? null,
+      tenantFilter: tenantId,
+      accountFilter: accountId,
+      recordCount: result.records.length,
+      chainIntact: result.chainIntact,
+      latestHash: result.latestHash,
+    },
+  });
+});
+
 app.post('/api/v1/admin/accounts', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
@@ -256,10 +415,21 @@ app.post('/api/v1/admin/accounts', async (c) => {
   const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
     ? body.monthlyRunQuota
     : null;
+  const requestPayload = {
+    accountName,
+    contactEmail,
+    tenantId,
+    tenantName,
+    planId: requestedPlanId,
+    monthlyRunQuota,
+  };
 
   if (!accountName || !contactEmail || !tenantId || !tenantName) {
     return c.json({ error: 'accountName, contactEmail, tenantId, and tenantName are required' }, 400);
   }
+
+  const adminMutation = adminMutationRequest(c, 'admin.accounts.create', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
 
   let resolvedPlan;
   try {
@@ -284,13 +454,34 @@ app.post('/api/v1/admin/accounts', async (c) => {
     monthlyRunQuota: resolvedPlan.monthlyRunQuota,
   });
 
-  return c.json({
-    account: adminAccountView(account.record),
-    initialKey: {
-      ...adminTenantKeyView(issued.record),
-      apiKey: issued.apiKey,
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.accounts.create',
+    requestPayload,
+    statusCode: 201,
+    responseBody: {
+      account: adminAccountView(account.record),
+      initialKey: {
+        ...adminTenantKeyView(issued.record),
+        apiKey: issued.apiKey,
+      },
     },
-  }, 201);
+    audit: {
+      action: 'account.created',
+      accountId: account.record.id,
+      tenantId: issued.record.tenantId,
+      tenantKeyId: issued.record.id,
+      planId: issued.record.planId,
+      monthlyRunQuota: issued.record.monthlyRunQuota,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        accountName: account.record.accountName,
+        contactEmail: account.record.contactEmail,
+      },
+    },
+  });
+
+  return c.json(responseBody, 201);
 });
 
 app.post('/api/v1/admin/tenant-keys', async (c) => {
@@ -304,10 +495,19 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
   const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
     ? body.monthlyRunQuota
     : null;
+  const requestPayload = {
+    tenantId,
+    tenantName,
+    planId: requestedPlanId,
+    monthlyRunQuota,
+  };
 
   if (!tenantId || !tenantName) {
     return c.json({ error: 'tenantId and tenantName are required' }, 400);
   }
+
+  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.issue', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
 
   let resolvedPlan;
   try {
@@ -327,26 +527,69 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
     monthlyRunQuota: resolvedPlan.monthlyRunQuota,
   });
 
-  return c.json({
-    key: {
-      ...adminTenantKeyView(issued.record),
-      apiKey: issued.apiKey,
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.tenant_keys.issue',
+    requestPayload,
+    statusCode: 201,
+    responseBody: {
+      key: {
+        ...adminTenantKeyView(issued.record),
+        apiKey: issued.apiKey,
+      },
     },
-  }, 201);
+    audit: {
+      action: 'tenant_key.issued',
+      tenantId: issued.record.tenantId,
+      tenantKeyId: issued.record.id,
+      planId: issued.record.planId,
+      monthlyRunQuota: issued.record.monthlyRunQuota,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        tenantName: issued.record.tenantName,
+      },
+    },
+  });
+
+  return c.json(responseBody, 201);
 });
 
 app.post('/api/v1/admin/tenant-keys/:id/revoke', (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
+  const requestPayload = { id: c.req.param('id') };
+  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.revoke', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
   const result = revokeTenantApiKey(c.req.param('id'));
   if (!result.record) {
     return c.json({ error: 'Tenant key record not found' }, 404);
   }
 
-  return c.json({
-    key: adminTenantKeyView(result.record),
+  const responseBody = finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.tenant_keys.revoke',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      key: adminTenantKeyView(result.record),
+    },
+    audit: {
+      action: 'tenant_key.revoked',
+      tenantId: result.record.tenantId,
+      tenantKeyId: result.record.id,
+      planId: result.record.planId,
+      monthlyRunQuota: result.record.monthlyRunQuota,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        tenantName: result.record.tenantName,
+        revokedAt: result.record.revokedAt,
+      },
+    },
   });
+
+  return c.json(responseBody);
 });
 
 app.get('/api/v1/admin/usage', (c) => {
