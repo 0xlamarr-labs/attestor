@@ -206,8 +206,16 @@ API endpoints:
 - `GET /api/v1/ready` — orchestrator readiness probe (200 when ready, 503 when not)
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
 - `GET /api/v1/account`
 - `GET /api/v1/account/usage`
+- `POST /api/v1/account/users/bootstrap`
+- `GET /api/v1/account/users`
+- `POST /api/v1/account/users`
+- `POST /api/v1/account/users/:id/deactivate`
+- `POST /api/v1/account/users/:id/reactivate`
 - `POST /api/v1/account/billing/checkout` (`Idempotency-Key` required)
 - `POST /api/v1/account/billing/portal`
 - `GET /api/v1/account/billing/export` (`format=json|csv`)
@@ -321,8 +329,9 @@ What it does not prove yet:
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, auto-summary in signed API response, not yet full filing-package issuance by default
 - Hosted API shell: built-in hosted plan catalog (`community`, `starter`, `pro`, `enterprise`) + API-key tenant plans + monthly pipeline-run quota enforcement + plan-aware tenant rate limiting on expensive pipeline routes + `/api/v1/account`, `/api/v1/account/usage`, and `/api/v1/account/billing/export` hosted-customer endpoints. When `ATTESTOR_CONTROL_PLANE_PG_URL` is set, hosted account state, tenant keys, usage, admin audit, admin idempotency replay, and Stripe webhook dedupe all move onto a shared PostgreSQL-backed control-plane first slice; otherwise they fall back to local single-node files. `/api/v1/account` surfaces the current Stripe-backed checkout and invoice summary for the hosted account, while `/api/v1/account/billing/export` can return JSON or CSV using live Stripe invoice/charge listing when available and shared-ledger/mock-summary fallbacks otherwise.
+- Customer auth / RBAC first slice: hosted customer access now supports account users plus opaque server-side sessions with role boundaries (`account_admin`, `billing_admin`, `read_only`). `POST /api/v1/account/users/bootstrap` creates the first `account_admin` from an initial tenant API key, `POST /api/v1/auth/login|logout` + `GET /api/v1/auth/me` provide cookie/header-backed session auth, and `/api/v1/account/users*` manages users under `account_admin` authorization. In shared-control-plane mode, account users and sessions move into PostgreSQL alongside the rest of the hosted control-plane. Boundary: one account membership per email, built-in `scrypt` password hashing, no invites/password reset/MFA/SSO yet.
 - Tenant onboarding CLI: `npm run tenant:keys -- plans|issue|list|rotate|deactivate|reactivate|revoke` manages hosted tenant keys through the current control-plane backend. Built-in plans resolve default quotas centrally; keys are hashed at rest and plaintext is only shown once on issuance.
-- Account provisioning store: hosted account registry with one primary tenant per account, explicit `active/suspended/archived` lifecycle, and Stripe billing summary in this first slice (subscription status, last checkout completion, last invoice outcome). Storage is local file-backed by default and shared PostgreSQL-backed when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured.
+- Account provisioning store: hosted account registry with one primary tenant per account, explicit `active/suspended/archived` lifecycle, and Stripe billing summary in this first slice (subscription status, last checkout completion, last invoice outcome). Storage is local file-backed by default and shared PostgreSQL-backed when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured. The same shared PG first slice now also covers hosted account users and opaque customer sessions.
 - Admin account API: `GET/POST /api/v1/admin/accounts` creates a hosted customer record and issues the first tenant API key in one operator call. `GET /api/v1/admin/accounts/:id/billing/export` returns JSON/CSV billing export for one hosted account, and `POST /api/v1/admin/accounts/:id/billing/stripe|suspend|reactivate|archive` adds operator billing attachment and account lifecycle controls. Hosted operator provisioning defaults to the `starter` plan unless overridden.
 - Admin plan catalog API: `GET /api/v1/admin/plans` returns the built-in hosted plan catalog, the current default provisioning plan, the active pipeline rate-limit window/defaults, the per-plan async pending-job caps, and whether each plan has a Stripe price configured.
 - Admin tenant management API: `GET/POST /api/v1/admin/tenant-keys` plus `POST /api/v1/admin/tenant-keys/:id/rotate|deactivate|reactivate|revoke` behind `ATTESTOR_ADMIN_API_KEY`. Built-in plan ids are validated server-side so operator typos cannot silently create the wrong quota boundary, and active overlap is capped to two keys per tenant by default.
@@ -331,6 +340,7 @@ What it does not prove yet:
 - Admin billing event API: `GET /api/v1/admin/billing/events` exposes the shared PostgreSQL-backed billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured, with account/tenant/event filters and deduplicated Stripe subscription, checkout-completion, and invoice lifecycle history.
 - Admin usage reporting API: `GET /api/v1/admin/usage` returns tenant-level monthly usage from the current control-plane ledger, with optional `tenantId` / `period` filtering and best-effort tenant metadata enrichment.
 - Control-plane backup / restore first slice: `npm run backup:control-plane` creates a logical snapshot of the hosted control-plane, including shared PostgreSQL-backed account/tenant/usage/admin-audit state when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, plus the shared PostgreSQL billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured. Ephemeral idempotency/webhook stores can be included explicitly for DR drills, restore verifies snapshot checksums before writing, and admin audit snapshots with a broken hash chain are rejected instead of being imported. This is still a logical snapshot path, not PostgreSQL PITR or Redis queue recovery.
+- Control-plane backup / restore first slice: `npm run backup:control-plane` creates a logical snapshot of the hosted control-plane, including shared PostgreSQL-backed account/tenant/usage/admin-audit/account-user/account-session state when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, plus the shared PostgreSQL billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured. Ephemeral idempotency/webhook stores can be included explicitly for DR drills, restore verifies snapshot checksums before writing, and admin audit snapshots with a broken hash chain are rejected instead of being imported. This is still a logical snapshot path, not PostgreSQL PITR or Redis queue recovery.
 - Stripe reconciliation first slice: `POST /api/v1/billing/stripe/webhook` verifies Stripe signatures, de-duplicates by `event.id`, reconciles hosted account billing state from `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed`, and suspends/reactivates account access based on subscription status. When `ATTESTOR_CONTROL_PLANE_PG_URL` is set, duplicate suppression moves onto a shared PostgreSQL claim/finalize path with advisory-lock guarded processing instead of the local processed-event file; when `ATTESTOR_BILLING_LEDGER_PG_URL` is set, the same route also claims and finalizes events in the shared PostgreSQL billing ledger. This now persists checkout-completion and last-invoice summary truth, and backs hosted billing export with shared event history, but it is still not a full internal invoice line-item or entitlement ledger.
 - Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices and a required `Idempotency-Key`, `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account, and `GET /api/v1/account/billing/export` returns customer-visible billing export in JSON or CSV. In runtime, `customer.subscription.*`, `checkout.session.completed`, and invoice webhooks sync Stripe billing truth back into Attestor hosted account and tenant state.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
@@ -389,9 +399,14 @@ What it does not prove yet:
 | `OIDC_CLIENT_ID` | OIDC client ID for device flow |
 | `ATTESTOR_TENANT_KEYS` | Tenant API keys with optional plan/quota metadata (`key:id:name[:plan][:quota],...`) for request-level isolation and hosted quota enforcement |
 | `ATTESTOR_ACCOUNT_STORE_PATH` | Optional path for the file-backed hosted account registry used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
+| `ATTESTOR_ACCOUNT_USER_STORE_PATH` | Optional path for the file-backed hosted account user registry used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
+| `ATTESTOR_ACCOUNT_SESSION_STORE_PATH` | Optional path for the file-backed hosted account session store used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_TENANT_KEY_STORE_PATH` | Optional path for the file-backed tenant key store used by `npm run tenant:keys` and hosted API key lookup when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_TENANT_KEY_MAX_ACTIVE_PER_TENANT` | Optional max active hosted API keys per tenant during overlap / cutover (default `2`) |
 | `ATTESTOR_USAGE_LEDGER_PATH` | Optional path for the file-backed hosted usage ledger used by quota enforcement and `/api/v1/account/usage` when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
+| `ATTESTOR_SESSION_COOKIE_NAME` | Optional cookie name for hosted customer sessions (default `attestor_session`) |
+| `ATTESTOR_SESSION_TTL_HOURS` | Optional hosted session TTL in hours (default `12`) |
+| `ATTESTOR_SESSION_COOKIE_SECURE` | Set `true` to mark hosted session cookies as `Secure` |
 | `ATTESTOR_RATE_LIMIT_WINDOW_SECONDS` | Optional tenant pipeline rate-limit window size in seconds (default `60`) |
 | `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | Optional per-plan pipeline request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
 | `ATTESTOR_ASYNC_PENDING_<PLAN>_JOBS` | Optional per-plan pending async-job cap override used for tenant-aware BullMQ submit fairness (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
@@ -437,6 +452,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1236 tests across 10 suites: 557 unit + 396 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 23 control-plane backup/restore + 29 control-plane backup/restore shared PG + 46 live shared control-plane PG + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1301 tests across 10 suites: 557 unit + 431 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 31 control-plane backup/restore + 37 control-plane backup/restore shared PG + 60 live shared control-plane PG + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

@@ -20,6 +20,8 @@ import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } fr
 import { readUsageLedgerSnapshot, resetUsageMeter } from '../src/service/usage-meter.js';
 import { resetTenantRateLimiterForTests } from '../src/service/rate-limit.js';
 import { resetAccountStoreForTests } from '../src/service/account-store.js';
+import { resetAccountUserStoreForTests } from '../src/service/account-user-store.js';
+import { resetAccountSessionStoreForTests } from '../src/service/account-session-store.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
@@ -87,6 +89,13 @@ function metricSamples(metrics: string, metricName: string, labels: Record<strin
     .filter((value) => Number.isFinite(value));
 }
 
+function cookieHeaderFromResponse(res: Response): string | null {
+  const raw = res.headers.get('set-cookie');
+  if (!raw) return null;
+  const [cookiePair] = raw.split(';', 1);
+  return cookiePair?.trim() || null;
+}
+
 async function run() {
   mkdirSync('.attestor', { recursive: true });
 
@@ -97,10 +106,13 @@ async function run() {
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(process.cwd(), '.attestor', 'live-api-usage-ledger.json');
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-accounts.json');
+  process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-users.json');
+  process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-sessions.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-stripe-webhooks.json');
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-observability.jsonl');
+  process.env.ATTESTOR_SESSION_COOKIE_SECURE = 'false';
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
@@ -119,6 +131,8 @@ async function run() {
   resetUsageMeter();
   resetTenantRateLimiterForTests();
   resetAccountStoreForTests();
+  resetAccountUserStoreForTests();
+  resetAccountSessionStoreForTests();
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
@@ -847,11 +861,147 @@ async function run() {
       ok(accountSummaryBody.account.id === createAccountBody.account.id, 'Account API: summary returns hosted account');
       ok(accountSummaryBody.account.billing.provider === null, 'Account API: billing starts empty');
 
-      const checkoutMissingKeyRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
+      const bootstrapRes = await fetch(`${BASE}/api/v1/account/users/bootstrap`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({
+          email: 'owner@account.example',
+          displayName: 'Owner Admin',
+          password: 'BootstrapPass123!',
+        }),
+      });
+      ok(bootstrapRes.status === 201, 'Account Users: bootstrap status 201');
+      const bootstrapBody = await bootstrapRes.json() as any;
+      ok(bootstrapBody.bootstrap === true, 'Account Users: bootstrap flag true');
+      ok(bootstrapBody.user.role === 'account_admin', 'Account Users: bootstrap user is account_admin');
+
+      const bootstrapConflictRes = await fetch(`${BASE}/api/v1/account/users/bootstrap`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({
+          email: 'second@account.example',
+          displayName: 'Second Admin',
+          password: 'BootstrapPass456!',
+        }),
+      });
+      ok(bootstrapConflictRes.status === 409, 'Account Users: bootstrap blocked once users exist');
+
+      const loginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'owner@account.example',
+          password: 'BootstrapPass123!',
+        }),
+      });
+      ok(loginRes.status === 200, 'Auth: login status 200');
+      const loginBody = await loginRes.json() as any;
+      const accountAdminCookie = cookieHeaderFromResponse(loginRes);
+      ok(Boolean(accountAdminCookie), 'Auth: login sets session cookie');
+      ok(loginBody.session.source === 'account_session', 'Auth: login returns account_session source');
+      ok(loginBody.user.lastLoginAt !== null, 'Auth: login updates lastLoginAt');
+
+      const meRes = await fetch(`${BASE}/api/v1/auth/me`, {
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(meRes.status === 200, 'Auth: me status 200');
+      const meBody = await meRes.json() as any;
+      ok(meBody.user.email === 'owner@account.example', 'Auth: me returns logged-in user');
+      ok(meBody.session.role === 'account_admin', 'Auth: me returns account_admin role');
+
+      const sessionAccountRes = await fetch(`${BASE}/api/v1/account`, {
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(sessionAccountRes.status === 200, 'Account API: summary also works with session cookie');
+      const sessionAccountBody = await sessionAccountRes.json() as any;
+      ok(sessionAccountBody.tenantContext.source === 'account_session', 'Account API: session summary source=account_session');
+
+      const usersNoSessionRes = await fetch(`${BASE}/api/v1/account/users`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(usersNoSessionRes.status === 401, 'Account Users: session required for user listing');
+
+      const createBillingAdminRes = await fetch(`${BASE}/api/v1/account/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: accountAdminCookie!,
+        },
+        body: JSON.stringify({
+          email: 'billing@account.example',
+          displayName: 'Billing Admin',
+          password: 'BillingPass123!',
+          role: 'billing_admin',
+        }),
+      });
+      ok(createBillingAdminRes.status === 201, 'Account Users: create billing_admin status 201');
+      const createBillingAdminBody = await createBillingAdminRes.json() as any;
+      ok(createBillingAdminBody.user.role === 'billing_admin', 'Account Users: billing_admin role persisted');
+
+      const createReadOnlyRes = await fetch(`${BASE}/api/v1/account/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: accountAdminCookie!,
+        },
+        body: JSON.stringify({
+          email: 'readonly@account.example',
+          displayName: 'Read Only',
+          password: 'ReadOnlyPass123!',
+          role: 'read_only',
+        }),
+      });
+      ok(createReadOnlyRes.status === 201, 'Account Users: create read_only status 201');
+      const createReadOnlyBody = await createReadOnlyRes.json() as any;
+      ok(createReadOnlyBody.user.role === 'read_only', 'Account Users: read_only role persisted');
+
+      const usersListRes = await fetch(`${BASE}/api/v1/account/users`, {
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(usersListRes.status === 200, 'Account Users: list status 200');
+      const usersListBody = await usersListRes.json() as any;
+      ok(usersListBody.users.length === 3, 'Account Users: list returns bootstrap + billing + read_only');
+
+      const readOnlyLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'readonly@account.example',
+          password: 'ReadOnlyPass123!',
+        }),
+      });
+      ok(readOnlyLoginRes.status === 200, 'Auth: read_only login status 200');
+      const readOnlyCookie = cookieHeaderFromResponse(readOnlyLoginRes);
+      ok(Boolean(readOnlyCookie), 'Auth: read_only login sets session cookie');
+
+      const readOnlyUsersRes = await fetch(`${BASE}/api/v1/account/users`, {
+        headers: { Cookie: readOnlyCookie! },
+      });
+      ok(readOnlyUsersRes.status === 403, 'RBAC: read_only user blocked from user listing');
+
+      const billingAdminLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'billing@account.example',
+          password: 'BillingPass123!',
+        }),
+      });
+      ok(billingAdminLoginRes.status === 200, 'Auth: billing_admin login status 200');
+      const billingAdminCookie = cookieHeaderFromResponse(billingAdminLoginRes);
+      ok(Boolean(billingAdminCookie), 'Auth: billing_admin login sets session cookie');
+
+      const checkoutMissingKeyRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: accountAdminCookie!,
         },
         body: JSON.stringify({ planId: 'pro' }),
       });
@@ -861,7 +1011,7 @@ async function run() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+          Cookie: accountAdminCookie!,
           'Idempotency-Key': 'checkout-no-plan-1',
         },
         body: JSON.stringify({}),
@@ -872,7 +1022,7 @@ async function run() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+          Cookie: accountAdminCookie!,
           'Idempotency-Key': 'checkout-account-1',
         },
         body: JSON.stringify({ planId: 'pro' }),
@@ -889,7 +1039,7 @@ async function run() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${createAccountBody.initialKey.apiKey}`,
+          Cookie: accountAdminCookie!,
           'Idempotency-Key': 'checkout-account-1',
         },
         body: JSON.stringify({ planId: 'pro' }),
@@ -901,9 +1051,20 @@ async function run() {
 
       const portalMissingCustomerRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+        headers: { Cookie: billingAdminCookie! },
       });
       ok(portalMissingCustomerRes.status === 409, 'Account Billing: portal requires Stripe customer');
+
+      const readOnlyCheckoutRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: readOnlyCookie!,
+          'Idempotency-Key': 'checkout-read-only-1',
+        },
+        body: JSON.stringify({ planId: 'pro' }),
+      });
+      ok(readOnlyCheckoutRes.status === 403, 'RBAC: read_only user blocked from billing checkout');
 
       ok(listedAccount.status === 'active', 'Admin Accounts: new account starts active');
       ok(listedAccount.billing.provider === null, 'Admin Accounts: billing starts empty');
@@ -1069,7 +1230,7 @@ async function run() {
 
       const suspendedPortalRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+        headers: { Cookie: billingAdminCookie! },
       });
       ok(suspendedPortalRes.status === 200, 'Stripe Webhook: suspended account may still open billing portal');
 
@@ -1230,7 +1391,7 @@ async function run() {
 
       const portalReadyRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+        headers: { Cookie: billingAdminCookie! },
       });
       ok(portalReadyRes.status === 200, 'Account Billing: portal status 200 once customer exists');
       const portalReadyBody = await portalReadyRes.json() as any;
@@ -1253,7 +1414,7 @@ async function run() {
       ok(accountSummaryAfterWebhookBody.tenantContext.planId === 'pro', 'Account API: summary shows synced plan');
 
       const accountBillingExportRes = await fetch(`${BASE}/api/v1/account/billing/export?limit=5`, {
-        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+        headers: { Cookie: billingAdminCookie! },
       });
       ok(accountBillingExportRes.status === 200, 'Account Billing Export: json status 200');
       const accountBillingExportBody = await accountBillingExportRes.json() as any;
@@ -1268,7 +1429,7 @@ async function run() {
       ok(exportedCharge.status === 'succeeded', 'Account Billing Export: derived charge status succeeded');
 
       const accountBillingExportCsvRes = await fetch(`${BASE}/api/v1/account/billing/export?format=csv&limit=5`, {
-        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+        headers: { Cookie: billingAdminCookie! },
       });
       ok(accountBillingExportCsvRes.status === 200, 'Account Billing Export: csv status 200');
       ok((accountBillingExportCsvRes.headers.get('content-type') ?? '').includes('text/csv'), 'Account Billing Export: csv content-type');
@@ -1292,6 +1453,55 @@ async function run() {
       });
       ok(adminBillingExportCsvRes.status === 200, 'Admin Account Billing Export: csv status 200');
       ok((adminBillingExportCsvRes.headers.get('content-disposition') ?? '').includes(`${createAccountBody.account.id}-billing-export.csv`), 'Admin Account Billing Export: csv attachment filename');
+
+      const deactivateReadOnlyRes = await fetch(`${BASE}/api/v1/account/users/${createReadOnlyBody.user.id}/deactivate`, {
+        method: 'POST',
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(deactivateReadOnlyRes.status === 200, 'Account Users: deactivate read_only status 200');
+      const deactivateReadOnlyBody = await deactivateReadOnlyRes.json() as any;
+      ok(deactivateReadOnlyBody.user.status === 'inactive', 'Account Users: read_only marked inactive');
+
+      const readOnlyAfterDeactivateLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'readonly@account.example',
+          password: 'ReadOnlyPass123!',
+        }),
+      });
+      ok(readOnlyAfterDeactivateLoginRes.status === 403, 'Auth: inactive read_only user cannot log in');
+
+      const reactivateReadOnlyRes = await fetch(`${BASE}/api/v1/account/users/${createReadOnlyBody.user.id}/reactivate`, {
+        method: 'POST',
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(reactivateReadOnlyRes.status === 200, 'Account Users: reactivate read_only status 200');
+      const reactivateReadOnlyBody = await reactivateReadOnlyRes.json() as any;
+      ok(reactivateReadOnlyBody.user.status === 'active', 'Account Users: read_only reactivated');
+
+      const readOnlyReLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'readonly@account.example',
+          password: 'ReadOnlyPass123!',
+        }),
+      });
+      ok(readOnlyReLoginRes.status === 200, 'Auth: reactivated read_only user can log in again');
+      const readOnlyLogoutCookie = cookieHeaderFromResponse(readOnlyReLoginRes);
+      ok(Boolean(readOnlyLogoutCookie), 'Auth: reactivated read_only login sets cookie');
+
+      const readOnlyLogoutRes = await fetch(`${BASE}/api/v1/auth/logout`, {
+        method: 'POST',
+        headers: { Cookie: readOnlyLogoutCookie! },
+      });
+      ok(readOnlyLogoutRes.status === 200, 'Auth: logout status 200');
+
+      const readOnlyAfterLogoutMeRes = await fetch(`${BASE}/api/v1/auth/me`, {
+        headers: { Cookie: readOnlyLogoutCookie! },
+      });
+      ok(readOnlyAfterLogoutMeRes.status === 401, 'Auth: logged-out session rejected by me endpoint');
 
       const billingEventsNoAuth = await fetch(`${BASE}/api/v1/admin/billing/events`);
       ok(billingEventsNoAuth.status === 401, 'Admin Billing Events: auth required');

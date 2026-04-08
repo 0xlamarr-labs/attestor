@@ -27,6 +27,8 @@ import {
 import {
   exportAdminAuditLogStoreSnapshot,
   exportAdminIdempotencyStoreSnapshot,
+  exportAccountSessionStoreSnapshot,
+  exportAccountUserStoreSnapshot,
   exportStripeWebhookStoreSnapshot,
   controlPlaneStoreMode,
   controlPlaneStoreSource,
@@ -35,12 +37,16 @@ import {
   exportUsageLedgerStoreSnapshot,
   restoreAdminAuditLogStoreSnapshot,
   restoreAdminIdempotencyStoreSnapshot,
+  restoreAccountSessionStoreSnapshot,
+  restoreAccountUserStoreSnapshot,
   restoreStripeWebhookStoreSnapshot,
   restoreHostedAccountStoreSnapshot,
   restoreTenantKeyStoreSnapshot,
   restoreUsageLedgerStoreSnapshot,
   type AdminAuditLogStoreSnapshot,
   type AdminIdempotencyStoreSnapshot,
+  type AccountSessionStoreSnapshot,
+  type AccountUserStoreSnapshot,
   type HostedAccountStoreSnapshot,
   type StripeWebhookStoreSnapshot,
   type TenantKeyStoreSnapshot,
@@ -52,6 +58,8 @@ type ControlPlaneComponentTier = 'critical' | 'ephemeral' | 'shared_postgres';
 interface ControlPlaneComponentSpec {
   id:
     | 'account_store'
+    | 'account_user_store'
+    | 'account_session_store'
     | 'tenant_key_store'
     | 'usage_ledger'
     | 'admin_audit_log'
@@ -112,6 +120,18 @@ function componentSpecs(includeEphemeral: boolean): ControlPlaneComponentSpec[] 
       tier: sharedControlPlane ? 'shared_postgres' : 'critical',
       sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ACCOUNT_STORE_PATH', '.attestor/accounts.json'),
       snapshotFilename: 'account-store.json',
+    },
+    {
+      id: 'account_user_store',
+      tier: sharedControlPlane ? 'shared_postgres' : 'critical',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ACCOUNT_USER_STORE_PATH', '.attestor/account-users.json'),
+      snapshotFilename: 'account-user-store.json',
+    },
+    {
+      id: 'account_session_store',
+      tier: sharedControlPlane ? 'shared_postgres' : 'ephemeral',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ACCOUNT_SESSION_STORE_PATH', '.attestor/account-sessions.json'),
+      snapshotFilename: 'account-session-store.json',
     },
     {
       id: 'tenant_key_store',
@@ -231,6 +251,8 @@ export async function createControlPlaneBackupSnapshot(options?: {
       component.sourcePath === null &&
       (
         component.id === 'account_store'
+        || component.id === 'account_user_store'
+        || component.id === 'account_session_store'
         || component.id === 'tenant_key_store'
         || component.id === 'usage_ledger'
         || component.id === 'admin_audit_log'
@@ -240,6 +262,8 @@ export async function createControlPlaneBackupSnapshot(options?: {
     ) {
       let snapshot:
         | HostedAccountStoreSnapshot
+        | AccountUserStoreSnapshot
+        | AccountSessionStoreSnapshot
         | TenantKeyStoreSnapshot
         | UsageLedgerStoreSnapshot
         | AdminAuditLogStoreSnapshot
@@ -247,6 +271,10 @@ export async function createControlPlaneBackupSnapshot(options?: {
         | StripeWebhookStoreSnapshot;
       if (component.id === 'account_store') {
         snapshot = await exportHostedAccountStoreSnapshot();
+      } else if (component.id === 'account_user_store') {
+        snapshot = await exportAccountUserStoreSnapshot();
+      } else if (component.id === 'account_session_store') {
+        snapshot = await exportAccountSessionStoreSnapshot();
       } else if (component.id === 'tenant_key_store') {
         snapshot = await exportTenantKeyStoreSnapshot();
       } else if (component.id === 'usage_ledger') {
@@ -403,6 +431,8 @@ export async function restoreControlPlaneBackupSnapshot(options: {
       component.sourcePath === null &&
       (
         component.id === 'account_store'
+        || component.id === 'account_user_store'
+        || component.id === 'account_session_store'
         || component.id === 'tenant_key_store'
         || component.id === 'usage_ledger'
         || component.id === 'admin_audit_log'
@@ -418,6 +448,12 @@ export async function restoreControlPlaneBackupSnapshot(options: {
       if (component.id === 'account_store') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as HostedAccountStoreSnapshot;
         await restoreHostedAccountStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else if (component.id === 'account_user_store') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as AccountUserStoreSnapshot;
+        await restoreAccountUserStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else if (component.id === 'account_session_store') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as AccountSessionStoreSnapshot;
+        await restoreAccountSessionStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
       } else if (component.id === 'tenant_key_store') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as TenantKeyStoreSnapshot;
         await restoreTenantKeyStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });

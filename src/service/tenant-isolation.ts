@@ -20,20 +20,35 @@
  */
 
 import type { Context, Next } from 'hono';
+import { getCookie } from 'hono/cookie';
 import {
+  findAccountSessionByTokenState,
+  findAccountUserByIdState,
+  findHostedAccountByIdState,
   findActiveTenantKeyState,
   findHostedAccountByTenantIdState,
+  findTenantRecordByTenantIdState,
   hasTenantKeyRecordsState,
+  revokeAccountSessionState,
 } from './control-plane-store.js';
-import { SELF_HOST_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
+import { DEFAULT_HOSTED_PLAN_ID, SELF_HOST_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
+import type { AccountUserRole } from './account-user-store.js';
 
 export interface TenantContext {
   tenantId: string;
   tenantName: string | null;
   authenticatedAt: string;
-  source: 'bearer_token' | 'api_key' | 'anonymous';
+  source: 'bearer_token' | 'api_key' | 'account_session' | 'anonymous';
   planId: string | null;
   monthlyRunQuota: number | null;
+}
+
+export interface AccountAccessContext {
+  accountId: string;
+  accountUserId: string;
+  role: AccountUserRole;
+  sessionId: string;
+  source: 'account_session';
 }
 
 /** Tenant registry — maps API keys to tenants. */
@@ -160,10 +175,12 @@ export function tenantMiddleware() {
     }
 
     loadTenantKeysFromEnv();
+    const isAuthRoute = c.req.path.startsWith('/api/v1/auth/');
     const enforced = tenantKeys.size > 0 || await hasTenantKeyRecordsState();
-    const tenant = await extractTenantContext(c.req.header('authorization'));
+    const session = await resolveAccountSessionContext(c);
+    const tenant = session?.tenant ?? await extractTenantContext(c.req.header('authorization'));
 
-    if (enforced && !tenant) {
+    if (enforced && !tenant && !isAuthRoute) {
       return c.json({ error: 'Valid tenant API key required in Authorization header' }, 401);
     }
 
@@ -182,8 +199,19 @@ export function tenantMiddleware() {
     if (resolved.monthlyRunQuota !== null) {
       c.req.raw.headers.set('x-attestor-monthly-run-quota', String(resolved.monthlyRunQuota));
     }
+    if (session) {
+      c.req.raw.headers.set('x-attestor-account-id', session.accountId);
+      c.req.raw.headers.set('x-attestor-account-user-id', session.accountUserId);
+      c.req.raw.headers.set('x-attestor-account-role', session.role);
+      c.req.raw.headers.set('x-attestor-account-session-id', session.sessionId);
+    }
 
-    const account = await findHostedAccountByTenantIdState(resolved.tenantId);
+    if (isAuthRoute) {
+      await next();
+      return;
+    }
+
+    const account = session?.account ?? await findHostedAccountByTenantIdState(resolved.tenantId);
     const isBillingSelfService = c.req.path.startsWith('/api/v1/account/billing/');
     if (account?.status === 'suspended') {
       if (isBillingSelfService) {
@@ -217,5 +245,70 @@ export function getTenantContextFromHeaders(headers: Headers): TenantContext {
     source: (headers.get('x-attestor-tenant-source') as TenantContext['source'] | null) ?? 'anonymous',
     planId: headers.get('x-attestor-plan-id') ?? SELF_HOST_PLAN_ID,
     monthlyRunQuota: Number.isFinite(parsedQuota) ? parsedQuota : null,
+  };
+}
+
+export function getAccountAccessContextFromHeaders(headers: Headers): AccountAccessContext | null {
+  const source = headers.get('x-attestor-tenant-source');
+  if (source !== 'account_session') return null;
+  const accountId = headers.get('x-attestor-account-id');
+  const accountUserId = headers.get('x-attestor-account-user-id');
+  const role = headers.get('x-attestor-account-role') as AccountUserRole | null;
+  const sessionId = headers.get('x-attestor-account-session-id');
+  if (!accountId || !accountUserId || !role || !sessionId) return null;
+  return {
+    accountId,
+    accountUserId,
+    role,
+    sessionId,
+    source: 'account_session',
+  };
+}
+
+async function resolveAccountSessionContext(c: Context): Promise<{
+  tenant: TenantContext;
+  account: Awaited<ReturnType<typeof findHostedAccountByIdState>>;
+  accountId: string;
+  accountUserId: string;
+  role: AccountUserRole;
+  sessionId: string;
+} | null> {
+  const sessionToken = getCookie(c, process.env.ATTESTOR_SESSION_COOKIE_NAME?.trim() || 'attestor_session')
+    ?? c.req.header('x-attestor-session')
+    ?? null;
+  if (!sessionToken) return null;
+
+  const session = await findAccountSessionByTokenState(sessionToken, { touch: true });
+  if (!session) return null;
+
+  const user = await findAccountUserByIdState(session.accountUserId);
+  const account = await findHostedAccountByIdState(session.accountId);
+  if (!user || user.status !== 'active' || !account) {
+    await revokeAccountSessionState(session.id);
+    return null;
+  }
+
+  const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
+  const resolvedPlan = resolvePlanSpec({
+    planId: tenantRecord?.planId ?? account.billing.lastCheckoutPlanId ?? DEFAULT_HOSTED_PLAN_ID,
+    monthlyRunQuota: tenantRecord?.monthlyRunQuota ?? null,
+    defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+    allowCustomPlan: true,
+  });
+
+  return {
+    tenant: {
+      tenantId: account.primaryTenantId,
+      tenantName: tenantRecord?.tenantName ?? account.accountName,
+      authenticatedAt: new Date().toISOString(),
+      source: 'account_session',
+      planId: resolvedPlan.planId,
+      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+    },
+    account,
+    accountId: account.id,
+    accountUserId: user.id,
+    role: user.role,
+    sessionId: session.id,
   };
 }

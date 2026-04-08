@@ -30,6 +30,37 @@ import {
   type StripeSubscriptionStatus,
 } from './account-store.js';
 import {
+  AccountUserStoreError,
+  buildAccountUserRecord,
+  createAccountUser as createAccountUserFile,
+  findAccountUserByEmail as findAccountUserByEmailFile,
+  findAccountUserById as findAccountUserByIdFile,
+  listAccountUsersByAccountId as listAccountUsersByAccountIdFile,
+  listAllAccountUsers as listAllAccountUsersFile,
+  normalizeAccountUserEmail,
+  recordAccountUserLogin as recordAccountUserLoginFile,
+  setAccountUserStatus as setAccountUserStatusFile,
+  verifyAccountUserPasswordRecord,
+  countAccountUsersForAccount as countAccountUsersForAccountFile,
+  type AccountUserRecord,
+  type AccountUserRole,
+  type AccountUserStatus,
+  type CreateAccountUserInput,
+} from './account-user-store.js';
+import {
+  buildAccountSessionRecord,
+  findAccountSessionByToken as findAccountSessionByTokenFile,
+  hashAccountSessionToken,
+  issueAccountSession as issueAccountSessionFile,
+  listAccountSessions as listAccountSessionsFile,
+  revokeAccountSession as revokeAccountSessionFile,
+  revokeAccountSessionByToken as revokeAccountSessionByTokenFile,
+  revokeAccountSessionsForUser as revokeAccountSessionsForUserFile,
+  sessionTtlHours,
+  type AccountSessionRecord,
+  type IssueAccountSessionInput,
+} from './account-session-store.js';
+import {
   findActiveTenantKey as findActiveTenantKeyFile,
   findTenantRecordByTenantId as findTenantRecordByTenantIdFile,
   hasTenantKeyRecords as hasTenantKeyRecordsFile,
@@ -112,6 +143,20 @@ export interface UsageLedgerStoreSnapshot {
   exportedAt: string;
   recordCount: number;
   monthlyPipelineRuns: UsageLedgerRecord[];
+}
+
+export interface AccountUserStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  records: AccountUserRecord[];
+}
+
+export interface AccountSessionStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  records: AccountSessionRecord[];
 }
 
 export interface AdminAuditLogStoreSnapshot {
@@ -248,6 +293,48 @@ async function ensureSchema(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS usage_ledger_period_used_idx
           ON attestor_control_plane.usage_ledger (period DESC, used DESC, tenant_id ASC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.account_users (
+          account_user_id TEXT PRIMARY KEY,
+          account_id TEXT NOT NULL REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
+          email TEXT NOT NULL,
+          role_id TEXT NOT NULL CHECK (role_id IN ('account_admin', 'billing_admin', 'read_only')),
+          user_status TEXT NOT NULL CHECK (user_status IN ('active', 'inactive')),
+          updated_at TIMESTAMPTZ NOT NULL,
+          last_login_at TIMESTAMPTZ NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS account_users_email_uidx
+          ON attestor_control_plane.account_users (email);
+
+        CREATE INDEX IF NOT EXISTS account_users_account_updated_idx
+          ON attestor_control_plane.account_users (account_id, updated_at DESC, account_user_id ASC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.account_sessions (
+          session_id TEXT PRIMARY KEY,
+          account_id TEXT NOT NULL REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
+          account_user_id TEXT NOT NULL REFERENCES attestor_control_plane.account_users(account_user_id) ON DELETE CASCADE,
+          role_id TEXT NOT NULL CHECK (role_id IN ('account_admin', 'billing_admin', 'read_only')),
+          token_hash TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL,
+          last_seen_at TIMESTAMPTZ NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL,
+          revoked_at TIMESTAMPTZ NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS account_sessions_token_hash_uidx
+          ON attestor_control_plane.account_sessions (token_hash);
+
+        CREATE INDEX IF NOT EXISTS account_sessions_account_seen_idx
+          ON attestor_control_plane.account_sessions (account_id, last_seen_at DESC, session_id ASC);
+
+        CREATE INDEX IF NOT EXISTS account_sessions_user_seen_idx
+          ON attestor_control_plane.account_sessions (account_user_id, last_seen_at DESC, session_id ASC);
+
+        CREATE INDEX IF NOT EXISTS account_sessions_expiry_idx
+          ON attestor_control_plane.account_sessions (expires_at ASC);
 
         CREATE TABLE IF NOT EXISTS attestor_control_plane.admin_audit_log (
           audit_id TEXT PRIMARY KEY,
@@ -440,6 +527,20 @@ function coerceTenantKeyRecord(value: unknown): TenantKeyRecord {
   return normalizeTenantKeyRecord(value as TenantKeyRecord);
 }
 
+function coerceAccountUserRecord(value: unknown): AccountUserRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid account user record in shared control-plane store.');
+  }
+  return value as AccountUserRecord;
+}
+
+function coerceAccountSessionRecord(value: unknown): AccountSessionRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid account session record in shared control-plane store.');
+  }
+  return value as AccountSessionRecord;
+}
+
 function rowToHostedAccount(row: PgQueryResultRow): HostedAccountRecord {
   return coerceHostedAccountRecord(row.record_json);
 }
@@ -455,6 +556,14 @@ function rowToUsageRecord(row: PgQueryResultRow): UsageLedgerRecord {
     used: Number(row.used),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
   };
+}
+
+function rowToAccountUser(row: PgQueryResultRow): AccountUserRecord {
+  return coerceAccountUserRecord(row.record_json);
+}
+
+function rowToAccountSession(row: PgQueryResultRow): AccountSessionRecord {
+  return coerceAccountSessionRecord(row.record_json);
 }
 
 function touchRecord(record: HostedAccountRecord): void {
@@ -608,6 +717,17 @@ function rowToAdminIdempotencyRecord(row: PgQueryResultRow): AdminIdempotencyRec
 
 function rowToStripeWebhookRecord(row: PgQueryResultRow): StripeWebhookRecord {
   return row.record_json as StripeWebhookRecord;
+}
+
+function mapPgErrorToAccountUserStoreError(err: unknown): AccountUserStoreError | null {
+  const pgErr = err as { code?: string; constraint?: string };
+  if (pgErr?.code !== '23505') return null;
+  switch (pgErr.constraint) {
+    case 'account_users_email_uidx':
+      return new AccountUserStoreError('CONFLICT', 'Account user email is already assigned to another hosted account.');
+    default:
+      return new AccountUserStoreError('CONFLICT', 'Hosted account user uniqueness constraint violated.');
+  }
 }
 
 function mapPgErrorToAccountStoreError(err: unknown): AccountStoreError | null {
@@ -816,6 +936,189 @@ async function consumeUsagePg(tenantId: string, period: string): Promise<number>
     [tenantId, period],
   );
   return Number(result.rows[0].used);
+}
+
+async function listAccountUsersByAccountIdPg(accountId: string): Promise<AccountUserRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_users
+      WHERE account_id = $1
+      ORDER BY updated_at DESC, account_user_id ASC`,
+    [accountId],
+  );
+  return result.rows.map(rowToAccountUser);
+}
+
+async function listAllAccountUsersPg(): Promise<AccountUserRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(`
+    SELECT record_json
+      FROM attestor_control_plane.account_users
+      ORDER BY updated_at DESC, account_user_id ASC
+  `);
+  return result.rows.map(rowToAccountUser);
+}
+
+async function findAccountUserByIdPg(id: string): Promise<AccountUserRecord | null> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_users
+      WHERE account_user_id = $1
+      LIMIT 1`,
+    [id],
+  );
+  return result.rows[0] ? rowToAccountUser(result.rows[0]) : null;
+}
+
+async function findAccountUserByEmailPg(email: string): Promise<AccountUserRecord | null> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_users
+      WHERE email = $1
+      LIMIT 1`,
+    [email.trim().toLowerCase()],
+  );
+  return result.rows[0] ? rowToAccountUser(result.rows[0]) : null;
+}
+
+async function countAccountUsersByAccountIdPg(accountId: string): Promise<number> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS count
+       FROM attestor_control_plane.account_users
+      WHERE account_id = $1`,
+    [accountId],
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+async function upsertAccountUserPg(record: AccountUserRecord, executor?: PgPool | PgClient): Promise<void> {
+  await ensureSchema();
+  const target = executor ?? await getPool();
+  try {
+    await target.query(
+      `INSERT INTO attestor_control_plane.account_users (
+        account_user_id, account_id, email, role_id, user_status, updated_at, last_login_at, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8::jsonb
+      )
+      ON CONFLICT (account_user_id) DO UPDATE SET
+        account_id = EXCLUDED.account_id,
+        email = EXCLUDED.email,
+        role_id = EXCLUDED.role_id,
+        user_status = EXCLUDED.user_status,
+        updated_at = EXCLUDED.updated_at,
+        last_login_at = EXCLUDED.last_login_at,
+        record_json = EXCLUDED.record_json`,
+      [
+        record.id,
+        record.accountId,
+        record.email,
+        record.role,
+        record.status,
+        record.updatedAt,
+        record.lastLoginAt,
+        JSON.stringify(record),
+      ],
+    );
+  } catch (err) {
+    const mapped = mapPgErrorToAccountUserStoreError(err);
+    if (mapped) throw mapped;
+    throw err;
+  }
+}
+
+async function listAccountSessionsPg(filters?: {
+  accountId?: string | null;
+  accountUserId?: string | null;
+}): Promise<AccountSessionRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const where: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+  if (filters?.accountId) {
+    where.push(`account_id = $${idx++}`);
+    params.push(filters.accountId);
+  }
+  if (filters?.accountUserId) {
+    where.push(`account_user_id = $${idx++}`);
+    params.push(filters.accountUserId);
+  }
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_sessions
+      ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY last_seen_at DESC, session_id ASC`,
+    params,
+  );
+  return result.rows.map(rowToAccountSession);
+}
+
+async function upsertAccountSessionPg(record: AccountSessionRecord, executor?: PgPool | PgClient): Promise<void> {
+  await ensureSchema();
+  const target = executor ?? await getPool();
+  await target.query(
+    `INSERT INTO attestor_control_plane.account_sessions (
+      session_id, account_id, account_user_id, role_id, token_hash, created_at, last_seen_at, expires_at, revoked_at, record_json
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz, $8::timestamptz, $9::timestamptz, $10::jsonb
+    )
+    ON CONFLICT (session_id) DO UPDATE SET
+      account_id = EXCLUDED.account_id,
+      account_user_id = EXCLUDED.account_user_id,
+      role_id = EXCLUDED.role_id,
+      token_hash = EXCLUDED.token_hash,
+      created_at = EXCLUDED.created_at,
+      last_seen_at = EXCLUDED.last_seen_at,
+      expires_at = EXCLUDED.expires_at,
+      revoked_at = EXCLUDED.revoked_at,
+      record_json = EXCLUDED.record_json`,
+    [
+      record.id,
+      record.accountId,
+      record.accountUserId,
+      record.role,
+      record.tokenHash,
+      record.createdAt,
+      record.lastSeenAt,
+      record.expiresAt,
+      record.revokedAt,
+      JSON.stringify(record),
+    ],
+  );
+}
+
+async function findAccountSessionByTokenPg(token: string, options?: { touch?: boolean }): Promise<AccountSessionRecord | null> {
+  await ensureSchema();
+  const pool = await getPool();
+  const tokenHash = hashAccountSessionToken(token);
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_sessions
+      WHERE token_hash = $1
+      LIMIT 1`,
+    [tokenHash],
+  );
+  if (!result.rows[0]) return null;
+  const record = rowToAccountSession(result.rows[0]);
+  const now = new Date();
+  if (record.revokedAt || Date.parse(record.expiresAt) <= now.getTime()) {
+    return null;
+  }
+  if (options?.touch) {
+    record.lastSeenAt = now.toISOString();
+    await upsertAccountSessionPg(record);
+  }
+  return record;
 }
 
 export async function listHostedAccountsState(): Promise<{
@@ -1488,6 +1791,174 @@ export async function queryUsageLedgerState(filters?: {
 }): Promise<UsageLedgerRecord[]> {
   if (!isSharedControlPlaneConfigured()) return queryUsageLedgerFile(filters);
   return listUsageLedgerPg(filters);
+}
+
+export async function listAccountUsersByAccountIdState(accountId: string): Promise<{
+  records: AccountUserRecord[];
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return listAccountUsersByAccountIdFile(accountId);
+  return {
+    records: await listAccountUsersByAccountIdPg(accountId),
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function listAllAccountUsersState(): Promise<{
+  records: AccountUserRecord[];
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return listAllAccountUsersFile();
+  return {
+    records: await listAllAccountUsersPg(),
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function countAccountUsersForAccountState(accountId: string): Promise<number> {
+  if (!isSharedControlPlaneConfigured()) return countAccountUsersForAccountFile(accountId);
+  return countAccountUsersByAccountIdPg(accountId);
+}
+
+export async function findAccountUserByIdState(id: string): Promise<AccountUserRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findAccountUserByIdFile(id);
+  return findAccountUserByIdPg(id);
+}
+
+export async function findAccountUserByEmailState(email: string): Promise<AccountUserRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findAccountUserByEmailFile(email);
+  return findAccountUserByEmailPg(normalizeAccountUserEmail(email));
+}
+
+export async function createAccountUserState(input: CreateAccountUserInput): Promise<{
+  record: AccountUserRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return createAccountUserFile(input);
+  const record = buildAccountUserRecord(input);
+  await upsertAccountUserPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function recordAccountUserLoginState(id: string): Promise<{
+  record: AccountUserRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return recordAccountUserLoginFile(id);
+  const record = await findAccountUserByIdPg(id);
+  if (!record) {
+    throw new AccountUserStoreError('NOT_FOUND', `Account user '${id}' was not found.`);
+  }
+  record.lastLoginAt = new Date().toISOString();
+  record.updatedAt = record.lastLoginAt;
+  await upsertAccountUserPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function setAccountUserStatusState(
+  id: string,
+  nextStatus: AccountUserStatus,
+): Promise<{
+  record: AccountUserRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return setAccountUserStatusFile(id, nextStatus);
+  return withPgTransaction(async (client) => {
+    const record = await findAccountUserByIdPg(id);
+    if (!record) {
+      throw new AccountUserStoreError('NOT_FOUND', `Account user '${id}' was not found.`);
+    }
+    if (record.status === nextStatus) {
+      return { record, path: controlPlaneStoreSource() };
+    }
+    if (nextStatus === 'inactive' && record.role === 'account_admin') {
+      const result = await client.query(
+        `SELECT COUNT(*)::int AS count
+           FROM attestor_control_plane.account_users
+          WHERE account_id = $1
+            AND role_id = 'account_admin'
+            AND user_status = 'active'`,
+        [record.accountId],
+      );
+      const activeAdmins = Number(result.rows[0]?.count ?? 0);
+      if (activeAdmins <= 1) {
+        throw new AccountUserStoreError(
+          'INVALID_STATE',
+          `Account '${record.accountId}' must retain at least one active account_admin user.`,
+        );
+      }
+    }
+    record.status = nextStatus;
+    record.updatedAt = new Date().toISOString();
+    record.deactivatedAt = nextStatus === 'inactive' ? record.updatedAt : null;
+    await upsertAccountUserPg(record, client);
+    return { record, path: controlPlaneStoreSource() };
+  });
+}
+
+export async function issueAccountSessionState(input: IssueAccountSessionInput): Promise<{
+  sessionToken: string;
+  record: AccountSessionRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return issueAccountSessionFile(input);
+  const issued = buildAccountSessionRecord(input);
+  await upsertAccountSessionPg(issued.record);
+  return { ...issued, path: controlPlaneStoreSource() };
+}
+
+export async function findAccountSessionByTokenState(
+  token: string,
+  options?: { touch?: boolean },
+): Promise<AccountSessionRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findAccountSessionByTokenFile(token, options);
+  return findAccountSessionByTokenPg(token, options);
+}
+
+export async function revokeAccountSessionState(id: string): Promise<{
+  record: AccountSessionRecord | null;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return revokeAccountSessionFile(id);
+  const records = await listAccountSessionsPg();
+  const record = records.find((entry) => entry.id === id) ?? null;
+  if (!record) return { record: null, path: controlPlaneStoreSource() };
+  if (!record.revokedAt) {
+    record.revokedAt = new Date().toISOString();
+    await upsertAccountSessionPg(record);
+  }
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function revokeAccountSessionByTokenState(token: string): Promise<{
+  record: AccountSessionRecord | null;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return revokeAccountSessionByTokenFile(token);
+  const record = await findAccountSessionByTokenPg(token);
+  if (!record) return { record: null, path: controlPlaneStoreSource() };
+  if (!record.revokedAt) {
+    record.revokedAt = new Date().toISOString();
+    await upsertAccountSessionPg(record);
+  }
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function revokeAccountSessionsForUserState(accountUserId: string): Promise<{
+  revokedCount: number;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return revokeAccountSessionsForUserFile(accountUserId);
+  const sessions = await listAccountSessionsPg({ accountUserId });
+  let revokedCount = 0;
+  for (const session of sessions) {
+    if (!session.revokedAt) {
+      session.revokedAt = new Date().toISOString();
+      await upsertAccountSessionPg(session);
+      revokedCount += 1;
+    }
+  }
+  return { revokedCount, path: controlPlaneStoreSource() };
 }
 
 export async function appendAdminAuditRecordState(
@@ -2213,6 +2684,66 @@ export async function restoreStripeWebhookStoreSnapshot(
   return { recordCount: snapshot.records.length };
 }
 
+export async function exportAccountUserStoreSnapshot(): Promise<AccountUserStoreSnapshot> {
+  const records = isSharedControlPlaneConfigured()
+    ? await listAllAccountUsersPg()
+    : listAllAccountUsersFile().records;
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreAccountUserStoreSnapshot(
+  snapshot: AccountUserStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for account user restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.account_users CASCADE');
+  }
+  for (const record of snapshot.records) {
+    await upsertAccountUserPg(record);
+  }
+  return { recordCount: snapshot.records.length };
+}
+
+export async function exportAccountSessionStoreSnapshot(): Promise<AccountSessionStoreSnapshot> {
+  const records = isSharedControlPlaneConfigured()
+    ? await listAccountSessionsPg()
+    : listAccountSessionsFile().records;
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreAccountSessionStoreSnapshot(
+  snapshot: AccountSessionStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for account session restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.account_sessions');
+  }
+  for (const record of snapshot.records) {
+    await upsertAccountSessionPg(record);
+  }
+  return { recordCount: snapshot.records.length };
+}
+
 export async function exportHostedAccountStoreSnapshot(): Promise<HostedAccountStoreSnapshot> {
   const records = isSharedControlPlaneConfigured()
     ? await listHostedAccountsPg()
@@ -2235,7 +2766,7 @@ export async function restoreHostedAccountStoreSnapshot(
   await ensureSchema();
   const pool = await getPool();
   if (options?.replaceExisting) {
-    await pool.query('TRUNCATE TABLE attestor_control_plane.hosted_accounts');
+    await pool.query('TRUNCATE TABLE attestor_control_plane.hosted_accounts CASCADE');
   }
   for (const record of snapshot.records) {
     await upsertHostedAccountPg(normalizeHostedAccountRecord(record));
@@ -2332,6 +2863,8 @@ export async function resetSharedControlPlaneStoreForTests(): Promise<void> {
     DROP TABLE IF EXISTS attestor_control_plane.stripe_webhook_dedupe;
     DROP TABLE IF EXISTS attestor_control_plane.admin_idempotency;
     DROP TABLE IF EXISTS attestor_control_plane.admin_audit_log;
+    DROP TABLE IF EXISTS attestor_control_plane.account_sessions;
+    DROP TABLE IF EXISTS attestor_control_plane.account_users;
     DROP TABLE IF EXISTS attestor_control_plane.usage_ledger;
     DROP TABLE IF EXISTS attestor_control_plane.tenant_api_keys;
     DROP TABLE IF EXISTS attestor_control_plane.hosted_accounts;

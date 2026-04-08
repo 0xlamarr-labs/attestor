@@ -29,6 +29,16 @@ import {
   resetAccountStoreForTests,
 } from '../src/service/account-store.js';
 import {
+  createAccountUser,
+  findAccountUserByEmail,
+  resetAccountUserStoreForTests,
+} from '../src/service/account-user-store.js';
+import {
+  findAccountSessionByToken,
+  issueAccountSession,
+  resetAccountSessionStoreForTests,
+} from '../src/service/account-session-store.js';
+import {
   issueTenantApiKey,
   listTenantKeyRecords,
   resetTenantKeyStoreForTests,
@@ -85,6 +95,8 @@ async function run(): Promise<void> {
   });
 
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(tempRoot, 'accounts.json');
+  process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(tempRoot, 'account-users.json');
+  process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(tempRoot, 'account-sessions.json');
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(tempRoot, 'tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(tempRoot, 'usage-ledger.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(tempRoot, 'admin-audit-log.json');
@@ -98,6 +110,8 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `postgres://cp_backup:cp_backup@localhost:${billingPgPort}/attestor_billing`;
 
   resetAccountStoreForTests();
+  resetAccountUserStoreForTests();
+  resetAccountSessionStoreForTests();
   resetTenantKeyStoreForTests();
   resetUsageMeter();
   resetAdminAuditLogForTests();
@@ -113,6 +127,18 @@ async function run(): Promise<void> {
       contactEmail: 'ops@backup.example',
       primaryTenantId: 'tenant-backup',
     }).record;
+    const ownerUser = createAccountUser({
+      accountId: account.id,
+      email: 'owner@backup.example',
+      displayName: 'Backup Owner',
+      password: 'BackupOwnerPass123!',
+      role: 'account_admin',
+    }).record;
+    const ownerSession = issueAccountSession({
+      accountId: account.id,
+      accountUserId: ownerUser.id,
+      role: ownerUser.role,
+    });
     const issued = issueTenantApiKey({
       tenantId: 'tenant-backup',
       tenantName: 'Backup Tenant',
@@ -182,16 +208,20 @@ async function run(): Promise<void> {
       includeEphemeral: true,
     });
     ok(backup.manifest.components.some((entry) => entry.id === 'account_store' && entry.present), 'Backup: account store present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'account_user_store' && entry.present), 'Backup: account user store present');
     ok(backup.manifest.components.some((entry) => entry.id === 'tenant_key_store' && entry.present), 'Backup: tenant key store present');
     ok(backup.manifest.components.some((entry) => entry.id === 'usage_ledger' && entry.present), 'Backup: usage ledger present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_audit_log' && entry.present), 'Backup: admin audit present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_idempotency_store' && entry.present), 'Backup: admin idempotency present');
     ok(backup.manifest.components.some((entry) => entry.id === 'stripe_webhook_store' && entry.present), 'Backup: webhook store present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'account_session_store' && entry.present), 'Backup: account session store present');
     const ledgerComponent = backup.manifest.components.find((entry) => entry.id === 'billing_event_ledger');
     ok(Boolean(ledgerComponent?.present), 'Backup: shared billing ledger exported');
     ok(ledgerComponent?.recordCount === 1, 'Backup: shared billing ledger record count captured');
 
     resetAccountStoreForTests();
+    resetAccountUserStoreForTests();
+    resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
     resetAdminAuditLogForTests();
@@ -205,6 +235,8 @@ async function run(): Promise<void> {
       replaceExisting: true,
     });
     ok(restored.restoredComponents.includes('account_store'), 'Restore: account store restored');
+    ok(restored.restoredComponents.includes('account_user_store'), 'Restore: account user store restored');
+    ok(restored.restoredComponents.includes('account_session_store'), 'Restore: account session store restored');
     ok(restored.restoredComponents.includes('billing_event_ledger'), 'Restore: billing ledger restored');
 
     const restoredAccount = findHostedAccountById(account.id);
@@ -214,6 +246,14 @@ async function run(): Promise<void> {
     const restoredKeys = listTenantKeyRecords().records;
     ok(restoredKeys.length === 1, 'Restore: tenant key recovered');
     ok(restoredKeys[0].id === issued.record.id, 'Restore: tenant key id preserved');
+
+    const restoredUser = findAccountUserByEmail('owner@backup.example');
+    ok(Boolean(restoredUser), 'Restore: account user recovered');
+    ok(restoredUser?.id === ownerUser.id, 'Restore: account user id preserved');
+
+    const restoredSession = findAccountSessionByToken(ownerSession.sessionToken);
+    ok(Boolean(restoredSession), 'Restore: account session recovered');
+    ok(restoredSession?.accountUserId === ownerUser.id, 'Restore: account session user preserved');
 
     const restoredUsage = queryUsageLedger({ tenantId: 'tenant-backup' });
     ok(restoredUsage.length === 1, 'Restore: usage ledger recovered');
@@ -240,13 +280,15 @@ async function run(): Promise<void> {
     console.log(`  Control-plane backup tests: ${passed} passed, 0 failed\n`);
   } finally {
     resetAccountStoreForTests();
+    resetAccountUserStoreForTests();
+    resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
     await resetBillingEventLedgerForTests();
-    await billingPg.stop();
+    try { await billingPg.stop(); } catch {}
     try { rmSync(tempRoot, { recursive: true, force: true }); } catch {}
   }
 }

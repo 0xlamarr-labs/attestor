@@ -15,7 +15,11 @@ import {
 } from '../src/service/control-plane-backup.js';
 import {
   consumePipelineRunState,
+  createAccountUserState,
   findHostedAccountByIdState,
+  findAccountSessionByTokenState,
+  findAccountUserByEmailState,
+  issueAccountSessionState,
   listTenantKeyRecordsState,
   listAdminAuditRecordsState,
   lookupAdminIdempotencyState,
@@ -71,6 +75,8 @@ async function run(): Promise<void> {
 
   process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `postgres://cp_backup_pg:cp_backup_pg@localhost:${pgPort}/attestor_control_plane`;
   process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `postgres://cp_backup_pg:cp_backup_pg@localhost:${pgPort}/attestor_billing`;
+  process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(tempRoot, 'account-users.json');
+  process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(tempRoot, 'account-sessions.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(tempRoot, 'admin-audit-log.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(tempRoot, 'admin-idempotency.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(tempRoot, 'stripe-webhooks.json');
@@ -98,6 +104,18 @@ async function run(): Promise<void> {
         tenantName: 'Backup PG Tenant',
         planId: 'starter',
       },
+    });
+    const ownerUser = await createAccountUserState({
+      accountId: provisioned.account.id,
+      email: 'owner@backup-pg.example',
+      displayName: 'Backup PG Owner',
+      password: 'BackupPgOwnerPass123!',
+      role: 'account_admin',
+    });
+    const ownerSession = await issueAccountSessionState({
+      accountId: provisioned.account.id,
+      accountUserId: ownerUser.record.id,
+      role: ownerUser.record.role,
     });
     await consumePipelineRunState('tenant-backup-pg', 'starter', 100);
 
@@ -165,6 +183,8 @@ async function run(): Promise<void> {
     });
     ok(backup.manifest.sharedControlPlaneMode === 'postgres', 'Backup: shared control-plane mode recorded');
     ok(backup.manifest.components.some((entry) => entry.id === 'account_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG account snapshot present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'account_user_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG account user snapshot present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'account_session_store' && entry.present), 'Backup: PG account session snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'tenant_key_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG tenant key snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'usage_ledger' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG usage snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_audit_log' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG admin audit snapshot present');
@@ -181,6 +201,8 @@ async function run(): Promise<void> {
       replaceExisting: true,
     });
     ok(restored.restoredComponents.includes('account_store'), 'Restore: shared PG account restored');
+    ok(restored.restoredComponents.includes('account_user_store'), 'Restore: shared PG account user restored');
+    ok(restored.restoredComponents.includes('account_session_store'), 'Restore: shared PG account session restored');
     ok(restored.restoredComponents.includes('tenant_key_store'), 'Restore: shared PG tenant keys restored');
     ok(restored.restoredComponents.includes('usage_ledger'), 'Restore: shared PG usage restored');
     ok(restored.restoredComponents.includes('billing_event_ledger'), 'Restore: shared billing ledger restored');
@@ -195,6 +217,14 @@ async function run(): Promise<void> {
     const restoredKeys = (await listTenantKeyRecordsState()).records;
     ok(restoredKeys.length === 1, 'Restore: tenant key recovered from PG snapshot');
     ok(restoredKeys[0].id === provisioned.initialKey.id, 'Restore: tenant key id preserved');
+
+    const restoredUser = await findAccountUserByEmailState('owner@backup-pg.example');
+    ok(Boolean(restoredUser), 'Restore: account user recovered from PG snapshot');
+    ok(restoredUser?.id === ownerUser.record.id, 'Restore: account user id preserved');
+
+    const restoredSession = await findAccountSessionByTokenState(ownerSession.sessionToken);
+    ok(Boolean(restoredSession), 'Restore: account session recovered from PG snapshot');
+    ok(restoredSession?.accountUserId === ownerUser.record.id, 'Restore: account session user preserved');
 
     const restoredUsage = await queryUsageLedgerState({ tenantId: 'tenant-backup-pg' });
     ok(restoredUsage.length === 1, 'Restore: usage ledger recovered from PG snapshot');
@@ -239,7 +269,7 @@ async function run(): Promise<void> {
   } finally {
     await resetSharedControlPlaneStoreForTests();
     await resetBillingEventLedgerForTests();
-    await pg.stop();
+    try { await pg.stop(); } catch {}
     try { rmSync(tempRoot, { recursive: true, force: true }); } catch {}
     delete process.env.ATTESTOR_CONTROL_PLANE_PG_URL;
   }

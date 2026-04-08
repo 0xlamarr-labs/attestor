@@ -7,6 +7,8 @@ This document describes the current Attestor control-plane backup and restore st
 Current backup tooling covers:
 
 - hosted account store
+- account user store
+- account session store
 - tenant key store
 - usage ledger
 - admin audit log
@@ -30,7 +32,7 @@ This is a **logical snapshot first slice**. For production PostgreSQL disaster r
 
 Attestor's hosted control-plane is currently mixed:
 
-- hosted accounts, tenant keys, usage, and admin audit can run either file-backed or on the shared PostgreSQL control-plane first slice
+- hosted accounts, account users, account sessions, tenant keys, usage, and admin audit can run either file-backed or on the shared PostgreSQL control-plane first slice
 - admin idempotency replay and Stripe webhook dedupe can also move onto the shared PostgreSQL control-plane when `--include-ephemeral` is used for snapshot drills
 - Stripe billing event truth already has a shared PostgreSQL first slice
 
@@ -125,6 +127,8 @@ If a billing ledger snapshot is present but PostgreSQL is not configured, restor
 Back up and restore these by default:
 
 - hosted accounts
+- account users
+- account sessions
 - tenant keys
 - usage ledger
 - admin audit log
@@ -153,6 +157,7 @@ These are not long-term sources of truth. In many DR events it is acceptable not
 6. Start the API and worker.
 7. Validate:
    - `GET /api/v1/ready`
+   - `GET /api/v1/auth/me` using a known restored account session, or `POST /api/v1/auth/login` for a restored account user
    - `GET /api/v1/admin/accounts`
    - `GET /api/v1/admin/tenant-keys`
    - `GET /api/v1/admin/usage`

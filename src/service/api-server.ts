@@ -37,6 +37,7 @@
 
 import { Hono, type Context } from 'hono';
 import { serve } from '@hono/node-server';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import Stripe from 'stripe';
 import { runFinancialPipeline } from '../financial/pipeline.js';
 import { generateKeyPair } from '../signing/keys.js';
@@ -68,7 +69,13 @@ import {
   retryFailedPipelineJob,
   submitPipelineJob,
 } from './async-pipeline.js';
-import { tenantMiddleware, getTenantContextFromHeaders, type TenantContext } from './tenant-isolation.js';
+import {
+  tenantMiddleware,
+  getAccountAccessContextFromHeaders,
+  getTenantContextFromHeaders,
+  type AccountAccessContext,
+  type TenantContext,
+} from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 import { canConsumeTenantPipelineRequest, consumeTenantPipelineRequest, getTenantPipelineRateLimit } from './rate-limit.js';
 import {
@@ -82,24 +89,43 @@ import {
   type StripeSubscriptionStatus,
 } from './account-store.js';
 import {
+  AccountUserStoreError,
+  type AccountUserRecord,
+  type AccountUserRole,
+  verifyAccountUserPasswordRecord,
+} from './account-user-store.js';
+import {
+  sessionCookieName,
+  sessionCookieSecure,
+} from './account-session-store.js';
+import {
   applyStripeCheckoutCompletionState,
   applyStripeInvoiceStateState,
   applyStripeSubscriptionStateState,
   attachStripeBillingToAccountState,
   claimProcessedStripeWebhookState,
   canConsumePipelineRunState,
+  countAccountUsersForAccountState,
+  createAccountUserState,
   finalizeProcessedStripeWebhookState,
   consumePipelineRunState,
+  findAccountUserByEmailState,
+  findAccountUserByIdState,
   findHostedAccountByIdState,
   findHostedAccountByTenantIdState,
   findTenantRecordByTenantIdState,
   getUsageContextState,
+  issueAccountSessionState,
   isSharedControlPlaneConfigured,
   issueTenantApiKeyState,
+  listAccountUsersByAccountIdState,
   listHostedAccountsState,
   listTenantKeyRecordsState,
   provisionHostedAccountState,
   queryUsageLedgerState,
+  recordAccountUserLoginState,
+  revokeAccountSessionByTokenState,
+  revokeAccountSessionsForUserState,
   revokeTenantApiKeyState,
   rotateTenantApiKeyState,
   appendAdminAuditRecordState,
@@ -109,6 +135,7 @@ import {
   lookupProcessedStripeWebhookState,
   releaseProcessedStripeWebhookClaimState,
   recordProcessedStripeWebhookState,
+  setAccountUserStatusState,
   setHostedAccountStatusState,
   setTenantApiKeyStatusState,
   syncTenantPlanByTenantIdState,
@@ -243,6 +270,50 @@ function createRequestSigners(identitySource: string, reviewerName?: string) {
 
 function currentTenant(c: Context): TenantContext {
   return getTenantContextFromHeaders(c.req.raw.headers);
+}
+
+function currentAccountAccess(c: Context): AccountAccessContext | null {
+  return getAccountAccessContextFromHeaders(c.req.raw.headers);
+}
+
+function currentAccountRole(c: Context): AccountUserRole | null {
+  return currentAccountAccess(c)?.role ?? null;
+}
+
+function accountUserView(record: AccountUserRecord) {
+  return {
+    id: record.id,
+    accountId: record.accountId,
+    email: record.email,
+    displayName: record.displayName,
+    role: record.role,
+    status: record.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    deactivatedAt: record.deactivatedAt,
+    lastLoginAt: record.lastLoginAt,
+  };
+}
+
+function requireAccountSession(
+  c: Context,
+  options?: {
+    roles?: AccountUserRole[];
+    allowApiKey?: boolean;
+  },
+): Response | null {
+  const access = currentAccountAccess(c);
+  if (!access) {
+    if (options?.allowApiKey && currentTenant(c).source === 'api_key') return null;
+    return c.json({ error: 'Account session required.' }, 401);
+  }
+  if (options?.roles && !options.roles.includes(access.role)) {
+    return c.json({
+      error: `Account role '${access.role}' is not allowed to perform this action.`,
+      requiredRoles: options.roles,
+    }, 403);
+  }
+  return null;
 }
 
 function currentAdminAuthorized(c: Context): Response | null {
@@ -673,6 +744,139 @@ app.get('/api/v1/connectors', async (c) => {
   return c.json({ connectors });
 });
 
+app.post('/api/v1/account/users/bootstrap', async (c) => {
+  const current = await currentHostedAccount(c);
+  if (current instanceof Response) return current;
+  if (current.tenant.source !== 'api_key' && current.tenant.source !== 'bearer_token') {
+    return c.json({ error: 'Bootstrap requires a tenant API key or bearer token.' }, 403);
+  }
+
+  const existingUsers = await countAccountUsersForAccountState(current.account.id);
+  if (existingUsers > 0) {
+    return c.json({
+      error: `Hosted account '${current.account.id}' already has account users. Use an account_admin session to manage users.`,
+    }, 409);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!email || !displayName || !password) {
+    return c.json({ error: 'email, displayName, and password are required.' }, 400);
+  }
+  if (password.length < 12) {
+    return c.json({ error: 'password must be at least 12 characters long.' }, 400);
+  }
+
+  let created;
+  try {
+    created = await createAccountUserState({
+      accountId: current.account.id,
+      email,
+      displayName,
+      password,
+      role: 'account_admin',
+    });
+  } catch (err) {
+    if (err instanceof AccountUserStoreError) {
+      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
+    }
+    throw err;
+  }
+
+  return c.json({
+    user: accountUserView(created.record),
+    bootstrap: true,
+  }, 201);
+});
+
+app.post('/api/v1/auth/login', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!email || !password) {
+    return c.json({ error: 'email and password are required.' }, 400);
+  }
+
+  const user = await findAccountUserByEmailState(email);
+  if (!user || !verifyAccountUserPasswordRecord(user.password, password)) {
+    return c.json({ error: 'Invalid email or password.' }, 401);
+  }
+  if (user.status !== 'active') {
+    return c.json({ error: `Account user '${user.email}' is inactive.` }, 403);
+  }
+
+  const account = await findHostedAccountByIdState(user.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
+  }
+  if (account.status === 'archived') {
+    return c.json({ error: `Hosted account '${account.id}' is archived and cannot accept new sessions.` }, 403);
+  }
+
+  const issued = await issueAccountSessionState({
+    accountId: account.id,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  const loginTouch = await recordAccountUserLoginState(user.id);
+
+  setCookie(c, sessionCookieName(), issued.sessionToken, {
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: sessionCookieSecure(),
+    path: '/api/v1',
+    expires: new Date(issued.record.expiresAt),
+  });
+
+  return c.json({
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    user: accountUserView(loginTouch.record),
+    account: adminAccountView(account),
+  });
+});
+
+app.post('/api/v1/auth/logout', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+
+  const token = c.req.header('x-attestor-session')
+    ?? getCookie(c, sessionCookieName())
+    ?? null;
+  if (token) {
+    await revokeAccountSessionByTokenState(token);
+  }
+  deleteCookie(c, sessionCookieName(), {
+    path: '/api/v1',
+  });
+  return c.json({ loggedOut: true });
+});
+
+app.get('/api/v1/auth/me', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!user || !account) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+  return c.json({
+    session: {
+      id: access.sessionId,
+      source: access.source,
+      role: access.role,
+    },
+    user: accountUserView(user),
+    account: adminAccountView(account),
+  });
+});
+
 app.get('/api/v1/account/usage', async (c) => {
   const tenant = currentTenant(c);
   const usage = await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
@@ -703,7 +907,112 @@ app.get('/api/v1/account', async (c) => {
   });
 });
 
+app.get('/api/v1/account/users', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const users = await listAccountUsersByAccountIdState(access.accountId);
+  return c.json({
+    users: users.records.map(accountUserView),
+  });
+});
+
+app.post('/api/v1/account/users', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  const role = typeof body.role === 'string' ? body.role.trim() as AccountUserRole : null;
+  if (!email || !displayName || !password || !role) {
+    return c.json({ error: 'email, displayName, password, and role are required.' }, 400);
+  }
+  if (!['account_admin', 'billing_admin', 'read_only'].includes(role)) {
+    return c.json({ error: "role must be one of: account_admin, billing_admin, read_only." }, 400);
+  }
+  if (password.length < 12) {
+    return c.json({ error: 'password must be at least 12 characters long.' }, 400);
+  }
+
+  let created;
+  try {
+    created = await createAccountUserState({
+      accountId: access.accountId,
+      email,
+      displayName,
+      password,
+      role,
+    });
+  } catch (err) {
+    if (err instanceof AccountUserStoreError) {
+      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
+    }
+    throw err;
+  }
+
+  return c.json({
+    user: accountUserView(created.record),
+  }, 201);
+});
+
+app.post('/api/v1/account/users/:id/deactivate', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(c.req.param('id'));
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: `Account user '${c.req.param('id')}' was not found.` }, 404);
+  }
+  try {
+    const updated = await setAccountUserStatusState(user.id, 'inactive');
+    await revokeAccountSessionsForUserState(user.id);
+    return c.json({
+      user: accountUserView(updated.record),
+    });
+  } catch (err) {
+    if (err instanceof AccountUserStoreError) {
+      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
+    }
+    throw err;
+  }
+});
+
+app.post('/api/v1/account/users/:id/reactivate', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(c.req.param('id'));
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: `Account user '${c.req.param('id')}' was not found.` }, 404);
+  }
+  try {
+    const updated = await setAccountUserStatusState(user.id, 'active');
+    return c.json({
+      user: accountUserView(updated.record),
+    });
+  } catch (err) {
+    if (err instanceof AccountUserStoreError) {
+      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
+    }
+    throw err;
+  }
+});
+
 app.post('/api/v1/account/billing/checkout', async (c) => {
+  const roleGate = requireAccountSession(c, {
+    roles: ['account_admin', 'billing_admin'],
+  });
+  if (roleGate) return roleGate;
   const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
 
@@ -751,6 +1060,10 @@ app.post('/api/v1/account/billing/checkout', async (c) => {
 });
 
 app.post('/api/v1/account/billing/portal', async (c) => {
+  const roleGate = requireAccountSession(c, {
+    roles: ['account_admin', 'billing_admin'],
+  });
+  if (roleGate) return roleGate;
   const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
 

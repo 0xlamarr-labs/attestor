@@ -68,12 +68,16 @@ async function run(): Promise<void> {
   const accountStorePath = join(tempRoot, 'accounts.json');
   const tenantKeyStorePath = join(tempRoot, 'tenant-keys.json');
   const usageLedgerPath = join(tempRoot, 'usage-ledger.json');
+  const accountUserStorePath = join(tempRoot, 'account-users.json');
+  const accountSessionStorePath = join(tempRoot, 'account-sessions.json');
   const adminAuditPath = join(tempRoot, 'admin-audit.json');
   const adminIdempotencyPath = join(tempRoot, 'admin-idempotency.json');
   const stripeWebhookPath = join(tempRoot, 'stripe-webhooks.json');
 
   process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `postgres://control_plane_live:control_plane_live@localhost:${pgPort}/attestor_control_plane`;
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = accountStorePath;
+  process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = accountUserStorePath;
+  process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = accountSessionStorePath;
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = tenantKeyStorePath;
   process.env.ATTESTOR_USAGE_LEDGER_PATH = usageLedgerPath;
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = adminAuditPath;
@@ -88,6 +92,9 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_STRIPE_USE_MOCK = 'true';
   process.env.STRIPE_API_KEY = 'sk_test_live_control_plane_mock';
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_control_plane';
+  process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://attestor.dev/billing/success';
+  process.env.ATTESTOR_BILLING_CANCEL_URL = 'https://attestor.dev/billing/cancel';
+  process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://attestor.dev/app';
   process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_monthly';
   process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_monthly';
   process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_monthly';
@@ -132,6 +139,8 @@ async function run(): Promise<void> {
     ok(createAccountBody.account.primaryTenantId === 'tenant-pg-live', 'Admin account create: tenant stored');
     ok(createAccountBody.initialKey.apiKey.startsWith('atk_'), 'Admin account create: API key issued');
     ok(!existsSync(accountStorePath), 'Shared PG: no local account store file created');
+    ok(!existsSync(accountUserStorePath), 'Shared PG: no local account user store file created');
+    ok(!existsSync(accountSessionStorePath), 'Shared PG: no local account session store file created');
     ok(!existsSync(tenantKeyStorePath), 'Shared PG: no local tenant key store file created');
     ok(!existsSync(usageLedgerPath), 'Shared PG: no local usage ledger file created');
     ok(!existsSync(adminAuditPath), 'Shared PG: no local admin audit file created');
@@ -163,6 +172,50 @@ async function run(): Promise<void> {
     const accountBody = await accountRes.json() as any;
     ok(accountBody.account.accountName === 'PG Hosted Co', 'Tenant account summary: account name matches');
     ok(accountBody.usage.used === 0, 'Tenant account summary: usage starts at 0');
+
+    const bootstrapRes = await fetch(`${base}/api/v1/account/users/bootstrap`, {
+      method: 'POST',
+      headers: {
+        ...tenantAuth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: 'owner@pg-hosted.example',
+        displayName: 'PG Owner',
+        password: 'PgOwnerPass123!',
+      }),
+    });
+    ok(bootstrapRes.status === 201, 'Account bootstrap via shared PG: 201');
+    const bootstrapBody = await bootstrapRes.json() as any;
+    ok(bootstrapBody.user.role === 'account_admin', 'Account bootstrap via shared PG: account_admin created');
+    ok(!existsSync(accountUserStorePath), 'Shared PG: bootstrap does not create local user store file');
+
+    const loginRes = await fetch(`${base}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'owner@pg-hosted.example',
+        password: 'PgOwnerPass123!',
+      }),
+    });
+    ok(loginRes.status === 200, 'Account login via shared PG: 200');
+    const accountSessionCookie = loginRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    ok(Boolean(accountSessionCookie), 'Account login via shared PG: session cookie returned');
+    ok(!existsSync(accountSessionStorePath), 'Shared PG: login does not create local session store file');
+
+    const meRes = await fetch(`${base}/api/v1/auth/me`, {
+      headers: { Cookie: accountSessionCookie! },
+    });
+    ok(meRes.status === 200, 'Account me via shared PG session: 200');
+    const meBody = await meRes.json() as any;
+    ok(meBody.session.role === 'account_admin', 'Account me via shared PG session: role persisted');
+
+    const sessionAccountRes = await fetch(`${base}/api/v1/account`, {
+      headers: { Cookie: accountSessionCookie! },
+    });
+    ok(sessionAccountRes.status === 200, 'Account summary via shared PG session: 200');
+    const sessionAccountBody = await sessionAccountRes.json() as any;
+    ok(sessionAccountBody.tenantContext.source === 'account_session', 'Account summary via shared PG session: source=account_session');
 
     const pipelineRes = await fetch(`${base}/api/v1/pipeline/run`, {
       method: 'POST',
@@ -253,6 +306,19 @@ async function run(): Promise<void> {
 
     const reactivatedUsageRes = await fetch(`${base}/api/v1/account/usage`, { headers: replacementAuth });
     ok(reactivatedUsageRes.status === 200, 'Reactivated account usable again');
+
+    const checkoutRes = await fetch(`${base}/api/v1/account/billing/checkout`, {
+      method: 'POST',
+      headers: {
+        Cookie: accountSessionCookie!,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'shared-control-plane-checkout-1',
+      },
+      body: JSON.stringify({ planId: 'pro' }),
+    });
+    ok(checkoutRes.status === 200, 'Billing checkout via shared PG session: 200');
+    const checkoutBody = await checkoutRes.json() as any;
+    ok(checkoutBody.planId === 'pro', 'Billing checkout via shared PG session: plan echoed');
 
     const listAccountsRes = await fetch(`${base}/api/v1/admin/accounts`, {
       headers: { Authorization: 'Bearer admin-shared-control-plane' },
@@ -404,7 +470,7 @@ async function run(): Promise<void> {
     resetStripeWebhookStoreForTests();
     resetObservabilityForTests();
     await resetBillingEventLedgerForTests();
-    await pg.stop();
+    try { await pg.stop(); } catch {}
     try { rmSync(tempRoot, { recursive: true, force: true }); } catch {}
     delete process.env.ATTESTOR_CONTROL_PLANE_PG_URL;
   }

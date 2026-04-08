@@ -219,6 +219,78 @@ export interface AccountSummaryResponse {
   rateLimit: RateLimitContext;
 }
 
+export interface AccountUserRecordView {
+  id: string;
+  accountId: string;
+  email: string;
+  displayName: string;
+  role: 'account_admin' | 'billing_admin' | 'read_only';
+  status: 'active' | 'inactive';
+  createdAt: string;
+  updatedAt: string;
+  deactivatedAt: string | null;
+  lastLoginAt: string | null;
+}
+
+export interface AccountUsersListResponse {
+  users: AccountUserRecordView[];
+}
+
+export interface AccountBootstrapUserRequest {
+  email: string;
+  displayName: string;
+  password: string;
+}
+
+export interface AccountBootstrapUserResponse {
+  user: AccountUserRecordView;
+  bootstrap: true;
+}
+
+export interface AccountCreateUserRequest {
+  email: string;
+  displayName: string;
+  password: string;
+  role: 'account_admin' | 'billing_admin' | 'read_only';
+}
+
+export interface AccountCreateUserResponse {
+  user: AccountUserRecordView;
+}
+
+export interface AccountSetUserStatusResponse {
+  user: AccountUserRecordView;
+}
+
+export interface AuthLoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface AuthLoginResponse {
+  session: {
+    id: string;
+    expiresAt: string;
+    source: 'account_session';
+  };
+  user: AccountUserRecordView;
+  account: AdminAccountRecord;
+}
+
+export interface AuthMeResponse {
+  session: {
+    id: string;
+    source: 'account_session';
+    role: 'account_admin' | 'billing_admin' | 'read_only';
+  };
+  user: AccountUserRecordView;
+  account: AdminAccountRecord;
+}
+
+export interface AuthLogoutResponse {
+  loggedOut: true;
+}
+
 export interface AccountBillingCheckoutRequest {
   planId: 'starter' | 'pro' | 'enterprise';
 }
