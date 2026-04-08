@@ -149,6 +149,17 @@ function deriveEntitlementShape(options: {
     };
   }
 
+  if (account.status === 'suspended' && subscriptionStatus !== 'past_due' && subscriptionStatus !== 'unpaid') {
+    return {
+      status: 'suspended',
+      accessEnabled: false,
+      reason: account.billing.lastInvoiceEventType === 'invoice.payment_failed'
+        ? 'invoice_payment_failed'
+        : 'account_suspended',
+      effectiveAt: account.suspendedAt ?? account.updatedAt,
+    };
+  }
+
   switch (subscriptionStatus) {
     case 'active':
       return {
@@ -194,17 +205,6 @@ function deriveEntitlementShape(options: {
         ? 'checkout_completed_pending_subscription'
         : 'manual_checkout_completed',
       effectiveAt: account.billing.lastCheckoutCompletedAt,
-    };
-  }
-
-  if (account.status === 'suspended') {
-    return {
-      status: 'suspended',
-      accessEnabled: false,
-      reason: account.billing.lastInvoiceEventType === 'invoice.payment_failed'
-        ? 'invoice_payment_failed'
-        : 'account_suspended',
-      effectiveAt: account.suspendedAt ?? account.updatedAt,
     };
   }
 

@@ -453,6 +453,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1342 tests across 10 suites: 557 unit + 453 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 35 control-plane backup/restore + 41 control-plane backup/restore shared PG + 71 live shared control-plane PG + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1347 tests across 10 suites: 557 unit + 458 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 35 control-plane backup/restore + 41 control-plane backup/restore shared PG + 71 live shared control-plane PG + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

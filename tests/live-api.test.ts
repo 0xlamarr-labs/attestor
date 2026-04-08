@@ -1196,6 +1196,14 @@ async function run() {
       const suspendedAccountUsageBody = await suspendedAccountUsageRes.json() as any;
       ok(suspendedAccountUsageBody.accountStatus === 'suspended', 'Admin Accounts: suspended account status surfaced');
 
+      const suspendedEntitlementRes = await fetch(`${BASE}/api/v1/admin/billing/entitlements?accountId=${createAccountBody.account.id}`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(suspendedEntitlementRes.status === 200, 'Admin Billing Entitlements: readable after manual suspend');
+      const suspendedEntitlementBody = await suspendedEntitlementRes.json() as any;
+      ok(suspendedEntitlementBody.records[0].status === 'suspended', 'Admin Billing Entitlements: manual suspend overrides active subscription in entitlement view');
+      ok(suspendedEntitlementBody.records[0].accessEnabled === false, 'Admin Billing Entitlements: manual suspend disables entitlement access');
+
       const reactivateAccountRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/reactivate`, {
         method: 'POST',
         headers: {
@@ -1214,6 +1222,13 @@ async function run() {
         headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
       });
       ok(reactivatedAccountUsageRes.status === 200, 'Admin Accounts: reactivated account key works again');
+
+      const reactivatedEntitlementRes = await fetch(`${BASE}/api/v1/admin/billing/entitlements?accountId=${createAccountBody.account.id}`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(reactivatedEntitlementRes.status === 200, 'Admin Billing Entitlements: readable after reactivate');
+      const reactivatedEntitlementBody = await reactivatedEntitlementRes.json() as any;
+      ok(reactivatedEntitlementBody.records[0].status === 'active', 'Admin Billing Entitlements: reactivate restores active entitlement view');
 
       const pastDuePayload = JSON.stringify({
         id: 'evt_sub_account_001_past_due',
