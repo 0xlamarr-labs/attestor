@@ -212,6 +212,22 @@ export function revokeAccountSessionsForUser(accountUserId: string): {
   return { revokedCount, path: storePath() };
 }
 
+export function revokeAccountSessionsForAccount(accountId: string): {
+  revokedCount: number;
+  path: string;
+} {
+  const store = loadStore();
+  let revokedCount = 0;
+  for (const record of store.records) {
+    if (record.accountId === accountId && !record.revokedAt) {
+      record.revokedAt = new Date().toISOString();
+      revokedCount += 1;
+    }
+  }
+  if (revokedCount > 0) saveStore(store);
+  return { revokedCount, path: storePath() };
+}
+
 export function resetAccountSessionStoreForTests(): void {
   const path = storePath();
   if (existsSync(path)) rmSync(path, { force: true });

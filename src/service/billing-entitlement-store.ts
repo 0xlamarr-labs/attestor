@@ -89,6 +89,7 @@ export interface ListBillingEntitlementsFilters {
   tenantId?: string | null;
   status?: HostedBillingEntitlementStatus | null;
   limit?: number | null;
+  offset?: number | null;
 }
 
 function storePath(): string {
@@ -358,6 +359,7 @@ export function listHostedBillingEntitlements(filters?: ListBillingEntitlementsF
   path: string;
 } {
   const limit = Math.max(1, Math.min(1000, filters?.limit ?? 100));
+  const offset = Math.max(0, filters?.offset ?? 0);
   let records = loadStore().records;
   if (filters?.accountId) {
     records = records.filter((entry) => entry.accountId === filters.accountId);
@@ -370,13 +372,13 @@ export function listHostedBillingEntitlements(filters?: ListBillingEntitlementsF
   }
   records = [...records].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
   return {
-    records: records.slice(0, limit),
+    records: records.slice(offset, offset + limit),
     path: storePath(),
   };
 }
 
 export function exportHostedBillingEntitlementStoreSnapshot(): HostedBillingEntitlementStoreSnapshot {
-  const { records } = listHostedBillingEntitlements({ limit: 10_000 });
+  const records = [...loadStore().records].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
   return {
     version: 1,
     exportedAt: new Date().toISOString(),

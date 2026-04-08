@@ -128,6 +128,7 @@ import {
   queryUsageLedgerState,
   recordAccountUserLoginState,
   revokeAccountSessionByTokenState,
+  revokeAccountSessionsForAccountState,
   revokeAccountSessionsForUserState,
   revokeTenantApiKeyState,
   rotateTenantApiKeyState,
@@ -591,6 +592,31 @@ async function syncHostedBillingEntitlement(account: HostedAccountRecord, option
     lastEventAt: options?.lastEventAt ?? null,
   });
   return synced.record;
+}
+
+async function syncHostedBillingEntitlementForTenant(
+  tenantId: string,
+  options?: {
+    lastEventId?: string | null;
+    lastEventType?: string | null;
+    lastEventAt?: string | null;
+  },
+): Promise<HostedBillingEntitlementRecord | null> {
+  const account = await findHostedAccountByTenantIdState(tenantId);
+  if (!account) return null;
+  return syncHostedBillingEntitlement(account, options);
+}
+
+async function revokeAccountSessionsForLifecycleChange(options: {
+  account: HostedAccountRecord | null;
+  previousStatus: HostedAccountRecord['status'] | null;
+  nextStatus: HostedAccountRecord['status'] | null;
+}): Promise<number> {
+  if (!options.account) return 0;
+  if (options.previousStatus === options.nextStatus) return 0;
+  if (options.nextStatus !== 'suspended' && options.nextStatus !== 'archived') return 0;
+  const result = await revokeAccountSessionsForAccountState(options.account.id);
+  return result.revokedCount;
 }
 
 function applyRateLimitHeaders(
@@ -1466,6 +1492,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         lastEventType: event.type,
         lastEventAt: unixSecondsToIso(event.created) ?? new Date().toISOString(),
       });
+      const revokedSessions = await revokeAccountSessionsForLifecycleChange({
+        account: applied.record,
+        previousStatus: applied.previousStatus,
+        nextStatus: applied.nextStatus,
+      });
 
       c.set('obs.accountId', applied.record.id);
       c.set('obs.accountStatus', applied.record.status);
@@ -1492,6 +1523,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             entitlementStatus: entitlement.status,
             entitlementAccessEnabled: entitlement.accessEnabled,
             effectivePlanId: entitlement.effectivePlanId,
+            revokedSessionCount: revokedSessions,
           },
         });
         finalizedSharedEvent = true;
@@ -1535,6 +1567,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           nextAccountStatus: applied.nextStatus,
           previousBillingStatus: applied.previousBillingStatus,
           nextBillingStatus: applied.nextBillingStatus,
+          revokedSessionCount: revokedSessions,
           sharedLedger: sharedBillingLedger,
         },
       });
@@ -1856,6 +1889,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       lastEventType: event.type,
       lastEventAt: unixSecondsToIso(event.created) ?? new Date().toISOString(),
     });
+    const revokedSessions = await revokeAccountSessionsForLifecycleChange({
+      account: applied.record,
+      previousStatus: applied.previousStatus,
+      nextStatus: applied.nextStatus,
+    });
 
     c.set('obs.accountId', applied.record.id);
     c.set('obs.accountStatus', applied.record.status);
@@ -1888,6 +1926,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           entitlementStatus: entitlement.status,
           entitlementAccessEnabled: entitlement.accessEnabled,
           effectivePlanId: entitlement.effectivePlanId,
+          revokedSessionCount: revokedSessions,
         },
       });
       finalizedSharedEvent = true;
@@ -1931,6 +1970,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         entitlementStatus: entitlement.status,
         entitlementAccessEnabled: entitlement.accessEnabled,
         effectivePlanId: entitlement.effectivePlanId,
+        previousAccountStatus: applied.previousStatus,
+        nextAccountStatus: applied.nextStatus,
+        previousBillingStatus: applied.previousBillingStatus,
+        nextBillingStatus: applied.nextBillingStatus,
+        revokedSessionCount: revokedSessions,
         sharedLedger: sharedBillingLedger,
       },
     });
@@ -2497,6 +2541,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  const revokedSessions = await revokeAccountSessionsForAccountState(result.record.id);
   await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await finalizeAdminMutation({
@@ -2515,6 +2560,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
       metadata: {
         reason: requestPayload.reason || null,
         suspendedAt: result.record.suspendedAt,
+        revokedSessionCount: revokedSessions.revokedCount,
       },
     },
   });
@@ -2586,6 +2632,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  const revokedSessions = await revokeAccountSessionsForAccountState(result.record.id);
   await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await finalizeAdminMutation({
@@ -2604,6 +2651,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
       metadata: {
         reason: requestPayload.reason || null,
         archivedAt: result.record.archivedAt,
+        revokedSessionCount: revokedSessions.revokedCount,
       },
     },
   });
@@ -2660,6 +2708,11 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlementForTenant(issued.record.tenantId, {
+    lastEventId: adminMutation.idempotencyKey,
+    lastEventType: 'admin.tenant_keys.issue',
+    lastEventAt: new Date().toISOString(),
+  });
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2716,6 +2769,11 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
     if (mapped) return mapped;
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
+  await syncHostedBillingEntitlementForTenant(rotated.record.tenantId, {
+    lastEventId: adminMutation.idempotencyKey,
+    lastEventType: 'admin.tenant_keys.rotate',
+    lastEventAt: new Date().toISOString(),
+  });
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2764,6 +2822,11 @@ app.post('/api/v1/admin/tenant-keys/:id/deactivate', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlementForTenant(result.record.tenantId, {
+    lastEventId: adminMutation.idempotencyKey,
+    lastEventType: 'admin.tenant_keys.deactivate',
+    lastEventAt: new Date().toISOString(),
+  });
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2806,6 +2869,11 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlementForTenant(result.record.tenantId, {
+    lastEventId: adminMutation.idempotencyKey,
+    lastEventType: 'admin.tenant_keys.reactivate',
+    lastEventAt: new Date().toISOString(),
+  });
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2843,6 +2911,11 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', async (c) => {
   if (!result.record) {
     return c.json({ error: 'Tenant key record not found' }, 404);
   }
+  await syncHostedBillingEntitlementForTenant(result.record.tenantId, {
+    lastEventId: adminMutation.idempotencyKey,
+    lastEventType: 'admin.tenant_keys.revoke',
+    lastEventAt: new Date().toISOString(),
+  });
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,

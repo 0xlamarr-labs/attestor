@@ -211,7 +211,7 @@ async function run(): Promise<void> {
       }),
     });
     ok(loginRes.status === 200, 'Account login via shared PG: 200');
-    const accountSessionCookie = loginRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    let accountSessionCookie = loginRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
     ok(Boolean(accountSessionCookie), 'Account login via shared PG: session cookie returned');
     ok(!existsSync(accountSessionStorePath), 'Shared PG: login does not create local session store file');
 
@@ -268,7 +268,7 @@ async function run(): Promise<void> {
         'Content-Type': 'application/json',
         'Idempotency-Key': 'shared-control-plane-rotate-1',
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ planId: 'pro' }),
     });
     ok(rotateRes.status === 201, 'Tenant key rotate: 201');
     const rotateBody = await rotateRes.json() as any;
@@ -278,6 +278,14 @@ async function run(): Promise<void> {
     const overlapNewRes = await fetch(`${base}/api/v1/account/usage`, { headers: replacementAuth });
     ok(overlapOldRes.status === 200, 'Old key still works during overlap');
     ok(overlapNewRes.status === 200, 'Replacement key works during overlap');
+
+    const sessionAccountAfterRotateRes = await fetch(`${base}/api/v1/account`, {
+      headers: { Cookie: accountSessionCookie! },
+    });
+    ok(sessionAccountAfterRotateRes.status === 200, 'Account summary reflects rotated tenant key plan');
+    const sessionAccountAfterRotateBody = await sessionAccountAfterRotateRes.json() as any;
+    ok(sessionAccountAfterRotateBody.tenantContext.planId === 'pro', 'Account summary picks up rotated tenant plan');
+    ok(sessionAccountAfterRotateBody.entitlement.effectivePlanId === 'pro', 'Entitlement sync follows rotated tenant plan');
 
     const deactivateRes = await fetch(`${base}/api/v1/admin/tenant-keys/${createAccountBody.initialKey.id}/deactivate`, {
       method: 'POST',
@@ -318,6 +326,23 @@ async function run(): Promise<void> {
 
     const reactivatedUsageRes = await fetch(`${base}/api/v1/account/usage`, { headers: replacementAuth });
     ok(reactivatedUsageRes.status === 200, 'Reactivated account usable again');
+
+    const staleSessionAfterSuspendRes = await fetch(`${base}/api/v1/auth/me`, {
+      headers: { Cookie: accountSessionCookie! },
+    });
+    ok(staleSessionAfterSuspendRes.status === 401, 'Suspended account invalidates existing shared PG session');
+
+    const reLoginRes = await fetch(`${base}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'owner@pg-hosted.example',
+        password: 'PgOwnerPass123!',
+      }),
+    });
+    ok(reLoginRes.status === 200, 'Shared PG account can re-login after reactivate');
+    accountSessionCookie = reLoginRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    ok(Boolean(accountSessionCookie), 'Shared PG re-login returns fresh session cookie');
 
     const checkoutRes = await fetch(`${base}/api/v1/account/billing/checkout`, {
       method: 'POST',

@@ -31,6 +31,8 @@ import {
   provisionHostedAccountState,
   queryUsageLedgerState,
   resetSharedControlPlaneStoreForTests,
+  restoreHostedAccountStoreSnapshot,
+  restoreHostedBillingEntitlementStoreSnapshot,
   restoreAdminAuditLogStoreSnapshot,
   upsertHostedBillingEntitlementState,
 } from '../src/service/control-plane-store.js';
@@ -281,6 +283,98 @@ async function run(): Promise<void> {
     const restoredBillingEvents = await listBillingEvents({ accountId: provisioned.account.id, limit: 10 });
     ok(restoredBillingEvents.length === 1, 'Restore: billing ledger rows restored');
     ok(restoredBillingEvents[0].stripeInvoiceId === 'in_backup_pg_1', 'Restore: billing invoice id preserved');
+
+    const bulkRecordCount = 1005;
+    const bulkAccounts = Array.from({ length: bulkRecordCount }, (_, index) => {
+      const id = `acct_bulk_pg_${String(index).padStart(4, '0')}`;
+      const tenantId = `tenant-bulk-pg-${String(index).padStart(4, '0')}`;
+      const createdAt = new Date(Date.UTC(2026, 3, 7, 0, 0, index % 60)).toISOString();
+      return {
+        ...provisioned.account,
+        id,
+        accountName: `Bulk PG ${index}`,
+        contactEmail: `bulk-pg-${index}@example.com`,
+        primaryTenantId: tenantId,
+        status: 'active' as const,
+        createdAt,
+        updatedAt: createdAt,
+        suspendedAt: null,
+        archivedAt: null,
+        billing: {
+          ...provisioned.account.billing,
+          provider: null,
+          stripeCustomerId: null,
+          stripeSubscriptionId: null,
+          stripeSubscriptionStatus: null,
+          stripePriceId: null,
+          lastCheckoutSessionId: null,
+          lastCheckoutCompletedAt: null,
+          lastCheckoutPlanId: null,
+          lastInvoiceId: null,
+          lastInvoiceStatus: null,
+          lastInvoiceCurrency: null,
+          lastInvoiceAmountPaid: null,
+          lastInvoiceAmountDue: null,
+          lastInvoiceEventId: null,
+          lastInvoiceEventType: null,
+          lastInvoiceProcessedAt: null,
+          lastInvoicePaidAt: null,
+          delinquentSince: null,
+          lastWebhookEventId: null,
+          lastWebhookEventType: null,
+          lastWebhookProcessedAt: null,
+        },
+      };
+    });
+    await restoreHostedAccountStoreSnapshot({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      recordCount: bulkAccounts.length,
+      records: bulkAccounts,
+    }, { replaceExisting: true });
+
+    const bulkEntitlements = bulkAccounts.map((account, index) => ({
+      id: `ent_bulk_pg_${String(index).padStart(4, '0')}`,
+      accountId: account.id,
+      tenantId: account.primaryTenantId,
+      provider: 'manual' as const,
+      status: 'provisioned' as const,
+      accessEnabled: true,
+      effectivePlanId: 'starter',
+      requestedPlanId: 'starter',
+      monthlyRunQuota: 100,
+      requestsPerWindow: 5,
+      asyncPendingJobsPerTenant: 1,
+      accountStatus: 'active' as const,
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      stripeSubscriptionStatus: null,
+      stripePriceId: null,
+      stripeCheckoutSessionId: null,
+      stripeInvoiceId: null,
+      stripeInvoiceStatus: null,
+      lastEventId: `evt_bulk_pg_${index}`,
+      lastEventType: 'manual.provisioning',
+      lastEventAt: account.updatedAt,
+      effectiveAt: account.createdAt,
+      delinquentSince: null,
+      reason: 'manual_provisioning',
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt,
+    }));
+    await restoreHostedBillingEntitlementStoreSnapshot({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      recordCount: bulkEntitlements.length,
+      records: bulkEntitlements,
+    }, { replaceExisting: true });
+
+    const paginatedBackup = await createControlPlaneBackupSnapshot({
+      snapshotDir,
+      includeEphemeral: false,
+    });
+    const entitlementComponent = paginatedBackup.manifest.components.find((entry) => entry.id === 'billing_entitlement_store');
+    ok(entitlementComponent?.recordCount === bulkRecordCount, 'Backup: shared PG entitlement snapshot exports every record across pagination');
 
     console.log(`  Control-plane backup PG tests: ${passed} passed, 0 failed\n`);
   } finally {

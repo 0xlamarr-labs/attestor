@@ -55,6 +55,7 @@ import {
   listAccountSessions as listAccountSessionsFile,
   revokeAccountSession as revokeAccountSessionFile,
   revokeAccountSessionByToken as revokeAccountSessionByTokenFile,
+  revokeAccountSessionsForAccount as revokeAccountSessionsForAccountFile,
   revokeAccountSessionsForUser as revokeAccountSessionsForUserFile,
   sessionTtlHours,
   type AccountSessionRecord,
@@ -891,17 +892,34 @@ async function listHostedBillingEntitlementsPg(
     clauses.push(`entitlement_status = $${params.length}`);
   }
   const limit = Math.max(1, Math.min(1000, filters?.limit ?? 100));
+  const offset = Math.max(0, filters?.offset ?? 0);
   params.push(limit);
+  params.push(offset);
   const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
   const result = await pool.query(
     `SELECT record_json
        FROM attestor_control_plane.billing_entitlements
        ${whereClause}
       ORDER BY updated_at DESC, account_id ASC
-      LIMIT $${params.length}`,
+      LIMIT $${params.length - 1}
+      OFFSET $${params.length}`,
     params,
   );
   return result.rows.map(rowToHostedBillingEntitlement);
+}
+
+async function listAllHostedBillingEntitlementsPg(): Promise<HostedBillingEntitlementRecord[]> {
+  const pageSize = 1000;
+  const records: HostedBillingEntitlementRecord[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await listHostedBillingEntitlementsPg({
+      limit: pageSize,
+      offset,
+    });
+    records.push(...page);
+    if (page.length < pageSize) break;
+  }
+  return records;
 }
 
 async function findHostedBillingEntitlementByAccountIdPg(accountId: string): Promise<HostedBillingEntitlementRecord | null> {
@@ -2132,6 +2150,23 @@ export async function revokeAccountSessionsForUserState(accountUserId: string): 
   return { revokedCount, path: controlPlaneStoreSource() };
 }
 
+export async function revokeAccountSessionsForAccountState(accountId: string): Promise<{
+  revokedCount: number;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return revokeAccountSessionsForAccountFile(accountId);
+  const sessions = await listAccountSessionsPg({ accountId });
+  let revokedCount = 0;
+  for (const session of sessions) {
+    if (!session.revokedAt) {
+      session.revokedAt = new Date().toISOString();
+      await upsertAccountSessionPg(session);
+      revokedCount += 1;
+    }
+  }
+  return { revokedCount, path: controlPlaneStoreSource() };
+}
+
 export async function appendAdminAuditRecordState(
   input: Omit<AdminAuditRecord, 'id' | 'occurredAt' | 'previousHash' | 'eventHash'>,
 ): Promise<{
@@ -2929,7 +2964,7 @@ export async function exportHostedAccountStoreSnapshot(): Promise<HostedAccountS
 
 export async function exportHostedBillingEntitlementStoreSnapshot(): Promise<BillingEntitlementStoreSnapshot> {
   const records = isSharedControlPlaneConfigured()
-    ? await listHostedBillingEntitlementsPg({ limit: 10_000 })
+    ? await listAllHostedBillingEntitlementsPg()
     : exportHostedBillingEntitlementStoreSnapshotFile().records;
   return {
     version: 1,

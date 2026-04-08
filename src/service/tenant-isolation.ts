@@ -283,7 +283,19 @@ async function resolveAccountSessionContext(c: Context): Promise<{
 
   const user = await findAccountUserByIdState(session.accountUserId);
   const account = await findHostedAccountByIdState(session.accountId);
-  if (!user || user.status !== 'active' || !account) {
+  const suspendedAtMs = account?.suspendedAt ? Date.parse(account.suspendedAt) : Number.NaN;
+  const sessionCreatedAtMs = Date.parse(session.createdAt);
+  const sessionPredatesSuspension = account?.status === 'suspended'
+    && Number.isFinite(suspendedAtMs)
+    && Number.isFinite(sessionCreatedAtMs)
+    && sessionCreatedAtMs <= suspendedAtMs;
+  if (
+    !user
+    || user.status !== 'active'
+    || !account
+    || account.status === 'archived'
+    || sessionPredatesSuspension
+  ) {
     await revokeAccountSessionState(session.id);
     return null;
   }

@@ -923,7 +923,7 @@ async function run() {
       });
       ok(loginRes.status === 200, 'Auth: login status 200');
       const loginBody = await loginRes.json() as any;
-      const accountAdminCookie = cookieHeaderFromResponse(loginRes);
+      let accountAdminCookie = cookieHeaderFromResponse(loginRes);
       ok(Boolean(accountAdminCookie), 'Auth: login sets session cookie');
       ok(loginBody.session.source === 'account_session', 'Auth: login returns account_session source');
       ok(loginBody.user.lastLoginAt !== null, 'Auth: login updates lastLoginAt');
@@ -1015,7 +1015,7 @@ async function run() {
         }),
       });
       ok(billingAdminLoginRes.status === 200, 'Auth: billing_admin login status 200');
-      const billingAdminCookie = cookieHeaderFromResponse(billingAdminLoginRes);
+      let billingAdminCookie = cookieHeaderFromResponse(billingAdminLoginRes);
       ok(Boolean(billingAdminCookie), 'Auth: billing_admin login sets session cookie');
 
       const checkoutMissingKeyRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
@@ -1204,6 +1204,17 @@ async function run() {
       ok(suspendedEntitlementBody.records[0].status === 'suspended', 'Admin Billing Entitlements: manual suspend overrides active subscription in entitlement view');
       ok(suspendedEntitlementBody.records[0].accessEnabled === false, 'Admin Billing Entitlements: manual suspend disables entitlement access');
 
+      const suspendedSessionMeRes = await fetch(`${BASE}/api/v1/auth/me`, {
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(suspendedSessionMeRes.status === 401, 'Admin Accounts: manual suspend invalidates existing account session');
+
+      const suspendedBillingSessionRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
+        method: 'POST',
+        headers: { Cookie: billingAdminCookie! },
+      });
+      ok(suspendedBillingSessionRes.status === 401, 'Admin Accounts: manual suspend invalidates existing billing session');
+
       const reactivateAccountRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/reactivate`, {
         method: 'POST',
         headers: {
@@ -1229,6 +1240,30 @@ async function run() {
       ok(reactivatedEntitlementRes.status === 200, 'Admin Billing Entitlements: readable after reactivate');
       const reactivatedEntitlementBody = await reactivatedEntitlementRes.json() as any;
       ok(reactivatedEntitlementBody.records[0].status === 'active', 'Admin Billing Entitlements: reactivate restores active entitlement view');
+
+      const accountAdminReLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'owner@account.example',
+          password: 'BootstrapPass123!',
+        }),
+      });
+      ok(accountAdminReLoginRes.status === 200, 'Auth: account_admin can log back in after manual reactivate');
+      accountAdminCookie = cookieHeaderFromResponse(accountAdminReLoginRes);
+      ok(Boolean(accountAdminCookie), 'Auth: account_admin re-login refreshes session cookie');
+
+      const billingAdminReLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'billing@account.example',
+          password: 'BillingPass123!',
+        }),
+      });
+      ok(billingAdminReLoginRes.status === 200, 'Auth: billing_admin can log back in after manual reactivate');
+      billingAdminCookie = cookieHeaderFromResponse(billingAdminReLoginRes);
+      ok(Boolean(billingAdminCookie), 'Auth: billing_admin re-login refreshes session cookie');
 
       const pastDuePayload = JSON.stringify({
         id: 'evt_sub_account_001_past_due',
@@ -1271,11 +1306,29 @@ async function run() {
       });
       ok(blockedAfterWebhookRes.status === 403, 'Stripe Webhook: suspended account blocked after webhook');
 
+      const suspendedPortalOldSessionRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
+        method: 'POST',
+        headers: { Cookie: billingAdminCookie! },
+      });
+      ok(suspendedPortalOldSessionRes.status === 401, 'Stripe Webhook: suspension invalidates pre-existing billing session');
+
+      const suspendedBillingLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'billing@account.example',
+          password: 'BillingPass123!',
+        }),
+      });
+      ok(suspendedBillingLoginRes.status === 200, 'Auth: suspended billing_admin can re-login for billing self-service');
+      billingAdminCookie = cookieHeaderFromResponse(suspendedBillingLoginRes);
+      ok(Boolean(billingAdminCookie), 'Auth: suspended billing_admin login sets fresh session cookie');
+
       const suspendedPortalRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
         method: 'POST',
         headers: { Cookie: billingAdminCookie! },
       });
-      ok(suspendedPortalRes.status === 200, 'Stripe Webhook: suspended account may still open billing portal');
+      ok(suspendedPortalRes.status === 200, 'Stripe Webhook: suspended account may still open billing portal after re-login');
 
       const pastDueWebhookReplayRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
         method: 'POST',
@@ -1467,6 +1520,18 @@ async function run() {
       ok(accountEntitlementAfterWebhookBody.entitlement.status === 'active', 'Account Entitlement: active after invoice.paid');
       ok(accountEntitlementAfterWebhookBody.entitlement.accessEnabled === true, 'Account Entitlement: access re-enabled after invoice.paid');
       ok(accountEntitlementAfterWebhookBody.entitlement.lastEventId === 'evt_invoice_account_001_paid', 'Account Entitlement: last event tracks latest invoice event');
+
+      const accountAdminPostInvoiceLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'owner@account.example',
+          password: 'BootstrapPass123!',
+        }),
+      });
+      ok(accountAdminPostInvoiceLoginRes.status === 200, 'Auth: account_admin can re-login after invoice recovery');
+      accountAdminCookie = cookieHeaderFromResponse(accountAdminPostInvoiceLoginRes);
+      ok(Boolean(accountAdminCookie), 'Auth: account_admin post-invoice re-login sets fresh session cookie');
 
       const accountBillingExportRes = await fetch(`${BASE}/api/v1/account/billing/export?limit=5`, {
         headers: { Cookie: billingAdminCookie! },
