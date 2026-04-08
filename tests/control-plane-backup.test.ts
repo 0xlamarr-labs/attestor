@@ -20,6 +20,11 @@ import {
   resetBillingEventLedgerForTests,
 } from '../src/service/billing-event-ledger.js';
 import {
+  findHostedBillingEntitlementByAccountId,
+  resetHostedBillingEntitlementStoreForTests,
+  upsertHostedBillingEntitlement,
+} from '../src/service/billing-entitlement-store.js';
+import {
   createControlPlaneBackupSnapshot,
   restoreControlPlaneBackupSnapshot,
 } from '../src/service/control-plane-backup.js';
@@ -99,6 +104,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(tempRoot, 'account-sessions.json');
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(tempRoot, 'tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(tempRoot, 'usage-ledger.json');
+  process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(tempRoot, 'billing-entitlements.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(tempRoot, 'admin-audit-log.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(tempRoot, 'admin-idempotency.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(tempRoot, 'stripe-webhooks.json');
@@ -114,6 +120,7 @@ async function run(): Promise<void> {
   resetAccountSessionStoreForTests();
   resetTenantKeyStoreForTests();
   resetUsageMeter();
+  resetHostedBillingEntitlementStoreForTests();
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
@@ -143,6 +150,14 @@ async function run(): Promise<void> {
       tenantId: 'tenant-backup',
       tenantName: 'Backup Tenant',
       planId: 'starter',
+    });
+    upsertHostedBillingEntitlement({
+      account,
+      currentPlanId: 'starter',
+      currentMonthlyRunQuota: 100,
+      lastEventId: 'evt_entitlement_backup_1',
+      lastEventType: 'manual.provisioning',
+      lastEventAt: '2026-04-07T00:00:00.000Z',
     });
     consumePipelineRun('tenant-backup', 'starter', 100);
     appendAdminAuditRecord({
@@ -211,6 +226,7 @@ async function run(): Promise<void> {
     ok(backup.manifest.components.some((entry) => entry.id === 'account_user_store' && entry.present), 'Backup: account user store present');
     ok(backup.manifest.components.some((entry) => entry.id === 'tenant_key_store' && entry.present), 'Backup: tenant key store present');
     ok(backup.manifest.components.some((entry) => entry.id === 'usage_ledger' && entry.present), 'Backup: usage ledger present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'billing_entitlement_store' && entry.present), 'Backup: billing entitlement store present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_audit_log' && entry.present), 'Backup: admin audit present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_idempotency_store' && entry.present), 'Backup: admin idempotency present');
     ok(backup.manifest.components.some((entry) => entry.id === 'stripe_webhook_store' && entry.present), 'Backup: webhook store present');
@@ -224,6 +240,7 @@ async function run(): Promise<void> {
     resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
+    resetHostedBillingEntitlementStoreForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
@@ -237,6 +254,7 @@ async function run(): Promise<void> {
     ok(restored.restoredComponents.includes('account_store'), 'Restore: account store restored');
     ok(restored.restoredComponents.includes('account_user_store'), 'Restore: account user store restored');
     ok(restored.restoredComponents.includes('account_session_store'), 'Restore: account session store restored');
+    ok(restored.restoredComponents.includes('billing_entitlement_store'), 'Restore: billing entitlement store restored');
     ok(restored.restoredComponents.includes('billing_event_ledger'), 'Restore: billing ledger restored');
 
     const restoredAccount = findHostedAccountById(account.id);
@@ -258,6 +276,10 @@ async function run(): Promise<void> {
     const restoredUsage = queryUsageLedger({ tenantId: 'tenant-backup' });
     ok(restoredUsage.length === 1, 'Restore: usage ledger recovered');
     ok(restoredUsage[0].used === 1, 'Restore: usage count preserved');
+
+    const restoredEntitlement = findHostedBillingEntitlementByAccountId(account.id).record;
+    ok(Boolean(restoredEntitlement), 'Restore: billing entitlement recovered');
+    ok(restoredEntitlement?.effectivePlanId === 'starter', 'Restore: billing entitlement plan preserved');
 
     const restoredAudit = listAdminAuditRecords();
     ok(restoredAudit.chainIntact === true, 'Restore: admin audit chain intact');
@@ -284,6 +306,7 @@ async function run(): Promise<void> {
     resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
+    resetHostedBillingEntitlementStoreForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();

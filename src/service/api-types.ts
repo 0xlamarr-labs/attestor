@@ -214,9 +214,53 @@ export interface AccountUsageResponse {
 
 export interface AccountSummaryResponse {
   account: AdminAccountRecord;
+  entitlement: AccountBillingEntitlementRecord;
   tenantContext: { tenantId: string; source: string; planId: string | null };
   usage: UsageContext;
   rateLimit: RateLimitContext;
+}
+
+export interface AccountBillingEntitlementRecord {
+  id: string;
+  accountId: string;
+  tenantId: string;
+  provider: 'manual' | 'stripe';
+  status: 'provisioned' | 'checkout_completed' | 'active' | 'trialing' | 'delinquent' | 'suspended' | 'archived';
+  accessEnabled: boolean;
+  effectivePlanId: string | null;
+  requestedPlanId: string | null;
+  monthlyRunQuota: number | null;
+  requestsPerWindow: number | null;
+  asyncPendingJobsPerTenant: number | null;
+  accountStatus: 'active' | 'suspended' | 'archived';
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripeSubscriptionStatus:
+    | 'trialing'
+    | 'active'
+    | 'incomplete'
+    | 'incomplete_expired'
+    | 'past_due'
+    | 'canceled'
+    | 'unpaid'
+    | 'paused'
+    | null;
+  stripePriceId: string | null;
+  stripeCheckoutSessionId: string | null;
+  stripeInvoiceId: string | null;
+  stripeInvoiceStatus: 'draft' | 'open' | 'paid' | 'uncollectible' | 'void' | null;
+  lastEventId: string | null;
+  lastEventType: string | null;
+  lastEventAt: string | null;
+  effectiveAt: string | null;
+  delinquentSince: string | null;
+  reason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccountBillingEntitlementResponse {
+  entitlement: AccountBillingEntitlementRecord;
 }
 
 export interface AccountUserRecordView {
@@ -351,6 +395,7 @@ export interface AccountBillingExportResponse {
   tenantId: string;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  entitlement: AccountBillingEntitlementRecord;
   checkout: BillingExportCheckoutSummary;
   invoices: BillingExportInvoiceRecord[];
   charges: BillingExportChargeRecord[];
@@ -660,6 +705,29 @@ export interface AdminBillingEventsResponse {
     appliedCount: number;
     ignoredCount: number;
     pendingCount: number;
+  };
+}
+
+export interface AdminBillingEntitlementsResponse {
+  records: AccountBillingEntitlementRecord[];
+  summary: {
+    accountFilter: string | null;
+    tenantFilter: string | null;
+    statusFilter:
+      | 'provisioned'
+      | 'checkout_completed'
+      | 'active'
+      | 'trialing'
+      | 'delinquent'
+      | 'suspended'
+      | 'archived'
+      | null;
+    recordCount: number;
+    accessEnabledCount: number;
+    providerCounts: {
+      manual: number;
+      stripe: number;
+    };
   };
 }
 

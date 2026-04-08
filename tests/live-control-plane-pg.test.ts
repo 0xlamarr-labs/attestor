@@ -13,6 +13,7 @@ import {
 } from '../src/financial/fixtures/scenarios.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
+import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
 import { resetObservabilityForTests } from '../src/service/observability.js';
 import { resetTenantRateLimiterForTests } from '../src/service/rate-limit.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
@@ -73,6 +74,7 @@ async function run(): Promise<void> {
   const adminAuditPath = join(tempRoot, 'admin-audit.json');
   const adminIdempotencyPath = join(tempRoot, 'admin-idempotency.json');
   const stripeWebhookPath = join(tempRoot, 'stripe-webhooks.json');
+  const billingEntitlementPath = join(tempRoot, 'billing-entitlements.json');
 
   process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `postgres://control_plane_live:control_plane_live@localhost:${pgPort}/attestor_control_plane`;
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = accountStorePath;
@@ -83,6 +85,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = adminAuditPath;
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = adminIdempotencyPath;
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = stripeWebhookPath;
+  process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = billingEntitlementPath;
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(tempRoot, 'observability.jsonl');
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-shared-control-plane';
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
@@ -108,6 +111,7 @@ async function run(): Promise<void> {
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
+  resetHostedBillingEntitlementStoreForTests();
   resetObservabilityForTests();
   await resetBillingEventLedgerForTests();
 
@@ -143,6 +147,7 @@ async function run(): Promise<void> {
     ok(!existsSync(accountSessionStorePath), 'Shared PG: no local account session store file created');
     ok(!existsSync(tenantKeyStorePath), 'Shared PG: no local tenant key store file created');
     ok(!existsSync(usageLedgerPath), 'Shared PG: no local usage ledger file created');
+    ok(!existsSync(billingEntitlementPath), 'Shared PG: no local billing entitlement file created');
     ok(!existsSync(adminAuditPath), 'Shared PG: no local admin audit file created');
     ok(!existsSync(adminIdempotencyPath), 'Shared PG: no local admin idempotency file created');
 
@@ -172,6 +177,13 @@ async function run(): Promise<void> {
     const accountBody = await accountRes.json() as any;
     ok(accountBody.account.accountName === 'PG Hosted Co', 'Tenant account summary: account name matches');
     ok(accountBody.usage.used === 0, 'Tenant account summary: usage starts at 0');
+    ok(accountBody.entitlement.status === 'provisioned', 'Tenant account summary: entitlement starts provisioned');
+    ok(accountBody.entitlement.effectivePlanId === 'starter', 'Tenant account summary: starter entitlement projected');
+
+    const entitlementRes = await fetch(`${base}/api/v1/account/entitlement`, { headers: tenantAuth });
+    ok(entitlementRes.status === 200, 'Tenant entitlement summary: 200');
+    const entitlementBody = await entitlementRes.json() as any;
+    ok(entitlementBody.entitlement.provider === 'manual', 'Tenant entitlement summary: provider starts manual');
 
     const bootstrapRes = await fetch(`${base}/api/v1/account/users/bootstrap`, {
       method: 'POST',
@@ -459,6 +471,21 @@ async function run(): Promise<void> {
     ok(webhookReplayRes.status === 200, 'Shared PG webhook: duplicate delivery preserved');
     ok(webhookReplayRes.headers.get('x-attestor-stripe-replay') === 'true', 'Shared PG webhook: duplicate replay header set');
     ok(!existsSync(stripeWebhookPath), 'Shared PG: no local Stripe webhook dedupe file created');
+    ok(!existsSync(billingEntitlementPath), 'Shared PG: webhook lifecycle still avoids local entitlement file');
+
+    const entitlementAfterWebhookRes = await fetch(`${base}/api/v1/account/entitlement`, {
+      headers: { Authorization: `Bearer ${rotateBody.newKey.apiKey}` },
+    });
+    ok(entitlementAfterWebhookRes.status === 403, 'Shared PG entitlement route respects suspended account state');
+
+    const adminEntitlementsRes = await fetch(`${base}/api/v1/admin/billing/entitlements?accountId=${createAccountBody.account.id}`, {
+      headers: { Authorization: 'Bearer admin-shared-control-plane' },
+    });
+    ok(adminEntitlementsRes.status === 200, 'Admin billing entitlements via shared PG: 200');
+    const adminEntitlementsBody = await adminEntitlementsRes.json() as any;
+    ok(adminEntitlementsBody.summary.recordCount === 1, 'Admin billing entitlements via shared PG: one record');
+    ok(adminEntitlementsBody.records[0].status === 'delinquent', 'Admin billing entitlements via shared PG: delinquent status reflected');
+    ok(adminEntitlementsBody.records[0].provider === 'stripe', 'Admin billing entitlements via shared PG: provider switched to stripe');
 
     console.log(`  Shared control-plane PG tests: ${passed} passed, 0 failed\n`);
   } finally {
@@ -468,6 +495,7 @@ async function run(): Promise<void> {
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
+    resetHostedBillingEntitlementStoreForTests();
     resetObservabilityForTests();
     await resetBillingEventLedgerForTests();
     try { await pg.stop(); } catch {}

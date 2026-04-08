@@ -26,6 +26,7 @@ import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
 import { resetBillingEventLedgerForTests } from '../src/service/billing-event-ledger.js';
+import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
 import { resetObservabilityForTests } from '../src/service/observability.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
@@ -111,6 +112,7 @@ async function run() {
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-stripe-webhooks.json');
+  process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-billing-entitlements.json');
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-observability.jsonl');
   process.env.ATTESTOR_SESSION_COOKIE_SECURE = 'false';
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
@@ -136,6 +138,7 @@ async function run() {
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
+  resetHostedBillingEntitlementStoreForTests();
   await resetBillingEventLedgerForTests();
   resetObservabilityForTests();
 
@@ -541,7 +544,14 @@ async function run() {
         6000,
         { Authorization: `Bearer ${failedTenant.apiKey}` },
       );
-      ok(failedStatus.error.includes('candidateSql') || failedStatus.error.includes('intent'), 'Async Queue: worker exposes validation failure');
+      ok(
+        failedStatus.error.includes('candidateSql')
+          || failedStatus.error.includes('intent')
+          || failedStatus.error.includes('Async job payload requires')
+          || failedStatus.error.includes('non-empty string')
+          || failedStatus.error.includes('object'),
+        'Async Queue: worker exposes validation failure',
+      );
       ok(failedStatus.maxAttempts >= 1, 'Async Queue: failed status reports retry ceiling');
       ok(failedStatus.tenantContext?.tenantId === 'tenant-dlq', 'Async Queue: failed status keeps tenant context');
 
@@ -860,6 +870,17 @@ async function run() {
       const accountSummaryBody = await accountSummaryRes.json() as any;
       ok(accountSummaryBody.account.id === createAccountBody.account.id, 'Account API: summary returns hosted account');
       ok(accountSummaryBody.account.billing.provider === null, 'Account API: billing starts empty');
+      ok(accountSummaryBody.entitlement.provider === 'manual', 'Account API: initial entitlement provider is manual');
+      ok(accountSummaryBody.entitlement.status === 'provisioned', 'Account API: initial entitlement status is provisioned');
+      ok(accountSummaryBody.entitlement.accessEnabled === true, 'Account API: initial entitlement enables access');
+
+      const accountEntitlementRes = await fetch(`${BASE}/api/v1/account/entitlement`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(accountEntitlementRes.status === 200, 'Account Entitlement: status 200');
+      const accountEntitlementBody = await accountEntitlementRes.json() as any;
+      ok(accountEntitlementBody.entitlement.accountId === createAccountBody.account.id, 'Account Entitlement: account id matches');
+      ok(accountEntitlementBody.entitlement.effectivePlanId === 'starter', 'Account Entitlement: starter plan reflected');
 
       const bootstrapRes = await fetch(`${BASE}/api/v1/account/users/bootstrap`, {
         method: 'POST',
@@ -1034,6 +1055,13 @@ async function run() {
       ok(String(checkoutBody.checkoutUrl).includes('/checkout/'), 'Account Billing: checkout URL returned');
       ok(checkoutBody.mock === true, 'Account Billing: checkout mock mode surfaced');
       ok(checkoutRes.headers.get('x-attestor-idempotency-key') === 'checkout-account-1', 'Account Billing: checkout echoes idempotency key');
+
+      const entitlementAfterCheckoutRes = await fetch(`${BASE}/api/v1/account/entitlement`, {
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(entitlementAfterCheckoutRes.status === 200, 'Account Entitlement: readable after checkout');
+      const entitlementAfterCheckoutBody = await entitlementAfterCheckoutRes.json() as any;
+      ok(entitlementAfterCheckoutBody.entitlement.status === 'provisioned', 'Account Entitlement: checkout creation alone does not activate entitlement');
 
       const checkoutReplayRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
         method: 'POST',
@@ -1412,6 +1440,18 @@ async function run() {
       ok(accountSummaryAfterWebhookBody.account.billing.lastInvoiceAmountPaid === 5000, 'Account API: summary shows last invoice payment');
       ok(accountSummaryAfterWebhookBody.account.billing.delinquentSince === null, 'Account API: summary shows cleared delinquentSince');
       ok(accountSummaryAfterWebhookBody.tenantContext.planId === 'pro', 'Account API: summary shows synced plan');
+      ok(accountSummaryAfterWebhookBody.entitlement.provider === 'stripe', 'Account API: summary entitlement provider switches to stripe');
+      ok(accountSummaryAfterWebhookBody.entitlement.status === 'active', 'Account API: summary entitlement reaches active');
+      ok(accountSummaryAfterWebhookBody.entitlement.effectivePlanId === 'pro', 'Account API: summary entitlement effective plan synced to pro');
+
+      const accountEntitlementAfterWebhookRes = await fetch(`${BASE}/api/v1/account/entitlement`, {
+        headers: { Cookie: billingAdminCookie! },
+      });
+      ok(accountEntitlementAfterWebhookRes.status === 200, 'Account Entitlement: status 200 after webhook lifecycle');
+      const accountEntitlementAfterWebhookBody = await accountEntitlementAfterWebhookRes.json() as any;
+      ok(accountEntitlementAfterWebhookBody.entitlement.status === 'active', 'Account Entitlement: active after invoice.paid');
+      ok(accountEntitlementAfterWebhookBody.entitlement.accessEnabled === true, 'Account Entitlement: access re-enabled after invoice.paid');
+      ok(accountEntitlementAfterWebhookBody.entitlement.lastEventId === 'evt_invoice_account_001_paid', 'Account Entitlement: last event tracks latest invoice event');
 
       const accountBillingExportRes = await fetch(`${BASE}/api/v1/account/billing/export?limit=5`, {
         headers: { Cookie: billingAdminCookie! },
@@ -1419,6 +1459,7 @@ async function run() {
       ok(accountBillingExportRes.status === 200, 'Account Billing Export: json status 200');
       const accountBillingExportBody = await accountBillingExportRes.json() as any;
       ok(accountBillingExportBody.accountId === createAccountBody.account.id, 'Account Billing Export: account id matches');
+      ok(accountBillingExportBody.entitlement.status === 'active', 'Account Billing Export: entitlement included in JSON');
       ok(accountBillingExportBody.checkout.sessionId === checkoutBody.checkoutSessionId, 'Account Billing Export: checkout session propagated');
       ok(accountBillingExportBody.summary.dataSource === 'ledger_derived' || accountBillingExportBody.summary.dataSource === 'mock_summary', 'Account Billing Export: data source is ledger-derived or mock-summary');
       const exportedInvoice = accountBillingExportBody.invoices.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
@@ -1447,6 +1488,7 @@ async function run() {
       const adminBillingExportBody = await adminBillingExportRes.json() as any;
       ok(adminBillingExportBody.accountId === createAccountBody.account.id, 'Admin Account Billing Export: account id matches');
       ok(adminBillingExportBody.summary.invoiceCount >= 1, 'Admin Account Billing Export: invoice count reported');
+      ok(adminBillingExportBody.entitlement.status === 'active', 'Admin Account Billing Export: entitlement included');
 
       const adminBillingExportCsvRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export?format=csv&limit=5`, {
         headers: { Authorization: 'Bearer admin-secret' },
@@ -1546,6 +1588,18 @@ async function run() {
       } else {
         console.log(`    billing events: skipped (PG ledger not configured, status ${billingEventsRes.status})`);
       }
+
+      const billingEntitlementsNoAuth = await fetch(`${BASE}/api/v1/admin/billing/entitlements`);
+      ok(billingEntitlementsNoAuth.status === 401, 'Admin Billing Entitlements: auth required');
+
+      const billingEntitlementsRes = await fetch(`${BASE}/api/v1/admin/billing/entitlements?accountId=${createAccountBody.account.id}`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(billingEntitlementsRes.status === 200, 'Admin Billing Entitlements: status 200');
+      const billingEntitlementsBody = await billingEntitlementsRes.json() as any;
+      ok(billingEntitlementsBody.summary.recordCount === 1, 'Admin Billing Entitlements: one record returned for account');
+      ok(billingEntitlementsBody.records[0].status === 'active', 'Admin Billing Entitlements: active entitlement returned');
+      ok(billingEntitlementsBody.records[0].effectivePlanId === 'pro', 'Admin Billing Entitlements: plan filter view shows pro');
 
       const metricsNoAuth = await fetch(`${BASE}/api/v1/admin/metrics`);
       ok(metricsNoAuth.status === 401, 'Admin Metrics: auth required');
@@ -2042,12 +2096,15 @@ async function run() {
     console.log(`\n  Live API Tests: ${passed} passed, 0 failed\n`);
   } finally {
     resetAccountStoreForTests();
+    resetAccountUserStoreForTests();
+    resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
     resetTenantRateLimiterForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
+    resetHostedBillingEntitlementStoreForTests();
     await resetBillingEventLedgerForTests();
     resetObservabilityForTests();
     serverHandle.close();

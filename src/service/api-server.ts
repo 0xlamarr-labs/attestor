@@ -11,6 +11,7 @@
  * - GET  /api/v1/domains             — registered domain packs
  * - GET  /api/v1/connectors          — registered database connectors
  * - GET  /api/v1/account             — current hosted account summary for tenant-authenticated callers
+ * - GET  /api/v1/account/entitlement — current hosted billing entitlement truth
  * - GET  /api/v1/account/usage       — current hosted usage/rate-limit summary
  * - POST /api/v1/account/billing/checkout — create Stripe Checkout subscription session
  * - POST /api/v1/account/billing/portal — create Stripe Billing Portal session
@@ -20,6 +21,7 @@
  * - POST /api/v1/admin/accounts/:id/billing/stripe — attach Stripe billing ids/status
  * - POST /api/v1/admin/accounts/:id/suspend|reactivate|archive — hosted account lifecycle
  * - GET  /api/v1/admin/plans         — hosted plan catalog + defaults
+ * - GET  /api/v1/admin/billing/entitlements — hosted billing entitlement read model
  * - GET  /api/v1/admin/audit         — tamper-evident hosted admin ledger
  * - GET  /api/v1/admin/queue         — async queue summary + retry policy
  * - GET  /api/v1/admin/queue/dlq     — failed-job / dead-letter inspection
@@ -99,6 +101,7 @@ import {
   sessionCookieSecure,
 } from './account-session-store.js';
 import {
+  findHostedBillingEntitlementByAccountIdState,
   applyStripeCheckoutCompletionState,
   applyStripeInvoiceStateState,
   applyStripeSubscriptionStateState,
@@ -139,7 +142,14 @@ import {
   setHostedAccountStatusState,
   setTenantApiKeyStatusState,
   syncTenantPlanByTenantIdState,
+  upsertHostedBillingEntitlementState,
+  listHostedBillingEntitlementsState,
 } from './control-plane-store.js';
+import {
+  projectHostedBillingEntitlement,
+  type HostedBillingEntitlementRecord,
+  type HostedBillingEntitlementStatus,
+} from './billing-entitlement-store.js';
 import {
   DEFAULT_HOSTED_PLAN_ID,
   defaultRateLimitWindowSeconds,
@@ -507,6 +517,80 @@ async function currentHostedAccount(c: Context): Promise<{
     usage: await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota),
     rateLimit: getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
   };
+}
+
+function billingEntitlementView(record: HostedBillingEntitlementRecord) {
+  return {
+    id: record.id,
+    accountId: record.accountId,
+    tenantId: record.tenantId,
+    provider: record.provider,
+    status: record.status,
+    accessEnabled: record.accessEnabled,
+    effectivePlanId: record.effectivePlanId,
+    requestedPlanId: record.requestedPlanId,
+    monthlyRunQuota: record.monthlyRunQuota,
+    requestsPerWindow: record.requestsPerWindow,
+    asyncPendingJobsPerTenant: record.asyncPendingJobsPerTenant,
+    accountStatus: record.accountStatus,
+    stripeCustomerId: record.stripeCustomerId,
+    stripeSubscriptionId: record.stripeSubscriptionId,
+    stripeSubscriptionStatus: record.stripeSubscriptionStatus,
+    stripePriceId: record.stripePriceId,
+    stripeCheckoutSessionId: record.stripeCheckoutSessionId,
+    stripeInvoiceId: record.stripeInvoiceId,
+    stripeInvoiceStatus: record.stripeInvoiceStatus,
+    lastEventId: record.lastEventId,
+    lastEventType: record.lastEventType,
+    lastEventAt: record.lastEventAt,
+    effectiveAt: record.effectiveAt,
+    delinquentSince: record.delinquentSince,
+    reason: record.reason,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+async function projectBillingEntitlementForAccount(account: HostedAccountRecord, options?: {
+  lastEventId?: string | null;
+  lastEventType?: string | null;
+  lastEventAt?: string | null;
+}): Promise<HostedBillingEntitlementRecord> {
+  const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
+  return projectHostedBillingEntitlement(
+    await findHostedBillingEntitlementByAccountIdState(account.id),
+    {
+      account,
+      currentPlanId: tenantRecord?.planId ?? account.billing.lastCheckoutPlanId ?? DEFAULT_HOSTED_PLAN_ID,
+      currentMonthlyRunQuota: tenantRecord?.monthlyRunQuota ?? null,
+      lastEventId: options?.lastEventId ?? null,
+      lastEventType: options?.lastEventType ?? null,
+      lastEventAt: options?.lastEventAt ?? null,
+    },
+  );
+}
+
+async function readHostedBillingEntitlement(account: HostedAccountRecord): Promise<HostedBillingEntitlementRecord> {
+  const existing = await findHostedBillingEntitlementByAccountIdState(account.id);
+  if (existing) return existing;
+  return projectBillingEntitlementForAccount(account);
+}
+
+async function syncHostedBillingEntitlement(account: HostedAccountRecord, options?: {
+  lastEventId?: string | null;
+  lastEventType?: string | null;
+  lastEventAt?: string | null;
+}): Promise<HostedBillingEntitlementRecord> {
+  const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
+  const synced = await upsertHostedBillingEntitlementState({
+    account,
+    currentPlanId: tenantRecord?.planId ?? account.billing.lastCheckoutPlanId ?? DEFAULT_HOSTED_PLAN_ID,
+    currentMonthlyRunQuota: tenantRecord?.monthlyRunQuota ?? null,
+    lastEventId: options?.lastEventId ?? null,
+    lastEventType: options?.lastEventType ?? null,
+    lastEventAt: options?.lastEventAt ?? null,
+  });
+  return synced.record;
 }
 
 function applyRateLimitHeaders(
@@ -895,8 +979,10 @@ app.get('/api/v1/account/usage', async (c) => {
 app.get('/api/v1/account', async (c) => {
   const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
+  const entitlement = await readHostedBillingEntitlement(current.account);
   return c.json({
     account: adminAccountView(current.account),
+    entitlement: billingEntitlementView(entitlement),
     tenantContext: {
       tenantId: current.tenant.tenantId,
       source: current.tenant.source,
@@ -904,6 +990,15 @@ app.get('/api/v1/account', async (c) => {
     },
     usage: current.usage,
     rateLimit: current.rateLimit,
+  });
+});
+
+app.get('/api/v1/account/entitlement', async (c) => {
+  const current = await currentHostedAccount(c);
+  if (current instanceof Response) return current;
+  const entitlement = await readHostedBillingEntitlement(current.account);
+  return c.json({
+    entitlement: billingEntitlementView(entitlement),
   });
 });
 
@@ -1113,6 +1208,7 @@ app.get('/api/v1/account/billing/export', async (c) => {
     account: current.account,
     limit: parsedLimit ?? undefined,
   });
+  const entitlement = await readHostedBillingEntitlement(current.account);
 
   if (format === 'csv') {
     c.header('content-type', 'text/csv; charset=utf-8');
@@ -1121,7 +1217,10 @@ app.get('/api/v1/account/billing/export', async (c) => {
     return c.body(renderHostedBillingExportCsv(payload));
   }
 
-  return c.json(payload);
+  return c.json({
+    ...payload,
+    entitlement: billingEntitlementView(entitlement),
+  });
 });
 
 app.post('/api/v1/billing/stripe/webhook', async (c) => {
@@ -1362,6 +1461,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           monthlyRunQuota: resolvedPlan.monthlyRunQuota,
         });
       }
+      const entitlement = await syncHostedBillingEntitlement(applied.record, {
+        lastEventId: event.id,
+        lastEventType: event.type,
+        lastEventAt: unixSecondsToIso(event.created) ?? new Date().toISOString(),
+      });
 
       c.set('obs.accountId', applied.record.id);
       c.set('obs.accountStatus', applied.record.status);
@@ -1385,6 +1489,9 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           metadata: {
             eventType: event.type,
             matchReason: applied.matchReason,
+            entitlementStatus: entitlement.status,
+            entitlementAccessEnabled: entitlement.accessEnabled,
+            effectivePlanId: entitlement.effectivePlanId,
           },
         });
         finalizedSharedEvent = true;
@@ -1421,6 +1528,9 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           stripeSubscriptionStatus,
           stripePriceId,
           mappedPlanId: mappedPlan?.id ?? null,
+          entitlementStatus: entitlement.status,
+          entitlementAccessEnabled: entitlement.accessEnabled,
+          effectivePlanId: entitlement.effectivePlanId,
           previousAccountStatus: applied.previousStatus,
           nextAccountStatus: applied.nextStatus,
           previousBillingStatus: applied.previousBillingStatus,
@@ -1537,6 +1647,11 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           monthlyRunQuota: resolvedPlan.monthlyRunQuota,
         });
       }
+      const entitlement = await syncHostedBillingEntitlement(applied.record, {
+        lastEventId: event.id,
+        lastEventType: event.type,
+        lastEventAt: completedAt,
+      });
 
       c.set('obs.accountId', applied.record.id);
       c.set('obs.accountStatus', applied.record.status);
@@ -1563,6 +1678,9 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             matchReason: applied.matchReason,
             completedAt,
             checkoutMode: session.mode ?? null,
+            entitlementStatus: entitlement.status,
+            entitlementAccessEnabled: entitlement.accessEnabled,
+            effectivePlanId: entitlement.effectivePlanId,
           },
         });
         finalizedSharedEvent = true;
@@ -1599,6 +1717,9 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           stripeSubscriptionId,
           stripePriceId,
           completedAt,
+          entitlementStatus: entitlement.status,
+          entitlementAccessEnabled: entitlement.accessEnabled,
+          effectivePlanId: entitlement.effectivePlanId,
           sharedLedger: sharedBillingLedger,
         },
       });
@@ -1725,11 +1846,16 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         planId: mappedPlan.id,
         defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
       });
-        await syncTenantPlanByTenantIdState(applied.record.primaryTenantId, {
+      await syncTenantPlanByTenantIdState(applied.record.primaryTenantId, {
         planId: resolvedPlan.planId,
         monthlyRunQuota: resolvedPlan.monthlyRunQuota,
       });
     }
+    const entitlement = await syncHostedBillingEntitlement(applied.record, {
+      lastEventId: event.id,
+      lastEventType: event.type,
+      lastEventAt: unixSecondsToIso(event.created) ?? new Date().toISOString(),
+    });
 
     c.set('obs.accountId', applied.record.id);
     c.set('obs.accountStatus', applied.record.status);
@@ -1759,6 +1885,9 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           eventType: event.type,
           matchReason: applied.matchReason,
           billingReason: invoice.billing_reason ?? null,
+          entitlementStatus: entitlement.status,
+          entitlementAccessEnabled: entitlement.accessEnabled,
+          effectivePlanId: entitlement.effectivePlanId,
         },
       });
       finalizedSharedEvent = true;
@@ -1799,6 +1928,9 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         invoiceAmountPaid: typeof invoice.amount_paid === 'number' ? invoice.amount_paid : null,
         invoiceAmountDue: typeof invoice.amount_due === 'number' ? invoice.amount_due : null,
         billingReason: invoice.billing_reason ?? null,
+        entitlementStatus: entitlement.status,
+        entitlementAccessEnabled: entitlement.accessEnabled,
+        effectivePlanId: entitlement.effectivePlanId,
         sharedLedger: sharedBillingLedger,
       },
     });
@@ -1885,6 +2017,7 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
     account,
     limit: parsedLimit ?? undefined,
   });
+  const entitlement = await readHostedBillingEntitlement(account);
 
   if (format === 'csv') {
     c.header('content-type', 'text/csv; charset=utf-8');
@@ -1893,7 +2026,10 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
     return c.body(renderHostedBillingExportCsv(payload));
   }
 
-  return c.json(payload);
+  return c.json({
+    ...payload,
+    entitlement: billingEntitlementView(entitlement),
+  });
 });
 
 app.get('/api/v1/admin/plans', (c) => {
@@ -1981,6 +2117,56 @@ app.get('/api/v1/admin/billing/events', async (c) => {
       appliedCount: records.filter((record) => record.outcome === 'applied').length,
       ignoredCount: records.filter((record) => record.outcome === 'ignored').length,
       pendingCount: records.filter((record) => record.outcome === 'pending').length,
+    },
+  });
+});
+
+app.get('/api/v1/admin/billing/entitlements', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const accountId = c.req.query('accountId')?.trim() || null;
+  const tenantId = c.req.query('tenantId')?.trim() || null;
+  const statusValue = c.req.query('status')?.trim() || null;
+  const allowedStatuses = new Set<HostedBillingEntitlementStatus>([
+    'provisioned',
+    'checkout_completed',
+    'active',
+    'trialing',
+    'delinquent',
+    'suspended',
+    'archived',
+  ]);
+  const status = statusValue && allowedStatuses.has(statusValue as HostedBillingEntitlementStatus)
+    ? statusValue as HostedBillingEntitlementStatus
+    : null;
+  if (statusValue && !status) {
+    return c.json({ error: 'status filter is invalid.' }, 400);
+  }
+
+  const limitRaw = c.req.query('limit')?.trim() || '';
+  const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
+  const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
+
+  const result = await listHostedBillingEntitlementsState({
+    accountId,
+    tenantId,
+    status,
+    limit,
+  });
+
+  return c.json({
+    records: result.records.map(billingEntitlementView),
+    summary: {
+      accountFilter: accountId,
+      tenantFilter: tenantId,
+      statusFilter: status,
+      recordCount: result.records.length,
+      accessEnabledCount: result.records.filter((entry) => entry.accessEnabled).length,
+      providerCounts: {
+        manual: result.records.filter((entry) => entry.provider === 'manual').length,
+        stripe: result.records.filter((entry) => entry.provider === 'stripe').length,
+      },
     },
   });
 });
@@ -2193,6 +2379,7 @@ app.post('/api/v1/admin/accounts', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlement(provisioned.account);
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2263,6 +2450,7 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlement(attached.record);
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2309,6 +2497,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2353,6 +2542,7 @@ app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -2396,6 +2586,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
     if (mapped) return mapped;
     throw err;
   }
+  await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,

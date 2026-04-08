@@ -22,6 +22,7 @@ import {
   issueAccountSessionState,
   listTenantKeyRecordsState,
   listAdminAuditRecordsState,
+  findHostedBillingEntitlementByAccountIdState,
   lookupAdminIdempotencyState,
   lookupProcessedStripeWebhookState,
   appendAdminAuditRecordState,
@@ -31,6 +32,7 @@ import {
   queryUsageLedgerState,
   resetSharedControlPlaneStoreForTests,
   restoreAdminAuditLogStoreSnapshot,
+  upsertHostedBillingEntitlementState,
 } from '../src/service/control-plane-store.js';
 
 let passed = 0;
@@ -77,6 +79,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `postgres://cp_backup_pg:cp_backup_pg@localhost:${pgPort}/attestor_billing`;
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(tempRoot, 'account-users.json');
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(tempRoot, 'account-sessions.json');
+  process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(tempRoot, 'billing-entitlements.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(tempRoot, 'admin-audit-log.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(tempRoot, 'admin-idempotency.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(tempRoot, 'stripe-webhooks.json');
@@ -116,6 +119,14 @@ async function run(): Promise<void> {
       accountId: provisioned.account.id,
       accountUserId: ownerUser.record.id,
       role: ownerUser.record.role,
+    });
+    await upsertHostedBillingEntitlementState({
+      account: provisioned.account,
+      currentPlanId: 'starter',
+      currentMonthlyRunQuota: 100,
+      lastEventId: 'evt_entitlement_backup_pg_1',
+      lastEventType: 'manual.provisioning',
+      lastEventAt: '2026-04-07T00:00:00.000Z',
     });
     await consumePipelineRunState('tenant-backup-pg', 'starter', 100);
 
@@ -187,6 +198,7 @@ async function run(): Promise<void> {
     ok(backup.manifest.components.some((entry) => entry.id === 'account_session_store' && entry.present), 'Backup: PG account session snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'tenant_key_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG tenant key snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'usage_ledger' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG usage snapshot present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'billing_entitlement_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG billing entitlement snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_audit_log' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG admin audit snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_idempotency_store' && entry.tier === 'ephemeral' && entry.present), 'Backup: PG admin idempotency snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'stripe_webhook_store' && entry.tier === 'ephemeral' && entry.present), 'Backup: PG webhook dedupe snapshot present');
@@ -205,6 +217,7 @@ async function run(): Promise<void> {
     ok(restored.restoredComponents.includes('account_session_store'), 'Restore: shared PG account session restored');
     ok(restored.restoredComponents.includes('tenant_key_store'), 'Restore: shared PG tenant keys restored');
     ok(restored.restoredComponents.includes('usage_ledger'), 'Restore: shared PG usage restored');
+    ok(restored.restoredComponents.includes('billing_entitlement_store'), 'Restore: shared PG billing entitlement restored');
     ok(restored.restoredComponents.includes('billing_event_ledger'), 'Restore: shared billing ledger restored');
     ok(restored.restoredComponents.includes('admin_audit_log'), 'Restore: shared admin audit restored');
     ok(restored.restoredComponents.includes('admin_idempotency_store'), 'Restore: shared admin idempotency restored');
@@ -229,6 +242,10 @@ async function run(): Promise<void> {
     const restoredUsage = await queryUsageLedgerState({ tenantId: 'tenant-backup-pg' });
     ok(restoredUsage.length === 1, 'Restore: usage ledger recovered from PG snapshot');
     ok(restoredUsage[0].used === 1, 'Restore: usage count preserved');
+
+    const restoredEntitlement = await findHostedBillingEntitlementByAccountIdState(provisioned.account.id);
+    ok(Boolean(restoredEntitlement), 'Restore: hosted billing entitlement recovered from PG snapshot');
+    ok(restoredEntitlement?.effectivePlanId === 'starter', 'Restore: hosted billing entitlement plan preserved');
 
     const restoredAudit = await listAdminAuditRecordsState();
     ok(restoredAudit.chainIntact === true, 'Restore: admin audit chain intact');

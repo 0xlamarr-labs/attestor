@@ -29,6 +29,7 @@ import {
   exportAdminIdempotencyStoreSnapshot,
   exportAccountSessionStoreSnapshot,
   exportAccountUserStoreSnapshot,
+  exportHostedBillingEntitlementStoreSnapshot,
   exportStripeWebhookStoreSnapshot,
   controlPlaneStoreMode,
   controlPlaneStoreSource,
@@ -39,6 +40,7 @@ import {
   restoreAdminIdempotencyStoreSnapshot,
   restoreAccountSessionStoreSnapshot,
   restoreAccountUserStoreSnapshot,
+  restoreHostedBillingEntitlementStoreSnapshot,
   restoreStripeWebhookStoreSnapshot,
   restoreHostedAccountStoreSnapshot,
   restoreTenantKeyStoreSnapshot,
@@ -47,6 +49,7 @@ import {
   type AdminIdempotencyStoreSnapshot,
   type AccountSessionStoreSnapshot,
   type AccountUserStoreSnapshot,
+  type BillingEntitlementStoreSnapshot,
   type HostedAccountStoreSnapshot,
   type StripeWebhookStoreSnapshot,
   type TenantKeyStoreSnapshot,
@@ -62,6 +65,7 @@ interface ControlPlaneComponentSpec {
     | 'account_session_store'
     | 'tenant_key_store'
     | 'usage_ledger'
+    | 'billing_entitlement_store'
     | 'admin_audit_log'
     | 'admin_idempotency_store'
     | 'stripe_webhook_store'
@@ -144,6 +148,12 @@ function componentSpecs(includeEphemeral: boolean): ControlPlaneComponentSpec[] 
       tier: sharedControlPlane ? 'shared_postgres' : 'critical',
       sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_USAGE_LEDGER_PATH', '.attestor/usage-ledger.json'),
       snapshotFilename: 'usage-ledger.json',
+    },
+    {
+      id: 'billing_entitlement_store',
+      tier: sharedControlPlane ? 'shared_postgres' : 'critical',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH', '.attestor/billing-entitlements.json'),
+      snapshotFilename: 'billing-entitlement-store.json',
     },
     {
       id: 'admin_audit_log',
@@ -255,6 +265,7 @@ export async function createControlPlaneBackupSnapshot(options?: {
         || component.id === 'account_session_store'
         || component.id === 'tenant_key_store'
         || component.id === 'usage_ledger'
+        || component.id === 'billing_entitlement_store'
         || component.id === 'admin_audit_log'
         || component.id === 'admin_idempotency_store'
         || component.id === 'stripe_webhook_store'
@@ -266,6 +277,7 @@ export async function createControlPlaneBackupSnapshot(options?: {
         | AccountSessionStoreSnapshot
         | TenantKeyStoreSnapshot
         | UsageLedgerStoreSnapshot
+        | BillingEntitlementStoreSnapshot
         | AdminAuditLogStoreSnapshot
         | AdminIdempotencyStoreSnapshot
         | StripeWebhookStoreSnapshot;
@@ -279,6 +291,8 @@ export async function createControlPlaneBackupSnapshot(options?: {
         snapshot = await exportTenantKeyStoreSnapshot();
       } else if (component.id === 'usage_ledger') {
         snapshot = await exportUsageLedgerStoreSnapshot();
+      } else if (component.id === 'billing_entitlement_store') {
+        snapshot = await exportHostedBillingEntitlementStoreSnapshot();
       } else if (component.id === 'admin_audit_log') {
         snapshot = await exportAdminAuditLogStoreSnapshot();
       } else if (component.id === 'admin_idempotency_store') {
@@ -435,6 +449,7 @@ export async function restoreControlPlaneBackupSnapshot(options: {
         || component.id === 'account_session_store'
         || component.id === 'tenant_key_store'
         || component.id === 'usage_ledger'
+        || component.id === 'billing_entitlement_store'
         || component.id === 'admin_audit_log'
         || component.id === 'admin_idempotency_store'
         || component.id === 'stripe_webhook_store'
@@ -460,6 +475,9 @@ export async function restoreControlPlaneBackupSnapshot(options: {
       } else if (component.id === 'usage_ledger') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as UsageLedgerStoreSnapshot;
         await restoreUsageLedgerStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else if (component.id === 'billing_entitlement_store') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as BillingEntitlementStoreSnapshot;
+        await restoreHostedBillingEntitlementStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
       } else if (component.id === 'admin_audit_log') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as AdminAuditLogStoreSnapshot;
         await restoreAdminAuditLogStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });

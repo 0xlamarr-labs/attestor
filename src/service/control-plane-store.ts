@@ -61,6 +61,20 @@ import {
   type IssueAccountSessionInput,
 } from './account-session-store.js';
 import {
+  exportHostedBillingEntitlementStoreSnapshot as exportHostedBillingEntitlementStoreSnapshotFile,
+  findHostedBillingEntitlementByAccountId as findHostedBillingEntitlementByAccountIdFile,
+  listHostedBillingEntitlements as listHostedBillingEntitlementsFile,
+  normalizeHostedBillingEntitlementRecord,
+  projectHostedBillingEntitlement,
+  restoreHostedBillingEntitlementStoreSnapshot as restoreHostedBillingEntitlementStoreSnapshotFile,
+  upsertHostedBillingEntitlement as upsertHostedBillingEntitlementFile,
+  type HostedBillingEntitlementRecord,
+  type HostedBillingEntitlementStatus,
+  type HostedBillingEntitlementStoreSnapshot,
+  type ListBillingEntitlementsFilters,
+  type ProjectHostedBillingEntitlementInput,
+} from './billing-entitlement-store.js';
+import {
   findActiveTenantKey as findActiveTenantKeyFile,
   findTenantRecordByTenantId as findTenantRecordByTenantIdFile,
   hasTenantKeyRecords as hasTenantKeyRecordsFile,
@@ -158,6 +172,8 @@ export interface AccountSessionStoreSnapshot {
   recordCount: number;
   records: AccountSessionRecord[];
 }
+
+export interface BillingEntitlementStoreSnapshot extends HostedBillingEntitlementStoreSnapshot {}
 
 export interface AdminAuditLogStoreSnapshot {
   version: 1;
@@ -335,6 +351,34 @@ async function ensureSchema(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS account_sessions_expiry_idx
           ON attestor_control_plane.account_sessions (expires_at ASC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.billing_entitlements (
+          account_id TEXT PRIMARY KEY REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
+          tenant_id TEXT NOT NULL,
+          provider TEXT NOT NULL CHECK (provider IN ('manual', 'stripe')),
+          entitlement_status TEXT NOT NULL CHECK (
+            entitlement_status IN (
+              'provisioned',
+              'checkout_completed',
+              'active',
+              'trialing',
+              'delinquent',
+              'suspended',
+              'archived'
+            )
+          ),
+          access_enabled BOOLEAN NOT NULL,
+          effective_plan_id TEXT NULL,
+          last_event_id TEXT NULL,
+          updated_at TIMESTAMPTZ NOT NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS billing_entitlements_tenant_updated_idx
+          ON attestor_control_plane.billing_entitlements (tenant_id, updated_at DESC, account_id ASC);
+
+        CREATE INDEX IF NOT EXISTS billing_entitlements_status_updated_idx
+          ON attestor_control_plane.billing_entitlements (entitlement_status, updated_at DESC, account_id ASC);
 
         CREATE TABLE IF NOT EXISTS attestor_control_plane.admin_audit_log (
           audit_id TEXT PRIMARY KEY,
@@ -520,6 +564,13 @@ function coerceHostedAccountRecord(value: unknown): HostedAccountRecord {
   return normalizeHostedAccountRecord(value as HostedAccountRecord);
 }
 
+function coerceHostedBillingEntitlementRecord(value: unknown): HostedBillingEntitlementRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid hosted billing entitlement record in shared control-plane store.');
+  }
+  return normalizeHostedBillingEntitlementRecord(value as HostedBillingEntitlementRecord);
+}
+
 function coerceTenantKeyRecord(value: unknown): TenantKeyRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Invalid tenant key record in shared control-plane store.');
@@ -543,6 +594,10 @@ function coerceAccountSessionRecord(value: unknown): AccountSessionRecord {
 
 function rowToHostedAccount(row: PgQueryResultRow): HostedAccountRecord {
   return coerceHostedAccountRecord(row.record_json);
+}
+
+function rowToHostedBillingEntitlement(row: PgQueryResultRow): HostedBillingEntitlementRecord {
+  return coerceHostedBillingEntitlementRecord(row.record_json);
 }
 
 function rowToTenantKey(row: PgQueryResultRow): TenantKeyRecord {
@@ -814,6 +869,87 @@ async function upsertHostedAccountPg(record: HostedAccountRecord, executor?: PgP
     if (mapped) throw mapped;
     throw err;
   }
+}
+
+async function listHostedBillingEntitlementsPg(
+  filters?: ListBillingEntitlementsFilters,
+): Promise<HostedBillingEntitlementRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (filters?.accountId) {
+    params.push(filters.accountId);
+    clauses.push(`account_id = $${params.length}`);
+  }
+  if (filters?.tenantId) {
+    params.push(filters.tenantId);
+    clauses.push(`tenant_id = $${params.length}`);
+  }
+  if (filters?.status) {
+    params.push(filters.status);
+    clauses.push(`entitlement_status = $${params.length}`);
+  }
+  const limit = Math.max(1, Math.min(1000, filters?.limit ?? 100));
+  params.push(limit);
+  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.billing_entitlements
+       ${whereClause}
+      ORDER BY updated_at DESC, account_id ASC
+      LIMIT $${params.length}`,
+    params,
+  );
+  return result.rows.map(rowToHostedBillingEntitlement);
+}
+
+async function findHostedBillingEntitlementByAccountIdPg(accountId: string): Promise<HostedBillingEntitlementRecord | null> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.billing_entitlements
+      WHERE account_id = $1
+      LIMIT 1`,
+    [accountId],
+  );
+  return result.rows[0] ? rowToHostedBillingEntitlement(result.rows[0]) : null;
+}
+
+async function upsertHostedBillingEntitlementPg(
+  record: HostedBillingEntitlementRecord,
+  executor?: PgPool | PgClient,
+): Promise<void> {
+  await ensureSchema();
+  const target = executor ?? await getPool();
+  await target.query(
+    `INSERT INTO attestor_control_plane.billing_entitlements (
+      account_id, tenant_id, provider, entitlement_status, access_enabled, effective_plan_id, last_event_id, updated_at, record_json
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::jsonb
+    )
+    ON CONFLICT (account_id) DO UPDATE SET
+      tenant_id = EXCLUDED.tenant_id,
+      provider = EXCLUDED.provider,
+      entitlement_status = EXCLUDED.entitlement_status,
+      access_enabled = EXCLUDED.access_enabled,
+      effective_plan_id = EXCLUDED.effective_plan_id,
+      last_event_id = EXCLUDED.last_event_id,
+      updated_at = EXCLUDED.updated_at,
+      record_json = EXCLUDED.record_json`,
+    [
+      record.accountId,
+      record.tenantId,
+      record.provider,
+      record.status,
+      record.accessEnabled,
+      record.effectivePlanId,
+      record.lastEventId,
+      record.updatedAt,
+      JSON.stringify(record),
+    ],
+  );
 }
 
 async function listTenantKeyRecordsPg(): Promise<TenantKeyRecord[]> {
@@ -1309,6 +1445,41 @@ export async function setHostedAccountStatusState(id: string, nextStatus: Hosted
   touchRecord(record);
   await upsertHostedAccountPg(record);
   return { record, path: controlPlaneStoreSource() };
+}
+
+export async function findHostedBillingEntitlementByAccountIdState(accountId: string): Promise<HostedBillingEntitlementRecord | null> {
+  if (!isSharedControlPlaneConfigured()) {
+    return findHostedBillingEntitlementByAccountIdFile(accountId).record;
+  }
+  return findHostedBillingEntitlementByAccountIdPg(accountId);
+}
+
+export async function listHostedBillingEntitlementsState(
+  filters?: ListBillingEntitlementsFilters,
+): Promise<{ records: HostedBillingEntitlementRecord[]; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) {
+    return listHostedBillingEntitlementsFile(filters);
+  }
+  return {
+    records: await listHostedBillingEntitlementsPg(filters),
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function upsertHostedBillingEntitlementState(
+  input: ProjectHostedBillingEntitlementInput,
+): Promise<{ record: HostedBillingEntitlementRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) {
+    const result = upsertHostedBillingEntitlementFile(input);
+    return { record: result.record, path: result.path };
+  }
+  const previous = await findHostedBillingEntitlementByAccountIdPg(input.account.id);
+  const record = projectHostedBillingEntitlement(previous, input);
+  await upsertHostedBillingEntitlementPg(record);
+  return {
+    record,
+    path: controlPlaneStoreSource(),
+  };
 }
 
 export async function applyStripeSubscriptionStateState(options: {
@@ -2756,6 +2927,18 @@ export async function exportHostedAccountStoreSnapshot(): Promise<HostedAccountS
   };
 }
 
+export async function exportHostedBillingEntitlementStoreSnapshot(): Promise<BillingEntitlementStoreSnapshot> {
+  const records = isSharedControlPlaneConfigured()
+    ? await listHostedBillingEntitlementsPg({ limit: 10_000 })
+    : exportHostedBillingEntitlementStoreSnapshotFile().records;
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
 export async function restoreHostedAccountStoreSnapshot(
   snapshot: HostedAccountStoreSnapshot,
   options?: { replaceExisting?: boolean },
@@ -2770,6 +2953,25 @@ export async function restoreHostedAccountStoreSnapshot(
   }
   for (const record of snapshot.records) {
     await upsertHostedAccountPg(normalizeHostedAccountRecord(record));
+  }
+  return { recordCount: snapshot.records.length };
+}
+
+export async function restoreHostedBillingEntitlementStoreSnapshot(
+  snapshot: BillingEntitlementStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    const restored = restoreHostedBillingEntitlementStoreSnapshotFile(snapshot);
+    return { recordCount: restored.recordCount };
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.billing_entitlements CASCADE');
+  }
+  for (const record of snapshot.records) {
+    await upsertHostedBillingEntitlementPg(normalizeHostedBillingEntitlementRecord(record));
   }
   return { recordCount: snapshot.records.length };
 }
@@ -2863,6 +3065,7 @@ export async function resetSharedControlPlaneStoreForTests(): Promise<void> {
     DROP TABLE IF EXISTS attestor_control_plane.stripe_webhook_dedupe;
     DROP TABLE IF EXISTS attestor_control_plane.admin_idempotency;
     DROP TABLE IF EXISTS attestor_control_plane.admin_audit_log;
+    DROP TABLE IF EXISTS attestor_control_plane.billing_entitlements;
     DROP TABLE IF EXISTS attestor_control_plane.account_sessions;
     DROP TABLE IF EXISTS attestor_control_plane.account_users;
     DROP TABLE IF EXISTS attestor_control_plane.usage_ledger;
