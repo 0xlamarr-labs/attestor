@@ -122,6 +122,12 @@ export function generateQrda3(
   const intendedRecip = infoRecip.ele('intendedRecipient');
   intendedRecip.ele('id').att('root', '2.16.840.1.113883.3.249.7').att('extension', options.programName ?? 'MIPS_INDIV').up();
 
+  // CMS EHR Certification ID participant — CONF:CMS_140
+  const participant = doc.ele('participant').att('typeCode', 'DEV');
+  const associatedEntity = participant.ele('associatedEntity').att('classCode', 'RGPR');
+  associatedEntity.ele('id').att('root', '2.16.840.1.113883.3.2074.1').att('extension', '0015HxDLbM0RXaO').up();
+  associatedEntity.ele('code').att('code', '129465004').att('codeSystem', '2.16.840.1.113883.6.96').att('displayName', 'medical record').up();  // CONF:4484-18308
+
   // documentationOf — required by CMS (CONF:5562-18170_C01)
   const docOf = doc.ele('documentationOf').att('typeCode', 'DOC');
   const serviceEvent = docOf.ele('serviceEvent').att('classCode', 'PCPR');
@@ -130,12 +136,6 @@ export function generateQrda3(
   const assignedEntity = performer.ele('assignedEntity');
   assignedEntity.ele('id').att('root', '2.16.840.1.113883.4.6').att('extension', options.performerNpi ?? '0000000000').up();
   assignedEntity.ele('representedOrganization').ele('id').att('root', '2.16.840.1.113883.4.2').att('extension', '000000000').up().up();
-
-  // CMS EHR Certification ID participant — CONF:CMS_140
-  const participant = doc.ele('participant').att('typeCode', 'DEV');
-  const associatedEntity = participant.ele('associatedEntity').att('classCode', 'RGPR');
-  associatedEntity.ele('id').att('root', '2.16.840.1.113883.3.2074.1').att('extension', '0015HxDLbM0RXaO').up();
-  associatedEntity.ele('code').att('code', '129465004').att('codeSystem', '2.16.840.1.113883.6.96').att('displayName', 'medical record').up();  // CONF:4484-18308
 
   // Reporting period
   const component = doc.ele('component').ele('structuredBody');
@@ -206,11 +206,6 @@ export function generateQrda3(
       aggrObs.ele('value').att('xsi:type', 'INT').att('value', String(pop.count)).up();
       aggrObs.ele('methodCode').att('code', 'COUNT').att('codeSystem', '2.16.840.1.113883.5.84').att('displayName', 'Count').up();  // CONF:77-19509 + 77-19510
 
-      // Measure Data reference — CONF:3259-18239/18240/18241
-      const mdRef = measureDataObs.ele('reference').att('typeCode', 'REFR');
-      mdRef.ele('externalObservation').att('classCode', 'OBS').att('moodCode', 'EVN')
-        .ele('id').att('root', measure.measureId).att('extension', popCode.code).up().up();
-
       // Supplemental data elements — required per CMS Measure Data CMS V5
       // Payer (CONF:4427-18141_C01)
       emitSupplementalData(measureDataObs, '2.16.840.1.113883.10.20.27.3.18', '2018-05-01', '48768-6', 'Payer', 'PAYER');
@@ -220,6 +215,11 @@ export function generateQrda3(
       emitSupplementalData(measureDataObs, '2.16.840.1.113883.10.20.27.3.8', '2016-09-01', '72826-1', 'Race', 'RACE');
       // Ethnicity (CONF:4427-18139_C01 / 3259-18149)
       emitSupplementalData(measureDataObs, '2.16.840.1.113883.10.20.27.3.7', '2016-09-01', '69490-1', 'Ethnicity', 'ETH');
+
+      // Measure Data reference — CONF:3259-18239/18240/18241
+      const mdRef = measureDataObs.ele('reference').att('typeCode', 'REFR');
+      mdRef.ele('externalObservation').att('classCode', 'OBS').att('moodCode', 'EVN')
+        .ele('id').att('root', measure.measureId).att('extension', popCode.code).up().up();
     }
 
     // Performance rate
@@ -229,12 +229,12 @@ export function generateQrda3(
       prObs.ele('templateId').att('root', TEMPLATE_IDS.performanceRate).att('extension', '2020-12-01').up();  // CONF:4484-19650 + 21444
       prObs.ele('templateId').att('root', '2.16.840.1.113883.10.20.27.3.25').att('extension', '2022-05-01').up();  // CMS Performance Rate (CONF:CMS_59/60/61)
       prObs.ele('code').att('code', 'ASSERTION').att('codeSystem', '2.16.840.1.113883.5.4').up();
+      prObs.ele('statusCode').att('code', 'completed').up();
+      prObs.ele('value').att('xsi:type', 'REAL').att('value', measure.rate.toFixed(6)).up();
       const prRef = prObs.ele('reference').att('typeCode', 'REFR');
       const prExtObs = prRef.ele('externalObservation').att('classCode', 'OBS').att('moodCode', 'EVN');
       prExtObs.ele('id').att('root', measure.measureId).up();  // CONF:4484-19651
       prExtObs.ele('code').att('code', 'NUMER').att('codeSystem', '2.16.840.1.113883.5.4').att('displayName', 'Numerator').up();  // CONF:4484-19657
-      prObs.ele('statusCode').att('code', 'completed').up();
-      prObs.ele('value').att('xsi:type', 'REAL').att('value', measure.rate.toFixed(6)).up();
     }
   }
 

@@ -313,7 +313,7 @@ What it does not prove yet:
 - PKI chain verification as **mandatory** across CLI and API. CLI: exit code 2 without chain (`--allow-legacy-verify` escape). API: 422 rejection without chain (`ATTESTOR_ALLOW_LEGACY_API=true` escape). `VerificationKit` now self-contains `trustChain` + `caPublicKeyPem`.
 - Secure encrypted token store (AES-256-GCM) as default OIDC persistence for both read and write. Plaintext cache is not read by default. Legacy import: `ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1` (one-time). Plaintext write: `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1` (opt-in).
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
-- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport (R4 schema-validated) + QRDA III generation with 5-tier local/runtime validation all passing zero errors (structural self-validation + CMS IG XPath + real CMS 2026 Schematron + Cypress-equivalent Layers 2-6), plus env-gated live VSAC Layer 7 and real ONC Cypress entrypoints
+- Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport (R4 schema-validated) + QRDA III generation with 5-tier local/runtime validation all passing zero errors (structural self-validation + CMS IG XPath + real CMS 2026 Schematron + Cypress-equivalent Layers 2-6), plus live VSAC Layer 7 expansion (11/11 curated targets) and real ONC Cypress zero-error validation on the demo service
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
 - Redis async backend with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis → in-process fallback). BullMQ active when any Redis tier resolves.
 - Split API/worker deployment (single-node first slice): `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown. Not horizontal multi-node — see Capability modules.
@@ -339,15 +339,11 @@ What it does not prove yet:
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
-- QRDA III: CMS-compatible XML generation with 5-tier runtime validation all passing zero errors: structural self-validation (16 checks) + CMS IG XPath assertions (29 rules via SaxonJS) + real CMS 2026 Schematron (vendored .sch via `cda-schematron-validator`) + Cypress-equivalent validators (Layers 2-6: Measure ID, Performance Rate recalculation, Population Logic, Program, Measure Period). Live VSAC Layer 7 support is now wired for the current CMS165/CMS122/CMS130 demo slice via the official VSAC FHIR API, but remains env-gated until a UMLS API key is provided.
+- QRDA III: CMS-compatible XML generation with 5-tier runtime validation all passing zero errors: structural self-validation (16 checks) + CMS IG XPath assertions (29 rules via SaxonJS) + real CMS 2026 Schematron (vendored .sch via `cda-schematron-validator`) + Cypress-equivalent validators (Layers 2-6: Measure ID, Performance Rate recalculation, Population Logic, Program, Measure Period). Live closure is now proven for the current CMS165/CMS122/CMS130 demo slice: VSAC Layer 7 expands all 11 curated targets via the official VSAC FHIR API, and ONC Cypress accepts the generated QRDA III with zero execution errors.
 - FHIR MeasureReport: schema-validated at runtime in healthcare CLI via `@solarahealth/fhir-r4` (Zod). Structural JSON Schema validation only, not terminology bindings or FHIRPath conformance.
 
 **Capability modules** (code exists, not yet fully productized):
 - Horizontal multi-node scaling (current: single-node API + worker split, no load balancer or multi-instance coordination)
-
-## Not Yet Implemented
-
-- ONC / VSAC live-credential closure (current: the healthcare CLI now wires both the real ONC Cypress API path and the official VSAC FHIR Layer 7 path. Connectivity is proven for both services, but final closure still requires a live run with working `CYPRESS_UMLS_USER` + `CYPRESS_UMLS_PASS` credentials and a `VSAC_UMLS_API_KEY`/`UMLS_API_KEY`, then confirming the curated Layer 7 value sets expand cleanly and the ONC Cypress submission returns zero errors.)
 
 ## Output Artifacts
 
@@ -424,8 +420,10 @@ What it does not prove yet:
 | `ATTESTOR_STRIPE_USE_MOCK` | Set `true` only in local/test environments to return deterministic mock Checkout/Portal sessions without hitting Stripe |
 | `REDIS_URL` | Redis URL for BullMQ async backend |
 | `ATTESTOR_ALLOW_LEGACY_API` | Set `true` to allow flat Ed25519 at `/api/v1/verify` (deprecated) |
-| `CYPRESS_UMLS_USER` | UMLS username for ONC Cypress API validation (free from uts.nlm.nih.gov) |
-| `CYPRESS_UMLS_PASS` | UMLS password for ONC Cypress API validation |
+| `CYPRESS_EMAIL` | Cypress demo account email for ONC Cypress API validation |
+| `CYPRESS_PASSWORD` | Cypress demo account password for ONC Cypress API validation |
+| `CYPRESS_UMLS_USER` | Legacy fallback env name for `CYPRESS_EMAIL` |
+| `CYPRESS_UMLS_PASS` | Legacy fallback env name for `CYPRESS_PASSWORD` |
 | `VSAC_UMLS_API_KEY` | UMLS API key for the official VSAC FHIR Layer 7 expansion path |
 | `UMLS_API_KEY` | Fallback env name for the VSAC UMLS API key |
 | `ATTESTOR_VSAC_MANIFEST_URL` | Optional VSAC manifest URL for `$expand` requests (default `http://cts.nlm.nih.gov/fhir/Library/latest-active`) |

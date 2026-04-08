@@ -4,11 +4,13 @@
  * Validates generated QRDA III XML against the REAL ONC Cypress server
  * at cypressdemo.healthit.gov.
  *
- * ENV-GATED: Requires CYPRESS_UMLS_USER and CYPRESS_UMLS_PASS.
- * These are free NLM/UMLS credentials — sign up at uts.nlm.nih.gov.
+ * ENV-GATED: Requires CYPRESS_EMAIL and CYPRESS_PASSWORD.
+ * Legacy fallback: CYPRESS_UMLS_USER / CYPRESS_UMLS_PASS.
+ * Create a Cypress demo account at cypressdemo.healthit.gov and sign in once
+ * with your UMLS API key to activate the account.
  * Skip gracefully when credentials are not set.
  *
- * Run: CYPRESS_UMLS_USER=x CYPRESS_UMLS_PASS=y npx tsx tests/live-cypress.test.ts
+ * Run: CYPRESS_EMAIL=x CYPRESS_PASSWORD=y npx tsx tests/live-cypress.test.ts
  */
 
 import { strict as assert } from 'node:assert';
@@ -23,7 +25,7 @@ async function run() {
 
   const { isCypressConfigured, validateViaCypressApi } = await import('../src/filing/cypress-api-client.js');
 
-  const demoYear = '2025';
+  const demoYear = '2026';
 
   // ═══ CONNECTIVITY TEST (always runs, no credentials needed) ═══
   console.log('  [Cypress API Connectivity Test]');
@@ -40,9 +42,9 @@ async function run() {
   }
 
   if (!isCypressConfigured()) {
-    console.log('  ⊘ FULL VALIDATION SKIPPED: CYPRESS_UMLS_USER / CYPRESS_UMLS_PASS not set');
-    console.log('    Sign up for free UMLS credentials at: https://uts.nlm.nih.gov/uts/signup-login');
-    console.log('    Then: CYPRESS_UMLS_USER=x CYPRESS_UMLS_PASS=y npx tsx tests/live-cypress.test.ts');
+    console.log('  ⊘ FULL VALIDATION SKIPPED: CYPRESS_EMAIL / CYPRESS_PASSWORD not set');
+    console.log('    Create a Cypress demo account at: https://cypressdemo.healthit.gov/users/sign_up');
+    console.log('    Then: CYPRESS_EMAIL=x CYPRESS_PASSWORD=y npx tsx tests/live-cypress.test.ts');
     console.log(`\n  Live Cypress Tests: ${passed} passed (connectivity only)\n`);
     return;
   }
@@ -62,7 +64,7 @@ async function run() {
   console.log('  Submitting to ONC Cypress server...\n');
 
   // ═══ Validate via real Cypress API ═══
-  console.log(`  [POST cypressdemo.healthit.gov/qrda_validation/${demoYear}/III/CMS]`);
+  console.log('  [POST live Cypress validator path]');
   const result = await validateViaCypressApi(xml, { year: demoYear });
 
   ok(result.scope === 'onc_cypress_api', 'Cypress API: scope = onc_cypress_api');
@@ -71,7 +73,7 @@ async function run() {
   ok(Array.isArray(result.errors), 'Cypress API: errors is array');
 
   if (result.httpStatus === 201 || result.httpStatus === 200) {
-    console.log(`    HTTP ${result.httpStatus}: ${result.errorCount} execution errors`);
+    console.log(`    HTTP ${result.httpStatus}: ${result.errorCount} execution errors (${result.uploadPath ?? 'unknown path'})`);
     ok(true, 'Cypress API: successful response');
 
     if (result.valid) {
@@ -87,8 +89,8 @@ async function run() {
       ok(true, `Cypress API: ${result.errorCount} errors reported (review output)`);
     }
   } else if (result.httpStatus === 401) {
-    console.log('    ✗ HTTP 401 — UMLS authentication failed');
-    console.log('    Check CYPRESS_UMLS_USER and CYPRESS_UMLS_PASS credentials');
+    console.log('    ✗ HTTP 401 — Cypress authentication failed');
+    console.log('    Check CYPRESS_EMAIL and CYPRESS_PASSWORD credentials');
     ok(false, 'Cypress API: authentication failed');
   } else {
     console.log(`    ✗ HTTP ${result.httpStatus}: ${result.errors[0]?.message ?? 'unknown error'}`);

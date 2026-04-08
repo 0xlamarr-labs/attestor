@@ -405,6 +405,7 @@ function printHelp(): void {
                                                       Run governed scenario + issue signed certificate
     npx tsx src/financial/cli.ts multi-query            Run a governed multi-query proof (fixed scenario set)
     npx tsx src/financial/cli.ts healthcare            Run healthcare domain E2E scenarios
+    npx tsx src/financial/cli.ts healthcare-closeout   Run the ONC/VSAC live credential closeout path
     npx tsx src/financial/cli.ts pg-demo-init          Bootstrap demo schema + data in PostgreSQL for real DB proof
     npx tsx src/financial/cli.ts pg-demo-teardown      Remove the demo schema from PostgreSQL
     npx tsx src/financial/cli.ts doctor                Check product proof readiness (keys, DB, credentials)
@@ -1130,19 +1131,19 @@ async function runHealthcareDemo(): Promise<void> {
     console.log(`  VSAC L7: ⊘ skipped (set VSAC_UMLS_API_KEY from the UMLS My Profile page for live value-set expansion)`);
   }
 
-  // ONC Cypress API validation (env-gated — only when UMLS credentials available)
+  // ONC Cypress API validation (env-gated — only when Cypress demo credentials are available)
   const { isCypressConfigured, validateViaCypressApi } = await import('../filing/cypress-api-client.js');
   if (isCypressConfigured()) {
     console.log(`  Submitting to ONC Cypress server...`);
     const apiResult = await validateViaCypressApi(qrda3Xml);
     const apiIcon = apiResult.valid ? '✓' : (apiResult.httpStatus === 0 ? '⊘' : '✗');
-    console.log(`  ONC Cypress: ${apiIcon} ${apiResult.errorCount} errors (${apiResult.scope}, HTTP ${apiResult.httpStatus})`);
+    console.log(`  ONC Cypress: ${apiIcon} ${apiResult.errorCount} errors (${apiResult.scope}, HTTP ${apiResult.httpStatus}, ${apiResult.uploadPath ?? 'no upload path'})`);
     if (!apiResult.valid && apiResult.errors.length > 0) {
       for (const e of apiResult.errors.slice(0, 5)) console.log(`    - ${e.message.slice(0, 120)}`);
       if (apiResult.errors.length > 5) console.log(`    ... and ${apiResult.errors.length - 5} more`);
     }
   } else {
-    console.log(`  ONC Cypress: ⊘ skipped (set CYPRESS_UMLS_USER + CYPRESS_UMLS_PASS for real ONC validation)`);
+    console.log(`  ONC Cypress: ⊘ skipped (set CYPRESS_EMAIL + CYPRESS_PASSWORD, or legacy CYPRESS_UMLS_USER + CYPRESS_UMLS_PASS, for real ONC validation)`);
   }
 
   console.log(`\n  Healthcare scenarios: ${scenarios.length} ran, ${allExpected ? 'all matched expected decisions' : 'SOME MISMATCHES'}`);
@@ -1150,6 +1151,64 @@ async function runHealthcareDemo(): Promise<void> {
     console.log(`  Certificate: ${scenarios[0].id} issued with signing key ${keyPair.fingerprint}`);
   }
   console.log('');
+}
+
+/**
+ * Healthcare live closeout — canonical credentialed closure for VSAC Layer 7 and ONC Cypress.
+ */
+async function runHealthcareCloseout(): Promise<void> {
+  console.log(`\n  Attestor Healthcare Live Closeout — ONC Cypress + VSAC Layer 7\n`);
+
+  const { runHealthcareLiveCloseout } = await import('../filing/healthcare-live-closeout.js');
+  const result = await runHealthcareLiveCloseout();
+
+  console.log(`  Local preflight: ${result.localPreflight.cypressEquivalentValid ? '✓' : '✗'} Cypress-equivalent Layers 2-6`);
+  console.log(`    QRDA XML chars: ${result.localPreflight.qrdaXmlChars}`);
+  console.log(`    Curated VSAC targets: ${result.localPreflight.curatedVsacTargets}`);
+  console.log(`    Local errors/warnings: ${result.localPreflight.cypressEquivalentErrors}/${result.localPreflight.cypressEquivalentWarnings}`);
+  console.log('');
+  console.log(`  Credential readiness:`);
+  console.log(`    ${result.credentials.cypressConfigured ? '✓' : '○'} ONC Cypress credentials (CYPRESS_EMAIL + CYPRESS_PASSWORD, legacy fallback supported)`);
+  console.log(`    ${result.credentials.vsacConfigured ? '✓' : '○'} VSAC API key (VSAC_UMLS_API_KEY or UMLS_API_KEY)`);
+  if (result.credentials.missingEnvVars.length > 0) {
+    console.log(`    Missing: ${result.credentials.missingEnvVars.join(', ')}`);
+  }
+
+  if (result.vsac) {
+    const icon = result.vsac.valid ? '✓' : '✗';
+    console.log('');
+    console.log(`  VSAC Layer 7: ${icon} ${result.vsac.expandedTargets}/${result.vsac.totalTargets} targets expanded, codes=${result.vsac.totalCodes}`);
+    if (!result.vsac.valid) {
+      for (const target of result.vsac.targets.filter(entry => !entry.valid).slice(0, 5)) {
+        console.log(`    - ${target.name} [${target.oid}] HTTP ${target.httpStatus}: ${target.error ?? 'unknown error'}`);
+      }
+    }
+  }
+
+  if (result.oncCypress) {
+    const icon = result.oncCypress.valid ? '✓' : '✗';
+    console.log('');
+    console.log(`  ONC Cypress: ${icon} HTTP ${result.oncCypress.httpStatus}, executionErrors=${result.oncCypress.errorCount}`);
+    if (!result.oncCypress.valid) {
+      for (const error of result.oncCypress.errors.slice(0, 5)) {
+        console.log(`    - ${error.message.slice(0, 140)}`);
+      }
+    }
+  }
+
+  console.log('');
+  if (result.closureAchieved) {
+    console.log('  ✓ Healthcare live closeout achieved.');
+    console.log('    11/11 curated VSAC targets expanded and ONC Cypress returned zero execution errors.\n');
+    return;
+  }
+
+  console.log('  ✗ Healthcare live closeout not yet achieved.');
+  for (const blocker of result.blockers) {
+    console.log(`    - ${blocker}`);
+  }
+  console.log('');
+  process.exit(1);
 }
 
 /**
@@ -1359,6 +1418,11 @@ async function main(): Promise<void> {
 
   if (command === 'healthcare') {
     await runHealthcareDemo();
+    return;
+  }
+
+  if (command === 'healthcare-closeout') {
+    await runHealthcareCloseout();
     return;
   }
 
