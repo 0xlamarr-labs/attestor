@@ -55,7 +55,7 @@ function adminEncryptionKey(): Buffer {
   return createHash('sha256').update(`attestor.admin.idempotency:${adminKey}`).digest();
 }
 
-function encryptResponse(response: unknown): {
+export function encryptAdminIdempotencyResponse(response: unknown): {
   ciphertext: string;
   iv: string;
   authTag: string;
@@ -71,7 +71,10 @@ function encryptResponse(response: unknown): {
   };
 }
 
-function decryptResponse(record: AdminIdempotencyRecord): unknown {
+export function decryptAdminIdempotencyResponse(record: Pick<
+  AdminIdempotencyRecord,
+  'responseCiphertext' | 'responseIv' | 'responseAuthTag'
+>): unknown {
   const decipher = createDecipheriv(
     'aes-256-gcm',
     adminEncryptionKey(),
@@ -114,7 +117,18 @@ function saveStore(store: AdminIdempotencyStoreFile): void {
   writeFileSync(path, `${JSON.stringify({ ...store, records: pruneExpired(store.records) }, null, 2)}\n`, 'utf8');
 }
 
-function buildRequestHash(routeId: string, payload: unknown): string {
+export function readAdminIdempotencySnapshot(): {
+  path: string;
+  records: AdminIdempotencyRecord[];
+} {
+  const store = loadStore();
+  return {
+    path: storePath(),
+    records: [...store.records],
+  };
+}
+
+export function buildAdminIdempotencyRequestHash(routeId: string, payload: unknown): string {
   return hashJsonValue({ routeId, payload });
 }
 
@@ -123,7 +137,7 @@ export function lookupAdminIdempotency(options: {
   routeId: string;
   requestPayload: unknown;
 }): AdminIdempotencyLookup {
-  const requestHash = buildRequestHash(options.routeId, options.requestPayload);
+  const requestHash = buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload);
   const store = loadStore();
   const existing = store.records.find((record) => record.idempotencyKey === options.idempotencyKey);
   if (!existing) return { kind: 'miss', requestHash };
@@ -138,7 +152,7 @@ export function lookupAdminIdempotency(options: {
     kind: 'replay',
     requestHash,
     record: existing,
-    response: decryptResponse(existing),
+    response: decryptAdminIdempotencyResponse(existing),
   };
 }
 
@@ -154,19 +168,19 @@ export function recordAdminIdempotency(options: {
   if (existing) {
     if (
       existing.routeId !== options.routeId ||
-      existing.requestHash !== buildRequestHash(options.routeId, options.requestPayload)
+      existing.requestHash !== buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload)
     ) {
       throw new Error(`Idempotency-Key '${options.idempotencyKey}' already exists for a different request`);
     }
     return { record: existing, path: storePath() };
   }
 
-  const encrypted = encryptResponse(options.response);
+  const encrypted = encryptAdminIdempotencyResponse(options.response);
   const record: AdminIdempotencyRecord = {
     id: `idem_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
     idempotencyKey: options.idempotencyKey,
     routeId: options.routeId,
-    requestHash: buildRequestHash(options.routeId, options.requestPayload),
+    requestHash: buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload),
     statusCode: options.statusCode,
     responseCiphertext: encrypted.ciphertext,
     responseIv: encrypted.iv,

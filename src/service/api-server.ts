@@ -99,6 +99,12 @@ import {
   queryUsageLedgerState,
   revokeTenantApiKeyState,
   rotateTenantApiKeyState,
+  appendAdminAuditRecordState,
+  listAdminAuditRecordsState,
+  lookupAdminIdempotencyState,
+  recordAdminIdempotencyState,
+  lookupProcessedStripeWebhookState,
+  recordProcessedStripeWebhookState,
   setHostedAccountStatusState,
   setTenantApiKeyStatusState,
   syncTenantPlanByTenantIdState,
@@ -114,10 +120,8 @@ import {
   resolvePlanSpec,
   resolvePlanStripePrice,
 } from './plan-catalog.js';
-import { appendAdminAuditRecord, listAdminAuditRecords, type AdminAuditAction } from './admin-audit-log.js';
-import { lookupAdminIdempotency, recordAdminIdempotency } from './admin-idempotency-store.js';
+import { type AdminAuditAction } from './admin-audit-log.js';
 import { hashJsonValue } from './json-stable.js';
-import { lookupProcessedStripeWebhook, recordProcessedStripeWebhook } from './stripe-webhook-store.js';
 import {
   claimStripeBillingEvent,
   finalizeStripeBillingEvent,
@@ -520,9 +524,8 @@ function billingEventView(record: Awaited<ReturnType<typeof listBillingEvents>>[
   };
 }
 
-function adminMutationRequest(c: Context, routeId: string, requestPayload: unknown):
-  | { idempotencyKey: string | null; requestHash: string }
-  | Response {
+async function adminMutationRequest(c: Context, routeId: string, requestPayload: unknown):
+  Promise<{ idempotencyKey: string | null; requestHash: string } | Response> {
   const idempotencyKey = c.req.header('Idempotency-Key')?.trim() ?? null;
   if (!idempotencyKey) {
     return {
@@ -531,7 +534,7 @@ function adminMutationRequest(c: Context, routeId: string, requestPayload: unkno
     };
   }
 
-  const lookup = lookupAdminIdempotency({
+  const lookup = await lookupAdminIdempotencyState({
     idempotencyKey,
     routeId,
     requestPayload,
@@ -562,7 +565,7 @@ function adminMutationRequest(c: Context, routeId: string, requestPayload: unkno
   };
 }
 
-function finalizeAdminMutation(options: {
+async function finalizeAdminMutation(options: {
   idempotencyKey: string | null;
   routeId: string;
   requestPayload: unknown;
@@ -578,9 +581,9 @@ function finalizeAdminMutation(options: {
     requestHash?: string;
     metadata?: Record<string, unknown>;
   };
-}): Record<string, unknown> {
+}): Promise<Record<string, unknown>> {
   if (options.idempotencyKey) {
-    recordAdminIdempotency({
+    await recordAdminIdempotencyState({
       idempotencyKey: options.idempotencyKey,
       routeId: options.routeId,
       requestPayload: options.requestPayload,
@@ -589,7 +592,7 @@ function finalizeAdminMutation(options: {
     });
   }
 
-  appendAdminAuditRecord({
+  await appendAdminAuditRecordState({
     actorType: 'admin_api_key',
     actorLabel: 'ATTESTOR_ADMIN_API_KEY',
     action: options.audit.action,
@@ -837,7 +840,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       eventType: event.type,
       rawPayload,
     })
-    : lookupProcessedStripeWebhook(event.id, rawPayload);
+    : await lookupProcessedStripeWebhookState(event.id, rawPayload);
   if (dedupe.kind === 'conflict') {
     observeBillingWebhookEvent(event.type, 'conflict');
     return c.json({
@@ -885,7 +888,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        recordProcessedStripeWebhook({
+        await recordProcessedStripeWebhookState({
           eventId: event.id,
           eventType: event.type,
           accountId: null,
@@ -962,7 +965,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           });
           finalizedSharedEvent = true;
         } else {
-          recordProcessedStripeWebhook({
+          await recordProcessedStripeWebhookState({
             eventId: event.id,
             eventType: event.type,
             accountId: null,
@@ -1023,7 +1026,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        recordProcessedStripeWebhook({
+        await recordProcessedStripeWebhookState({
           eventId: event.id,
           eventType: event.type,
           accountId: applied.record.id,
@@ -1037,7 +1040,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
       observeBillingWebhookEvent(event.type, 'applied');
 
-      appendAdminAuditRecord({
+      await appendAdminAuditRecordState({
         actorType: 'stripe_webhook',
         actorLabel: 'stripe.webhooks',
         action: 'billing.stripe.webhook_applied',
@@ -1135,7 +1138,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           });
           finalizedSharedEvent = true;
         } else {
-          recordProcessedStripeWebhook({
+          await recordProcessedStripeWebhookState({
             eventId: event.id,
             eventType: event.type,
             accountId: null,
@@ -1199,7 +1202,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        recordProcessedStripeWebhook({
+        await recordProcessedStripeWebhookState({
           eventId: event.id,
           eventType: event.type,
           accountId: applied.record.id,
@@ -1213,7 +1216,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
       observeBillingWebhookEvent(event.type, 'applied');
 
-      appendAdminAuditRecord({
+      await appendAdminAuditRecordState({
         actorType: 'stripe_webhook',
         actorLabel: 'stripe.webhooks',
         action: 'billing.stripe.webhook_applied',
@@ -1325,7 +1328,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        recordProcessedStripeWebhook({
+        await recordProcessedStripeWebhookState({
           eventId: event.id,
           eventType: event.type,
           accountId: null,
@@ -1393,7 +1396,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       });
       finalizedSharedEvent = true;
     } else {
-      recordProcessedStripeWebhook({
+      await recordProcessedStripeWebhookState({
         eventId: event.id,
         eventType: event.type,
         accountId: applied.record.id,
@@ -1407,7 +1410,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
     observeBillingWebhookEvent(event.type, 'applied');
 
-    appendAdminAuditRecord({
+    await appendAdminAuditRecordState({
       actorType: 'stripe_webhook',
       actorLabel: 'stripe.webhooks',
       action: 'billing.stripe.webhook_applied',
@@ -1536,7 +1539,7 @@ app.get('/api/v1/admin/plans', (c) => {
   });
 });
 
-app.get('/api/v1/admin/audit', (c) => {
+app.get('/api/v1/admin/audit', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
@@ -1547,7 +1550,7 @@ app.get('/api/v1/admin/audit', (c) => {
   const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
 
-  const result = listAdminAuditRecords({
+  const result = await listAdminAuditRecordsState({
     action: action ?? null,
     tenantId,
     accountId,
@@ -1719,7 +1722,7 @@ app.post('/api/v1/admin/queue/jobs/:id/retry', async (c) => {
   if (unauthorized) return unauthorized;
 
   const requestPayload = { jobId: c.req.param('id') };
-  const adminMutation = adminMutationRequest(c, 'admin.queue.jobs.retry', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.queue.jobs.retry', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   if (asyncBackendMode !== 'bullmq' || !bullmqQueue) {
@@ -1733,7 +1736,7 @@ app.post('/api/v1/admin/queue/jobs/:id/retry', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.queue.jobs.retry',
     requestPayload,
@@ -1783,7 +1786,7 @@ app.post('/api/v1/admin/accounts', async (c) => {
     return c.json({ error: 'accountName, contactEmail, tenantId, and tenantName are required' }, 400);
   }
 
-  const adminMutation = adminMutationRequest(c, 'admin.accounts.create', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.accounts.create', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let resolvedPlan;
@@ -1820,7 +1823,7 @@ app.post('/api/v1/admin/accounts', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.accounts.create',
     requestPayload,
@@ -1873,7 +1876,7 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
     return c.json({ error: 'stripeCustomerId or stripeSubscriptionId is required.' }, 400);
   }
 
-  const adminMutation = adminMutationRequest(c, 'admin.accounts.attach_stripe_billing', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.accounts.attach_stripe_billing', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let attached;
@@ -1890,7 +1893,7 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.accounts.attach_stripe_billing',
     requestPayload,
@@ -1924,7 +1927,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
     id: c.req.param('id'),
     reason: typeof body.reason === 'string' ? body.reason.trim() : '',
   };
-  const adminMutation = adminMutationRequest(c, 'admin.accounts.suspend', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.accounts.suspend', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let result;
@@ -1936,7 +1939,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.accounts.suspend',
     requestPayload,
@@ -1968,7 +1971,7 @@ app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
     id: c.req.param('id'),
     reason: typeof body.reason === 'string' ? body.reason.trim() : '',
   };
-  const adminMutation = adminMutationRequest(c, 'admin.accounts.reactivate', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.accounts.reactivate', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let result;
@@ -1980,7 +1983,7 @@ app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.accounts.reactivate',
     requestPayload,
@@ -2011,7 +2014,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
     id: c.req.param('id'),
     reason: typeof body.reason === 'string' ? body.reason.trim() : '',
   };
-  const adminMutation = adminMutationRequest(c, 'admin.accounts.archive', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.accounts.archive', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let result;
@@ -2023,7 +2026,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.accounts.archive',
     requestPayload,
@@ -2068,7 +2071,7 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
     return c.json({ error: 'tenantId and tenantName are required' }, 400);
   }
 
-  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.issue', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.tenant_keys.issue', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let resolvedPlan;
@@ -2096,7 +2099,7 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.tenant_keys.issue',
     requestPayload,
@@ -2137,7 +2140,7 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
     planId: requestedPlanId,
     monthlyRunQuota,
   };
-  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.rotate', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.tenant_keys.rotate', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let rotated;
@@ -2152,7 +2155,7 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.tenant_keys.rotate',
     requestPayload,
@@ -2188,7 +2191,7 @@ app.post('/api/v1/admin/tenant-keys/:id/deactivate', async (c) => {
   if (unauthorized) return unauthorized;
 
   const requestPayload = { id: c.req.param('id') };
-  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.deactivate', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.tenant_keys.deactivate', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let result;
@@ -2200,7 +2203,7 @@ app.post('/api/v1/admin/tenant-keys/:id/deactivate', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.tenant_keys.deactivate',
     requestPayload,
@@ -2230,7 +2233,7 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', async (c) => {
   if (unauthorized) return unauthorized;
 
   const requestPayload = { id: c.req.param('id') };
-  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.reactivate', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.tenant_keys.reactivate', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   let result;
@@ -2242,7 +2245,7 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', async (c) => {
     throw err;
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.tenant_keys.reactivate',
     requestPayload,
@@ -2271,7 +2274,7 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', async (c) => {
   if (unauthorized) return unauthorized;
 
   const requestPayload = { id: c.req.param('id') };
-  const adminMutation = adminMutationRequest(c, 'admin.tenant_keys.revoke', requestPayload);
+  const adminMutation = await adminMutationRequest(c, 'admin.tenant_keys.revoke', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
   const result = await revokeTenantApiKeyState(c.req.param('id'));
@@ -2279,7 +2282,7 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', async (c) => {
     return c.json({ error: 'Tenant key record not found' }, 404);
   }
 
-  const responseBody = finalizeAdminMutation({
+  const responseBody = await finalizeAdminMutation({
     idempotencyKey: adminMutation.idempotencyKey,
     routeId: 'admin.tenant_keys.revoke',
     requestPayload,

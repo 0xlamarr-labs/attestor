@@ -6,10 +6,10 @@ This document describes the current Attestor control-plane backup and restore st
 
 Current backup tooling covers:
 
-- file-backed hosted account store
-- file-backed tenant key store
-- file-backed usage ledger
-- file-backed admin audit log
+- hosted account store
+- tenant key store
+- usage ledger
+- admin audit log
 - optional ephemeral stores:
   - admin idempotency replay store
   - Stripe webhook dedupe store
@@ -30,7 +30,8 @@ This is a **logical snapshot first slice**. For production PostgreSQL disaster r
 
 Attestor's hosted control-plane is currently mixed:
 
-- some state is still file-backed
+- hosted accounts, tenant keys, usage, and admin audit can run either file-backed or on the shared PostgreSQL control-plane first slice
+- admin idempotency replay and Stripe webhook dedupe can also move onto the shared PostgreSQL control-plane when `--include-ephemeral` is used for snapshot drills
 - Stripe billing event truth already has a shared PostgreSQL first slice
 
 The control-plane snapshot gives operators one bounded way to:
@@ -44,7 +45,7 @@ The control-plane snapshot gives operators one bounded way to:
 Use both layers:
 
 1. **Attestor control-plane snapshot**
-   - protects file-backed control-plane state
+   - protects the current control-plane state, whether file-backed or shared PostgreSQL-backed
    - exports the shared billing event ledger logically
 2. **Native PostgreSQL backups**
    - `pg_dump` / logical dumps for routine export
@@ -145,6 +146,7 @@ These are not long-term sources of truth. In many DR events it is acceptable not
 4. Restore the snapshot onto the replacement node.
 5. Reconfigure the same:
    - `ATTESTOR_ADMIN_API_KEY`
+   - `ATTESTOR_CONTROL_PLANE_PG_URL` if shared control-plane mode is used
    - Stripe env vars
    - `ATTESTOR_BILLING_LEDGER_PG_URL`
 6. Start the API and worker.
@@ -175,7 +177,7 @@ It is not yet equivalent to:
 
 This improves operational safety materially, but it does not replace the longer-term work to:
 
-- move more control-plane state off local files
+- move the remaining non-shared control-plane edges fully off local files in all deployments
 - add broader shared multi-node stores
 - add Redis/queue recovery policy beyond BullMQ retention
 - add production PostgreSQL backup automation outside the application

@@ -25,15 +25,24 @@ import {
   type BillingEventLedgerSnapshot,
 } from './billing-event-ledger.js';
 import {
+  exportAdminAuditLogStoreSnapshot,
+  exportAdminIdempotencyStoreSnapshot,
+  exportStripeWebhookStoreSnapshot,
   controlPlaneStoreMode,
   controlPlaneStoreSource,
   exportHostedAccountStoreSnapshot,
   exportTenantKeyStoreSnapshot,
   exportUsageLedgerStoreSnapshot,
+  restoreAdminAuditLogStoreSnapshot,
+  restoreAdminIdempotencyStoreSnapshot,
+  restoreStripeWebhookStoreSnapshot,
   restoreHostedAccountStoreSnapshot,
   restoreTenantKeyStoreSnapshot,
   restoreUsageLedgerStoreSnapshot,
+  type AdminAuditLogStoreSnapshot,
+  type AdminIdempotencyStoreSnapshot,
   type HostedAccountStoreSnapshot,
+  type StripeWebhookStoreSnapshot,
   type TenantKeyStoreSnapshot,
   type UsageLedgerStoreSnapshot,
 } from './control-plane-store.js';
@@ -118,8 +127,8 @@ function componentSpecs(includeEphemeral: boolean): ControlPlaneComponentSpec[] 
     },
     {
       id: 'admin_audit_log',
-      tier: 'critical',
-      sourcePath: defaultPath('ATTESTOR_ADMIN_AUDIT_LOG_PATH', '.attestor/admin-audit-log.json'),
+      tier: sharedControlPlane ? 'shared_postgres' : 'critical',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ADMIN_AUDIT_LOG_PATH', '.attestor/admin-audit-log.json'),
       snapshotFilename: 'admin-audit-log.json',
     },
     {
@@ -135,13 +144,13 @@ function componentSpecs(includeEphemeral: boolean): ControlPlaneComponentSpec[] 
       {
         id: 'admin_idempotency_store',
         tier: 'ephemeral',
-        sourcePath: defaultPath('ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH', '.attestor/admin-idempotency.json'),
+        sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH', '.attestor/admin-idempotency.json'),
         snapshotFilename: 'admin-idempotency.json',
       },
       {
         id: 'stripe_webhook_store',
         tier: 'ephemeral',
-        sourcePath: defaultPath('ATTESTOR_STRIPE_WEBHOOK_STORE_PATH', '.attestor/stripe-webhooks.json'),
+        sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_STRIPE_WEBHOOK_STORE_PATH', '.attestor/stripe-webhooks.json'),
         snapshotFilename: 'stripe-webhook-store.json',
       },
     );
@@ -219,25 +228,41 @@ export async function createControlPlaneBackupSnapshot(options?: {
   for (const component of componentSpecs(includeEphemeral)) {
     const snapshotPath = join(snapshotDir, snapshotSubdirForTier(component.tier), component.snapshotFilename);
     if (
-      component.tier === 'shared_postgres' &&
-      (component.id === 'account_store' || component.id === 'tenant_key_store' || component.id === 'usage_ledger')
+      component.sourcePath === null &&
+      (
+        component.id === 'account_store'
+        || component.id === 'tenant_key_store'
+        || component.id === 'usage_ledger'
+        || component.id === 'admin_audit_log'
+        || component.id === 'admin_idempotency_store'
+        || component.id === 'stripe_webhook_store'
+      )
     ) {
       let snapshot:
         | HostedAccountStoreSnapshot
         | TenantKeyStoreSnapshot
-        | UsageLedgerStoreSnapshot;
+        | UsageLedgerStoreSnapshot
+        | AdminAuditLogStoreSnapshot
+        | AdminIdempotencyStoreSnapshot
+        | StripeWebhookStoreSnapshot;
       if (component.id === 'account_store') {
         snapshot = await exportHostedAccountStoreSnapshot();
       } else if (component.id === 'tenant_key_store') {
         snapshot = await exportTenantKeyStoreSnapshot();
-      } else {
+      } else if (component.id === 'usage_ledger') {
         snapshot = await exportUsageLedgerStoreSnapshot();
+      } else if (component.id === 'admin_audit_log') {
+        snapshot = await exportAdminAuditLogStoreSnapshot();
+      } else if (component.id === 'admin_idempotency_store') {
+        snapshot = await exportAdminIdempotencyStoreSnapshot();
+      } else {
+        snapshot = await exportStripeWebhookStoreSnapshot();
       }
       writeJsonFile(snapshotPath, snapshot);
       components.push({
         id: component.id,
-        tier: component.tier,
-        sourcePath: redactedConnectionSource(controlPlaneStoreSource()),
+        tier: component.tier === 'ephemeral' ? 'ephemeral' : 'shared_postgres',
+        sourcePath: null,
         snapshotPath: relative(snapshotDir, snapshotPath),
         present: true,
         sha256: sha256File(snapshotPath),
@@ -375,12 +400,19 @@ export async function restoreControlPlaneBackupSnapshot(options: {
 
     const absoluteSnapshotPath = verifySnapshotFile(snapshotDir, component);
     if (
-      component.tier === 'shared_postgres' &&
-      (component.id === 'account_store' || component.id === 'tenant_key_store' || component.id === 'usage_ledger')
+      component.sourcePath === null &&
+      (
+        component.id === 'account_store'
+        || component.id === 'tenant_key_store'
+        || component.id === 'usage_ledger'
+        || component.id === 'admin_audit_log'
+        || component.id === 'admin_idempotency_store'
+        || component.id === 'stripe_webhook_store'
+      )
     ) {
       if (controlPlaneStoreMode() !== 'postgres') {
         throw new Error(
-          'Shared control-plane snapshot present, but ATTESTOR_CONTROL_PLANE_PG_URL (or shared fallback) is not configured for restore.',
+          'Shared control-plane snapshot present, but ATTESTOR_CONTROL_PLANE_PG_URL is not configured for restore.',
         );
       }
       if (component.id === 'account_store') {
@@ -389,9 +421,18 @@ export async function restoreControlPlaneBackupSnapshot(options: {
       } else if (component.id === 'tenant_key_store') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as TenantKeyStoreSnapshot;
         await restoreTenantKeyStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
-      } else {
+      } else if (component.id === 'usage_ledger') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as UsageLedgerStoreSnapshot;
         await restoreUsageLedgerStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else if (component.id === 'admin_audit_log') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as AdminAuditLogStoreSnapshot;
+        await restoreAdminAuditLogStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else if (component.id === 'admin_idempotency_store') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as AdminIdempotencyStoreSnapshot;
+        await restoreAdminIdempotencyStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as StripeWebhookStoreSnapshot;
+        await restoreStripeWebhookStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
       }
       restoredComponents.push(component.id);
       continue;

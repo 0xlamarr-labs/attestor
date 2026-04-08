@@ -61,6 +61,17 @@ function saveStore(store: StripeWebhookStoreFile): void {
   writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
 }
 
+export function readStripeWebhookStoreSnapshot(): {
+  path: string;
+  records: StripeWebhookRecord[];
+} {
+  const store = loadStore();
+  return {
+    path: storePath(),
+    records: [...store.records],
+  };
+}
+
 function payloadHash(payload: string): string {
   return hashJsonValue({ payload });
 }

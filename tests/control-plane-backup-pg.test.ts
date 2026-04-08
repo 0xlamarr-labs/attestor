@@ -4,16 +4,6 @@ import { createServer } from 'node:net';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  appendAdminAuditRecord,
-  listAdminAuditRecords,
-  resetAdminAuditLogForTests,
-} from '../src/service/admin-audit-log.js';
-import {
-  lookupAdminIdempotency,
-  recordAdminIdempotency,
-  resetAdminIdempotencyStoreForTests,
-} from '../src/service/admin-idempotency-store.js';
-import {
   claimStripeBillingEvent,
   finalizeStripeBillingEvent,
   listBillingEvents,
@@ -27,15 +17,16 @@ import {
   consumePipelineRunState,
   findHostedAccountByIdState,
   listTenantKeyRecordsState,
+  listAdminAuditRecordsState,
+  lookupAdminIdempotencyState,
+  lookupProcessedStripeWebhookState,
+  appendAdminAuditRecordState,
+  recordAdminIdempotencyState,
+  recordProcessedStripeWebhookState,
   provisionHostedAccountState,
   queryUsageLedgerState,
   resetSharedControlPlaneStoreForTests,
 } from '../src/service/control-plane-store.js';
-import {
-  lookupProcessedStripeWebhook,
-  recordProcessedStripeWebhook,
-  resetStripeWebhookStoreForTests,
-} from '../src/service/stripe-webhook-store.js';
 
 let passed = 0;
 
@@ -90,9 +81,6 @@ async function run(): Promise<void> {
   await pg.createDatabase('attestor_billing');
 
   await resetSharedControlPlaneStoreForTests();
-  resetAdminAuditLogForTests();
-  resetAdminIdempotencyStoreForTests();
-  resetStripeWebhookStoreForTests();
   await resetBillingEventLedgerForTests();
 
   try {
@@ -112,7 +100,7 @@ async function run(): Promise<void> {
     });
     await consumePipelineRunState('tenant-backup-pg', 'starter', 100);
 
-    appendAdminAuditRecord({
+    await appendAdminAuditRecordState({
       actorType: 'admin_api_key',
       actorLabel: 'backup-test-admin',
       action: 'account.created',
@@ -126,14 +114,14 @@ async function run(): Promise<void> {
       requestHash: 'req_hash_backup_pg',
       metadata: { source: 'test' },
     });
-    recordAdminIdempotency({
+    await recordAdminIdempotencyState({
       idempotencyKey: 'idem-backup-pg-1',
       routeId: 'admin.accounts.create',
       requestPayload: { accountId: provisioned.account.id },
       statusCode: 201,
       response: { ok: true, accountId: provisioned.account.id },
     });
-    recordProcessedStripeWebhook({
+    await recordProcessedStripeWebhookState({
       eventId: 'evt_webhook_backup_pg_1',
       eventType: 'invoice.paid',
       accountId: provisioned.account.id,
@@ -178,12 +166,12 @@ async function run(): Promise<void> {
     ok(backup.manifest.components.some((entry) => entry.id === 'account_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG account snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'tenant_key_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG tenant key snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'usage_ledger' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG usage snapshot present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'admin_audit_log' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG admin audit snapshot present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'admin_idempotency_store' && entry.tier === 'ephemeral' && entry.present), 'Backup: PG admin idempotency snapshot present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'stripe_webhook_store' && entry.tier === 'ephemeral' && entry.present), 'Backup: PG webhook dedupe snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'billing_event_ledger' && entry.present), 'Backup: billing ledger snapshot present');
 
     await resetSharedControlPlaneStoreForTests();
-    resetAdminAuditLogForTests();
-    resetAdminIdempotencyStoreForTests();
-    resetStripeWebhookStoreForTests();
     await resetBillingEventLedgerForTests();
 
     const restored = await restoreControlPlaneBackupSnapshot({
@@ -195,6 +183,9 @@ async function run(): Promise<void> {
     ok(restored.restoredComponents.includes('tenant_key_store'), 'Restore: shared PG tenant keys restored');
     ok(restored.restoredComponents.includes('usage_ledger'), 'Restore: shared PG usage restored');
     ok(restored.restoredComponents.includes('billing_event_ledger'), 'Restore: shared billing ledger restored');
+    ok(restored.restoredComponents.includes('admin_audit_log'), 'Restore: shared admin audit restored');
+    ok(restored.restoredComponents.includes('admin_idempotency_store'), 'Restore: shared admin idempotency restored');
+    ok(restored.restoredComponents.includes('stripe_webhook_store'), 'Restore: shared Stripe webhook dedupe restored');
 
     const restoredAccount = await findHostedAccountByIdState(provisioned.account.id);
     ok(Boolean(restoredAccount), 'Restore: hosted account recovered from PG snapshot');
@@ -208,18 +199,18 @@ async function run(): Promise<void> {
     ok(restoredUsage.length === 1, 'Restore: usage ledger recovered from PG snapshot');
     ok(restoredUsage[0].used === 1, 'Restore: usage count preserved');
 
-    const restoredAudit = listAdminAuditRecords();
+    const restoredAudit = await listAdminAuditRecordsState();
     ok(restoredAudit.chainIntact === true, 'Restore: admin audit chain intact');
     ok(restoredAudit.records.length === 1, 'Restore: admin audit records recovered');
 
-    const idempotencyLookup = lookupAdminIdempotency({
+    const idempotencyLookup = await lookupAdminIdempotencyState({
       idempotencyKey: 'idem-backup-pg-1',
       routeId: 'admin.accounts.create',
       requestPayload: { accountId: provisioned.account.id },
     });
     ok(idempotencyLookup.kind === 'replay', 'Restore: admin idempotency restored');
 
-    const webhookLookup = lookupProcessedStripeWebhook('evt_webhook_backup_pg_1', '{"id":"evt_webhook_backup_pg_1"}');
+    const webhookLookup = await lookupProcessedStripeWebhookState('evt_webhook_backup_pg_1', '{"id":"evt_webhook_backup_pg_1"}');
     ok(webhookLookup.kind === 'duplicate', 'Restore: stripe webhook dedupe restored');
 
     const restoredBillingEvents = await listBillingEvents({ accountId: provisioned.account.id, limit: 10 });
@@ -229,9 +220,6 @@ async function run(): Promise<void> {
     console.log(`  Control-plane backup PG tests: ${passed} passed, 0 failed\n`);
   } finally {
     await resetSharedControlPlaneStoreForTests();
-    resetAdminAuditLogForTests();
-    resetAdminIdempotencyStoreForTests();
-    resetStripeWebhookStoreForTests();
     await resetBillingEventLedgerForTests();
     await pg.stop();
     try { rmSync(tempRoot, { recursive: true, force: true }); } catch {}

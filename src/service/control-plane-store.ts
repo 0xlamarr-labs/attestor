@@ -55,6 +55,31 @@ import {
   type UsageContext,
   type UsageLedgerRecord,
 } from './usage-meter.js';
+import {
+  appendAdminAuditRecord as appendAdminAuditRecordFile,
+  listAdminAuditRecords as listAdminAuditRecordsFile,
+  verifyAdminAuditChain,
+  type AdminAuditAction,
+  type AdminAuditRecord,
+} from './admin-audit-log.js';
+import {
+  buildAdminIdempotencyRequestHash,
+  decryptAdminIdempotencyResponse,
+  encryptAdminIdempotencyResponse,
+  lookupAdminIdempotency as lookupAdminIdempotencyFile,
+  recordAdminIdempotency as recordAdminIdempotencyFile,
+  readAdminIdempotencySnapshot,
+  type AdminIdempotencyLookup,
+  type AdminIdempotencyRecord,
+} from './admin-idempotency-store.js';
+import {
+  lookupProcessedStripeWebhook as lookupProcessedStripeWebhookFile,
+  recordProcessedStripeWebhook as recordProcessedStripeWebhookFile,
+  readStripeWebhookStoreSnapshot,
+  type StripeWebhookLookup,
+  type StripeWebhookRecord,
+} from './stripe-webhook-store.js';
+import { hashJsonValue } from './json-stable.js';
 import { DEFAULT_HOSTED_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
 
 type PgQueryResultRow = Record<string, unknown>;
@@ -89,14 +114,34 @@ export interface UsageLedgerStoreSnapshot {
   monthlyPipelineRuns: UsageLedgerRecord[];
 }
 
+export interface AdminAuditLogStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  chainIntact: boolean;
+  latestHash: string | null;
+  records: AdminAuditRecord[];
+}
+
+export interface AdminIdempotencyStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  records: AdminIdempotencyRecord[];
+}
+
+export interface StripeWebhookStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  records: StripeWebhookRecord[];
+}
+
 let poolPromise: Promise<PgPool> | null = null;
 let initPromise: Promise<void> | null = null;
 
 function connectionString(): string | null {
-  const dedicated = process.env.ATTESTOR_CONTROL_PLANE_PG_URL?.trim();
-  if (dedicated) return dedicated;
-  const fallback = process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim();
-  return fallback || null;
+  return process.env.ATTESTOR_CONTROL_PLANE_PG_URL?.trim() || null;
 }
 
 export function controlPlaneStoreMode(): 'postgres' | 'file' {
@@ -192,6 +237,71 @@ async function ensureSchema(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS usage_ledger_period_used_idx
           ON attestor_control_plane.usage_ledger (period DESC, used DESC, tenant_id ASC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.admin_audit_log (
+          audit_id TEXT PRIMARY KEY,
+          occurred_at TIMESTAMPTZ NOT NULL,
+          actor_type TEXT NOT NULL,
+          action TEXT NOT NULL,
+          account_id TEXT NULL,
+          tenant_id TEXT NULL,
+          previous_hash TEXT NULL,
+          event_hash TEXT NOT NULL UNIQUE,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS admin_audit_log_occurred_idx
+          ON attestor_control_plane.admin_audit_log (occurred_at DESC, audit_id DESC);
+
+        CREATE INDEX IF NOT EXISTS admin_audit_log_action_idx
+          ON attestor_control_plane.admin_audit_log (action, occurred_at DESC);
+
+        CREATE INDEX IF NOT EXISTS admin_audit_log_account_idx
+          ON attestor_control_plane.admin_audit_log (account_id, occurred_at DESC);
+
+        CREATE INDEX IF NOT EXISTS admin_audit_log_tenant_idx
+          ON attestor_control_plane.admin_audit_log (tenant_id, occurred_at DESC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.admin_idempotency (
+          idempotency_id TEXT PRIMARY KEY,
+          idempotency_key TEXT NOT NULL UNIQUE,
+          route_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          status_code INTEGER NOT NULL,
+          response_ciphertext TEXT NOT NULL,
+          response_iv TEXT NOT NULL,
+          response_auth_tag TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL,
+          last_replayed_at TIMESTAMPTZ NULL,
+          replay_count INTEGER NOT NULL CHECK (replay_count >= 0),
+          record_json JSONB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS admin_idempotency_created_idx
+          ON attestor_control_plane.admin_idempotency (created_at DESC);
+
+        CREATE INDEX IF NOT EXISTS admin_idempotency_route_idx
+          ON attestor_control_plane.admin_idempotency (route_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.stripe_webhook_dedupe (
+          webhook_record_id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL UNIQUE,
+          event_type TEXT NOT NULL,
+          payload_hash TEXT NOT NULL,
+          account_id TEXT NULL,
+          stripe_customer_id TEXT NULL,
+          stripe_subscription_id TEXT NULL,
+          outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'ignored')),
+          reason TEXT NULL,
+          received_at TIMESTAMPTZ NOT NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS stripe_webhook_dedupe_received_idx
+          ON attestor_control_plane.stripe_webhook_dedupe (received_at DESC, webhook_record_id DESC);
+
+        CREATE INDEX IF NOT EXISTS stripe_webhook_dedupe_account_idx
+          ON attestor_control_plane.stripe_webhook_dedupe (account_id, received_at DESC);
       `);
     })();
   }
@@ -417,6 +527,58 @@ function usageContextFromRecord(
     remaining: resolvedQuota === null ? null : Math.max(0, resolvedQuota - used),
     enforced: resolvedQuota !== null,
   };
+}
+
+function advisoryLockKey(namespace: string): string {
+  const digest = createHash('sha256').update(namespace).digest();
+  let value = 0n;
+  for (let i = 0; i < 8; i += 1) {
+    value = (value << 8n) + BigInt(digest[i] ?? 0);
+  }
+  if (value > 0x7fff_ffff_ffff_ffffn) {
+    value -= 0x1_0000_0000_0000_0000n;
+  }
+  return value.toString();
+}
+
+async function withPgTransaction<T>(work: (client: PgClient) => Promise<T>): Promise<T> {
+  await ensureSchema();
+  const pool = await getPool();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // surface original error
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+function adminIdempotencyCutoffIso(now = Date.now()): string {
+  const raw = process.env.ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : 24;
+  const ttlHours = Number.isFinite(parsed) && parsed > 0 ? parsed : 24;
+  return new Date(now - ttlHours * 60 * 60 * 1000).toISOString();
+}
+
+function rowToAdminAuditRecord(row: PgQueryResultRow): AdminAuditRecord {
+  return row.record_json as AdminAuditRecord;
+}
+
+function rowToAdminIdempotencyRecord(row: PgQueryResultRow): AdminIdempotencyRecord {
+  return row.record_json as AdminIdempotencyRecord;
+}
+
+function rowToStripeWebhookRecord(row: PgQueryResultRow): StripeWebhookRecord {
+  return row.record_json as StripeWebhookRecord;
 }
 
 function mapPgErrorToAccountStoreError(err: unknown): AccountStoreError | null {
@@ -1299,6 +1461,528 @@ export async function queryUsageLedgerState(filters?: {
   return listUsageLedgerPg(filters);
 }
 
+export async function appendAdminAuditRecordState(
+  input: Omit<AdminAuditRecord, 'id' | 'occurredAt' | 'previousHash' | 'eventHash'>,
+): Promise<{
+  record: AdminAuditRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return appendAdminAuditRecordFile(input);
+  const record = await withPgTransaction(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [advisoryLockKey('attestor_control_plane:admin_audit')]);
+    const latestResult = await client.query(
+      `SELECT record_json
+         FROM attestor_control_plane.admin_audit_log
+        ORDER BY occurred_at DESC, audit_id DESC
+        LIMIT 1`,
+    );
+    const previous = latestResult.rows[0] ? rowToAdminAuditRecord(latestResult.rows[0]) : null;
+    const baseRecord = {
+      id: `audit_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      occurredAt: new Date().toISOString(),
+      previousHash: previous?.eventHash ?? null,
+      ...input,
+    };
+    const recordToInsert: AdminAuditRecord = {
+      ...baseRecord,
+      eventHash: hashJsonValue(baseRecord),
+    };
+    await client.query(
+      `INSERT INTO attestor_control_plane.admin_audit_log (
+        audit_id, occurred_at, actor_type, action, account_id, tenant_id, previous_hash, event_hash, record_json
+      ) VALUES (
+        $1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9::jsonb
+      )`,
+      [
+        recordToInsert.id,
+        recordToInsert.occurredAt,
+        recordToInsert.actorType,
+        recordToInsert.action,
+        recordToInsert.accountId,
+        recordToInsert.tenantId,
+        recordToInsert.previousHash,
+        recordToInsert.eventHash,
+        JSON.stringify(recordToInsert),
+      ],
+    );
+    return recordToInsert;
+  });
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function listAdminAuditRecordsState(filters?: {
+  action?: AdminAuditAction | null;
+  tenantId?: string | null;
+  accountId?: string | null;
+  limit?: number | null;
+}): Promise<{
+  records: AdminAuditRecord[];
+  chainIntact: boolean;
+  latestHash: string | null;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return listAdminAuditRecordsFile(filters);
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(`
+    SELECT record_json
+      FROM attestor_control_plane.admin_audit_log
+      ORDER BY occurred_at ASC, audit_id ASC
+  `);
+  const allRecords = result.rows.map(rowToAdminAuditRecord);
+  const chainIntact = verifyAdminAuditChain(allRecords);
+  let records = allRecords
+    .filter((record) => !filters?.action || record.action === filters.action)
+    .filter((record) => !filters?.tenantId || record.tenantId === filters.tenantId)
+    .filter((record) => !filters?.accountId || record.accountId === filters.accountId)
+    .sort((left, right) => left.occurredAt < right.occurredAt ? 1 : -1);
+  if (filters?.limit && filters.limit > 0) {
+    records = records.slice(0, filters.limit);
+  }
+  return {
+    records,
+    chainIntact,
+    latestHash: allRecords.length > 0 ? allRecords[allRecords.length - 1]?.eventHash ?? null : null,
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function lookupAdminIdempotencyState(options: {
+  idempotencyKey: string;
+  routeId: string;
+  requestPayload: unknown;
+}): Promise<AdminIdempotencyLookup> {
+  if (!isSharedControlPlaneConfigured()) return lookupAdminIdempotencyFile(options);
+  const requestHash = buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload);
+  return withPgTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM attestor_control_plane.admin_idempotency
+        WHERE created_at < $1::timestamptz`,
+      [adminIdempotencyCutoffIso()],
+    );
+    await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [
+      advisoryLockKey(`attestor_control_plane:admin_idempotency:${options.idempotencyKey}`),
+    ]);
+    const result = await client.query(
+      `SELECT record_json
+         FROM attestor_control_plane.admin_idempotency
+        WHERE idempotency_key = $1
+        LIMIT 1`,
+      [options.idempotencyKey],
+    );
+    const existing = result.rows[0] ? rowToAdminIdempotencyRecord(result.rows[0]) : null;
+    if (!existing) return { kind: 'miss', requestHash };
+    if (existing.routeId !== options.routeId || existing.requestHash !== requestHash) {
+      return { kind: 'conflict', requestHash, record: existing };
+    }
+    const replayedRecord: AdminIdempotencyRecord = {
+      ...existing,
+      lastReplayedAt: new Date().toISOString(),
+      replayCount: existing.replayCount + 1,
+    };
+    await client.query(
+      `UPDATE attestor_control_plane.admin_idempotency
+          SET last_replayed_at = $2::timestamptz,
+              replay_count = $3,
+              record_json = $4::jsonb
+        WHERE idempotency_key = $1`,
+      [
+        options.idempotencyKey,
+        replayedRecord.lastReplayedAt,
+        replayedRecord.replayCount,
+        JSON.stringify(replayedRecord),
+      ],
+    );
+    return {
+      kind: 'replay',
+      requestHash,
+      record: replayedRecord,
+      response: decryptAdminIdempotencyResponse(replayedRecord),
+    };
+  });
+}
+
+export async function recordAdminIdempotencyState(options: {
+  idempotencyKey: string;
+  routeId: string;
+  requestPayload: unknown;
+  statusCode: number;
+  response: unknown;
+}): Promise<{ record: AdminIdempotencyRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return recordAdminIdempotencyFile(options);
+  const requestHash = buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload);
+  const record = await withPgTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM attestor_control_plane.admin_idempotency
+        WHERE created_at < $1::timestamptz`,
+      [adminIdempotencyCutoffIso()],
+    );
+    await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [
+      advisoryLockKey(`attestor_control_plane:admin_idempotency:${options.idempotencyKey}`),
+    ]);
+    const existingResult = await client.query(
+      `SELECT record_json
+         FROM attestor_control_plane.admin_idempotency
+        WHERE idempotency_key = $1
+        LIMIT 1`,
+      [options.idempotencyKey],
+    );
+    const existing = existingResult.rows[0] ? rowToAdminIdempotencyRecord(existingResult.rows[0]) : null;
+    if (existing) {
+      if (existing.routeId !== options.routeId || existing.requestHash !== requestHash) {
+        throw new Error(`Idempotency-Key '${options.idempotencyKey}' already exists for a different request`);
+      }
+      return existing;
+    }
+    const encrypted = encryptAdminIdempotencyResponse(options.response);
+    const recordToInsert: AdminIdempotencyRecord = {
+      id: `idem_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      idempotencyKey: options.idempotencyKey,
+      routeId: options.routeId,
+      requestHash,
+      statusCode: options.statusCode,
+      responseCiphertext: encrypted.ciphertext,
+      responseIv: encrypted.iv,
+      responseAuthTag: encrypted.authTag,
+      createdAt: new Date().toISOString(),
+      lastReplayedAt: null,
+      replayCount: 0,
+    };
+    await client.query(
+      `INSERT INTO attestor_control_plane.admin_idempotency (
+        idempotency_id, idempotency_key, route_id, request_hash, status_code,
+        response_ciphertext, response_iv, response_auth_tag,
+        created_at, last_replayed_at, replay_count, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8,
+        $9::timestamptz, $10::timestamptz, $11, $12::jsonb
+      )`,
+      [
+        recordToInsert.id,
+        recordToInsert.idempotencyKey,
+        recordToInsert.routeId,
+        recordToInsert.requestHash,
+        recordToInsert.statusCode,
+        recordToInsert.responseCiphertext,
+        recordToInsert.responseIv,
+        recordToInsert.responseAuthTag,
+        recordToInsert.createdAt,
+        recordToInsert.lastReplayedAt,
+        recordToInsert.replayCount,
+        JSON.stringify(recordToInsert),
+      ],
+    );
+    return recordToInsert;
+  });
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function lookupProcessedStripeWebhookState(
+  eventId: string,
+  rawPayload: string,
+): Promise<StripeWebhookLookup> {
+  if (!isSharedControlPlaneConfigured()) return lookupProcessedStripeWebhookFile(eventId, rawPayload);
+  await ensureSchema();
+  const pool = await getPool();
+  const requestHash = hashJsonValue({ payload: rawPayload });
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.stripe_webhook_dedupe
+      WHERE event_id = $1
+      LIMIT 1`,
+    [eventId],
+  );
+  const existing = result.rows[0] ? rowToStripeWebhookRecord(result.rows[0]) : null;
+  if (!existing) return { kind: 'miss', payloadHash: requestHash };
+  if (existing.payloadHash !== requestHash) {
+    return { kind: 'conflict', payloadHash: requestHash, record: existing };
+  }
+  return { kind: 'duplicate', payloadHash: requestHash, record: existing };
+}
+
+export async function recordProcessedStripeWebhookState(
+  input: Omit<StripeWebhookRecord, 'id' | 'receivedAt' | 'payloadHash'> & { rawPayload: string },
+): Promise<{ record: StripeWebhookRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return recordProcessedStripeWebhookFile(input);
+  const requestHash = hashJsonValue({ payload: input.rawPayload });
+  const record = await withPgTransaction(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [
+      advisoryLockKey(`attestor_control_plane:stripe_webhook:${input.eventId}`),
+    ]);
+    const existingResult = await client.query(
+      `SELECT record_json
+         FROM attestor_control_plane.stripe_webhook_dedupe
+        WHERE event_id = $1
+        LIMIT 1`,
+      [input.eventId],
+    );
+    const existing = existingResult.rows[0] ? rowToStripeWebhookRecord(existingResult.rows[0]) : null;
+    if (existing) {
+      if (existing.payloadHash !== requestHash) {
+        throw new Error(`Stripe event '${input.eventId}' was already recorded with a different payload hash.`);
+      }
+      return existing;
+    }
+    const recordToInsert: StripeWebhookRecord = {
+      id: `stripe_evt_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      eventId: input.eventId,
+      eventType: input.eventType,
+      payloadHash: requestHash,
+      accountId: input.accountId,
+      stripeCustomerId: input.stripeCustomerId,
+      stripeSubscriptionId: input.stripeSubscriptionId,
+      outcome: input.outcome,
+      reason: input.reason,
+      receivedAt: new Date().toISOString(),
+    };
+    await client.query(
+      `INSERT INTO attestor_control_plane.stripe_webhook_dedupe (
+        webhook_record_id, event_id, event_type, payload_hash, account_id, stripe_customer_id,
+        stripe_subscription_id, outcome, reason, received_at, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10::timestamptz, $11::jsonb
+      )`,
+      [
+        recordToInsert.id,
+        recordToInsert.eventId,
+        recordToInsert.eventType,
+        recordToInsert.payloadHash,
+        recordToInsert.accountId,
+        recordToInsert.stripeCustomerId,
+        recordToInsert.stripeSubscriptionId,
+        recordToInsert.outcome,
+        recordToInsert.reason,
+        recordToInsert.receivedAt,
+        JSON.stringify(recordToInsert),
+      ],
+    );
+    return recordToInsert;
+  });
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function exportAdminAuditLogStoreSnapshot(): Promise<AdminAuditLogStoreSnapshot> {
+  const result = isSharedControlPlaneConfigured()
+    ? await listAdminAuditRecordsState()
+    : listAdminAuditRecordsFile();
+  const chronological = [...result.records].sort((left, right) => left.occurredAt > right.occurredAt ? 1 : -1);
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: chronological.length,
+    chainIntact: result.chainIntact,
+    latestHash: result.latestHash,
+    records: chronological,
+  };
+}
+
+export async function restoreAdminAuditLogStoreSnapshot(
+  snapshot: AdminAuditLogStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for admin audit restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.admin_audit_log');
+  }
+  for (const record of snapshot.records) {
+    await pool.query(
+      `INSERT INTO attestor_control_plane.admin_audit_log (
+        audit_id, occurred_at, actor_type, action, account_id, tenant_id, previous_hash, event_hash, record_json
+      ) VALUES (
+        $1, $2::timestamptz, $3, $4, $5, $6, $7, $8, $9::jsonb
+      )
+      ON CONFLICT (audit_id) DO UPDATE SET
+        occurred_at = EXCLUDED.occurred_at,
+        actor_type = EXCLUDED.actor_type,
+        action = EXCLUDED.action,
+        account_id = EXCLUDED.account_id,
+        tenant_id = EXCLUDED.tenant_id,
+        previous_hash = EXCLUDED.previous_hash,
+        event_hash = EXCLUDED.event_hash,
+        record_json = EXCLUDED.record_json`,
+      [
+        record.id,
+        record.occurredAt,
+        record.actorType,
+        record.action,
+        record.accountId,
+        record.tenantId,
+        record.previousHash,
+        record.eventHash,
+        JSON.stringify(record),
+      ],
+    );
+  }
+  return { recordCount: snapshot.records.length };
+}
+
+export async function exportAdminIdempotencyStoreSnapshot(): Promise<AdminIdempotencyStoreSnapshot> {
+  if (!isSharedControlPlaneConfigured()) {
+    const { records } = readAdminIdempotencySnapshot();
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      recordCount: records.length,
+      records,
+    };
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  await pool.query(
+    `DELETE FROM attestor_control_plane.admin_idempotency
+      WHERE created_at < $1::timestamptz`,
+    [adminIdempotencyCutoffIso()],
+  );
+  const result = await pool.query(`
+    SELECT record_json
+      FROM attestor_control_plane.admin_idempotency
+      ORDER BY created_at ASC, idempotency_id ASC
+  `);
+  const records = result.rows.map(rowToAdminIdempotencyRecord);
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreAdminIdempotencyStoreSnapshot(
+  snapshot: AdminIdempotencyStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for admin idempotency restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.admin_idempotency');
+  }
+  for (const record of snapshot.records) {
+    await pool.query(
+      `INSERT INTO attestor_control_plane.admin_idempotency (
+        idempotency_id, idempotency_key, route_id, request_hash, status_code,
+        response_ciphertext, response_iv, response_auth_tag,
+        created_at, last_replayed_at, replay_count, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8,
+        $9::timestamptz, $10::timestamptz, $11, $12::jsonb
+      )
+      ON CONFLICT (idempotency_id) DO UPDATE SET
+        idempotency_key = EXCLUDED.idempotency_key,
+        route_id = EXCLUDED.route_id,
+        request_hash = EXCLUDED.request_hash,
+        status_code = EXCLUDED.status_code,
+        response_ciphertext = EXCLUDED.response_ciphertext,
+        response_iv = EXCLUDED.response_iv,
+        response_auth_tag = EXCLUDED.response_auth_tag,
+        created_at = EXCLUDED.created_at,
+        last_replayed_at = EXCLUDED.last_replayed_at,
+        replay_count = EXCLUDED.replay_count,
+        record_json = EXCLUDED.record_json`,
+      [
+        record.id,
+        record.idempotencyKey,
+        record.routeId,
+        record.requestHash,
+        record.statusCode,
+        record.responseCiphertext,
+        record.responseIv,
+        record.responseAuthTag,
+        record.createdAt,
+        record.lastReplayedAt,
+        record.replayCount,
+        JSON.stringify(record),
+      ],
+    );
+  }
+  return { recordCount: snapshot.records.length };
+}
+
+export async function exportStripeWebhookStoreSnapshot(): Promise<StripeWebhookStoreSnapshot> {
+  if (!isSharedControlPlaneConfigured()) {
+    const { records } = readStripeWebhookStoreSnapshot();
+    return {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      recordCount: records.length,
+      records,
+    };
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(`
+    SELECT record_json
+      FROM attestor_control_plane.stripe_webhook_dedupe
+      ORDER BY received_at ASC, webhook_record_id ASC
+  `);
+  const records = result.rows.map(rowToStripeWebhookRecord);
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreStripeWebhookStoreSnapshot(
+  snapshot: StripeWebhookStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for Stripe webhook dedupe restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.stripe_webhook_dedupe');
+  }
+  for (const record of snapshot.records) {
+    await pool.query(
+      `INSERT INTO attestor_control_plane.stripe_webhook_dedupe (
+        webhook_record_id, event_id, event_type, payload_hash, account_id, stripe_customer_id,
+        stripe_subscription_id, outcome, reason, received_at, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10::timestamptz, $11::jsonb
+      )
+      ON CONFLICT (webhook_record_id) DO UPDATE SET
+        event_id = EXCLUDED.event_id,
+        event_type = EXCLUDED.event_type,
+        payload_hash = EXCLUDED.payload_hash,
+        account_id = EXCLUDED.account_id,
+        stripe_customer_id = EXCLUDED.stripe_customer_id,
+        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+        outcome = EXCLUDED.outcome,
+        reason = EXCLUDED.reason,
+        received_at = EXCLUDED.received_at,
+        record_json = EXCLUDED.record_json`,
+      [
+        record.id,
+        record.eventId,
+        record.eventType,
+        record.payloadHash,
+        record.accountId,
+        record.stripeCustomerId,
+        record.stripeSubscriptionId,
+        record.outcome,
+        record.reason,
+        record.receivedAt,
+        JSON.stringify(record),
+      ],
+    );
+  }
+  return { recordCount: snapshot.records.length };
+}
+
 export async function exportHostedAccountStoreSnapshot(): Promise<HostedAccountStoreSnapshot> {
   const records = isSharedControlPlaneConfigured()
     ? await listHostedAccountsPg()
@@ -1412,6 +2096,9 @@ export async function resetSharedControlPlaneStoreForTests(): Promise<void> {
   }
   const pool = await getPool();
   await pool.query(`
+    DROP TABLE IF EXISTS attestor_control_plane.stripe_webhook_dedupe;
+    DROP TABLE IF EXISTS attestor_control_plane.admin_idempotency;
+    DROP TABLE IF EXISTS attestor_control_plane.admin_audit_log;
     DROP TABLE IF EXISTS attestor_control_plane.usage_ledger;
     DROP TABLE IF EXISTS attestor_control_plane.tenant_api_keys;
     DROP TABLE IF EXISTS attestor_control_plane.hosted_accounts;
