@@ -11,7 +11,7 @@
     "test:financial": "tsx src/financial/financial.test.ts",
     "test:signing": "tsx src/signing/signing.test.ts",
     "verify": "npm run typecheck && npm test && npm run build",
-    "verify:full": "npm run verify && tsx tests/live-api.test.ts && tsx tests/live-postgres.test.ts && tsx tests/connectors-and-filing.test.ts && tsx tests/live-snowflake.test.ts && tsx tests/live-vsac.test.ts",
+    "verify:full": "npm run verify && tsx tests/live-api.test.ts && tsx tests/live-postgres.test.ts && tsx tests/connectors-and-filing.test.ts && tsx tests/live-snowflake.test.ts && tsx tests/live-vsac.test.ts && tsx tests/live-cypress.test.ts",
     "test:live-api": "tsx tests/live-api.test.ts",
     "test:live-cypress": "tsx tests/live-cypress.test.ts",
     "test:live-pg": "tsx tests/live-postgres.test.ts",

@@ -1,33 +1,37 @@
 /**
- * LIVE ONC Cypress API Validation Test
+ * LIVE ONC Cypress API validation test.
  *
- * Validates generated QRDA III XML against the REAL ONC Cypress server
- * at cypressdemo.healthit.gov.
+ * Validates generated QRDA III XML against the real ONC Cypress server at
+ * cypressdemo.healthit.gov.
  *
- * ENV-GATED: Requires CYPRESS_EMAIL and CYPRESS_PASSWORD.
- * Legacy fallback: CYPRESS_UMLS_USER / CYPRESS_UMLS_PASS.
+ * ENV-GATED:
+ * - CYPRESS_EMAIL and CYPRESS_PASSWORD
+ * - Legacy fallback: CYPRESS_UMLS_USER / CYPRESS_UMLS_PASS
+ *
  * Create a Cypress demo account at cypressdemo.healthit.gov and sign in once
  * with your UMLS API key to activate the account.
- * Skip gracefully when credentials are not set.
  *
- * Run: CYPRESS_EMAIL=x CYPRESS_PASSWORD=y npx tsx tests/live-cypress.test.ts
+ * Run:
+ *   CYPRESS_EMAIL=x CYPRESS_PASSWORD=y npx tsx tests/live-cypress.test.ts
  */
 
 import { strict as assert } from 'node:assert';
 
 let passed = 0;
-function ok(condition: boolean, msg: string): void { assert(condition, msg); passed++; }
+function ok(condition: boolean, msg: string): void {
+  assert(condition, msg);
+  passed++;
+}
 
 async function run() {
-  console.log('\n══════════════════════════════════════════════════════════════');
-  console.log('  LIVE ONC CYPRESS API — Real Server Validation');
-  console.log('══════════════════════════════════════════════════════════════\n');
+  console.log('\n================================================================');
+  console.log('  LIVE ONC CYPRESS API - Real Server Validation');
+  console.log('================================================================\n');
 
   const { isCypressConfigured, validateViaCypressApi } = await import('../src/filing/cypress-api-client.js');
 
   const demoYear = '2026';
 
-  // ═══ CONNECTIVITY TEST (always runs, no credentials needed) ═══
   console.log('  [Cypress API Connectivity Test]');
   {
     const { generateQrda3: genQrda } = await import('../src/filing/qrda3-generator.js');
@@ -38,20 +42,24 @@ async function run() {
     ok(connResult.httpStatus === 401, 'Connectivity: server reachable (HTTP 401 = auth required)');
     ok(connResult.errors.length > 0, 'Connectivity: server returned error message');
     console.log(`    HTTP ${connResult.httpStatus}: ${connResult.errors[0]?.message ?? 'no message'}`);
-    console.log('    ✓ ONC Cypress server is reachable and responding\n');
+    console.log('    OK ONC Cypress server is reachable and responding\n');
   }
 
   if (!isCypressConfigured()) {
-    console.log('  ⊘ FULL VALIDATION SKIPPED: CYPRESS_EMAIL / CYPRESS_PASSWORD not set');
+    console.log('  SKIPPED FULL VALIDATION: CYPRESS_EMAIL / CYPRESS_PASSWORD not set');
     console.log('    Create a Cypress demo account at: https://cypressdemo.healthit.gov/users/sign_up');
     console.log('    Then: CYPRESS_EMAIL=x CYPRESS_PASSWORD=y npx tsx tests/live-cypress.test.ts');
     console.log(`\n  Live Cypress Tests: ${passed} passed (connectivity only)\n`);
     return;
   }
 
-  // Generate QRDA III with all 3 CMS measures
   const { generateQrda3 } = await import('../src/filing/qrda3-generator.js');
-  const { CMS165_BLOOD_PRESSURE, CMS122_DIABETES_A1C, CMS130_COLORECTAL_SCREENING, evaluateMeasure } = await import('../src/domains/healthcare-measures.js');
+  const {
+    CMS165_BLOOD_PRESSURE,
+    CMS122_DIABETES_A1C,
+    CMS130_COLORECTAL_SCREENING,
+    evaluateMeasure,
+  } = await import('../src/domains/healthcare-measures.js');
 
   const evals = [
     evaluateMeasure(CMS165_BLOOD_PRESSURE, { initial_population: 1200, denominator: 1100, denominator_exclusion: 100, numerator: 825 }),
@@ -63,7 +71,6 @@ async function run() {
   console.log(`  Generated QRDA III: ${xml.length} chars, ${evals.length} measures`);
   console.log('  Submitting to ONC Cypress server...\n');
 
-  // ═══ Validate via real Cypress API ═══
   console.log('  [POST live Cypress validator path]');
   const result = await validateViaCypressApi(xml, { year: demoYear });
 
@@ -77,27 +84,29 @@ async function run() {
     ok(true, 'Cypress API: successful response');
 
     if (result.valid) {
-      console.log('    ✓ ZERO ERRORS — ONC Cypress validation passed!');
+      console.log('    OK ZERO ERRORS - ONC Cypress validation passed');
       ok(true, 'Cypress API: zero execution errors');
     } else {
-      console.log(`    ⚠ ${result.errorCount} error(s) reported by Cypress:`);
+      console.log(`    ERROR ${result.errorCount} error(s) reported by Cypress:`);
       for (const e of result.errors.slice(0, 10)) {
         console.log(`      - ${e.message.slice(0, 120)}`);
       }
       if (result.errors.length > 10) console.log(`      ... and ${result.errors.length - 10} more`);
-      // Don't fail the test for Cypress errors — report them
-      ok(true, `Cypress API: ${result.errorCount} errors reported (review output)`);
+      ok(false, `Cypress API: expected zero execution errors, got ${result.errorCount}`);
     }
   } else if (result.httpStatus === 401) {
-    console.log('    ✗ HTTP 401 — Cypress authentication failed');
+    console.log('    ERROR HTTP 401 - Cypress authentication failed');
     console.log('    Check CYPRESS_EMAIL and CYPRESS_PASSWORD credentials');
     ok(false, 'Cypress API: authentication failed');
   } else {
-    console.log(`    ✗ HTTP ${result.httpStatus}: ${result.errors[0]?.message ?? 'unknown error'}`);
+    console.log(`    ERROR HTTP ${result.httpStatus}: ${result.errors[0]?.message ?? 'unknown error'}`);
     ok(result.httpStatus >= 200, `Cypress API: unexpected status ${result.httpStatus}`);
   }
 
   console.log(`\n  Live Cypress Tests: ${passed} passed\n`);
 }
 
-run().catch(err => { console.error('  CRASHED:', err); process.exit(1); });
+run().catch(err => {
+  console.error('  CRASHED:', err);
+  process.exit(1);
+});
