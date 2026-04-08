@@ -26,6 +26,7 @@ import {
   provisionHostedAccountState,
   queryUsageLedgerState,
   resetSharedControlPlaneStoreForTests,
+  restoreAdminAuditLogStoreSnapshot,
 } from '../src/service/control-plane-store.js';
 
 let passed = 0;
@@ -202,6 +203,23 @@ async function run(): Promise<void> {
     const restoredAudit = await listAdminAuditRecordsState();
     ok(restoredAudit.chainIntact === true, 'Restore: admin audit chain intact');
     ok(restoredAudit.records.length === 1, 'Restore: admin audit records recovered');
+
+    let invalidAuditRejected = false;
+    try {
+      await restoreAdminAuditLogStoreSnapshot({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        recordCount: restoredAudit.records.length,
+        chainIntact: false,
+        latestHash: restoredAudit.latestHash,
+        records: restoredAudit.records.map((record, index) => index === 0
+          ? { ...record, previousHash: 'tampered_previous_hash' }
+          : record),
+      }, { replaceExisting: true });
+    } catch (err) {
+      invalidAuditRejected = err instanceof Error && err.message.includes('invalid');
+    }
+    ok(invalidAuditRejected, 'Restore: invalid admin audit snapshot is rejected before import');
 
     const idempotencyLookup = await lookupAdminIdempotencyState({
       idempotencyKey: 'idem-backup-pg-1',

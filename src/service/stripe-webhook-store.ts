@@ -20,7 +20,7 @@ export interface StripeWebhookRecord {
   accountId: string | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
-  outcome: 'applied' | 'ignored';
+  outcome: 'pending' | 'applied' | 'ignored';
   reason: string | null;
   receivedAt: string;
 }

@@ -110,6 +110,7 @@ npm run restore:control-plane -- --input-dir .attestor/backups/pre-maintenance -
 Restore behavior:
 
 - verifies snapshot checksums before writing
+- rejects admin audit snapshots whose hash chain is broken
 - restores file-backed stores to their configured runtime paths
 - restores the shared billing ledger into PostgreSQL when:
   - the snapshot contains it

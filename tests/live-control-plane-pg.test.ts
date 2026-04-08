@@ -17,7 +17,12 @@ import { resetObservabilityForTests } from '../src/service/observability.js';
 import { resetTenantRateLimiterForTests } from '../src/service/rate-limit.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
 import { resetBillingEventLedgerForTests } from '../src/service/billing-event-ledger.js';
-import { resetSharedControlPlaneStoreForTests } from '../src/service/control-plane-store.js';
+import {
+  claimProcessedStripeWebhookState,
+  finalizeProcessedStripeWebhookState,
+  releaseProcessedStripeWebhookClaimState,
+  resetSharedControlPlaneStoreForTests,
+} from '../src/service/control-plane-store.js';
 
 let passed = 0;
 const stripe = new Stripe('sk_test_live_control_plane');
@@ -277,6 +282,66 @@ async function run(): Promise<void> {
       }),
     });
     ok(attachBillingRes.status === 200, 'Attach Stripe billing: 200');
+
+    const sharedClaimPayload = '{"id":"evt_pg_live_claim_1"}';
+    const firstClaim = await claimProcessedStripeWebhookState({
+      eventId: 'evt_pg_live_claim_1',
+      eventType: 'invoice.paid',
+      rawPayload: sharedClaimPayload,
+    });
+    ok(firstClaim.kind === 'claimed', 'Shared PG webhook claim: first claim created pending row');
+    if (firstClaim.kind !== 'claimed') throw new Error('Expected first Stripe webhook claim to succeed.');
+    const secondClaimPromise = claimProcessedStripeWebhookState({
+      eventId: 'evt_pg_live_claim_1',
+      eventType: 'invoice.paid',
+      rawPayload: sharedClaimPayload,
+    });
+    const secondClaimWhileHeld = await Promise.race([
+      secondClaimPromise.then(() => 'resolved'),
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 75)),
+    ]);
+    ok(secondClaimWhileHeld === 'pending', 'Shared PG webhook claim: second claim waits while advisory lock is held');
+    const finalizedClaim = await finalizeProcessedStripeWebhookState({
+      claimId: firstClaim.claimId,
+      eventId: 'evt_pg_live_claim_1',
+      eventType: 'invoice.paid',
+      accountId: createAccountBody.account.id,
+      stripeCustomerId: 'cus_pg_live_001',
+      stripeSubscriptionId: 'sub_pg_live_001',
+      outcome: 'applied',
+      reason: null,
+      rawPayload: sharedClaimPayload,
+    });
+    ok(finalizedClaim.record.outcome === 'applied', 'Shared PG webhook claim: finalize persists final outcome');
+    const secondClaim = await secondClaimPromise;
+    ok(secondClaim.kind === 'duplicate', 'Shared PG webhook claim: duplicate sees finalized row after lock release');
+
+    const releasedClaim = await claimProcessedStripeWebhookState({
+      eventId: 'evt_pg_live_claim_release',
+      eventType: 'invoice.payment_failed',
+      rawPayload: '{"id":"evt_pg_live_claim_release"}',
+    });
+    ok(releasedClaim.kind === 'claimed', 'Shared PG webhook claim: second pending claim created');
+    if (releasedClaim.kind !== 'claimed') throw new Error('Expected releasable Stripe webhook claim to succeed.');
+    await releaseProcessedStripeWebhookClaimState('evt_pg_live_claim_release', releasedClaim.claimId);
+    const reclaimedClaim = await claimProcessedStripeWebhookState({
+      eventId: 'evt_pg_live_claim_release',
+      eventType: 'invoice.payment_failed',
+      rawPayload: '{"id":"evt_pg_live_claim_release"}',
+    });
+    ok(reclaimedClaim.kind === 'claimed', 'Shared PG webhook claim: released pending row can be claimed again');
+    if (reclaimedClaim.kind !== 'claimed') throw new Error('Expected reclaimed Stripe webhook claim to succeed.');
+    await finalizeProcessedStripeWebhookState({
+      claimId: reclaimedClaim.claimId,
+      eventId: 'evt_pg_live_claim_release',
+      eventType: 'invoice.payment_failed',
+      accountId: createAccountBody.account.id,
+      stripeCustomerId: 'cus_pg_live_001',
+      stripeSubscriptionId: 'sub_pg_live_001',
+      outcome: 'ignored',
+      reason: 'manual_release_test',
+      rawPayload: '{"id":"evt_pg_live_claim_release"}',
+    });
 
     const subscriptionPayload = JSON.stringify({
       id: 'evt_pg_live_sub_1',

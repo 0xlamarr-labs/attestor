@@ -86,12 +86,15 @@ import {
   applyStripeInvoiceStateState,
   applyStripeSubscriptionStateState,
   attachStripeBillingToAccountState,
+  claimProcessedStripeWebhookState,
   canConsumePipelineRunState,
+  finalizeProcessedStripeWebhookState,
   consumePipelineRunState,
   findHostedAccountByIdState,
   findHostedAccountByTenantIdState,
   findTenantRecordByTenantIdState,
   getUsageContextState,
+  isSharedControlPlaneConfigured,
   issueTenantApiKeyState,
   listHostedAccountsState,
   listTenantKeyRecordsState,
@@ -104,6 +107,7 @@ import {
   lookupAdminIdempotencyState,
   recordAdminIdempotencyState,
   lookupProcessedStripeWebhookState,
+  releaseProcessedStripeWebhookClaimState,
   recordProcessedStripeWebhookState,
   setHostedAccountStatusState,
   setTenantApiKeyStatusState,
@@ -834,13 +838,21 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
   c.header('x-attestor-stripe-event-id', event.id);
   const sharedBillingLedger = isBillingEventLedgerConfigured();
+  const sharedControlPlaneWebhookState = !sharedBillingLedger && isSharedControlPlaneConfigured();
   const dedupe = sharedBillingLedger
     ? await claimStripeBillingEvent({
       providerEventId: event.id,
       eventType: event.type,
       rawPayload,
     })
+    : sharedControlPlaneWebhookState
+      ? await claimProcessedStripeWebhookState({
+        eventId: event.id,
+        eventType: event.type,
+        rawPayload,
+      })
     : await lookupProcessedStripeWebhookState(event.id, rawPayload);
+  const controlPlaneClaimId = dedupe.kind === 'claimed' && 'claimId' in dedupe ? dedupe.claimId : null;
   if (dedupe.kind === 'conflict') {
     observeBillingWebhookEvent(event.type, 'conflict');
     return c.json({
@@ -864,6 +876,42 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
   }
 
   let finalizedSharedEvent = false;
+  let finalizedControlPlaneEvent = false;
+  const finalizeWebhookDedupe = async (input: {
+    eventType: string;
+    accountId: string | null;
+    stripeCustomerId: string | null;
+    stripeSubscriptionId: string | null;
+    outcome: 'applied' | 'ignored';
+    reason: string | null;
+  }): Promise<void> => {
+    if (sharedBillingLedger) return;
+    if (sharedControlPlaneWebhookState && controlPlaneClaimId) {
+      await finalizeProcessedStripeWebhookState({
+        claimId: controlPlaneClaimId,
+        eventId: event.id,
+        eventType: input.eventType,
+        accountId: input.accountId,
+        stripeCustomerId: input.stripeCustomerId,
+        stripeSubscriptionId: input.stripeSubscriptionId,
+        outcome: input.outcome,
+        reason: input.reason,
+        rawPayload,
+      });
+      finalizedControlPlaneEvent = true;
+      return;
+    }
+    await recordProcessedStripeWebhookState({
+      eventId: event.id,
+      eventType: input.eventType,
+      accountId: input.accountId,
+      stripeCustomerId: input.stripeCustomerId,
+      stripeSubscriptionId: input.stripeSubscriptionId,
+      outcome: input.outcome,
+      reason: input.reason,
+      rawPayload,
+    });
+  };
   try {
     const supportedEvent =
       event.type === 'customer.subscription.created'
@@ -888,15 +936,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        await recordProcessedStripeWebhookState({
-          eventId: event.id,
+        await finalizeWebhookDedupe({
           eventType: event.type,
           accountId: null,
           stripeCustomerId: null,
           stripeSubscriptionId: null,
           outcome: 'ignored',
           reason: 'unsupported_event_type',
-          rawPayload,
         });
       }
       return c.json({
@@ -942,6 +988,12 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           } catch {
             // allow original error mapping to surface
           }
+        } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
+          try {
+            await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
+          } catch {
+            // allow original error mapping to surface
+          }
         }
         const mapped = accountStoreErrorResponse(c, err);
         if (mapped) return mapped;
@@ -965,15 +1017,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           });
           finalizedSharedEvent = true;
         } else {
-          await recordProcessedStripeWebhookState({
-            eventId: event.id,
+          await finalizeWebhookDedupe({
             eventType: event.type,
             accountId: null,
             stripeCustomerId,
             stripeSubscriptionId,
             outcome: 'ignored',
             reason: 'no_account_match',
-            rawPayload,
           });
         }
         return c.json({
@@ -1026,15 +1076,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        await recordProcessedStripeWebhookState({
-          eventId: event.id,
+        await finalizeWebhookDedupe({
           eventType: event.type,
           accountId: applied.record.id,
           stripeCustomerId,
           stripeSubscriptionId,
           outcome: 'applied',
           reason: null,
-          rawPayload,
         });
       }
 
@@ -1113,6 +1161,12 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           } catch {
             // allow original error mapping to surface
           }
+        } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
+          try {
+            await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
+          } catch {
+            // allow original error mapping to surface
+          }
         }
         const mapped = accountStoreErrorResponse(c, err);
         if (mapped) return mapped;
@@ -1138,15 +1192,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           });
           finalizedSharedEvent = true;
         } else {
-          await recordProcessedStripeWebhookState({
-            eventId: event.id,
+          await finalizeWebhookDedupe({
             eventType: event.type,
             accountId: null,
             stripeCustomerId,
             stripeSubscriptionId,
             outcome: 'ignored',
             reason: 'no_account_match',
-            rawPayload,
           });
         }
         return c.json({
@@ -1202,15 +1254,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        await recordProcessedStripeWebhookState({
-          eventId: event.id,
+        await finalizeWebhookDedupe({
           eventType: event.type,
           accountId: applied.record.id,
           stripeCustomerId,
           stripeSubscriptionId,
           outcome: 'applied',
           reason: null,
-          rawPayload,
         });
       }
 
@@ -1300,6 +1350,12 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         } catch {
           // allow original error mapping to surface
         }
+      } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
+        try {
+          await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
+        } catch {
+          // allow original error mapping to surface
+        }
       }
       const mapped = accountStoreErrorResponse(c, err);
       if (mapped) return mapped;
@@ -1328,15 +1384,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         });
         finalizedSharedEvent = true;
       } else {
-        await recordProcessedStripeWebhookState({
-          eventId: event.id,
+        await finalizeWebhookDedupe({
           eventType: event.type,
           accountId: null,
           stripeCustomerId,
           stripeSubscriptionId,
           outcome: 'ignored',
           reason: 'no_account_match',
-          rawPayload,
         });
       }
       return c.json({
@@ -1396,15 +1450,13 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       });
       finalizedSharedEvent = true;
     } else {
-      await recordProcessedStripeWebhookState({
-        eventId: event.id,
+      await finalizeWebhookDedupe({
         eventType: event.type,
         accountId: applied.record.id,
         stripeCustomerId,
         stripeSubscriptionId,
         outcome: 'applied',
         reason: null,
-        rawPayload,
       });
     }
 
@@ -1452,6 +1504,12 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     if (sharedBillingLedger && !finalizedSharedEvent) {
       try {
         await releaseStripeBillingEventClaim(event.id);
+      } catch {
+        // allow original failure to surface
+      }
+    } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
+      try {
+        await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
       } catch {
         // allow original failure to surface
       }

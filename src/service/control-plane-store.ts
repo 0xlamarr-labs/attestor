@@ -139,6 +139,17 @@ export interface StripeWebhookStoreSnapshot {
 
 let poolPromise: Promise<PgPool> | null = null;
 let initPromise: Promise<void> | null = null;
+type StripeWebhookClaimLease = {
+  client: PgClient;
+  advisoryLockKey: string;
+  eventId: string;
+};
+const stripeWebhookClaimLeases = new Map<string, StripeWebhookClaimLease>();
+
+export type StripeWebhookClaimState =
+  | { kind: 'claimed'; payloadHash: string; record: StripeWebhookRecord; claimId: string }
+  | { kind: 'duplicate'; payloadHash: string; record: StripeWebhookRecord }
+  | { kind: 'conflict'; payloadHash: string; record: StripeWebhookRecord };
 
 function connectionString(): string | null {
   return process.env.ATTESTOR_CONTROL_PLANE_PG_URL?.trim() || null;
@@ -291,7 +302,7 @@ async function ensureSchema(): Promise<void> {
           account_id TEXT NULL,
           stripe_customer_id TEXT NULL,
           stripe_subscription_id TEXT NULL,
-          outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'ignored')),
+          outcome TEXT NOT NULL CHECK (outcome IN ('pending', 'applied', 'ignored')),
           reason TEXT NULL,
           received_at TIMESTAMPTZ NOT NULL,
           record_json JSONB NOT NULL
@@ -302,6 +313,13 @@ async function ensureSchema(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS stripe_webhook_dedupe_account_idx
           ON attestor_control_plane.stripe_webhook_dedupe (account_id, received_at DESC);
+
+        ALTER TABLE attestor_control_plane.stripe_webhook_dedupe
+          DROP CONSTRAINT IF EXISTS stripe_webhook_dedupe_outcome_check;
+
+        ALTER TABLE attestor_control_plane.stripe_webhook_dedupe
+          ADD CONSTRAINT stripe_webhook_dedupe_outcome_check
+          CHECK (outcome IN ('pending', 'applied', 'ignored'));
       `);
     })();
   }
@@ -559,6 +577,17 @@ async function withPgTransaction<T>(work: (client: PgClient) => Promise<T>): Pro
     throw err;
   } finally {
     client.release();
+  }
+}
+
+async function releaseStripeWebhookPgClaimLease(claimId: string): Promise<void> {
+  const lease = stripeWebhookClaimLeases.get(claimId);
+  if (!lease) return;
+  stripeWebhookClaimLeases.delete(claimId);
+  try {
+    await lease.client.query('SELECT pg_advisory_unlock($1::bigint)', [lease.advisoryLockKey]);
+  } finally {
+    lease.client.release();
   }
 }
 
@@ -1701,6 +1730,204 @@ export async function lookupProcessedStripeWebhookState(
   return { kind: 'duplicate', payloadHash: requestHash, record: existing };
 }
 
+export async function claimProcessedStripeWebhookState(input: {
+  eventId: string;
+  eventType: string;
+  rawPayload: string;
+}): Promise<StripeWebhookClaimState> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for Stripe webhook claims.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  const client = await pool.connect();
+  const requestHash = hashJsonValue({ payload: input.rawPayload });
+  const lockKey = advisoryLockKey(`attestor_control_plane:stripe_webhook:${input.eventId}`);
+  let keepLease = false;
+  try {
+    await client.query('SELECT pg_advisory_lock($1::bigint)', [lockKey]);
+    const existingResult = await client.query(
+      `SELECT record_json
+         FROM attestor_control_plane.stripe_webhook_dedupe
+        WHERE event_id = $1
+        LIMIT 1`,
+      [input.eventId],
+    );
+    const existing = existingResult.rows[0] ? rowToStripeWebhookRecord(existingResult.rows[0]) : null;
+    if (existing) {
+      if (existing.payloadHash !== requestHash) {
+        return { kind: 'conflict', payloadHash: requestHash, record: existing };
+      }
+      if (existing.outcome !== 'pending') {
+        return { kind: 'duplicate', payloadHash: requestHash, record: existing };
+      }
+      await client.query(
+        `DELETE FROM attestor_control_plane.stripe_webhook_dedupe
+          WHERE event_id = $1 AND outcome = 'pending'`,
+        [input.eventId],
+      );
+    }
+
+    const record: StripeWebhookRecord = {
+      id: `stripe_evt_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      eventId: input.eventId,
+      eventType: input.eventType,
+      payloadHash: requestHash,
+      accountId: null,
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      outcome: 'pending',
+      reason: null,
+      receivedAt: new Date().toISOString(),
+    };
+    await client.query(
+      `INSERT INTO attestor_control_plane.stripe_webhook_dedupe (
+        webhook_record_id, event_id, event_type, payload_hash, account_id, stripe_customer_id,
+        stripe_subscription_id, outcome, reason, received_at, record_json
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10::timestamptz, $11::jsonb
+      )`,
+      [
+        record.id,
+        record.eventId,
+        record.eventType,
+        record.payloadHash,
+        record.accountId,
+        record.stripeCustomerId,
+        record.stripeSubscriptionId,
+        record.outcome,
+        record.reason,
+        record.receivedAt,
+        JSON.stringify(record),
+      ],
+    );
+
+    const claimId = `stripe_claim_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+    stripeWebhookClaimLeases.set(claimId, {
+      client,
+      advisoryLockKey: lockKey,
+      eventId: input.eventId,
+    });
+    keepLease = true;
+    return { kind: 'claimed', payloadHash: requestHash, record, claimId };
+  } finally {
+    if (!keepLease) {
+      try {
+        await client.query('SELECT pg_advisory_unlock($1::bigint)', [lockKey]);
+      } catch {
+        // best-effort unlock before connection release
+      }
+      client.release();
+    }
+  }
+}
+
+export async function finalizeProcessedStripeWebhookState(input: {
+  claimId: string;
+  eventId: string;
+  eventType: string;
+  accountId: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  outcome: Exclude<StripeWebhookRecord['outcome'], 'pending'>;
+  reason: string | null;
+  rawPayload: string;
+}): Promise<{ record: StripeWebhookRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for Stripe webhook finalize.');
+  }
+  const lease = stripeWebhookClaimLeases.get(input.claimId);
+  if (!lease || lease.eventId !== input.eventId) {
+    throw new Error(`Stripe webhook claim '${input.claimId}' is missing or does not match event '${input.eventId}'.`);
+  }
+
+  const requestHash = hashJsonValue({ payload: input.rawPayload });
+  let finalized = false;
+  try {
+    const existingResult = await lease.client.query(
+      `SELECT record_json
+         FROM attestor_control_plane.stripe_webhook_dedupe
+        WHERE event_id = $1
+        LIMIT 1`,
+      [input.eventId],
+    );
+    const existing = existingResult.rows[0] ? rowToStripeWebhookRecord(existingResult.rows[0]) : null;
+    if (!existing) {
+      throw new Error(`Stripe webhook event '${input.eventId}' was not claimed before finalize.`);
+    }
+    if (existing.payloadHash !== requestHash) {
+      throw new Error(`Stripe event '${input.eventId}' was claimed with a different payload hash.`);
+    }
+
+    const record: StripeWebhookRecord = {
+      ...existing,
+      eventType: input.eventType,
+      accountId: input.accountId,
+      stripeCustomerId: input.stripeCustomerId,
+      stripeSubscriptionId: input.stripeSubscriptionId,
+      outcome: input.outcome,
+      reason: input.reason,
+    };
+    await lease.client.query(
+      `UPDATE attestor_control_plane.stripe_webhook_dedupe
+          SET event_type = $2,
+              payload_hash = $3,
+              account_id = $4,
+              stripe_customer_id = $5,
+              stripe_subscription_id = $6,
+              outcome = $7,
+              reason = $8,
+              record_json = $9::jsonb
+        WHERE event_id = $1`,
+      [
+        input.eventId,
+        record.eventType,
+        record.payloadHash,
+        record.accountId,
+        record.stripeCustomerId,
+        record.stripeSubscriptionId,
+        record.outcome,
+        record.reason,
+        JSON.stringify(record),
+      ],
+    );
+    finalized = true;
+    return { record, path: controlPlaneStoreSource() };
+  } finally {
+    if (!finalized) {
+      try {
+        await lease.client.query(
+          `DELETE FROM attestor_control_plane.stripe_webhook_dedupe
+            WHERE event_id = $1 AND outcome = 'pending'`,
+          [input.eventId],
+        );
+      } catch {
+        // best-effort cleanup before releasing the advisory lock
+      }
+    }
+    await releaseStripeWebhookPgClaimLease(input.claimId);
+  }
+}
+
+export async function releaseProcessedStripeWebhookClaimState(
+  eventId: string,
+  claimId: string,
+): Promise<void> {
+  if (!isSharedControlPlaneConfigured()) return;
+  const lease = stripeWebhookClaimLeases.get(claimId);
+  if (!lease) return;
+  try {
+    await lease.client.query(
+      `DELETE FROM attestor_control_plane.stripe_webhook_dedupe
+        WHERE event_id = $1 AND outcome = 'pending'`,
+      [eventId],
+    );
+  } finally {
+    await releaseStripeWebhookPgClaimLease(claimId);
+  }
+}
+
 export async function recordProcessedStripeWebhookState(
   input: Omit<StripeWebhookRecord, 'id' | 'receivedAt' | 'payloadHash'> & { rawPayload: string },
 ): Promise<{ record: StripeWebhookRecord; path: string | null }> {
@@ -1784,6 +2011,9 @@ export async function restoreAdminAuditLogStoreSnapshot(
 ): Promise<{ recordCount: number }> {
   if (!isSharedControlPlaneConfigured()) {
     throw new Error('Shared control-plane PostgreSQL is not configured for admin audit restore.');
+  }
+  if (!verifyAdminAuditChain(snapshot.records)) {
+    throw new Error('Admin audit snapshot chain is invalid and cannot be restored.');
   }
   await ensureSchema();
   const pool = await getPool();
@@ -2084,6 +2314,9 @@ export async function restoreUsageLedgerStoreSnapshot(
 }
 
 export async function resetSharedControlPlaneStoreForTests(): Promise<void> {
+  if (stripeWebhookClaimLeases.size > 0) {
+    await Promise.all([...stripeWebhookClaimLeases.keys()].map((claimId) => releaseStripeWebhookPgClaimLease(claimId)));
+  }
   if (!poolPromise && !connectionString()) return;
   if (!isSharedControlPlaneConfigured()) {
     if (poolPromise) {
