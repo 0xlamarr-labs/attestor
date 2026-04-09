@@ -1,12 +1,16 @@
 import type { HostedAccountRecord } from './account-store.js';
+import type { HostedBillingEntitlementRecord } from './billing-entitlement-store.js';
 import {
   isBillingEventLedgerConfigured,
+  listBillingCharges,
   listBillingEvents,
+  type BillingChargeRecord,
   type BillingEventRecord,
 } from './billing-event-ledger.js';
 import {
   exportHostedStripeBillingSnapshot,
   type HostedStripeChargeSnapshot,
+  type HostedStripeActiveEntitlementSnapshot,
   type HostedStripeInvoiceSnapshot,
   type HostedStripeInvoiceLineItemSnapshot,
 } from './stripe-billing.js';
@@ -74,6 +78,11 @@ export interface HostedBillingExportPayload {
   invoices: HostedBillingExportInvoiceRecord[];
   charges: HostedBillingExportChargeRecord[];
   lineItems: HostedBillingExportInvoiceLineItemRecord[];
+  entitlementFeatures: {
+    lookupKeys: string[];
+    featureIds: string[];
+    source: 'stripe_live' | 'entitlement_read_model' | 'none';
+  };
   summary: {
     dataSource: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary' | 'empty';
     mock: boolean;
@@ -129,18 +138,17 @@ function deriveInvoicesFromLedger(records: BillingEventRecord[]): HostedBillingE
     .sort((left, right) => Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? ''));
 }
 
-function deriveChargesFromLedger(records: BillingEventRecord[]): HostedBillingExportChargeRecord[] {
+function deriveChargesFromLedger(records: BillingChargeRecord[]): HostedBillingExportChargeRecord[] {
   return records
-    .filter((record) => record.eventType === 'invoice.paid' && record.outcome === 'applied' && record.stripeInvoiceId)
     .map((record) => ({
-      chargeId: null,
+      chargeId: record.stripeChargeId,
       invoiceId: record.stripeInvoiceId,
-      amount: record.stripeInvoiceAmountPaid,
-      currency: record.stripeInvoiceCurrency,
-      status: 'succeeded' as const,
-      paid: true,
-      refunded: false,
-      createdAt: metadataString(record.metadata, 'paidAt') ?? record.processedAt ?? record.receivedAt,
+      amount: record.amount,
+      currency: record.currency,
+      status: record.status,
+      paid: record.paid,
+      refunded: record.refunded,
+      createdAt: record.createdAt,
       source: 'ledger_derived' as const,
     }))
     .sort((left, right) => Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? ''));
@@ -252,8 +260,35 @@ function mapStripeLineItems(records: HostedStripeInvoiceLineItemSnapshot[]): Hos
   }));
 }
 
+function mapStripeEntitlements(records: HostedStripeActiveEntitlementSnapshot[]): {
+  lookupKeys: string[];
+  featureIds: string[];
+  source: 'stripe_live';
+} {
+  return {
+    lookupKeys: [...new Set(records.map((record) => record.lookupKey).filter((value) => value.trim() !== ''))].sort(),
+    featureIds: [...new Set(records.map((record) => record.featureId ?? '').filter((value) => value.trim() !== ''))].sort(),
+    source: 'stripe_live',
+  };
+}
+
+function mapEntitlementReadModel(record: HostedBillingEntitlementRecord | null | undefined): {
+  lookupKeys: string[];
+  featureIds: string[];
+  source: 'entitlement_read_model' | 'none';
+} {
+  const lookupKeys = [...new Set(record?.stripeEntitlementLookupKeys ?? [])];
+  const featureIds = [...new Set(record?.stripeEntitlementFeatureIds ?? [])];
+  return {
+    lookupKeys,
+    featureIds,
+    source: lookupKeys.length > 0 || featureIds.length > 0 ? 'entitlement_read_model' : 'none',
+  };
+}
+
 export async function buildHostedBillingExport(options: {
   account: HostedAccountRecord;
+  entitlement?: HostedBillingEntitlementRecord | null;
   limit?: number | null;
 }): Promise<HostedBillingExportPayload> {
   const limit = Math.max(1, Math.min(100, options.limit ?? 20));
@@ -276,34 +311,49 @@ export async function buildHostedBillingExport(options: {
         limit: Math.max(limit * 50, 250),
       })
     : [];
+  const ledgerCharges = sharedBillingLedger
+    ? await listBillingCharges({
+        accountId: options.account.id,
+        limit: Math.max(limit * 10, 100),
+      })
+    : [];
 
   let invoices: HostedBillingExportInvoiceRecord[] = [];
   let charges: HostedBillingExportChargeRecord[] = [];
   let lineItems: HostedBillingExportInvoiceLineItemRecord[] = [];
+  let entitlementFeatures: HostedBillingExportPayload['entitlementFeatures'] = {
+    lookupKeys: [],
+    featureIds: [],
+    source: 'none',
+  };
   let dataSource: HostedBillingExportPayload['summary']['dataSource'] = 'empty';
 
   if (stripeSnapshot.source === 'stripe_live') {
     invoices = mapStripeInvoices(stripeSnapshot.invoices);
     charges = mapStripeCharges(stripeSnapshot.charges);
     lineItems = mapStripeLineItems(stripeSnapshot.lineItems);
+    entitlementFeatures = mapStripeEntitlements(stripeSnapshot.entitlements);
     dataSource = 'stripe_live';
-  } else if (ledgerRecords.length > 0) {
+  } else if (ledgerRecords.length > 0 || ledgerCharges.length > 0 || ledgerLineItems.length > 0) {
     invoices = deriveInvoicesFromLedger(ledgerRecords).slice(0, limit);
-    charges = deriveChargesFromLedger(ledgerRecords).slice(0, limit);
+    charges = deriveChargesFromLedger(ledgerCharges).slice(0, limit);
     const invoiceIds = new Set(invoices.map((invoice) => invoice.invoiceId));
     lineItems = deriveLineItemsFromLedger(ledgerLineItems)
       .filter((lineItem) => invoiceIds.has(lineItem.invoiceId))
       .slice(0, Math.max(limit * 25, 100));
+    entitlementFeatures = mapEntitlementReadModel(options.entitlement);
     dataSource = 'ledger_derived';
   } else if (stripeSnapshot.source === 'mock_summary') {
     invoices = mapStripeInvoices(stripeSnapshot.invoices);
     charges = mapStripeCharges(stripeSnapshot.charges);
     lineItems = mapStripeLineItems(stripeSnapshot.lineItems);
+    entitlementFeatures = mapEntitlementReadModel(options.entitlement);
     dataSource = 'mock_summary';
   } else {
     invoices = summaryInvoices(options.account);
     charges = summaryCharges(options.account);
     lineItems = [];
+    entitlementFeatures = mapEntitlementReadModel(options.entitlement);
     dataSource = invoices.length > 0 || charges.length > 0 ? 'summary_only' : 'empty';
   }
 
@@ -320,6 +370,7 @@ export async function buildHostedBillingExport(options: {
     invoices,
     charges,
     lineItems,
+    entitlementFeatures,
     summary: {
       dataSource,
       mock: stripeSnapshot.mock,

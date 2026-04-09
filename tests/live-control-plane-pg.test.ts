@@ -97,6 +97,7 @@ async function run(): Promise<void> {
   const billingEntitlementPath = join(tempRoot, 'billing-entitlements.json');
 
   process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `postgres://control_plane_live:control_plane_live@localhost:${pgPort}/attestor_control_plane`;
+  process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `postgres://control_plane_live:control_plane_live@localhost:${pgPort}/attestor_billing`;
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = accountStorePath;
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = accountUserStorePath;
   process.env.ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH = accountUserTokenStorePath;
@@ -128,6 +129,7 @@ async function run(): Promise<void> {
   await pg.initialise();
   await pg.start();
   await pg.createDatabase('attestor_control_plane');
+  await pg.createDatabase('attestor_billing');
 
   await resetSharedControlPlaneStoreForTests();
   await resetTenantRateLimiterForTests();
@@ -673,6 +675,104 @@ async function run(): Promise<void> {
     ok(adminEntitlementsBody.records[0].status === 'delinquent', 'Admin billing entitlements via shared PG: delinquent status reflected');
     ok(adminEntitlementsBody.records[0].provider === 'stripe', 'Admin billing entitlements via shared PG: provider switched to stripe');
 
+    const chargePayload = JSON.stringify({
+      id: 'evt_pg_live_charge_1',
+      object: 'event',
+      type: 'charge.succeeded',
+      created: 1712557200,
+      data: {
+        object: {
+          id: 'ch_pg_live_001',
+          object: 'charge',
+          customer: 'cus_pg_live_001',
+          invoice: 'in_pg_live_001',
+          payment_intent: 'pi_pg_live_001',
+          amount: 5000,
+          amount_refunded: 0,
+          currency: 'usd',
+          status: 'succeeded',
+          paid: true,
+          refunded: false,
+          failure_code: null,
+          failure_message: null,
+          metadata: {
+            attestorAccountId: createAccountBody.account.id,
+          },
+        },
+      },
+    });
+    const chargeSignature = stripe.webhooks.generateTestHeaderString({
+      payload: chargePayload,
+      secret: process.env.STRIPE_WEBHOOK_SECRET!,
+    });
+    const chargeRes = await fetch(`${base}/api/v1/billing/stripe/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Stripe-Signature': chargeSignature,
+      },
+      body: chargePayload,
+    });
+    ok(chargeRes.status === 200, 'Shared PG charge webhook: accepted');
+
+    const entitlementSummaryPayload = JSON.stringify({
+      id: 'evt_pg_live_entitlements_1',
+      object: 'event',
+      type: 'entitlements.active_entitlement_summary.updated',
+      created: 1712559000,
+      data: {
+        object: {
+          object: 'entitlements.active_entitlement_summary',
+          customer: 'cus_pg_live_001',
+          entitlements: {
+            object: 'list',
+            data: [
+              {
+                id: 'ent_pg_live_api',
+                object: 'entitlements.active_entitlement',
+                lookup_key: 'attestor.pro.api',
+                feature: {
+                  id: 'feat_pro_api',
+                  object: 'entitlements.feature',
+                  lookup_key: 'attestor.pro.api',
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const entitlementSummarySignature = stripe.webhooks.generateTestHeaderString({
+      payload: entitlementSummaryPayload,
+      secret: process.env.STRIPE_WEBHOOK_SECRET!,
+    });
+    const entitlementSummaryRes = await fetch(`${base}/api/v1/billing/stripe/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Stripe-Signature': entitlementSummarySignature,
+      },
+      body: entitlementSummaryPayload,
+    });
+    ok(entitlementSummaryRes.status === 200, 'Shared PG entitlement summary webhook: accepted');
+
+    const adminEntitlementsAfterFeaturesRes = await fetch(`${base}/api/v1/admin/billing/entitlements?accountId=${createAccountBody.account.id}`, {
+      headers: { Authorization: 'Bearer admin-shared-control-plane' },
+    });
+    ok(adminEntitlementsAfterFeaturesRes.status === 200, 'Admin billing entitlements via shared PG after entitlement summary: 200');
+    const adminEntitlementsAfterFeaturesBody = await adminEntitlementsAfterFeaturesRes.json() as any;
+    ok(adminEntitlementsAfterFeaturesBody.records[0].stripeEntitlementLookupKeys.includes('attestor.pro.api'), 'Admin billing entitlements via shared PG: lookup keys persisted');
+    ok(adminEntitlementsAfterFeaturesBody.records[0].stripeEntitlementFeatureIds.includes('feat_pro_api'), 'Admin billing entitlements via shared PG: feature ids persisted');
+
+    const adminBillingExportRes = await fetch(`${base}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export?limit=5`, {
+      headers: { Authorization: 'Bearer admin-shared-control-plane' },
+    });
+    ok(adminBillingExportRes.status === 200, 'Admin account billing export via shared PG: 200');
+    const adminBillingExportBody = await adminBillingExportRes.json() as any;
+    const exportedCharge = adminBillingExportBody.charges.find((entry: any) => entry.chargeId === 'ch_pg_live_001');
+    ok(Boolean(exportedCharge), 'Admin account billing export via shared PG: charge ledger exported');
+    ok(adminBillingExportBody.entitlementFeatures.lookupKeys.includes('attestor.pro.api'), 'Admin account billing export via shared PG: entitlement lookup keys exported');
+
     console.log(`  Shared control-plane PG tests: ${passed} passed, 0 failed\n`);
   } finally {
     server.close();
@@ -687,6 +787,7 @@ async function run(): Promise<void> {
     try { await pg.stop(); } catch {}
     try { rmSync(tempRoot, { recursive: true, force: true }); } catch {}
     delete process.env.ATTESTOR_CONTROL_PLANE_PG_URL;
+    delete process.env.ATTESTOR_BILLING_LEDGER_PG_URL;
   }
 }
 

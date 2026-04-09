@@ -31,8 +31,10 @@ export type BillingInvoiceStatus =
   | 'uncollectible'
   | 'void'
   | null;
+export type BillingChargeStatus = 'succeeded' | 'pending' | 'failed' | null;
 export type BillingInvoiceLineItemSource = 'stripe_webhook' | 'stripe_live_fetch';
 export type BillingInvoiceLineItemCaptureMode = 'full' | 'partial';
+export type BillingChargeSource = 'stripe_webhook' | 'stripe_live_fetch';
 
 export interface BillingEventRecord {
   id: string;
@@ -89,6 +91,30 @@ export interface BillingInvoiceLineItemRecord {
   updatedAt: string;
 }
 
+export interface BillingChargeRecord {
+  id: string;
+  provider: BillingEventProvider;
+  accountId: string | null;
+  tenantId: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripeInvoiceId: string | null;
+  stripeChargeId: string;
+  stripePaymentIntentId: string | null;
+  amount: number | null;
+  amountRefunded: number | null;
+  currency: string | null;
+  status: BillingChargeStatus;
+  paid: boolean | null;
+  refunded: boolean | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  source: BillingChargeSource;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type BillingEventClaim =
   | { kind: 'claimed'; payloadHash: string; record: BillingEventRecord }
   | { kind: 'duplicate'; payloadHash: string; record: BillingEventRecord }
@@ -104,14 +130,16 @@ export interface BillingEventListFilters {
 }
 
 export interface BillingEventLedgerSnapshot {
-  version: 2;
+  version: 3;
   provider: 'stripe';
   exportedAt: string;
   eventRecordCount: number;
   lineItemRecordCount: number;
+  chargeRecordCount: number;
   recordCount: number;
   records: BillingEventRecord[];
   lineItems: BillingInvoiceLineItemRecord[];
+  charges: BillingChargeRecord[];
 }
 
 export interface BillingInvoiceLineItemInput {
@@ -129,6 +157,29 @@ export interface BillingInvoiceLineItemInput {
 }
 
 export interface BillingInvoiceLineItemListFilters {
+  accountId?: string | null;
+  tenantId?: string | null;
+  stripeInvoiceId?: string | null;
+  limit?: number | null;
+}
+
+export interface BillingChargeInput {
+  stripeChargeId: string;
+  stripePaymentIntentId?: string | null;
+  stripeInvoiceId?: string | null;
+  amount?: number | null;
+  amountRefunded?: number | null;
+  currency?: string | null;
+  status?: BillingChargeStatus;
+  paid?: boolean | null;
+  refunded?: boolean | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+}
+
+export interface BillingChargeListFilters {
   accountId?: string | null;
   tenantId?: string | null;
   stripeInvoiceId?: string | null;
@@ -265,6 +316,39 @@ async function ensureSchema(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS billing_invoice_line_items_account_idx
           ON attestor_control_plane.billing_invoice_line_items (account_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.billing_charges (
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          account_id TEXT NULL,
+          tenant_id TEXT NULL,
+          stripe_customer_id TEXT NULL,
+          stripe_subscription_id TEXT NULL,
+          stripe_invoice_id TEXT NULL,
+          stripe_charge_id TEXT NOT NULL,
+          stripe_payment_intent_id TEXT NULL,
+          amount BIGINT NULL,
+          amount_refunded BIGINT NULL,
+          currency TEXT NULL,
+          status TEXT NULL,
+          paid BOOLEAN NULL,
+          refunded BOOLEAN NULL,
+          failure_code TEXT NULL,
+          failure_message TEXT NULL,
+          source TEXT NOT NULL CHECK (source IN ('stripe_webhook', 'stripe_live_fetch')),
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS billing_charges_provider_charge_idx
+          ON attestor_control_plane.billing_charges (provider, stripe_charge_id);
+
+        CREATE INDEX IF NOT EXISTS billing_charges_account_idx
+          ON attestor_control_plane.billing_charges (account_id, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS billing_charges_invoice_idx
+          ON attestor_control_plane.billing_charges (stripe_invoice_id, updated_at DESC);
       `);
     })();
   }
@@ -354,6 +438,39 @@ function rowToLineItemRecord(row: Record<string, unknown>): BillingInvoiceLineIt
     proration: row.proration === null ? null : Boolean(row.proration),
     source: toNullableLineItemSource(row.source),
     captureMode: toNullableCaptureMode(row.capture_mode),
+    metadata: toNullableObject(row.metadata),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function toNullableChargeStatus(value: unknown): BillingChargeStatus {
+  if (value === 'succeeded' || value === 'pending' || value === 'failed') {
+    return value;
+  }
+  return null;
+}
+
+function rowToChargeRecord(row: Record<string, unknown>): BillingChargeRecord {
+  return {
+    id: String(row.id),
+    provider: String(row.provider) as BillingEventProvider,
+    accountId: row.account_id === null ? null : String(row.account_id),
+    tenantId: row.tenant_id === null ? null : String(row.tenant_id),
+    stripeCustomerId: row.stripe_customer_id === null ? null : String(row.stripe_customer_id),
+    stripeSubscriptionId: row.stripe_subscription_id === null ? null : String(row.stripe_subscription_id),
+    stripeInvoiceId: row.stripe_invoice_id === null ? null : String(row.stripe_invoice_id),
+    stripeChargeId: String(row.stripe_charge_id),
+    stripePaymentIntentId: row.stripe_payment_intent_id === null ? null : String(row.stripe_payment_intent_id),
+    amount: row.amount === null ? null : Number(row.amount),
+    amountRefunded: row.amount_refunded === null ? null : Number(row.amount_refunded),
+    currency: row.currency === null ? null : String(row.currency),
+    status: toNullableChargeStatus(row.status),
+    paid: row.paid === null ? null : Boolean(row.paid),
+    refunded: row.refunded === null ? null : Boolean(row.refunded),
+    failureCode: row.failure_code === null ? null : String(row.failure_code),
+    failureMessage: row.failure_message === null ? null : String(row.failure_message),
+    source: row.source === 'stripe_live_fetch' ? 'stripe_live_fetch' : 'stripe_webhook',
     metadata: toNullableObject(row.metadata),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
@@ -710,10 +827,121 @@ export async function listBillingInvoiceLineItems(
   return result.rows.map(rowToLineItemRecord);
 }
 
+export async function upsertStripeCharges(input: {
+  accountId: string | null;
+  tenantId: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  charges: BillingChargeInput[];
+  source: BillingChargeSource;
+}): Promise<{ recordCount: number }> {
+  await ensureSchema();
+  const pool = await getPool();
+  let recordCount = 0;
+
+  for (const charge of input.charges) {
+    if (!charge.stripeChargeId?.trim()) continue;
+    const now = new Date().toISOString();
+    const createdAt = charge.createdAt ?? now;
+    const chargeId = `bill_charge_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+    await pool.query(
+      `INSERT INTO attestor_control_plane.billing_charges (
+        id, provider, account_id, tenant_id, stripe_customer_id, stripe_subscription_id,
+        stripe_invoice_id, stripe_charge_id, stripe_payment_intent_id, amount, amount_refunded,
+        currency, status, paid, refunded, failure_code, failure_message, source, metadata,
+        created_at, updated_at
+      ) VALUES (
+        $1, 'stripe', $2, $3, $4, $5,
+        $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18::jsonb,
+        $19::timestamptz, $20::timestamptz
+      )
+      ON CONFLICT (provider, stripe_charge_id) DO UPDATE SET
+        account_id = EXCLUDED.account_id,
+        tenant_id = EXCLUDED.tenant_id,
+        stripe_customer_id = EXCLUDED.stripe_customer_id,
+        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+        stripe_invoice_id = EXCLUDED.stripe_invoice_id,
+        stripe_payment_intent_id = EXCLUDED.stripe_payment_intent_id,
+        amount = EXCLUDED.amount,
+        amount_refunded = EXCLUDED.amount_refunded,
+        currency = EXCLUDED.currency,
+        status = EXCLUDED.status,
+        paid = EXCLUDED.paid,
+        refunded = EXCLUDED.refunded,
+        failure_code = EXCLUDED.failure_code,
+        failure_message = EXCLUDED.failure_message,
+        source = EXCLUDED.source,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        chargeId,
+        input.accountId,
+        input.tenantId,
+        input.stripeCustomerId ?? null,
+        input.stripeSubscriptionId ?? null,
+        charge.stripeInvoiceId ?? null,
+        charge.stripeChargeId,
+        charge.stripePaymentIntentId ?? null,
+        charge.amount ?? null,
+        charge.amountRefunded ?? null,
+        charge.currency ?? null,
+        charge.status ?? null,
+        charge.paid ?? null,
+        charge.refunded ?? null,
+        charge.failureCode ?? null,
+        charge.failureMessage ?? null,
+        input.source,
+        JSON.stringify(charge.metadata ?? {}),
+        createdAt,
+        now,
+      ],
+    );
+    recordCount += 1;
+  }
+
+  return { recordCount };
+}
+
+export async function listBillingCharges(
+  filters: BillingChargeListFilters = {},
+): Promise<BillingChargeRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const where: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (filters.accountId) {
+    where.push(`account_id = $${idx++}`);
+    params.push(filters.accountId);
+  }
+  if (filters.tenantId) {
+    where.push(`tenant_id = $${idx++}`);
+    params.push(filters.tenantId);
+  }
+  if (filters.stripeInvoiceId) {
+    where.push(`stripe_invoice_id = $${idx++}`);
+    params.push(filters.stripeInvoiceId);
+  }
+
+  const limit = Math.max(1, Math.min(5_000, filters.limit ?? 500));
+  params.push(limit);
+  const sql = `
+    SELECT *
+      FROM attestor_control_plane.billing_charges
+      ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY updated_at DESC, stripe_charge_id ASC
+      LIMIT $${idx}
+  `;
+  const result = await pool.query(sql, params);
+  return result.rows.map(rowToChargeRecord);
+}
+
 export async function exportBillingEventLedgerSnapshot(): Promise<BillingEventLedgerSnapshot> {
   await ensureSchema();
   const pool = await getPool();
-  const [eventResult, lineItemResult] = await Promise.all([
+  const [eventResult, lineItemResult, chargeResult] = await Promise.all([
     pool.query(`
       SELECT *
         FROM attestor_control_plane.billing_event_ledger
@@ -724,18 +952,26 @@ export async function exportBillingEventLedgerSnapshot(): Promise<BillingEventLe
         FROM attestor_control_plane.billing_invoice_line_items
         ORDER BY updated_at ASC, stripe_invoice_id ASC, stripe_invoice_line_item_id ASC
     `),
+    pool.query(`
+      SELECT *
+        FROM attestor_control_plane.billing_charges
+        ORDER BY updated_at ASC, stripe_invoice_id ASC NULLS FIRST, stripe_charge_id ASC
+    `),
   ]);
   const records = eventResult.rows.map(rowToRecord);
   const lineItems = lineItemResult.rows.map(rowToLineItemRecord);
+  const charges = chargeResult.rows.map(rowToChargeRecord);
   return {
-    version: 2,
+    version: 3,
     provider: 'stripe',
     exportedAt: new Date().toISOString(),
     eventRecordCount: records.length,
     lineItemRecordCount: lineItems.length,
-    recordCount: records.length + lineItems.length,
+    chargeRecordCount: charges.length,
+    recordCount: records.length + lineItems.length + charges.length,
     records,
     lineItems,
+    charges,
   };
 }
 
@@ -746,6 +982,15 @@ export async function restoreBillingEventLedgerSnapshot(
     exportedAt: string;
     recordCount: number;
     records: BillingEventRecord[];
+  } | {
+    version: 2;
+    provider: 'stripe';
+    exportedAt: string;
+    eventRecordCount: number;
+    lineItemRecordCount: number;
+    recordCount: number;
+    records: BillingEventRecord[];
+    lineItems: BillingInvoiceLineItemRecord[];
   },
   options?: { replaceExisting?: boolean },
 ): Promise<{ recordCount: number }> {
@@ -753,8 +998,10 @@ export async function restoreBillingEventLedgerSnapshot(
   const pool = await getPool();
   if (options?.replaceExisting) {
     await pool.query(`
-      TRUNCATE TABLE attestor_control_plane.billing_invoice_line_items,
-      attestor_control_plane.billing_event_ledger
+      TRUNCATE TABLE
+        attestor_control_plane.billing_charges,
+        attestor_control_plane.billing_invoice_line_items,
+        attestor_control_plane.billing_event_ledger
     `);
   }
 
@@ -913,7 +1160,67 @@ export async function restoreBillingEventLedgerSnapshot(
     );
   }
 
-  return { recordCount: snapshot.records.length + snapshotLineItems.length };
+  const snapshotCharges = 'charges' in snapshot ? snapshot.charges : [];
+  for (const charge of snapshotCharges) {
+    await pool.query(
+      `INSERT INTO attestor_control_plane.billing_charges (
+        id, provider, account_id, tenant_id, stripe_customer_id, stripe_subscription_id,
+        stripe_invoice_id, stripe_charge_id, stripe_payment_intent_id, amount, amount_refunded,
+        currency, status, paid, refunded, failure_code, failure_message, source, metadata,
+        created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10, $11,
+        $12, $13, $14, $15, $16, $17, $18, $19::jsonb,
+        $20::timestamptz, $21::timestamptz
+      )
+      ON CONFLICT (provider, stripe_charge_id) DO UPDATE SET
+        id = EXCLUDED.id,
+        account_id = EXCLUDED.account_id,
+        tenant_id = EXCLUDED.tenant_id,
+        stripe_customer_id = EXCLUDED.stripe_customer_id,
+        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+        stripe_invoice_id = EXCLUDED.stripe_invoice_id,
+        stripe_payment_intent_id = EXCLUDED.stripe_payment_intent_id,
+        amount = EXCLUDED.amount,
+        amount_refunded = EXCLUDED.amount_refunded,
+        currency = EXCLUDED.currency,
+        status = EXCLUDED.status,
+        paid = EXCLUDED.paid,
+        refunded = EXCLUDED.refunded,
+        failure_code = EXCLUDED.failure_code,
+        failure_message = EXCLUDED.failure_message,
+        source = EXCLUDED.source,
+        metadata = EXCLUDED.metadata,
+        created_at = EXCLUDED.created_at,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        charge.id,
+        charge.provider,
+        charge.accountId,
+        charge.tenantId,
+        charge.stripeCustomerId,
+        charge.stripeSubscriptionId,
+        charge.stripeInvoiceId,
+        charge.stripeChargeId,
+        charge.stripePaymentIntentId,
+        charge.amount,
+        charge.amountRefunded,
+        charge.currency,
+        charge.status,
+        charge.paid,
+        charge.refunded,
+        charge.failureCode,
+        charge.failureMessage,
+        charge.source,
+        JSON.stringify(charge.metadata ?? {}),
+        charge.createdAt,
+        charge.updatedAt,
+      ],
+    );
+  }
+
+  return { recordCount: snapshot.records.length + snapshotLineItems.length + snapshotCharges.length };
 }
 
 export async function resetBillingEventLedgerForTests(): Promise<void> {

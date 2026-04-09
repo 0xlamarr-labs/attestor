@@ -1818,6 +1818,67 @@ async function run() {
       ok(accountEntitlementAfterWebhookBody.entitlement.accessEnabled === true, 'Account Entitlement: access re-enabled after invoice.paid');
       ok(accountEntitlementAfterWebhookBody.entitlement.lastEventId === 'evt_invoice_account_001_paid', 'Account Entitlement: last event tracks latest invoice event');
 
+      const entitlementSummaryPayload = JSON.stringify({
+        id: 'evt_entitlements_account_001_updated',
+        object: 'event',
+        type: 'entitlements.active_entitlement_summary.updated',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            object: 'entitlements.active_entitlement_summary',
+            customer: 'cus_account_001',
+            entitlements: {
+              object: 'list',
+              data: [
+                {
+                  id: 'entacct_001_pro_api',
+                  object: 'entitlements.active_entitlement',
+                  lookup_key: 'attestor.pro.api',
+                  feature: {
+                    id: 'feat_pro_api',
+                    object: 'entitlements.feature',
+                    lookup_key: 'attestor.pro.api',
+                  },
+                },
+                {
+                  id: 'entacct_001_export',
+                  object: 'entitlements.active_entitlement',
+                  lookup_key: 'attestor.pro.billing_export',
+                  feature: {
+                    id: 'feat_billing_export',
+                    object: 'entitlements.feature',
+                    lookup_key: 'attestor.pro.billing_export',
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+      const entitlementSummarySignature = stripe.webhooks.generateTestHeaderString({
+        payload: entitlementSummaryPayload,
+        secret: process.env.STRIPE_WEBHOOK_SECRET!,
+      });
+      const entitlementSummaryRes = await fetch(`${BASE}/api/v1/billing/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Stripe-Signature': entitlementSummarySignature,
+        },
+        body: entitlementSummaryPayload,
+      });
+      ok(entitlementSummaryRes.status === 200, 'Stripe Webhook: entitlements.active_entitlement_summary.updated accepted');
+
+      const accountEntitlementAfterSummaryRes = await fetch(`${BASE}/api/v1/account/entitlement`, {
+        headers: { Cookie: billingAdminCookie! },
+      });
+      ok(accountEntitlementAfterSummaryRes.status === 200, 'Account Entitlement: readable after entitlement summary update');
+      const accountEntitlementAfterSummaryBody = await accountEntitlementAfterSummaryRes.json() as any;
+      ok(accountEntitlementAfterSummaryBody.entitlement.lastEventId === 'evt_entitlements_account_001_updated', 'Account Entitlement: last event advances to entitlement summary');
+      ok(accountEntitlementAfterSummaryBody.entitlement.stripeEntitlementLookupKeys.includes('attestor.pro.api'), 'Account Entitlement: lookup keys persisted from Stripe entitlement summary');
+      ok(accountEntitlementAfterSummaryBody.entitlement.stripeEntitlementFeatureIds.includes('feat_pro_api'), 'Account Entitlement: feature ids persisted from Stripe entitlement summary');
+      ok(typeof accountEntitlementAfterSummaryBody.entitlement.stripeEntitlementSummaryUpdatedAt === 'string', 'Account Entitlement: entitlement summary timestamp stored');
+
       const accountAdminPostInvoiceLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1838,6 +1899,8 @@ async function run() {
       ok(accountBillingExportBody.accountId === createAccountBody.account.id, 'Account Billing Export: account id matches');
       ok(accountBillingExportBody.entitlement.status === 'active', 'Account Billing Export: entitlement included in JSON');
       ok(accountBillingExportBody.checkout.sessionId === checkoutBody.checkoutSessionId, 'Account Billing Export: checkout session propagated');
+      ok(accountBillingExportBody.entitlementFeatures.lookupKeys.includes('attestor.pro.api'), 'Account Billing Export: entitlement lookup keys exported');
+      ok(accountBillingExportBody.entitlementFeatures.featureIds.includes('feat_pro_api'), 'Account Billing Export: entitlement feature ids exported');
       ok(accountBillingExportBody.summary.dataSource === 'ledger_derived' || accountBillingExportBody.summary.dataSource === 'mock_summary', 'Account Billing Export: data source is ledger-derived or mock-summary');
       const exportedInvoice = accountBillingExportBody.invoices.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
       ok(Boolean(exportedInvoice), 'Account Billing Export: paid invoice exported');

@@ -53,6 +53,9 @@ export interface HostedBillingEntitlementRecord {
   stripeCheckoutSessionId: string | null;
   stripeInvoiceId: string | null;
   stripeInvoiceStatus: StripeInvoiceStatus;
+  stripeEntitlementLookupKeys: string[];
+  stripeEntitlementFeatureIds: string[];
+  stripeEntitlementSummaryUpdatedAt: string | null;
   lastEventId: string | null;
   lastEventType: string | null;
   lastEventAt: string | null;
@@ -79,9 +82,20 @@ export interface ProjectHostedBillingEntitlementInput {
   account: HostedAccountRecord;
   currentPlanId?: string | null;
   currentMonthlyRunQuota?: number | null;
+  stripeEntitlementLookupKeys?: string[] | null;
+  stripeEntitlementFeatureIds?: string[] | null;
+  stripeEntitlementSummaryUpdatedAt?: string | null;
   lastEventId?: string | null;
   lastEventType?: string | null;
   lastEventAt?: string | null;
+}
+
+function normalizeStringArray(values: string[] | null | undefined): string[] {
+  if (!Array.isArray(values)) return [];
+  const normalized = values
+    .map((value) => typeof value === 'string' ? value.trim() : '')
+    .filter((value) => value !== '');
+  return [...new Set(normalized)].sort((left, right) => left.localeCompare(right));
 }
 
 export interface ListBillingEntitlementsFilters {
@@ -260,6 +274,9 @@ export function normalizeHostedBillingEntitlementRecord(record: HostedBillingEnt
     stripeCheckoutSessionId: record.stripeCheckoutSessionId ?? null,
     stripeInvoiceId: record.stripeInvoiceId ?? null,
     stripeInvoiceStatus: record.stripeInvoiceStatus ?? null,
+    stripeEntitlementLookupKeys: normalizeStringArray(record.stripeEntitlementLookupKeys),
+    stripeEntitlementFeatureIds: normalizeStringArray(record.stripeEntitlementFeatureIds),
+    stripeEntitlementSummaryUpdatedAt: record.stripeEntitlementSummaryUpdatedAt ?? null,
     lastEventId: record.lastEventId ?? null,
     lastEventType: record.lastEventType ?? null,
     lastEventAt: record.lastEventAt ?? null,
@@ -310,6 +327,11 @@ export function projectHostedBillingEntitlement(
     stripeCheckoutSessionId: input.account.billing.lastCheckoutSessionId,
     stripeInvoiceId: input.account.billing.lastInvoiceId,
     stripeInvoiceStatus: input.account.billing.lastInvoiceStatus,
+    stripeEntitlementLookupKeys: input.stripeEntitlementLookupKeys ?? previous?.stripeEntitlementLookupKeys ?? [],
+    stripeEntitlementFeatureIds: input.stripeEntitlementFeatureIds ?? previous?.stripeEntitlementFeatureIds ?? [],
+    stripeEntitlementSummaryUpdatedAt: input.stripeEntitlementSummaryUpdatedAt
+      ?? previous?.stripeEntitlementSummaryUpdatedAt
+      ?? null,
     lastEventId: input.lastEventId
       ?? input.account.billing.lastWebhookEventId
       ?? input.account.billing.lastInvoiceEventId

@@ -211,6 +211,7 @@ import {
   isBillingEventLedgerConfigured,
   listBillingEvents,
   releaseStripeBillingEventClaim,
+  upsertStripeCharges,
   upsertStripeInvoiceLineItems,
 } from './billing-event-ledger.js';
 import {
@@ -230,7 +231,9 @@ import {
   StripeBillingError,
   createHostedBillingPortalSession,
   createHostedCheckoutSession,
+  extractActiveEntitlementsFromSummary,
   extractInvoiceLineItemSnapshotsFromInvoice,
+  listHostedStripeActiveEntitlements,
   listHostedStripeInvoiceLineItems,
 } from './stripe-billing.js';
 import {
@@ -512,6 +515,20 @@ function parseStripeInvoiceStatus(
   }
 }
 
+function parseStripeChargeStatus(
+  raw: unknown,
+): 'succeeded' | 'pending' | 'failed' | null {
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  switch (raw.trim()) {
+    case 'succeeded':
+    case 'pending':
+    case 'failed':
+      return raw.trim() as 'succeeded' | 'pending' | 'failed';
+    default:
+      return null;
+  }
+}
+
 function metadataStringValue(
   key: string,
   ...sources: Array<Record<string, unknown> | Stripe.Metadata | null | undefined>
@@ -678,6 +695,9 @@ function billingEntitlementView(record: HostedBillingEntitlementRecord) {
     stripeCheckoutSessionId: record.stripeCheckoutSessionId,
     stripeInvoiceId: record.stripeInvoiceId,
     stripeInvoiceStatus: record.stripeInvoiceStatus,
+    stripeEntitlementLookupKeys: record.stripeEntitlementLookupKeys,
+    stripeEntitlementFeatureIds: record.stripeEntitlementFeatureIds,
+    stripeEntitlementSummaryUpdatedAt: record.stripeEntitlementSummaryUpdatedAt,
     lastEventId: record.lastEventId,
     lastEventType: record.lastEventType,
     lastEventAt: record.lastEventAt,
@@ -693,6 +713,9 @@ async function projectBillingEntitlementForAccount(account: HostedAccountRecord,
   lastEventId?: string | null;
   lastEventType?: string | null;
   lastEventAt?: string | null;
+  stripeEntitlementLookupKeys?: string[] | null;
+  stripeEntitlementFeatureIds?: string[] | null;
+  stripeEntitlementSummaryUpdatedAt?: string | null;
 }): Promise<HostedBillingEntitlementRecord> {
   const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
   return projectHostedBillingEntitlement(
@@ -701,6 +724,9 @@ async function projectBillingEntitlementForAccount(account: HostedAccountRecord,
       account,
       currentPlanId: tenantRecord?.planId ?? account.billing.lastCheckoutPlanId ?? DEFAULT_HOSTED_PLAN_ID,
       currentMonthlyRunQuota: tenantRecord?.monthlyRunQuota ?? null,
+      stripeEntitlementLookupKeys: options?.stripeEntitlementLookupKeys ?? null,
+      stripeEntitlementFeatureIds: options?.stripeEntitlementFeatureIds ?? null,
+      stripeEntitlementSummaryUpdatedAt: options?.stripeEntitlementSummaryUpdatedAt ?? null,
       lastEventId: options?.lastEventId ?? null,
       lastEventType: options?.lastEventType ?? null,
       lastEventAt: options?.lastEventAt ?? null,
@@ -718,12 +744,18 @@ async function syncHostedBillingEntitlement(account: HostedAccountRecord, option
   lastEventId?: string | null;
   lastEventType?: string | null;
   lastEventAt?: string | null;
+  stripeEntitlementLookupKeys?: string[] | null;
+  stripeEntitlementFeatureIds?: string[] | null;
+  stripeEntitlementSummaryUpdatedAt?: string | null;
 }): Promise<HostedBillingEntitlementRecord> {
   const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
   const synced = await upsertHostedBillingEntitlementState({
     account,
     currentPlanId: tenantRecord?.planId ?? account.billing.lastCheckoutPlanId ?? DEFAULT_HOSTED_PLAN_ID,
     currentMonthlyRunQuota: tenantRecord?.monthlyRunQuota ?? null,
+    stripeEntitlementLookupKeys: options?.stripeEntitlementLookupKeys ?? null,
+    stripeEntitlementFeatureIds: options?.stripeEntitlementFeatureIds ?? null,
+    stripeEntitlementSummaryUpdatedAt: options?.stripeEntitlementSummaryUpdatedAt ?? null,
     lastEventId: options?.lastEventId ?? null,
     lastEventType: options?.lastEventType ?? null,
     lastEventAt: options?.lastEventAt ?? null,
@@ -737,11 +769,50 @@ async function syncHostedBillingEntitlementForTenant(
     lastEventId?: string | null;
     lastEventType?: string | null;
     lastEventAt?: string | null;
+    stripeEntitlementLookupKeys?: string[] | null;
+    stripeEntitlementFeatureIds?: string[] | null;
+    stripeEntitlementSummaryUpdatedAt?: string | null;
   },
 ): Promise<HostedBillingEntitlementRecord | null> {
   const account = await findHostedAccountByTenantIdState(tenantId);
   if (!account) return null;
   return syncHostedBillingEntitlement(account, options);
+}
+
+async function findHostedAccountByStripeRefs(options: {
+  accountId?: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+}): Promise<{
+  record: HostedAccountRecord | null;
+  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+}> {
+  if (options.accountId) {
+    const record = await findHostedAccountByIdState(options.accountId);
+    if (record) {
+      return { record, matchReason: 'account_id' };
+    }
+  }
+
+  const { records } = await listHostedAccountsState();
+  if (options.stripeSubscriptionId) {
+    const record = records.find((entry) => entry.billing.stripeSubscriptionId === options.stripeSubscriptionId) ?? null;
+    if (record) {
+      return { record, matchReason: 'subscription_id' };
+    }
+  }
+
+  if (options.stripeCustomerId) {
+    const record = records.find((entry) => entry.billing.stripeCustomerId === options.stripeCustomerId) ?? null;
+    if (record) {
+      return { record, matchReason: 'customer_id' };
+    }
+  }
+
+  return {
+    record: null,
+    matchReason: 'none',
+  };
 }
 
 async function revokeAccountSessionsForLifecycleChange(options: {
@@ -1954,11 +2025,12 @@ app.get('/api/v1/account/billing/export', async (c) => {
     return c.json({ error: 'limit must be a positive integer.' }, 400);
   }
 
+  const entitlement = await readHostedBillingEntitlement(current.account);
   const payload = await buildHostedBillingExport({
     account: current.account,
+    entitlement,
     limit: parsedLimit ?? undefined,
   });
-  const entitlement = await readHostedBillingEntitlement(current.account);
 
   if (format === 'csv') {
     c.header('content-type', 'text/csv; charset=utf-8');
@@ -2082,6 +2154,10 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       || event.type === 'customer.subscription.paused'
       || event.type === 'customer.subscription.resumed'
       || event.type === 'checkout.session.completed'
+      || event.type === 'charge.succeeded'
+      || event.type === 'charge.failed'
+      || event.type === 'charge.refunded'
+      || event.type === 'entitlements.active_entitlement_summary.updated'
       || event.type === 'invoice.paid'
       || event.type === 'invoice.payment_failed';
 
@@ -2493,6 +2569,320 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       });
     }
 
+    if (event.type === 'charge.succeeded' || event.type === 'charge.failed' || event.type === 'charge.refunded') {
+      const charge = event.data.object as Stripe.Charge;
+      const stripeChargeId = stripeReferenceId(charge.id);
+      const stripeCustomerId = stripeReferenceId(charge.customer);
+      const stripeInvoiceId = stripeReferenceId((charge as { invoice?: unknown }).invoice);
+      const accountIdFromMetadata = metadataStringValue('attestorAccountId', charge.metadata);
+      const matched = await findHostedAccountByStripeRefs({
+        accountId: accountIdFromMetadata,
+        stripeCustomerId,
+        stripeSubscriptionId: null,
+      });
+      const account = matched.record;
+      const chargeCreatedAt = unixSecondsToIso(charge.created) ?? new Date().toISOString();
+
+      if (sharedBillingLedger && stripeChargeId) {
+        await upsertStripeCharges({
+          accountId: account?.id ?? null,
+          tenantId: account?.primaryTenantId ?? null,
+          stripeCustomerId,
+          stripeSubscriptionId: account?.billing.stripeSubscriptionId ?? null,
+          charges: [{
+            stripeChargeId,
+            stripeInvoiceId,
+            stripePaymentIntentId: stripeReferenceId(charge.payment_intent),
+            amount: typeof charge.amount === 'number' ? charge.amount : null,
+            amountRefunded: typeof charge.amount_refunded === 'number' ? charge.amount_refunded : null,
+            currency: typeof charge.currency === 'string' ? charge.currency : null,
+            status: parseStripeChargeStatus(charge.status),
+            paid: typeof charge.paid === 'boolean' ? charge.paid : null,
+            refunded: typeof charge.refunded === 'boolean' ? charge.refunded : null,
+            failureCode: typeof charge.failure_code === 'string' ? charge.failure_code : null,
+            failureMessage: typeof charge.failure_message === 'string' ? charge.failure_message : null,
+            metadata: {
+              eventType: event.type,
+            },
+            createdAt: chargeCreatedAt,
+          }],
+          source: 'stripe_webhook',
+        });
+      }
+
+      if (!account) {
+        observeBillingWebhookEvent(event.type, 'ignored');
+        if (sharedBillingLedger) {
+          await finalizeStripeBillingEvent({
+            providerEventId: event.id,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+            stripeCustomerId,
+            stripeSubscriptionId: null,
+            stripeInvoiceId,
+            metadata: {
+              eventType: event.type,
+              stripeChargeId,
+              chargeStatus: parseStripeChargeStatus(charge.status),
+              chargeCreatedAt,
+            },
+          });
+          finalizedSharedEvent = true;
+        } else {
+          await finalizeWebhookDedupe({
+            eventType: event.type,
+            accountId: null,
+            stripeCustomerId,
+            stripeSubscriptionId: null,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+          });
+        }
+        return c.json({
+          received: true,
+          duplicate: false,
+          ignored: true,
+          eventId: event.id,
+          eventType: event.type,
+          reason: 'no_account_match',
+          stripeCustomerId,
+          stripeChargeId,
+          invoiceId: stripeInvoiceId,
+        });
+      }
+
+      const entitlement = await syncHostedBillingEntitlement(account, {
+        lastEventId: event.id,
+        lastEventType: event.type,
+        lastEventAt: chargeCreatedAt,
+      });
+
+      c.set('obs.accountId', account.id);
+      c.set('obs.accountStatus', account.status);
+      c.set('obs.tenantId', account.primaryTenantId);
+      c.set('obs.planId', account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null);
+
+      if (sharedBillingLedger) {
+        await finalizeStripeBillingEvent({
+          providerEventId: event.id,
+          outcome: 'applied',
+          accountId: account.id,
+          tenantId: account.primaryTenantId,
+          stripeCustomerId,
+          stripeSubscriptionId: account.billing.stripeSubscriptionId,
+          stripePriceId: account.billing.stripePriceId,
+          stripeInvoiceId,
+          metadata: {
+            eventType: event.type,
+            matchReason: matched.matchReason,
+            stripeChargeId,
+            chargeStatus: parseStripeChargeStatus(charge.status),
+            chargeCreatedAt,
+            entitlementStatus: entitlement.status,
+            entitlementAccessEnabled: entitlement.accessEnabled,
+            effectivePlanId: entitlement.effectivePlanId,
+          },
+        });
+        finalizedSharedEvent = true;
+      } else {
+        await finalizeWebhookDedupe({
+          eventType: event.type,
+          accountId: account.id,
+          stripeCustomerId,
+          stripeSubscriptionId: account.billing.stripeSubscriptionId,
+          outcome: 'applied',
+          reason: null,
+        });
+      }
+
+      observeBillingWebhookEvent(event.type, 'applied');
+
+      await appendAdminAuditRecordState({
+        actorType: 'stripe_webhook',
+        actorLabel: 'stripe.webhooks',
+        action: 'billing.stripe.webhook_applied',
+        routeId: 'billing.stripe.webhook',
+        accountId: account.id,
+        tenantId: account.primaryTenantId,
+        tenantKeyId: null,
+        planId: account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null,
+        monthlyRunQuota: null,
+        idempotencyKey: event.id,
+        requestHash: dedupe.payloadHash,
+        metadata: {
+          eventType: event.type,
+          matchReason: matched.matchReason,
+          stripeChargeId,
+          stripeCustomerId,
+          stripeInvoiceId,
+          chargeStatus: parseStripeChargeStatus(charge.status),
+          chargeCreatedAt,
+          entitlementStatus: entitlement.status,
+          entitlementAccessEnabled: entitlement.accessEnabled,
+          effectivePlanId: entitlement.effectivePlanId,
+          sharedLedger: sharedBillingLedger,
+        },
+      });
+
+      return c.json({
+        received: true,
+        duplicate: false,
+        eventId: event.id,
+        eventType: event.type,
+        accountId: account.id,
+        accountStatus: account.status,
+        chargeId: stripeChargeId,
+        invoiceId: stripeInvoiceId,
+      });
+    }
+
+    if (event.type === 'entitlements.active_entitlement_summary.updated') {
+      const summary = event.data.object as Stripe.Entitlements.ActiveEntitlementSummary;
+      const stripeCustomerId = stripeReferenceId((summary as { customer?: unknown }).customer);
+      const matched = await findHostedAccountByStripeRefs({
+        accountId: null,
+        stripeCustomerId,
+        stripeSubscriptionId: null,
+      });
+      const account = matched.record;
+      const summaryUpdatedAt = unixSecondsToIso(event.created) ?? new Date().toISOString();
+      const canFetchCanonicalEntitlements = process.env.ATTESTOR_STRIPE_USE_MOCK !== 'true'
+        && Boolean(process.env.STRIPE_API_KEY?.trim())
+        && Boolean(stripeCustomerId);
+      const summaryEntitlements = extractActiveEntitlementsFromSummary(summary);
+      const canonicalEntitlements = canFetchCanonicalEntitlements && stripeCustomerId
+        ? await listHostedStripeActiveEntitlements({
+          customerId: stripeCustomerId,
+          limit: 5_000,
+        })
+        : [];
+      const entitlementRecords = canonicalEntitlements.length > 0 ? canonicalEntitlements : summaryEntitlements;
+      const lookupKeys = [...new Set(entitlementRecords.map((record) => record.lookupKey).filter((value) => value.trim() !== ''))].sort();
+      const featureIds = [...new Set(entitlementRecords.map((record) => record.featureId ?? '').filter((value) => value.trim() !== ''))].sort();
+
+      if (!account) {
+        observeBillingWebhookEvent(event.type, 'ignored');
+        if (sharedBillingLedger) {
+          await finalizeStripeBillingEvent({
+            providerEventId: event.id,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+            stripeCustomerId,
+            stripeSubscriptionId: null,
+            metadata: {
+              eventType: event.type,
+              entitlementLookupKeyCount: lookupKeys.length,
+              entitlementFeatureIdCount: featureIds.length,
+              entitlementSummaryUpdatedAt: summaryUpdatedAt,
+            },
+          });
+          finalizedSharedEvent = true;
+        } else {
+          await finalizeWebhookDedupe({
+            eventType: event.type,
+            accountId: null,
+            stripeCustomerId,
+            stripeSubscriptionId: null,
+            outcome: 'ignored',
+            reason: 'no_account_match',
+          });
+        }
+        return c.json({
+          received: true,
+          duplicate: false,
+          ignored: true,
+          eventId: event.id,
+          eventType: event.type,
+          reason: 'no_account_match',
+          stripeCustomerId,
+        });
+      }
+
+      const entitlement = await syncHostedBillingEntitlement(account, {
+        lastEventId: event.id,
+        lastEventType: event.type,
+        lastEventAt: summaryUpdatedAt,
+        stripeEntitlementLookupKeys: lookupKeys,
+        stripeEntitlementFeatureIds: featureIds,
+        stripeEntitlementSummaryUpdatedAt: summaryUpdatedAt,
+      });
+
+      c.set('obs.accountId', account.id);
+      c.set('obs.accountStatus', account.status);
+      c.set('obs.tenantId', account.primaryTenantId);
+      c.set('obs.planId', account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null);
+
+      if (sharedBillingLedger) {
+        await finalizeStripeBillingEvent({
+          providerEventId: event.id,
+          outcome: 'applied',
+          accountId: account.id,
+          tenantId: account.primaryTenantId,
+          stripeCustomerId,
+          stripeSubscriptionId: account.billing.stripeSubscriptionId,
+          stripePriceId: account.billing.stripePriceId,
+          metadata: {
+            eventType: event.type,
+            matchReason: matched.matchReason,
+            entitlementLookupKeys: lookupKeys,
+            entitlementFeatureIds: featureIds,
+            entitlementSummaryUpdatedAt: summaryUpdatedAt,
+            entitlementStatus: entitlement.status,
+            entitlementAccessEnabled: entitlement.accessEnabled,
+            effectivePlanId: entitlement.effectivePlanId,
+          },
+        });
+        finalizedSharedEvent = true;
+      } else {
+        await finalizeWebhookDedupe({
+          eventType: event.type,
+          accountId: account.id,
+          stripeCustomerId,
+          stripeSubscriptionId: account.billing.stripeSubscriptionId,
+          outcome: 'applied',
+          reason: null,
+        });
+      }
+
+      observeBillingWebhookEvent(event.type, 'applied');
+
+      await appendAdminAuditRecordState({
+        actorType: 'stripe_webhook',
+        actorLabel: 'stripe.webhooks',
+        action: 'billing.stripe.webhook_applied',
+        routeId: 'billing.stripe.webhook',
+        accountId: account.id,
+        tenantId: account.primaryTenantId,
+        tenantKeyId: null,
+        planId: account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null,
+        monthlyRunQuota: null,
+        idempotencyKey: event.id,
+        requestHash: dedupe.payloadHash,
+        metadata: {
+          eventType: event.type,
+          matchReason: matched.matchReason,
+          stripeCustomerId,
+          entitlementLookupKeys: lookupKeys,
+          entitlementFeatureIds: featureIds,
+          entitlementSummaryUpdatedAt: summaryUpdatedAt,
+          entitlementStatus: entitlement.status,
+          entitlementAccessEnabled: entitlement.accessEnabled,
+          effectivePlanId: entitlement.effectivePlanId,
+          sharedLedger: sharedBillingLedger,
+        },
+      });
+
+      return c.json({
+        received: true,
+        duplicate: false,
+        eventId: event.id,
+        eventType: event.type,
+        accountId: account.id,
+        accountStatus: account.status,
+        entitlement: billingEntitlementView(entitlement),
+      });
+    }
+
     const invoice = event.data.object as Stripe.Invoice & {
       subscription?: unknown;
       subscription_details?: { metadata?: Record<string, unknown> | null } | null;
@@ -2844,11 +3234,12 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
     return c.json({ error: 'limit must be a positive integer.' }, 400);
   }
 
+  const entitlement = await readHostedBillingEntitlement(account);
   const payload = await buildHostedBillingExport({
     account,
+    entitlement,
     limit: parsedLimit ?? undefined,
   });
-  const entitlement = await readHostedBillingEntitlement(account);
 
   if (format === 'csv') {
     c.header('content-type', 'text/csv; charset=utf-8');

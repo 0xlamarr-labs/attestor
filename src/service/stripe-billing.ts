@@ -2,8 +2,8 @@
  * Stripe Billing — Hosted checkout + customer portal first slice
  *
  * BOUNDARY:
- * - Stripe-hosted checkout and portal only
- * - No Stripe-native entitlement service yet
+ * - Stripe-hosted checkout and portal
+ * - Live billing export can read invoices, charges, line items, and active entitlements
  * - Supports a deterministic mock mode for local integration tests
  */
 
@@ -113,6 +113,13 @@ export interface HostedStripeChargeSnapshot {
   source: 'stripe_live' | 'mock_summary';
 }
 
+export interface HostedStripeActiveEntitlementSnapshot {
+  entitlementId: string;
+  lookupKey: string;
+  featureId: string | null;
+  source: 'stripe_live' | 'stripe_webhook';
+}
+
 export interface HostedStripeInvoiceLineItemSnapshot {
   lineItemId: string;
   invoiceId: string;
@@ -137,9 +144,18 @@ export interface HostedStripeBillingSnapshot {
   invoices: HostedStripeInvoiceSnapshot[];
   charges: HostedStripeChargeSnapshot[];
   lineItems: HostedStripeInvoiceLineItemSnapshot[];
+  entitlements: HostedStripeActiveEntitlementSnapshot[];
 }
 
 function stripeReferenceId(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  if (value && typeof value === 'object' && 'id' in value && typeof (value as { id?: unknown }).id === 'string') {
+    return ((value as { id: string }).id).trim();
+  }
+  return null;
+}
+
+function stripeFeatureId(value: unknown): string | null {
   if (typeof value === 'string' && value.trim() !== '') return value.trim();
   if (value && typeof value === 'object' && 'id' in value && typeof (value as { id?: unknown }).id === 'string') {
     return ((value as { id: string }).id).trim();
@@ -236,6 +252,53 @@ export async function listHostedStripeInvoiceLineItems(options: {
     });
     if (page.data.length === 0) break;
     records.push(...page.data.map((lineItem) => mapStripeInvoiceLineItem(lineItem, 'stripe_live', 'full')));
+    if (!page.has_more) break;
+    startingAfter = page.data[page.data.length - 1]?.id;
+    if (!startingAfter) break;
+  }
+
+  return records;
+}
+
+function mapStripeActiveEntitlement(
+  record: Stripe.Entitlements.ActiveEntitlement,
+  source: HostedStripeActiveEntitlementSnapshot['source'],
+): HostedStripeActiveEntitlementSnapshot {
+  return {
+    entitlementId: record.id,
+    lookupKey: record.lookup_key,
+    featureId: stripeFeatureId(record.feature),
+    source,
+  };
+}
+
+export function extractActiveEntitlementsFromSummary(
+  summary: Stripe.Entitlements.ActiveEntitlementSummary,
+): HostedStripeActiveEntitlementSnapshot[] {
+  const entries = Array.isArray(summary.entitlements?.data) ? summary.entitlements.data : [];
+  return entries.map((entry) => mapStripeActiveEntitlement(entry, 'stripe_webhook'));
+}
+
+export async function listHostedStripeActiveEntitlements(options: {
+  customerId: string;
+  limit?: number;
+}): Promise<HostedStripeActiveEntitlementSnapshot[]> {
+  if (!options.customerId?.trim() || useMockStripeBilling()) return [];
+  const pageSize = 100;
+  const maxRecords = Math.max(1, Math.min(5_000, options.limit ?? 1_000));
+  const records: HostedStripeActiveEntitlementSnapshot[] = [];
+  let startingAfter: string | undefined;
+
+  while (records.length < maxRecords) {
+    const remaining = maxRecords - records.length;
+    const page = await stripeClient().entitlements.activeEntitlements.list({
+      customer: options.customerId,
+      limit: Math.min(pageSize, remaining),
+      starting_after: startingAfter,
+      expand: ['data.feature'],
+    });
+    if (page.data.length === 0) break;
+    records.push(...page.data.map((entry) => mapStripeActiveEntitlement(entry, 'stripe_live')));
     if (!page.has_more) break;
     startingAfter = page.data[page.data.length - 1]?.id;
     if (!startingAfter) break;
@@ -356,6 +419,7 @@ export async function exportHostedStripeBillingSnapshot(options: {
       invoices: [],
       charges: [],
       lineItems: [],
+      entitlements: [],
     };
   }
 
@@ -396,13 +460,15 @@ export async function exportHostedStripeBillingSnapshot(options: {
       invoices,
       charges,
       lineItems: [],
+      entitlements: [],
     };
   }
 
   const limit = Math.max(1, Math.min(100, options.limit));
-  const [invoiceList, chargeList] = await Promise.all([
+  const [invoiceList, chargeList, entitlements] = await Promise.all([
     stripeClient().invoices.list({ customer: customerId, limit }),
     stripeClient().charges.list({ customer: customerId, limit }),
+    listHostedStripeActiveEntitlements({ customerId, limit: Math.max(limit * 5, 100) }),
   ]);
   const lineItems = (await Promise.all(
     invoiceList.data.map(async (invoice) => listHostedStripeInvoiceLineItems({
@@ -442,5 +508,6 @@ export async function exportHostedStripeBillingSnapshot(options: {
       source: 'stripe_live',
     })),
     lineItems,
+    entitlements,
   };
 }

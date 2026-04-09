@@ -6,9 +6,11 @@ import { join } from 'node:path';
 import {
   claimStripeBillingEvent,
   finalizeStripeBillingEvent,
+  listBillingCharges,
   listBillingInvoiceLineItems,
   listBillingEvents,
   resetBillingEventLedgerForTests,
+  upsertStripeCharges,
   upsertStripeInvoiceLineItems,
 } from '../src/service/billing-event-ledger.js';
 import {
@@ -132,6 +134,9 @@ async function run(): Promise<void> {
       account: provisioned.account,
       currentPlanId: 'starter',
       currentMonthlyRunQuota: 100,
+      stripeEntitlementLookupKeys: ['attestor.starter.api'],
+      stripeEntitlementFeatureIds: ['feat_starter_api'],
+      stripeEntitlementSummaryUpdatedAt: '2026-04-07T00:00:00.000Z',
       lastEventId: 'evt_entitlement_backup_pg_1',
       lastEventType: 'manual.provisioning',
       lastEventAt: '2026-04-07T00:00:00.000Z',
@@ -233,6 +238,28 @@ async function run(): Promise<void> {
         proration: false,
       }],
     });
+    await upsertStripeCharges({
+      accountId: provisioned.account.id,
+      tenantId: 'tenant-backup-pg',
+      stripeCustomerId: 'cus_backup_pg',
+      stripeSubscriptionId: 'sub_backup_pg',
+      source: 'stripe_webhook',
+      charges: [{
+        stripeChargeId: 'ch_backup_pg_1',
+        stripeInvoiceId: 'in_backup_pg_1',
+        stripePaymentIntentId: 'pi_backup_pg_1',
+        amount: 5000,
+        amountRefunded: 0,
+        currency: 'usd',
+        status: 'succeeded',
+        paid: true,
+        refunded: false,
+        failureCode: null,
+        failureMessage: null,
+        metadata: { source: 'backup-test' },
+        createdAt: '2026-04-07T00:00:00.000Z',
+      }],
+    });
 
     const backup = await createControlPlaneBackupSnapshot({
       snapshotDir,
@@ -294,6 +321,7 @@ async function run(): Promise<void> {
     const restoredEntitlement = await findHostedBillingEntitlementByAccountIdState(provisioned.account.id);
     ok(Boolean(restoredEntitlement), 'Restore: hosted billing entitlement recovered from PG snapshot');
     ok(restoredEntitlement?.effectivePlanId === 'starter', 'Restore: hosted billing entitlement plan preserved');
+    ok(restoredEntitlement?.stripeEntitlementLookupKeys.includes('attestor.starter.api') === true, 'Restore: hosted billing entitlement lookup keys preserved');
 
     const restoredAudit = await listAdminAuditRecordsState();
     ok(restoredAudit.chainIntact === true, 'Restore: admin audit chain intact');
@@ -336,6 +364,9 @@ async function run(): Promise<void> {
     const restoredBillingLineItems = await listBillingInvoiceLineItems({ accountId: provisioned.account.id, limit: 10 });
     ok(restoredBillingLineItems.length === 1, 'Restore: billing invoice line items restored');
     ok(restoredBillingLineItems[0].stripeInvoiceLineItemId === 'il_backup_pg_1', 'Restore: billing invoice line item id preserved');
+    const restoredBillingCharges = await listBillingCharges({ accountId: provisioned.account.id, limit: 10 });
+    ok(restoredBillingCharges.length === 1, 'Restore: billing charge rows restored');
+    ok(restoredBillingCharges[0].stripeChargeId === 'ch_backup_pg_1', 'Restore: billing charge id preserved');
 
     const bulkRecordCount = 1005;
     const bulkAccounts = Array.from({ length: bulkRecordCount }, (_, index) => {
@@ -406,6 +437,9 @@ async function run(): Promise<void> {
       stripeCheckoutSessionId: null,
       stripeInvoiceId: null,
       stripeInvoiceStatus: null,
+      stripeEntitlementLookupKeys: [],
+      stripeEntitlementFeatureIds: [],
+      stripeEntitlementSummaryUpdatedAt: null,
       lastEventId: `evt_bulk_pg_${index}`,
       lastEventType: 'manual.provisioning',
       lastEventAt: account.updatedAt,

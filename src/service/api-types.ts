@@ -253,6 +253,9 @@ export interface AccountBillingEntitlementRecord {
   stripeCheckoutSessionId: string | null;
   stripeInvoiceId: string | null;
   stripeInvoiceStatus: 'draft' | 'open' | 'paid' | 'uncollectible' | 'void' | null;
+  stripeEntitlementLookupKeys: string[];
+  stripeEntitlementFeatureIds: string[];
+  stripeEntitlementSummaryUpdatedAt: string | null;
   lastEventId: string | null;
   lastEventType: string | null;
   lastEventAt: string | null;
@@ -598,6 +601,12 @@ export interface BillingExportInvoiceLineItemRecord {
   source: 'stripe_live' | 'ledger_derived' | 'mock_summary';
 }
 
+export interface BillingExportEntitlementFeatures {
+  lookupKeys: string[];
+  featureIds: string[];
+  source: 'stripe_live' | 'entitlement_read_model' | 'none';
+}
+
 export interface AccountBillingExportResponse {
   accountId: string;
   tenantId: string;
@@ -608,6 +617,7 @@ export interface AccountBillingExportResponse {
   invoices: BillingExportInvoiceRecord[];
   charges: BillingExportChargeRecord[];
   lineItems: BillingExportInvoiceLineItemRecord[];
+  entitlementFeatures: BillingExportEntitlementFeatures;
   summary: {
     dataSource: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary' | 'empty';
     mock: boolean;
