@@ -4140,9 +4140,13 @@ export function startServer(port: number = 3700): { port: number; close: () => v
     redisUrl: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() || sharedRedisUrl,
     redisMode: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() ? 'explicit' : redisMode,
   });
-  if (telemetry.enabled && telemetry.endpoint) {
-    console.log(`[telemetry] OTLP traces enabled (${telemetry.protocol}) -> ${telemetry.endpoint}`);
-  } else if (telemetry.disabledReason) {
+  if (telemetry.traces.enabled && telemetry.traces.endpoint) {
+    console.log(`[telemetry] OTLP traces enabled (${telemetry.traces.protocol}) -> ${telemetry.traces.endpoint}`);
+  }
+  if (telemetry.metrics.enabled && telemetry.metrics.endpoint) {
+    console.log(`[telemetry] OTLP metrics enabled (${telemetry.metrics.protocol}) -> ${telemetry.metrics.endpoint} @ ${telemetry.metrics.exportIntervalMillis ?? 1000}ms`);
+  }
+  if (!telemetry.traces.enabled && !telemetry.metrics.enabled && telemetry.disabledReason) {
     console.log(`[telemetry] Disabled: ${telemetry.disabledReason}`);
   }
   const server = serve({ fetch: app.fetch, port });
