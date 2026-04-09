@@ -25,6 +25,7 @@ import { resetAccountUserActionTokenStoreForTests } from '../src/service/account
 import { resetAccountSessionStoreForTests } from '../src/service/account-session-store.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
+import { readAsyncDeadLetterStoreSnapshot, resetAsyncDeadLetterStoreForTests } from '../src/service/async-dead-letter-store.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
 import { resetBillingEventLedgerForTests } from '../src/service/billing-event-ledger.js';
 import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
@@ -113,6 +114,7 @@ async function run() {
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-sessions.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
+  process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-async-dlq.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-stripe-webhooks.json');
   process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-billing-entitlements.json');
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-observability.jsonl');
@@ -139,6 +141,7 @@ async function run() {
   resetAccountSessionStoreForTests();
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
+  resetAsyncDeadLetterStoreForTests();
   resetStripeWebhookStoreForTests();
   resetHostedBillingEntitlementStoreForTests();
   await resetBillingEventLedgerForTests();
@@ -581,6 +584,10 @@ async function run() {
       const dlqRecord = dlqBody.records.find((record: any) => record.jobId === failedSubmitBody.jobId);
       ok(Boolean(dlqRecord), 'Admin DLQ: failed job record present');
       ok(dlqRecord.failedReason.includes('candidateSql') || dlqRecord.failedReason.includes('intent'), 'Admin DLQ: failure reason preserved');
+      ok(dlqRecord.backendMode === 'bullmq', 'Admin DLQ: backendMode truthful');
+      ok(typeof dlqRecord.recordedAt === 'string', 'Admin DLQ: recordedAt surfaced');
+      const persistedDlq = readAsyncDeadLetterStoreSnapshot();
+      ok(persistedDlq.records.some((record) => record.jobId === failedSubmitBody.jobId), 'Admin DLQ: failed job persisted to local DLQ store');
 
       const retryNoAuth = await fetch(`${BASE}/api/v1/admin/queue/jobs/${failedSubmitBody.jobId}/retry`, {
         method: 'POST',
@@ -597,6 +604,7 @@ async function run() {
       ok(retryRes.status === 202, 'Admin Queue Retry: status 202');
       const retryBody = await retryRes.json() as any;
       ok(retryBody.job.jobId === failedSubmitBody.jobId, 'Admin Queue Retry: same job retried');
+      ok(!readAsyncDeadLetterStoreSnapshot().records.some((record) => record.jobId === failedSubmitBody.jobId), 'Admin Queue Retry: DLQ record removed after retry');
 
       const retryAuditRes = await fetch(`${BASE}/api/v1/admin/audit?action=async_job.retried`, {
         headers: { Authorization: 'Bearer admin-secret' },

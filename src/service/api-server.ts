@@ -103,6 +103,7 @@ import {
   verifyAccountUserPasswordRecord,
 } from './account-user-store.js';
 import { type AccountUserActionTokenRecord } from './account-user-token-store.js';
+import { type AsyncDeadLetterRecord } from './async-dead-letter-store.js';
 import {
   sessionCookieName,
   sessionCookieSecure,
@@ -132,6 +133,7 @@ import {
   isSharedControlPlaneConfigured,
   issueTenantApiKeyState,
   issuePasswordResetTokenState,
+  listAsyncDeadLetterRecordsState,
   listAccountUsersByAccountIdState,
   listAccountUserActionTokensByAccountIdState,
   listHostedAccountsState,
@@ -158,6 +160,7 @@ import {
   setHostedAccountStatusState,
   setTenantApiKeyStatusState,
   syncTenantPlanByTenantIdState,
+  upsertAsyncDeadLetterRecordState,
   upsertHostedBillingEntitlementState,
   listHostedBillingEntitlementsState,
 } from './control-plane-store.js';
@@ -2587,7 +2590,18 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25;
 
   if (asyncBackendMode === 'bullmq' && bullmqQueue) {
-    const records = await listFailedPipelineJobs(bullmqQueue, { tenantId, limit });
+    const persisted = await listAsyncDeadLetterRecordsState({ tenantId, backendMode: 'bullmq', limit });
+    const live = persisted.records.length < limit
+      ? await listFailedPipelineJobs(bullmqQueue, { tenantId, limit: limit * 2 })
+      : [];
+    const merged = new Map<string, AsyncDeadLetterRecord>();
+    for (const record of persisted.records) merged.set(record.jobId, record);
+    for (const record of live) {
+      if (merged.size >= limit && merged.has(record.jobId)) continue;
+      if (!merged.has(record.jobId)) merged.set(record.jobId, record);
+      if (merged.size >= limit) break;
+    }
+    const records = [...merged.values()].slice(0, limit);
     return c.json({
       records,
       summary: {
@@ -2599,13 +2613,15 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
     });
   }
 
-  const records = Array.from(inProcessJobs.values())
+  const persisted = await listAsyncDeadLetterRecordsState({ tenantId, backendMode: 'in_process', limit });
+  const live = Array.from(inProcessJobs.values())
     .filter((job) => job.status === 'failed')
     .filter((job) => !tenantId || job.tenantId === tenantId)
     .slice(0, limit)
     .map((job) => ({
       jobId: job.id,
       name: 'pipeline-run',
+      backendMode: 'in_process' as const,
       tenantId: job.tenantId,
       planId: job.planId,
       state: 'failed',
@@ -2616,7 +2632,15 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
       submittedAt: job.submittedAt,
       processedAt: null,
       failedAt: job.completedAt,
+      recordedAt: job.completedAt ?? job.submittedAt,
     }));
+  const merged = new Map<string, AsyncDeadLetterRecord>();
+  for (const record of persisted.records) merged.set(record.jobId, record);
+  for (const record of live) {
+    if (!merged.has(record.jobId)) merged.set(record.jobId, record);
+    if (merged.size >= limit) break;
+  }
+  const records = [...merged.values()].slice(0, limit);
 
   return c.json({
     records,
@@ -3949,6 +3973,22 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         job.status = 'failed';
         job.error = err.message ?? String(err);
         job.completedAt = new Date().toISOString();
+        await upsertAsyncDeadLetterRecordState({
+          jobId: job.id,
+          name: 'pipeline-run',
+          backendMode: 'in_process',
+          tenantId: job.tenantId,
+          planId: job.planId,
+          state: 'failed',
+          failedReason: job.error,
+          attemptsMade: 1,
+          maxAttempts: 1,
+          requestedAt: job.submittedAt,
+          submittedAt: job.submittedAt,
+          processedAt: job.completedAt,
+          failedAt: job.completedAt,
+          recordedAt: job.completedAt,
+        });
       }
     });
 

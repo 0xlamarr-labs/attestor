@@ -26,6 +26,7 @@ import {
   lookupAdminIdempotencyState,
   lookupProcessedStripeWebhookState,
   appendAdminAuditRecordState,
+  listAsyncDeadLetterRecordsState,
   recordAdminIdempotencyState,
   recordProcessedStripeWebhookState,
   provisionHostedAccountState,
@@ -35,6 +36,7 @@ import {
   restoreHostedBillingEntitlementStoreSnapshot,
   restoreAdminAuditLogStoreSnapshot,
   upsertHostedBillingEntitlementState,
+  upsertAsyncDeadLetterRecordState,
 } from '../src/service/control-plane-store.js';
 
 let passed = 0;
@@ -85,6 +87,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(tempRoot, 'billing-entitlements.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(tempRoot, 'admin-audit-log.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(tempRoot, 'admin-idempotency.json');
+  process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = join(tempRoot, 'async-dead-letter.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(tempRoot, 'stripe-webhooks.json');
   process.env.ATTESTOR_ADMIN_API_KEY = 'backup-test-admin';
 
@@ -164,6 +167,22 @@ async function run(): Promise<void> {
       reason: null,
       rawPayload: '{"id":"evt_webhook_backup_pg_1"}',
     });
+    await upsertAsyncDeadLetterRecordState({
+      jobId: 'job_backup_pg_dlq_1',
+      name: 'pipeline-run',
+      backendMode: 'bullmq',
+      tenantId: 'tenant-backup-pg',
+      planId: 'starter',
+      state: 'failed',
+      failedReason: 'synthetic shared PG DLQ failure',
+      attemptsMade: 3,
+      maxAttempts: 3,
+      requestedAt: '2026-04-07T00:00:00.000Z',
+      submittedAt: '2026-04-07T00:00:01.000Z',
+      processedAt: '2026-04-07T00:00:02.000Z',
+      failedAt: '2026-04-07T00:00:03.000Z',
+      recordedAt: '2026-04-07T00:00:03.000Z',
+    });
     const claim = await claimStripeBillingEvent({
       providerEventId: 'evt_billing_backup_pg_1',
       eventType: 'invoice.paid',
@@ -202,6 +221,7 @@ async function run(): Promise<void> {
     ok(backup.manifest.components.some((entry) => entry.id === 'tenant_key_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG tenant key snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'usage_ledger' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG usage snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'billing_entitlement_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG billing entitlement snapshot present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'async_dead_letter_store' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG async DLQ snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_audit_log' && entry.tier === 'shared_postgres' && entry.present), 'Backup: PG admin audit snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_idempotency_store' && entry.tier === 'ephemeral' && entry.present), 'Backup: PG admin idempotency snapshot present');
     ok(backup.manifest.components.some((entry) => entry.id === 'stripe_webhook_store' && entry.tier === 'ephemeral' && entry.present), 'Backup: PG webhook dedupe snapshot present');
@@ -221,6 +241,7 @@ async function run(): Promise<void> {
     ok(restored.restoredComponents.includes('tenant_key_store'), 'Restore: shared PG tenant keys restored');
     ok(restored.restoredComponents.includes('usage_ledger'), 'Restore: shared PG usage restored');
     ok(restored.restoredComponents.includes('billing_entitlement_store'), 'Restore: shared PG billing entitlement restored');
+    ok(restored.restoredComponents.includes('async_dead_letter_store'), 'Restore: shared PG async DLQ restored');
     ok(restored.restoredComponents.includes('billing_event_ledger'), 'Restore: shared billing ledger restored');
     ok(restored.restoredComponents.includes('admin_audit_log'), 'Restore: shared admin audit restored');
     ok(restored.restoredComponents.includes('admin_idempotency_store'), 'Restore: shared admin idempotency restored');
@@ -253,6 +274,10 @@ async function run(): Promise<void> {
     const restoredAudit = await listAdminAuditRecordsState();
     ok(restoredAudit.chainIntact === true, 'Restore: admin audit chain intact');
     ok(restoredAudit.records.length === 1, 'Restore: admin audit records recovered');
+
+    const restoredDlq = await listAsyncDeadLetterRecordsState({ backendMode: 'bullmq' });
+    ok(restoredDlq.records.length === 1, 'Restore: shared PG async DLQ records recovered');
+    ok(restoredDlq.records[0].jobId === 'job_backup_pg_dlq_1', 'Restore: shared PG async DLQ job id preserved');
 
     let invalidAuditRejected = false;
     try {

@@ -11,6 +11,7 @@ Current backup tooling covers:
 - account session store
 - tenant key store
 - usage ledger
+- async DLQ store
 - admin audit log
 - optional ephemeral stores:
   - admin idempotency replay store
@@ -32,7 +33,7 @@ This is a **logical snapshot first slice**. For production PostgreSQL disaster r
 
 Attestor's hosted control-plane is currently mixed:
 
-- hosted accounts, account users, account sessions, tenant keys, usage, billing entitlements, and admin audit can run either file-backed or on the shared PostgreSQL control-plane first slice
+- hosted accounts, account users, account sessions, tenant keys, usage, billing entitlements, async DLQ, and admin audit can run either file-backed or on the shared PostgreSQL control-plane first slice
 - admin idempotency replay and Stripe webhook dedupe can also move onto the shared PostgreSQL control-plane when `--include-ephemeral` is used for snapshot drills
 - Stripe billing event truth already has a shared PostgreSQL first slice
 
@@ -133,6 +134,7 @@ Back up and restore these by default:
 - tenant keys
 - usage ledger
 - billing entitlement read model
+- async DLQ store
 - admin audit log
 - shared billing event ledger
 

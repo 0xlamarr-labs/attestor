@@ -20,7 +20,7 @@
  * - Single-queue, configurable concurrency (default 1)
  * - Shares Redis with API server
  * - Tenant fairness comes from per-tenant pending-job caps at API submit time, not BullMQ Pro queue groups
- * - Failed jobs remain inspectable in BullMQ's failed set / DLQ view and can be retried manually
+ * - Terminal failed jobs remain inspectable through the admin DLQ route and persist into the current DLQ store for retry/audit workflows
  * - Pipeline-route rate limiting is enforced on the API side and can use shared Redis-backed windows when configured
  * - No BullMQ Pro queue groups or broader multi-tenant queue isolation yet
  *

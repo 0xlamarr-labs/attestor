@@ -59,6 +59,11 @@ import {
   recordProcessedStripeWebhook,
   resetStripeWebhookStoreForTests,
 } from '../src/service/stripe-webhook-store.js';
+import {
+  listAsyncDeadLetterRecords,
+  resetAsyncDeadLetterStoreForTests,
+  upsertAsyncDeadLetterRecord,
+} from '../src/service/async-dead-letter-store.js';
 
 let passed = 0;
 
@@ -109,6 +114,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(tempRoot, 'billing-entitlements.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(tempRoot, 'admin-audit-log.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(tempRoot, 'admin-idempotency.json');
+  process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = join(tempRoot, 'async-dead-letter.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(tempRoot, 'stripe-webhooks.json');
   process.env.ATTESTOR_ADMIN_API_KEY = 'backup-test-admin';
 
@@ -126,6 +132,7 @@ async function run(): Promise<void> {
   resetHostedBillingEntitlementStoreForTests();
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
+  resetAsyncDeadLetterStoreForTests();
   resetStripeWebhookStoreForTests();
   await resetBillingEventLedgerForTests();
 
@@ -194,6 +201,22 @@ async function run(): Promise<void> {
       reason: null,
       rawPayload: '{"id":"evt_webhook_backup_1"}',
     });
+    upsertAsyncDeadLetterRecord({
+      jobId: 'job_backup_dlq_1',
+      name: 'pipeline-run',
+      backendMode: 'bullmq',
+      tenantId: 'tenant-backup',
+      planId: 'starter',
+      state: 'failed',
+      failedReason: 'synthetic DLQ failure',
+      attemptsMade: 3,
+      maxAttempts: 3,
+      requestedAt: '2026-04-07T00:00:00.000Z',
+      submittedAt: '2026-04-07T00:00:01.000Z',
+      processedAt: '2026-04-07T00:00:02.000Z',
+      failedAt: '2026-04-07T00:00:03.000Z',
+      recordedAt: '2026-04-07T00:00:03.000Z',
+    });
     const claim = await claimStripeBillingEvent({
       providerEventId: 'evt_billing_backup_1',
       eventType: 'invoice.paid',
@@ -230,6 +253,7 @@ async function run(): Promise<void> {
     ok(backup.manifest.components.some((entry) => entry.id === 'tenant_key_store' && entry.present), 'Backup: tenant key store present');
     ok(backup.manifest.components.some((entry) => entry.id === 'usage_ledger' && entry.present), 'Backup: usage ledger present');
     ok(backup.manifest.components.some((entry) => entry.id === 'billing_entitlement_store' && entry.present), 'Backup: billing entitlement store present');
+    ok(backup.manifest.components.some((entry) => entry.id === 'async_dead_letter_store' && entry.present), 'Backup: async DLQ store present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_audit_log' && entry.present), 'Backup: admin audit present');
     ok(backup.manifest.components.some((entry) => entry.id === 'admin_idempotency_store' && entry.present), 'Backup: admin idempotency present');
     ok(backup.manifest.components.some((entry) => entry.id === 'stripe_webhook_store' && entry.present), 'Backup: webhook store present');
@@ -247,6 +271,7 @@ async function run(): Promise<void> {
     resetHostedBillingEntitlementStoreForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
+    resetAsyncDeadLetterStoreForTests();
     resetStripeWebhookStoreForTests();
     await resetBillingEventLedgerForTests();
 
@@ -289,6 +314,10 @@ async function run(): Promise<void> {
     ok(restoredAudit.chainIntact === true, 'Restore: admin audit chain intact');
     ok(restoredAudit.records.length === 1, 'Restore: admin audit records recovered');
 
+    const restoredDlq = listAsyncDeadLetterRecords();
+    ok(restoredDlq.records.length === 1, 'Restore: async DLQ records recovered');
+    ok(restoredDlq.records[0].jobId === 'job_backup_dlq_1', 'Restore: async DLQ job id preserved');
+
     const idempotencyLookup = lookupAdminIdempotency({
       idempotencyKey: 'idem-backup-1',
       routeId: 'admin.accounts.create',
@@ -314,6 +343,7 @@ async function run(): Promise<void> {
     resetHostedBillingEntitlementStoreForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
+    resetAsyncDeadLetterStoreForTests();
     resetStripeWebhookStoreForTests();
     await resetBillingEventLedgerForTests();
     try { await billingPg.stop(); } catch {}

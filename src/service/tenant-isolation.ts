@@ -14,7 +14,7 @@
  * - Token-based tenant identification (not database isolation)
  * - API key lookup can come from env or local file-backed operator store
  * - Plan/quota metadata can ride with API keys for hosted enforcement
- * - No rate limiting or shared multi-node tenant datastore yet
+ * - No full multi-node customer identity fabric yet; hosted tenant truth can be shared via the control-plane PostgreSQL first slice
  * - Request routing remains distinct from optional database-level RLS
  * - This is the first request-routing slice
  */

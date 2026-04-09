@@ -861,6 +861,7 @@ export interface AdminAsyncQueueSummaryResponse {
 export interface AdminAsyncDeadLetterRecord {
   jobId: string;
   name: string;
+  backendMode: 'bullmq' | 'in_process';
   tenantId: string | null;
   planId: string | null;
   state: string;
@@ -871,6 +872,7 @@ export interface AdminAsyncDeadLetterRecord {
   submittedAt: string | null;
   processedAt: string | null;
   failedAt: string | null;
+  recordedAt: string;
 }
 
 export interface AdminAsyncDeadLetterResponse {

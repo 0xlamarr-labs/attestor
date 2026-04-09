@@ -51,6 +51,23 @@ async function reservePort(): Promise<number> {
   });
 }
 
+async function waitForJobStatus(
+  base: string,
+  jobId: string,
+  expected: 'completed' | 'failed',
+  timeoutMs: number = 6000,
+  headers?: Record<string, string>,
+): Promise<any> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${base}/api/v1/pipeline/status/${jobId}`, { headers });
+    const body = await res.json();
+    if (body.status === expected) return body;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for async job ${jobId} to reach status '${expected}'.`);
+}
+
 async function run(): Promise<void> {
   mkdirSync('.attestor', { recursive: true });
   const tempRoot = mkdtempSync(join(process.cwd(), '.attestor', 'live-control-plane-pg-'));
@@ -74,6 +91,7 @@ async function run(): Promise<void> {
   const accountSessionStorePath = join(tempRoot, 'account-sessions.json');
   const adminAuditPath = join(tempRoot, 'admin-audit.json');
   const adminIdempotencyPath = join(tempRoot, 'admin-idempotency.json');
+  const asyncDlqPath = join(tempRoot, 'async-dlq.json');
   const stripeWebhookPath = join(tempRoot, 'stripe-webhooks.json');
   const billingEntitlementPath = join(tempRoot, 'billing-entitlements.json');
 
@@ -86,6 +104,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_USAGE_LEDGER_PATH = usageLedgerPath;
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = adminAuditPath;
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = adminIdempotencyPath;
+  process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = asyncDlqPath;
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = stripeWebhookPath;
   process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = billingEntitlementPath;
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(tempRoot, 'observability.jsonl');
@@ -153,6 +172,7 @@ async function run(): Promise<void> {
     ok(!existsSync(billingEntitlementPath), 'Shared PG: no local billing entitlement file created');
     ok(!existsSync(adminAuditPath), 'Shared PG: no local admin audit file created');
     ok(!existsSync(adminIdempotencyPath), 'Shared PG: no local admin idempotency file created');
+    ok(!existsSync(asyncDlqPath), 'Shared PG: no local async DLQ file created');
 
     const createAccountReplayRes = await fetch(`${base}/api/v1/admin/accounts`, {
       method: 'POST',
@@ -375,6 +395,37 @@ async function run(): Promise<void> {
     ok(reLoginRes.status === 200, 'Shared PG account can re-login after reactivate');
     accountSessionCookie = reLoginRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
     ok(Boolean(accountSessionCookie), 'Shared PG re-login returns fresh session cookie');
+
+    const failedAsyncRes = await fetch(`${base}/api/v1/pipeline/run-async`, {
+      method: 'POST',
+      headers: {
+        ...replacementAuth,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        candidateSql: 123,
+        intent: 'bad-intent',
+      }),
+    });
+    ok(failedAsyncRes.status === 202, 'Shared PG async failure proof: queued for worker validation');
+    const failedAsyncBody = await failedAsyncRes.json() as any;
+    const failedAsyncStatus = await waitForJobStatus(
+      base,
+      failedAsyncBody.jobId,
+      'failed',
+      6000,
+      replacementAuth,
+    );
+    ok(failedAsyncStatus.tenantContext?.tenantId === 'tenant-pg-live', 'Shared PG async failure proof: tenant context preserved');
+    const sharedDlqRes = await fetch(`${base}/api/v1/admin/queue/dlq?tenantId=tenant-pg-live&limit=10`, {
+      headers: { Authorization: 'Bearer admin-shared-control-plane' },
+    });
+    ok(sharedDlqRes.status === 200, 'Shared PG async DLQ: admin route readable');
+    const sharedDlqBody = await sharedDlqRes.json() as any;
+    const sharedDlqRecord = sharedDlqBody.records.find((record: any) => record.jobId === failedAsyncBody.jobId);
+    ok(Boolean(sharedDlqRecord), 'Shared PG async DLQ: failed job persisted');
+    ok(sharedDlqRecord.backendMode === 'bullmq', 'Shared PG async DLQ: backend mode truthful');
+    ok(!existsSync(asyncDlqPath), 'Shared PG async DLQ: no local file created after failure');
 
     const checkoutRes = await fetch(`${base}/api/v1/account/billing/checkout`, {
       method: 'POST',

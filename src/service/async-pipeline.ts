@@ -10,7 +10,7 @@
  * - Worker: processes jobs by calling runFinancialPipeline()
  * - Status: job progress and results queryable by jobId
  * - Retry: bounded attempts + exponential backoff
- * - DLQ: failed BullMQ jobs retained for short-lived operator inspection
+ * - DLQ: terminal async failures retained in an operator-facing dead-letter store
  *
  * DEPLOYMENT:
  * - Requires Redis (localhost:6379 or REDIS_URL)
@@ -20,13 +20,15 @@
  * BOUNDARY:
  * - Single logical queue first slice
  * - Tenant fairness is enforced via per-tenant pending-job caps, not BullMQ Pro groups
- * - Failed jobs remain in BullMQ's failed set / DLQ view, not an external incident system
+ * - BullMQ failed jobs remain the runtime source of truth, but terminal failures are also copied into a persistent DLQ store
  * - No long-term job result persistence outside BullMQ retention
  */
 
 import { randomUUID } from 'node:crypto';
 import { Job, Queue, UnrecoverableError, Worker } from 'bullmq';
 import type { FinancialPipelineInput } from '../financial/pipeline.js';
+import type { AsyncDeadLetterRecord } from './async-dead-letter-store.js';
+import { removeAsyncDeadLetterRecordState, upsertAsyncDeadLetterRecordState } from './control-plane-store.js';
 import { resolvePlanAsyncQueue } from './plan-catalog.js';
 
 export interface PipelineJobTenantContext {
@@ -93,20 +95,7 @@ export interface AsyncQueueSummary {
   tenant: TenantAsyncQueueSnapshot | null;
 }
 
-export interface AsyncDeadLetterJobRecord {
-  jobId: string;
-  name: string;
-  tenantId: string | null;
-  planId: string | null;
-  state: 'failed' | string;
-  failedReason: string | null;
-  attemptsMade: number;
-  maxAttempts: number;
-  requestedAt: string | null;
-  submittedAt: string | null;
-  processedAt: string | null;
-  failedAt: string | null;
-}
+export type AsyncDeadLetterJobRecord = AsyncDeadLetterRecord;
 
 export interface AsyncPipelineConfig {
   redisUrl?: string;
@@ -254,6 +243,55 @@ async function failedReasonForJob(
     }
   }
   return null;
+}
+
+function failedReasonFromEvent(job: Job<PipelineJobData, PipelineJobResult> | undefined | null, err: Error): string | null {
+  const direct = job?.failedReason?.trim();
+  if (direct) return direct;
+  const stackReason = job?.stacktrace?.find((entry) => typeof entry === 'string' && entry.trim() !== '');
+  if (stackReason) return stackReason;
+  if (err.message?.trim()) return err.message.trim();
+  return null;
+}
+
+function deadLetterRecordFromJob(options: {
+  backendMode: AsyncDeadLetterRecord['backendMode'];
+  job: Job<PipelineJobData, PipelineJobResult>;
+  failedReason: string | null;
+}): AsyncDeadLetterRecord {
+  const { backendMode, job, failedReason } = options;
+  return {
+    jobId: String(job.id),
+    name: job.name,
+    backendMode,
+    tenantId: job.data.tenant?.tenantId ?? null,
+    planId: job.data.tenant?.planId ?? null,
+    state: 'failed',
+    failedReason,
+    attemptsMade: job.attemptsMade,
+    maxAttempts: job.opts.attempts ?? resolveRetryPolicy().attempts,
+    requestedAt: job.data.requestedAt ?? null,
+    submittedAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
+    processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
+    failedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : new Date().toISOString(),
+    recordedAt: new Date().toISOString(),
+  };
+}
+
+async function persistTerminalDeadLetterJob(
+  job: Job<PipelineJobData, PipelineJobResult> | undefined | null,
+  err: Error,
+): Promise<void> {
+  if (!job?.id) return;
+  const maxAttempts = job.opts.attempts ?? resolveRetryPolicy().attempts;
+  const state = await job.getState().catch(() => null);
+  if (state !== 'failed' && job.attemptsMade < maxAttempts) return;
+  const record = deadLetterRecordFromJob({
+    backendMode: 'bullmq',
+    job,
+    failedReason: failedReasonFromEvent(job, err),
+  });
+  await upsertAsyncDeadLetterRecordState(record);
 }
 
 export function getAsyncRetryPolicy(config?: AsyncPipelineConfig): AsyncRetryPolicy {
@@ -456,6 +494,7 @@ export async function listFailedPipelineJobs(
       records.push({
         jobId: String(job.id),
         name: job.name,
+        backendMode: 'bullmq',
         tenantId: job.data.tenant?.tenantId ?? null,
         planId: job.data.tenant?.planId ?? null,
         state: await job.getState(),
@@ -466,6 +505,7 @@ export async function listFailedPipelineJobs(
         submittedAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
         processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
         failedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : null,
+        recordedAt: job.finishedOn ? new Date(job.finishedOn).toISOString() : new Date().toISOString(),
       });
       if (records.length >= limit) break;
     }
@@ -499,9 +539,11 @@ export async function retryFailedPipelineJob(
     }
   }
   await job.retry();
+  await removeAsyncDeadLetterRecordState(jobId);
   return {
     jobId: String(job.id),
     name: job.name,
+    backendMode: 'bullmq',
     tenantId,
     planId,
     state: 'waiting',
@@ -512,6 +554,7 @@ export async function retryFailedPipelineJob(
     submittedAt: job.timestamp ? new Date(job.timestamp).toISOString() : null,
     processedAt: job.processedOn ? new Date(job.processedOn).toISOString() : null,
     failedAt: null,
+    recordedAt: new Date().toISOString(),
   };
 }
 
@@ -519,7 +562,7 @@ export function createPipelineWorker(config?: AsyncPipelineConfig): Worker<Pipel
   const redis = parseRedisOpts(config?.redisUrl ?? process.env.REDIS_URL);
   const policy = resolveRetryPolicy(config);
 
-  return new Worker<PipelineJobData, PipelineJobResult>(
+  const worker = new Worker<PipelineJobData, PipelineJobResult>(
     currentQueueName(config),
     async (job: Job<PipelineJobData, PipelineJobResult>) => {
       const start = Date.now();
@@ -550,6 +593,18 @@ export function createPipelineWorker(config?: AsyncPipelineConfig): Worker<Pipel
       maxStalledCount: policy.maxStalledCount,
     },
   );
+
+  worker.on('completed', (job) => {
+    if (!job?.id) return;
+    void removeAsyncDeadLetterRecordState(String(job.id)).catch(() => {});
+  });
+
+  worker.on('failed', (job, err) => {
+    if (!job || !err) return;
+    void persistTerminalDeadLetterJob(job, err).catch(() => {});
+  });
+
+  return worker;
 }
 
 export async function checkRedisHealth(config?: AsyncPipelineConfig): Promise<{
