@@ -1,0 +1,119 @@
+services:
+  proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - "3700:8080"
+    volumes:
+      - ./ops/nginx/attestor-ha.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api1:
+        condition: service_healthy
+      api2:
+        condition: service_healthy
+
+  api1:
+    build: .
+    command: node dist/service/api-server.js
+    expose:
+      - "3700"
+    environment:
+      PORT: 3700
+      ATTESTOR_INSTANCE_ID: api1
+      ATTESTOR_HA_MODE: "true"
+      ATTESTOR_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+      ATTESTOR_CONTROL_PLANE_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+      ATTESTOR_BILLING_LEDGER_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+      REDIS_URL: redis://redis:6379
+      ATTESTOR_RATE_LIMIT_REDIS_URL: redis://redis:6379
+      ATTESTOR_ASYNC_ACTIVE_REDIS_URL: redis://redis:6379
+      ATTESTOR_TENANT_KEYS: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3700/api/v1/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  api2:
+    build: .
+    command: node dist/service/api-server.js
+    expose:
+      - "3700"
+    environment:
+      PORT: 3700
+      ATTESTOR_INSTANCE_ID: api2
+      ATTESTOR_HA_MODE: "true"
+      ATTESTOR_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+      ATTESTOR_CONTROL_PLANE_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+      ATTESTOR_BILLING_LEDGER_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+      REDIS_URL: redis://redis:6379
+      ATTESTOR_RATE_LIMIT_REDIS_URL: redis://redis:6379
+      ATTESTOR_ASYNC_ACTIVE_REDIS_URL: redis://redis:6379
+      ATTESTOR_TENANT_KEYS: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3700/api/v1/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  worker1:
+    build: .
+    command: node dist/service/worker.js
+    environment:
+      ATTESTOR_INSTANCE_ID: worker1
+      ATTESTOR_HA_MODE: "true"
+      REDIS_URL: redis://redis:6379
+      ATTESTOR_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker2:
+    build: .
+    command: node dist/service/worker.js
+    environment:
+      ATTESTOR_INSTANCE_ID: worker2
+      ATTESTOR_HA_MODE: "true"
+      REDIS_URL: redis://redis:6379
+      ATTESTOR_PG_URL: postgresql://attestor:attestor@postgres:5432/attestor
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: attestor
+      POSTGRES_PASSWORD: attestor
+      POSTGRES_DB: attestor
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U attestor"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pg_data:

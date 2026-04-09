@@ -92,6 +92,10 @@ import {
   shutdownTenantAsyncExecutionCoordinator,
 } from './async-tenant-execution.js';
 import {
+  evaluateApiHighAvailabilityState,
+  resolveServiceInstanceId,
+} from './high-availability.js';
+import {
   tenantKeyStorePolicy,
   TenantKeyStoreError,
   type TenantKeyRecord,
@@ -231,6 +235,7 @@ if (!filingRegistry.has('xbrl-csv-eba-dpm2')) filingRegistry.register(xbrlCsvEba
 
 const app = new Hono();
 const startTime = Date.now();
+const serviceInstanceId = resolveServiceInstanceId();
 
 app.use('/api/*', async (c, next) => {
   const requestUrl = new URL(c.req.url);
@@ -320,6 +325,7 @@ app.use('/api/*', async (c, next) => {
     c.header('traceparent', trace.responseTraceparent);
     c.header('x-attestor-trace-id', trace.traceId);
     c.header('x-attestor-span-id', trace.spanId);
+    c.header('x-attestor-instance-id', serviceInstanceId);
   }
 });
 
@@ -893,9 +899,16 @@ async function finalizeAdminMutation(options: {
 // ─── Health ─────────────────────────────────────────────────────────────────
 
 app.get('/api/v1/health', (c) => {
+  const highAvailability = evaluateApiHighAvailabilityState({
+    redisMode: redisMode as 'external' | 'localhost' | 'embedded' | 'none' | 'unavailable',
+    asyncBackendMode: asyncBackendMode as 'bullmq' | 'in_process' | 'none',
+    sharedControlPlane: isSharedControlPlaneConfigured(),
+    sharedBillingLedger: !!process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim(),
+  });
   return c.json({
     status: 'healthy',
     version: '0.1.0',
+    instanceId: serviceInstanceId,
     uptime: Math.floor((Date.now() - startTime) / 1000),
     domains: domainRegistry.listIds(),
     connectors: connectorRegistry.listIds(),
@@ -919,6 +932,7 @@ app.get('/api/v1/health', (c) => {
       },
     },
     asyncBackend: { mode: asyncBackendMode, redisMode },
+    highAvailability,
     engine: 'attestor',
   });
 });
@@ -4105,6 +4119,12 @@ app.get('/api/v1/pipeline/status/:jobId', async (c) => {
 app.get('/api/v1/ready', (c) => {
   const checks: Record<string, boolean> = {};
   let ready = true;
+  const highAvailability = evaluateApiHighAvailabilityState({
+    redisMode: redisMode as 'external' | 'localhost' | 'embedded' | 'none' | 'unavailable',
+    asyncBackendMode: asyncBackendMode as 'bullmq' | 'in_process' | 'none',
+    sharedControlPlane: isSharedControlPlaneConfigured(),
+    sharedBillingLedger: !!process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim(),
+  });
 
   // 1. Async backend initialized (BullMQ or in-process fallback)
   checks.asyncBackend = asyncBackendMode === 'bullmq' || asyncBackendMode === 'in_process';
@@ -4124,8 +4144,13 @@ app.get('/api/v1/ready', (c) => {
     if (!checks.redis) ready = false;
   }
 
+  if (highAvailability.enabled) {
+    checks.highAvailability = highAvailability.ready;
+    if (!checks.highAvailability) ready = false;
+  }
+
   const status = ready ? 200 : 503;
-  return c.json({ ready, checks, asyncBackendMode, redisMode }, status);
+  return c.json({ ready, checks, instanceId: serviceInstanceId, asyncBackendMode, redisMode, highAvailability }, status);
 });
 
 // ─── Server Start/Stop ──────────────────────────────────────────────────────
@@ -4140,6 +4165,18 @@ export function startServer(port: number = 3700): { port: number; close: () => v
     redisUrl: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() || sharedRedisUrl,
     redisMode: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() ? 'explicit' : redisMode,
   });
+  const highAvailability = evaluateApiHighAvailabilityState({
+    redisMode: redisMode as 'external' | 'localhost' | 'embedded' | 'none' | 'unavailable',
+    asyncBackendMode: asyncBackendMode as 'bullmq' | 'in_process' | 'none',
+    sharedControlPlane: isSharedControlPlaneConfigured(),
+    sharedBillingLedger: !!process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim(),
+  });
+  if (highAvailability.enabled && !highAvailability.ready) {
+    throw new Error(`ATTESTOR_HA_MODE startup guard failed for instance '${highAvailability.instanceId}': ${highAvailability.issues.join(' ')}`);
+  }
+  if (highAvailability.enabled) {
+    console.log(`[ha] Multi-node first slice enabled for instance '${highAvailability.instanceId}' (redis=${highAvailability.redisMode}, sharedControlPlane=${highAvailability.sharedControlPlane}, sharedBillingLedger=${highAvailability.sharedBillingLedger})`);
+  }
   if (telemetry.traces.enabled && telemetry.traces.endpoint) {
     console.log(`[telemetry] OTLP traces enabled (${telemetry.traces.protocol}) -> ${telemetry.traces.endpoint}`);
   }

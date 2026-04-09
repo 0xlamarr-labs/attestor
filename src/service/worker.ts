@@ -28,22 +28,28 @@
  * Run: REDIS_URL=redis://prod:6379 npm run worker
  */
 
+import type { Worker } from 'bullmq';
 import { resolveRedis } from './redis-auto.js';
 import {
   configureTenantAsyncExecutionCoordinator,
   shutdownTenantAsyncExecutionCoordinator,
 } from './async-tenant-execution.js';
+import {
+  evaluateWorkerHighAvailabilityState,
+  resolveServiceInstanceId,
+} from './high-availability.js';
 import { createPipelineWorker } from './async-pipeline.js';
-import type { Worker } from 'bullmq';
 
 async function main() {
   console.log('[worker] Attestor Pipeline Worker starting...');
+  const instanceId = resolveServiceInstanceId();
 
-  // ── Redis connection (same 3-tier auto-resolution as API) ──
   let redisUrl: string;
+  let resolvedRedisMode: 'external' | 'localhost' | 'embedded' = 'embedded';
   try {
     const resolved = await resolveRedis();
     redisUrl = `redis://${resolved.host}:${resolved.port}`;
+    resolvedRedisMode = resolved.mode;
     configureTenantAsyncExecutionCoordinator({ redisUrl, redisMode: resolved.mode });
     console.log(`[worker] Redis connected (${resolved.mode} @ ${resolved.host}:${resolved.port})`);
   } catch (err: any) {
@@ -52,7 +58,16 @@ async function main() {
     process.exit(1);
   }
 
-  // ── Create BullMQ Worker ──
+  const highAvailability = evaluateWorkerHighAvailabilityState({
+    redisMode: resolvedRedisMode,
+  });
+  if (highAvailability.enabled && !highAvailability.ready) {
+    throw new Error(`ATTESTOR_HA_MODE startup guard failed for worker '${instanceId}': ${highAvailability.issues.join(' ')}`);
+  }
+  if (highAvailability.enabled) {
+    console.log(`[worker] Multi-node first slice enabled for instance '${instanceId}' (redis=${highAvailability.redisMode})`);
+  }
+
   const worker: Worker = createPipelineWorker({ redisUrl });
   console.log(`[worker] Pipeline worker active — listening for jobs on queue 'attestor-pipeline'`);
 
@@ -66,7 +81,6 @@ async function main() {
     console.error(`[worker] Worker error: ${err.message}`);
   });
 
-  // ── Graceful shutdown ──
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
