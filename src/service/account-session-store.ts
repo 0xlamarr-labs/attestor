@@ -9,6 +9,7 @@
  * - Local file-backed store only
  * - Opaque random session tokens hashed at rest
  * - HttpOnly cookie/header transport expected
+ * - Sessions are issued only after MFA verification when the account user has MFA enabled
  * - No refresh tokens, device binding, or central session revocation bus yet
  */
 

@@ -30,6 +30,7 @@ import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-s
 import { resetBillingEventLedgerForTests } from '../src/service/billing-event-ledger.js';
 import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
 import { resetObservabilityForTests } from '../src/service/observability.js';
+import { generateCurrentTotpCode } from '../src/service/account-mfa.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT, COUNTERPARTY_REPORT_CONTRACT,
@@ -112,6 +113,7 @@ async function run() {
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-users.json');
   process.env.ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-user-tokens.json');
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-sessions.json');
+  process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'live-api-mfa-secret';
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
   process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-async-dlq.json');
@@ -1102,6 +1104,123 @@ async function run() {
       });
       ok(readOnlyNewPasswordLoginRes.status === 200, 'Auth: new read_only password works');
       readOnlyCookie = cookieHeaderFromResponse(readOnlyNewPasswordLoginRes);
+
+      const readOnlyMfaEnrollRes = await fetch(`${BASE}/api/v1/account/mfa/totp/enroll`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: readOnlyCookie!,
+        },
+        body: JSON.stringify({
+          password: 'ReadOnlyPass456!',
+        }),
+      });
+      ok(readOnlyMfaEnrollRes.status === 200, 'MFA: TOTP enrollment start status 200');
+      const readOnlyMfaEnrollBody = await readOnlyMfaEnrollRes.json() as any;
+      ok(readOnlyMfaEnrollBody.enrollment.method === 'totp', 'MFA: enrollment method is totp');
+      ok(typeof readOnlyMfaEnrollBody.enrollment.secretBase32 === 'string', 'MFA: enrollment returns secret');
+      ok(String(readOnlyMfaEnrollBody.enrollment.otpauthUrl).startsWith('otpauth://totp/'), 'MFA: enrollment returns otpauth URL');
+      const readOnlyPendingMfaRes = await fetch(`${BASE}/api/v1/account/mfa`, {
+        headers: { Cookie: readOnlyCookie! },
+      });
+      ok(readOnlyPendingMfaRes.status === 200, 'MFA: summary status 200 while pending');
+      const readOnlyPendingMfaBody = await readOnlyPendingMfaRes.json() as any;
+      ok(readOnlyPendingMfaBody.mfa.pendingEnrollment === true, 'MFA: summary shows pending enrollment');
+
+      const readOnlyMfaConfirmRes = await fetch(`${BASE}/api/v1/account/mfa/totp/confirm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: readOnlyCookie!,
+        },
+        body: JSON.stringify({
+          code: generateCurrentTotpCode(readOnlyMfaEnrollBody.enrollment.secretBase32),
+        }),
+      });
+      ok(readOnlyMfaConfirmRes.status === 200, 'MFA: TOTP confirm status 200');
+      const readOnlyMfaConfirmBody = await readOnlyMfaConfirmRes.json() as any;
+      const readOnlyMfaCookie = cookieHeaderFromResponse(readOnlyMfaConfirmRes);
+      ok(Boolean(readOnlyMfaCookie), 'MFA: confirm rotates session cookie');
+      ok(readOnlyMfaConfirmBody.enabled === true, 'MFA: confirm enables MFA');
+      ok(Array.isArray(readOnlyMfaConfirmBody.recoveryCodes) && readOnlyMfaConfirmBody.recoveryCodes.length === 8, 'MFA: confirm returns recovery codes once');
+
+      const stalePreMfaSessionRes = await fetch(`${BASE}/api/v1/auth/me`, {
+        headers: { Cookie: readOnlyCookie! },
+      });
+      ok(stalePreMfaSessionRes.status === 401, 'MFA: pre-enrollment session revoked after enable');
+      readOnlyCookie = readOnlyMfaCookie;
+
+      const readOnlyEnabledMfaRes = await fetch(`${BASE}/api/v1/account/mfa`, {
+        headers: { Cookie: readOnlyCookie! },
+      });
+      ok(readOnlyEnabledMfaRes.status === 200, 'MFA: summary status 200 after enable');
+      const readOnlyEnabledMfaBody = await readOnlyEnabledMfaRes.json() as any;
+      ok(readOnlyEnabledMfaBody.mfa.enabled === true, 'MFA: summary shows enabled');
+      ok(readOnlyEnabledMfaBody.mfa.recoveryCodesRemaining === 8, 'MFA: summary shows recovery code count');
+
+      const readOnlyMfaLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'readonly@account.example',
+          password: 'ReadOnlyPass456!',
+        }),
+      });
+      ok(readOnlyMfaLoginRes.status === 200, 'MFA: login returns challenge response');
+      const readOnlyMfaLoginBody = await readOnlyMfaLoginRes.json() as any;
+      ok(readOnlyMfaLoginBody.mfaRequired === true, 'MFA: login requires second factor');
+      ok(typeof readOnlyMfaLoginBody.challengeToken === 'string' && readOnlyMfaLoginBody.challengeToken.startsWith('atok_'), 'MFA: challenge token returned');
+
+      const readOnlyMfaWrongVerifyRes = await fetch(`${BASE}/api/v1/auth/mfa/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeToken: readOnlyMfaLoginBody.challengeToken,
+          code: '000000',
+        }),
+      });
+      ok(readOnlyMfaWrongVerifyRes.status === 400, 'MFA: wrong TOTP code rejected');
+
+      const readOnlyMfaVerifyRes = await fetch(`${BASE}/api/v1/auth/mfa/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeToken: readOnlyMfaLoginBody.challengeToken,
+          code: generateCurrentTotpCode(readOnlyMfaEnrollBody.enrollment.secretBase32),
+        }),
+      });
+      ok(readOnlyMfaVerifyRes.status === 200, 'MFA: verify challenge status 200');
+      const readOnlyMfaVerifyBody = await readOnlyMfaVerifyRes.json() as any;
+      readOnlyCookie = cookieHeaderFromResponse(readOnlyMfaVerifyRes);
+      ok(Boolean(readOnlyCookie), 'MFA: verify issues new session cookie');
+      ok(readOnlyMfaVerifyBody.verified === true, 'MFA: verify returns verified=true');
+      ok(readOnlyMfaVerifyBody.recoveryCodeUsed === false, 'MFA: verify notes TOTP path');
+
+      const readOnlyMfaDisableRes = await fetch(`${BASE}/api/v1/account/mfa/disable`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: readOnlyCookie!,
+        },
+        body: JSON.stringify({
+          password: 'ReadOnlyPass456!',
+          recoveryCode: readOnlyMfaConfirmBody.recoveryCodes[0],
+        }),
+      });
+      ok(readOnlyMfaDisableRes.status === 200, 'MFA: disable status 200');
+      const readOnlyMfaDisableBody = await readOnlyMfaDisableRes.json() as any;
+      const readOnlyPostDisableCookie = cookieHeaderFromResponse(readOnlyMfaDisableRes);
+      ok(Boolean(readOnlyPostDisableCookie), 'MFA: disable rotates session cookie');
+      ok(readOnlyMfaDisableBody.disabled === true, 'MFA: disable returns disabled=true');
+      ok(readOnlyMfaDisableBody.recoveryCodeUsed === true, 'MFA: disable accepts recovery code');
+      readOnlyCookie = readOnlyPostDisableCookie;
+
+      const readOnlyDisabledMfaRes = await fetch(`${BASE}/api/v1/account/mfa`, {
+        headers: { Cookie: readOnlyCookie! },
+      });
+      ok(readOnlyDisabledMfaRes.status === 200, 'MFA: summary status 200 after disable');
+      const readOnlyDisabledMfaBody = await readOnlyDisabledMfaRes.json() as any;
+      ok(readOnlyDisabledMfaBody.mfa.enabled === false, 'MFA: summary shows disabled after disable');
 
       const billingAdminLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
         method: 'POST',

@@ -8,9 +8,9 @@
  * BOUNDARY:
  * - Local file-backed store only
  * - One account membership per email in this first slice
- * - Passwords use built-in scrypt (memory-hard) instead of Argon2id
+ * - Passwords and recovery codes use built-in scrypt (memory-hard) instead of Argon2id
  * - Invite and password-reset flows exist, but delivery is still manual/operator-driven
- * - No MFA or SSO/SAML yet
+ * - TOTP MFA is shipped; WebAuthn and SSO/SAML are not
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -32,6 +32,36 @@ export interface AccountUserPasswordState {
   hash: string;
 }
 
+export interface AccountUserRecoveryCodeRecord {
+  id: string;
+  hash: AccountUserPasswordState;
+  consumedAt: string | null;
+}
+
+export interface AccountUserTotpState {
+  method: 'totp';
+  algorithm: 'SHA1';
+  digits: 6;
+  periodSeconds: 30;
+  enabledAt: string | null;
+  updatedAt: string | null;
+  sessionBoundaryAt: string | null;
+  secretCiphertext: string | null;
+  secretIv: string | null;
+  secretAuthTag: string | null;
+  pendingSecretCiphertext: string | null;
+  pendingSecretIv: string | null;
+  pendingSecretAuthTag: string | null;
+  pendingIssuedAt: string | null;
+  recoveryCodes: AccountUserRecoveryCodeRecord[];
+  recoveryCodesIssuedAt: string | null;
+  lastVerifiedAt: string | null;
+}
+
+export interface AccountUserMfaState {
+  totp: AccountUserTotpState;
+}
+
 export interface AccountUserRecord {
   id: string;
   accountId: string;
@@ -45,6 +75,7 @@ export interface AccountUserRecord {
   passwordUpdatedAt: string;
   deactivatedAt: string | null;
   lastLoginAt: string | null;
+  mfa: AccountUserMfaState;
 }
 
 interface AccountUserStoreFile {
@@ -85,10 +116,50 @@ function defaultStore(): AccountUserStoreFile {
   return { version: 1, records: [] };
 }
 
+export function defaultAccountUserMfaState(): AccountUserMfaState {
+  return {
+    totp: {
+      method: 'totp',
+      algorithm: 'SHA1',
+      digits: 6,
+      periodSeconds: 30,
+      enabledAt: null,
+        updatedAt: null,
+        sessionBoundaryAt: null,
+        secretCiphertext: null,
+      secretIv: null,
+      secretAuthTag: null,
+      pendingSecretCiphertext: null,
+      pendingSecretIv: null,
+      pendingSecretAuthTag: null,
+      pendingIssuedAt: null,
+      recoveryCodes: [],
+      recoveryCodesIssuedAt: null,
+      lastVerifiedAt: null,
+    },
+  };
+}
+
 function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
+  const defaults = defaultAccountUserMfaState();
+  const rawMfa = (record as Partial<AccountUserRecord>).mfa;
+  const rawTotp = rawMfa?.totp;
   return {
     ...record,
     passwordUpdatedAt: record.passwordUpdatedAt ?? record.updatedAt ?? record.createdAt,
+    mfa: {
+      totp: {
+        ...defaults.totp,
+        ...(rawTotp ?? {}),
+        recoveryCodes: Array.isArray(rawTotp?.recoveryCodes)
+          ? rawTotp.recoveryCodes.map((entry) => ({
+            id: String(entry.id),
+            hash: entry.hash,
+            consumedAt: entry.consumedAt ?? null,
+          }))
+          : [],
+      },
+    },
   };
 }
 
@@ -98,6 +169,10 @@ function normalizeEmail(email: string): string {
 
 export function normalizeAccountUserEmail(email: string): string {
   return normalizeEmail(email);
+}
+
+export function coerceAccountUserRecord(value: unknown): AccountUserRecord {
+  return normalizeRecord(value as AccountUserRecord);
 }
 
 function loadStore(): AccountUserStoreFile {
@@ -200,6 +275,7 @@ export function buildAccountUserRecord(input: CreateAccountUserInput): AccountUs
     passwordUpdatedAt: now,
     deactivatedAt: null,
     lastLoginAt: null,
+    mfa: defaultAccountUserMfaState(),
   };
 }
 
@@ -253,6 +329,22 @@ export function createAccountUser(input: CreateAccountUserInput): {
   store.records.push(record);
   saveStore(store);
   return { record, path: storePath() };
+}
+
+export function saveAccountUserRecord(record: AccountUserRecord): {
+  record: AccountUserRecord;
+  path: string;
+} {
+  const store = loadStore();
+  const normalized = normalizeRecord(record);
+  ensureUniqueEmail(store, normalized.email, normalized.id);
+  const index = store.records.findIndex((entry) => entry.id === normalized.id);
+  if (index < 0) {
+    throw new AccountUserStoreError('NOT_FOUND', `Account user '${normalized.id}' was not found.`);
+  }
+  store.records[index] = normalized;
+  saveStore(store);
+  return { record: normalized, path: storePath() };
 }
 
 export function recordAccountUserLogin(id: string): {

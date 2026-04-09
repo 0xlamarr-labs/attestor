@@ -11,6 +11,7 @@ import {
   COUNTERPARTY_REPORT_CONTRACT,
   COUNTERPARTY_SQL,
 } from '../src/financial/fixtures/scenarios.js';
+import { generateCurrentTotpCode } from '../src/service/account-mfa.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
 import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
@@ -100,6 +101,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = accountUserStorePath;
   process.env.ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH = accountUserTokenStorePath;
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = accountSessionStorePath;
+  process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'shared-control-plane-mfa-secret';
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = tenantKeyStorePath;
   process.env.ATTESTOR_USAGE_LEDGER_PATH = usageLedgerPath;
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = adminAuditPath;
@@ -244,6 +246,70 @@ async function run(): Promise<void> {
     ok(meRes.status === 200, 'Account me via shared PG session: 200');
     const meBody = await meRes.json() as any;
     ok(meBody.session.role === 'account_admin', 'Account me via shared PG session: role persisted');
+
+    const mfaEnrollRes = await fetch(`${base}/api/v1/account/mfa/totp/enroll`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: accountSessionCookie!,
+      },
+      body: JSON.stringify({
+        password: 'PgOwnerPass123!',
+      }),
+    });
+    ok(mfaEnrollRes.status === 200, 'Shared PG MFA enroll: 200');
+    const mfaEnrollBody = await mfaEnrollRes.json() as any;
+    ok(typeof mfaEnrollBody.enrollment.secretBase32 === 'string', 'Shared PG MFA enroll: secret returned');
+    ok(!existsSync(accountUserStorePath), 'Shared PG MFA enroll: no local account user store created');
+
+    const mfaConfirmRes = await fetch(`${base}/api/v1/account/mfa/totp/confirm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: accountSessionCookie!,
+      },
+      body: JSON.stringify({
+        code: generateCurrentTotpCode(mfaEnrollBody.enrollment.secretBase32),
+      }),
+    });
+    ok(mfaConfirmRes.status === 200, 'Shared PG MFA confirm: 200');
+    const mfaConfirmBody = await mfaConfirmRes.json() as any;
+    accountSessionCookie = mfaConfirmRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    ok(Boolean(accountSessionCookie), 'Shared PG MFA confirm: fresh session cookie returned');
+    ok(Array.isArray(mfaConfirmBody.recoveryCodes) && mfaConfirmBody.recoveryCodes.length === 8, 'Shared PG MFA confirm: recovery codes returned');
+    ok(!existsSync(accountSessionStorePath), 'Shared PG MFA confirm: no local session store created');
+
+    const mfaSummaryRes = await fetch(`${base}/api/v1/account/mfa`, {
+      headers: { Cookie: accountSessionCookie! },
+    });
+    ok(mfaSummaryRes.status === 200, 'Shared PG MFA summary: 200');
+    const mfaSummaryBody = await mfaSummaryRes.json() as any;
+    ok(mfaSummaryBody.mfa.enabled === true, 'Shared PG MFA summary: enabled=true');
+
+    const mfaLoginRes = await fetch(`${base}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'owner@pg-hosted.example',
+        password: 'PgOwnerPass123!',
+      }),
+    });
+    ok(mfaLoginRes.status === 200, 'Shared PG MFA login: challenge response');
+    const mfaLoginBody = await mfaLoginRes.json() as any;
+    ok(mfaLoginBody.mfaRequired === true, 'Shared PG MFA login: mfaRequired');
+    ok(!existsSync(accountUserTokenStorePath), 'Shared PG MFA login: no local action token store created');
+
+    const mfaVerifyRes = await fetch(`${base}/api/v1/auth/mfa/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeToken: mfaLoginBody.challengeToken,
+        code: generateCurrentTotpCode(mfaEnrollBody.enrollment.secretBase32),
+      }),
+    });
+    ok(mfaVerifyRes.status === 200, 'Shared PG MFA verify: 200');
+    accountSessionCookie = mfaVerifyRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    ok(Boolean(accountSessionCookie), 'Shared PG MFA verify: session cookie returned');
 
     const inviteRes = await fetch(`${base}/api/v1/account/users/invites`, {
       method: 'POST',
@@ -393,8 +459,20 @@ async function run(): Promise<void> {
       }),
     });
     ok(reLoginRes.status === 200, 'Shared PG account can re-login after reactivate');
-    accountSessionCookie = reLoginRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
-    ok(Boolean(accountSessionCookie), 'Shared PG re-login returns fresh session cookie');
+    const reLoginBody = await reLoginRes.json() as any;
+    ok(reLoginBody.mfaRequired === true, 'Shared PG re-login still enforces MFA');
+
+    const reLoginVerifyRes = await fetch(`${base}/api/v1/auth/mfa/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeToken: reLoginBody.challengeToken,
+        code: generateCurrentTotpCode(mfaEnrollBody.enrollment.secretBase32),
+      }),
+    });
+    ok(reLoginVerifyRes.status === 200, 'Shared PG re-login MFA verify: 200');
+    accountSessionCookie = reLoginVerifyRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    ok(Boolean(accountSessionCookie), 'Shared PG re-login returns fresh session cookie after MFA verify');
 
     const failedAsyncRes = await fetch(`${base}/api/v1/pipeline/run-async`, {
       method: 'POST',

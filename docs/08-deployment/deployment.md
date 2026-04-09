@@ -75,7 +75,7 @@ docker run \
 | `ATTESTOR_ACCOUNT_STORE_PATH` | No | `.attestor/accounts.json` | File-backed hosted account registry used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_ACCOUNT_USER_STORE_PATH` | No | `.attestor/account-users.json` | File-backed hosted account user registry used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_ACCOUNT_SESSION_STORE_PATH` | No | `.attestor/account-sessions.json` | File-backed hosted customer session store used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
-| `ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH` | No | `.attestor/account-user-tokens.json` | File-backed hosted invite/password-reset token store used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
+| `ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH` | No | `.attestor/account-user-tokens.json` | File-backed hosted invite/password-reset/MFA-login token store used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_TENANT_KEY_STORE_PATH` | No | `.attestor/tenant-keys.json` | File-backed tenant key store used by `npm run tenant:keys` and API key lookup when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_TENANT_KEY_MAX_ACTIVE_PER_TENANT` | No | `2` | Max simultaneously active hosted API keys per tenant during rotation overlap |
 | `ATTESTOR_USAGE_LEDGER_PATH` | No | `.attestor/usage-ledger.json` | File-backed single-node usage ledger for hosted quota enforcement when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
@@ -86,6 +86,10 @@ docker run \
 | `ATTESTOR_SESSION_COOKIE_SECURE` | No | `false` | Mark hosted customer session cookies as `Secure` |
 | `ATTESTOR_ACCOUNT_INVITE_TTL_HOURS` | No | `72` | Hosted invite token TTL in hours for manual-delivery onboarding |
 | `ATTESTOR_PASSWORD_RESET_TTL_MINUTES` | No | `30` | Hosted password-reset token TTL in minutes for manual-delivery reset flows |
+| `ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY` | No | None | Dedicated secret for encrypting hosted TOTP seeds at rest; falls back to `ATTESTOR_ADMIN_API_KEY` when unset |
+| `ATTESTOR_MFA_ISSUER` | No | `Attestor` | Issuer label embedded into generated `otpauth://` TOTP enrollment URLs |
+| `ATTESTOR_MFA_LOGIN_TTL_MINUTES` | No | `10` | Hosted MFA login challenge TTL in minutes |
+| `ATTESTOR_MFA_LOGIN_MAX_ATTEMPTS` | No | `5` | Max invalid attempts before a hosted MFA login challenge is revoked |
 | `ATTESTOR_RATE_LIMIT_WINDOW_SECONDS` | No | `60` | Tenant pipeline rate-limit window size in seconds |
 | `ATTESTOR_RATE_LIMIT_REDIS_URL` | No | None | Optional explicit Redis URL for shared pipeline-route rate limiting. When unset, the limiter reuses the current Redis async backend when BullMQ is active |
 | `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | No | Plan defaults | Per-plan request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
@@ -187,7 +191,7 @@ What is deployed today:
 - Shared Redis queue between API and worker
 - PostgreSQL RLS tenant isolation
 - Hosted tenant key lifecycle with rotate -> deactivate/reactivate -> revoke, `lastUsedAt`, and max-2 active overlap
-- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, manual-delivery invite/password-reset flows, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
+- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, manual-delivery invite/password-reset flows, TOTP MFA enrollment/verify/disable + recovery codes, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
 - Tenant-aware pipeline throttling with plan defaults, `Retry-After`, and `429` responses. Uses a shared Redis fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current BullMQ Redis backend is available; otherwise falls back to in-memory single-node buckets
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed` processing with duplicate-event suppression, checkout/invoice summary persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
@@ -204,3 +208,4 @@ What is not yet implemented:
 - No bundled external log collector or full distributed trace/metrics backend
 - External KMS-backed tenant key storage or shared multi-node key ledger
 - Full internal invoice line-item ledger, charge/invoice reconciliation beyond export-oriented summaries, Stripe-native feature entitlement service, or broader shared multi-node control-plane stores beyond the current hosted control-plane first slice
+- WebAuthn/passkeys, outbound email delivery for invite/reset/MFA recovery, and SSO/SAML

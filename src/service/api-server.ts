@@ -112,6 +112,16 @@ import {
   verifyAccountUserPasswordRecord,
 } from './account-user-store.js';
 import { type AccountUserActionTokenRecord } from './account-user-token-store.js';
+import {
+  buildTotpOtpAuthUrl,
+  decryptTotpSecret,
+  encryptTotpSecret,
+  generateRecoveryCodes,
+  generateTotpSecretBase32,
+  totpSummary,
+  verifyAndConsumeRecoveryCode,
+  verifyTotpCode,
+} from './account-mfa.js';
 import { type AsyncDeadLetterRecord } from './async-dead-letter-store.js';
 import {
   sessionCookieName,
@@ -128,6 +138,7 @@ import {
   countAccountUsersForAccountState,
   consumeAccountUserActionTokenState,
   createAccountUserState,
+  saveAccountUserRecordState,
   finalizeProcessedStripeWebhookState,
   consumePipelineRunState,
   findAccountUserByEmailState,
@@ -138,6 +149,7 @@ import {
   findTenantRecordByTenantIdState,
   getUsageContextState,
   issueAccountInviteTokenState,
+  issueAccountMfaLoginTokenState,
   issueAccountSessionState,
   isSharedControlPlaneConfigured,
   issueTenantApiKeyState,
@@ -166,6 +178,7 @@ import {
   recordProcessedStripeWebhookState,
   setAccountUserPasswordState,
   setAccountUserStatusState,
+  saveAccountUserActionTokenRecordState,
   setHostedAccountStatusState,
   setTenantApiKeyStatusState,
   syncTenantPlanByTenantIdState,
@@ -357,6 +370,7 @@ function currentAccountRole(c: Context): AccountUserRole | null {
 }
 
 function accountUserView(record: AccountUserRecord) {
+  const mfa = totpSummary(record.mfa.totp);
   return {
     id: record.id,
     accountId: record.accountId,
@@ -368,7 +382,17 @@ function accountUserView(record: AccountUserRecord) {
     updatedAt: record.updatedAt,
     deactivatedAt: record.deactivatedAt,
     lastLoginAt: record.lastLoginAt,
+    mfa: {
+      enabled: mfa.enabled,
+      method: mfa.method,
+      enrolledAt: mfa.enrolledAt,
+      pendingEnrollment: mfa.pendingEnrollment,
+    },
   };
+}
+
+function accountUserDetailedMfaView(record: AccountUserRecord) {
+  return totpSummary(record.mfa.totp);
 }
 
 function accountUserActionTokenStatus(record: AccountUserActionTokenRecord): 'pending' | 'consumed' | 'revoked' | 'expired' {
@@ -586,6 +610,14 @@ function accountStoreErrorResponse(c: Context, err: unknown): Response | null {
     return c.json({ error: err.message }, 404);
   }
   return c.json({ error: err.message }, 409);
+}
+
+function accountMfaErrorResponse(c: Context, err: unknown): Response | null {
+  if (!(err instanceof Error)) return null;
+  if (err.message.includes('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY') || err.message.includes('ATTESTOR_ADMIN_API_KEY')) {
+    return c.json({ error: err.message }, 503);
+  }
+  return null;
 }
 
 function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
@@ -1034,6 +1066,30 @@ app.post('/api/v1/auth/login', async (c) => {
     return c.json({ error: `Hosted account '${account.id}' is archived and cannot accept new sessions.` }, 403);
   }
 
+  const userTotp = totpSummary(user.mfa.totp);
+  if (userTotp.enabled) {
+    const issued = await issueAccountMfaLoginTokenState({
+      accountId: account.id,
+      accountUserId: user.id,
+      email: user.email,
+    });
+    return c.json({
+      mfaRequired: true,
+      challengeToken: issued.token,
+      challenge: {
+        id: issued.record.id,
+        method: 'totp',
+        expiresAt: issued.record.expiresAt,
+        maxAttempts: issued.record.maxAttempts,
+        remainingAttempts: issued.record.maxAttempts === null
+          ? null
+          : Math.max(issued.record.maxAttempts - issued.record.attemptCount, 0),
+      },
+      user: accountUserView(user),
+      account: adminAccountView(account),
+    });
+  }
+
   const issued = await issueAccountSessionState({
     accountId: account.id,
     accountUserId: user.id,
@@ -1044,6 +1100,101 @@ app.post('/api/v1/auth/login', async (c) => {
   setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
 
   return c.json({
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    user: accountUserView(loginTouch.record),
+    account: adminAccountView(account),
+  });
+});
+
+app.post('/api/v1/auth/mfa/verify', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
+  const code = typeof body.code === 'string' ? body.code.trim() : '';
+  const recoveryCode = typeof body.recoveryCode === 'string' ? body.recoveryCode.trim() : '';
+  if (!challengeToken || (!code && !recoveryCode)) {
+    return c.json({ error: 'challengeToken and either code or recoveryCode are required.' }, 400);
+  }
+
+  const challenge = await findAccountUserActionTokenByTokenState(challengeToken);
+  if (!challenge || challenge.purpose !== 'mfa_login' || !challenge.accountUserId) {
+    return c.json({ error: 'MFA challenge is invalid or expired.' }, 400);
+  }
+
+  const user = await findAccountUserByIdState(challenge.accountUserId);
+  const account = user ? await findHostedAccountByIdState(user.accountId) : null;
+  if (!user || !account || account.id !== challenge.accountId || user.status !== 'active' || account.status === 'archived') {
+    return c.json({ error: 'MFA challenge is invalid or expired.' }, 400);
+  }
+  if (!user.mfa.totp.enabledAt || !user.mfa.totp.secretCiphertext || !user.mfa.totp.secretIv || !user.mfa.totp.secretAuthTag) {
+    return c.json({ error: `Account user '${user.email}' does not have active MFA configured.` }, 409);
+  }
+
+  let verified = false;
+  let recoveryCodeUsed = false;
+  const nextUser = structuredClone(user);
+
+  if (code) {
+    try {
+      verified = verifyTotpCode({
+        secretBase32: decryptTotpSecret({
+          ciphertext: user.mfa.totp.secretCiphertext,
+          iv: user.mfa.totp.secretIv,
+          authTag: user.mfa.totp.secretAuthTag,
+        }),
+        code,
+      });
+    } catch (err) {
+      const mapped = accountMfaErrorResponse(c, err);
+      if (mapped) return mapped;
+      throw err;
+    }
+    if (verified) {
+      const now = new Date().toISOString();
+      nextUser.mfa.totp.lastVerifiedAt = now;
+      nextUser.mfa.totp.updatedAt = now;
+      nextUser.updatedAt = now;
+      await saveAccountUserRecordState(nextUser);
+    }
+  } else {
+    const recovery = verifyAndConsumeRecoveryCode(user.mfa.totp, recoveryCode);
+    verified = recovery.ok;
+    recoveryCodeUsed = recovery.ok;
+    if (recovery.ok) {
+      nextUser.mfa.totp = recovery.nextTotp;
+      nextUser.updatedAt = recovery.nextTotp.updatedAt ?? nextUser.updatedAt;
+      await saveAccountUserRecordState(nextUser);
+    }
+  }
+
+  if (!verified) {
+    const nextChallenge = structuredClone(challenge);
+    nextChallenge.attemptCount += 1;
+    nextChallenge.lastAttemptAt = new Date().toISOString();
+    nextChallenge.updatedAt = nextChallenge.lastAttemptAt;
+    if (nextChallenge.maxAttempts !== null && nextChallenge.attemptCount >= nextChallenge.maxAttempts) {
+      nextChallenge.revokedAt = nextChallenge.lastAttemptAt;
+    }
+    await saveAccountUserActionTokenRecordState(nextChallenge);
+    return c.json({ error: 'MFA code is invalid or expired.' }, 400);
+  }
+
+  await consumeAccountUserActionTokenState(challenge.id);
+  await revokeAccountUserActionTokensForUserState(user.id, 'mfa_login');
+  const loginTouch = await recordAccountUserLoginState(user.id);
+  const issued = await issueAccountSessionState({
+    accountId: account.id,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    verified: true,
+    recoveryCodeUsed,
     session: {
       id: issued.record.id,
       expiresAt: issued.record.expiresAt,
@@ -1130,6 +1281,248 @@ app.get('/api/v1/auth/me', async (c) => {
     },
     user: accountUserView(user),
     account: adminAccountView(account),
+  });
+});
+
+app.get('/api/v1/account/mfa', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+  return c.json({
+    mfa: accountUserDetailedMfaView(user),
+  });
+});
+
+app.post('/api/v1/account/mfa/totp/enroll', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!user || !account || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!password) {
+    return c.json({ error: 'password is required.' }, 400);
+  }
+  if (!verifyAccountUserPasswordRecord(user.password, password)) {
+    return c.json({ error: 'Current password is invalid.' }, 403);
+  }
+  if (totpSummary(user.mfa.totp).enabled) {
+    return c.json({ error: `Account user '${user.email}' already has TOTP MFA enabled.` }, 409);
+  }
+
+  let secretBase32: string;
+  let secretEnvelope: ReturnType<typeof encryptTotpSecret>;
+  try {
+    secretBase32 = generateTotpSecretBase32();
+    secretEnvelope = encryptTotpSecret(secretBase32);
+  } catch (err) {
+    const mapped = accountMfaErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+  const now = new Date().toISOString();
+  const nextUser = structuredClone(user);
+  nextUser.mfa.totp.pendingSecretCiphertext = secretEnvelope.ciphertext;
+  nextUser.mfa.totp.pendingSecretIv = secretEnvelope.iv;
+  nextUser.mfa.totp.pendingSecretAuthTag = secretEnvelope.authTag;
+  nextUser.mfa.totp.pendingIssuedAt = now;
+  nextUser.mfa.totp.updatedAt = now;
+  nextUser.updatedAt = now;
+  await saveAccountUserRecordState(nextUser);
+
+  const issuer = process.env.ATTESTOR_MFA_ISSUER?.trim() || 'Attestor';
+  return c.json({
+    enrollment: {
+      method: 'totp',
+      issuer,
+      accountName: user.email,
+      secretBase32,
+      otpauthUrl: buildTotpOtpAuthUrl({
+        issuer,
+        accountName: user.email,
+        secretBase32,
+      }),
+      digits: 6,
+      periodSeconds: 30,
+      algorithm: 'SHA1',
+      pendingIssuedAt: now,
+    },
+  });
+});
+
+app.post('/api/v1/account/mfa/totp/confirm', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const code = typeof body.code === 'string' ? body.code.trim() : '';
+  if (!code) {
+    return c.json({ error: 'code is required.' }, 400);
+  }
+  if (!user.mfa.totp.pendingSecretCiphertext || !user.mfa.totp.pendingSecretIv || !user.mfa.totp.pendingSecretAuthTag) {
+    return c.json({ error: `Account user '${user.email}' does not have a pending TOTP enrollment.` }, 409);
+  }
+
+  let secretBase32: string;
+  try {
+    secretBase32 = decryptTotpSecret({
+      ciphertext: user.mfa.totp.pendingSecretCiphertext,
+      iv: user.mfa.totp.pendingSecretIv,
+      authTag: user.mfa.totp.pendingSecretAuthTag,
+    });
+  } catch (err) {
+    const mapped = accountMfaErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+  if (!verifyTotpCode({ secretBase32, code })) {
+    return c.json({ error: 'TOTP code is invalid.' }, 400);
+  }
+
+  const recovery = generateRecoveryCodes();
+  const now = new Date().toISOString();
+  const nextUser = structuredClone(user);
+  nextUser.mfa.totp.secretCiphertext = user.mfa.totp.pendingSecretCiphertext;
+  nextUser.mfa.totp.secretIv = user.mfa.totp.pendingSecretIv;
+  nextUser.mfa.totp.secretAuthTag = user.mfa.totp.pendingSecretAuthTag;
+  nextUser.mfa.totp.pendingSecretCiphertext = null;
+  nextUser.mfa.totp.pendingSecretIv = null;
+  nextUser.mfa.totp.pendingSecretAuthTag = null;
+  nextUser.mfa.totp.pendingIssuedAt = null;
+  nextUser.mfa.totp.enabledAt = now;
+  nextUser.mfa.totp.updatedAt = now;
+  nextUser.mfa.totp.sessionBoundaryAt = now;
+  nextUser.mfa.totp.lastVerifiedAt = now;
+  nextUser.mfa.totp.recoveryCodes = recovery.hashedCodes;
+  nextUser.mfa.totp.recoveryCodesIssuedAt = now;
+  nextUser.updatedAt = now;
+  await saveAccountUserRecordState(nextUser);
+
+  await revokeAccountSessionsForUserState(user.id);
+  await revokeAccountUserActionTokensForUserState(user.id, 'mfa_login');
+  const issued = await issueAccountSessionState({
+    accountId: access.accountId,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  const loginTouch = await recordAccountUserLoginState(user.id);
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    enabled: true,
+    recoveryCodes: recovery.codes,
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    user: accountUserView(loginTouch.record),
+  });
+});
+
+app.post('/api/v1/account/mfa/disable', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const password = typeof body.password === 'string' ? body.password : '';
+  const code = typeof body.code === 'string' ? body.code.trim() : '';
+  const recoveryCode = typeof body.recoveryCode === 'string' ? body.recoveryCode.trim() : '';
+  if (!password || (!code && !recoveryCode)) {
+    return c.json({ error: 'password and either code or recoveryCode are required.' }, 400);
+  }
+  if (!verifyAccountUserPasswordRecord(user.password, password)) {
+    return c.json({ error: 'Current password is invalid.' }, 403);
+  }
+  if (!totpSummary(user.mfa.totp).enabled || !user.mfa.totp.secretCiphertext || !user.mfa.totp.secretIv || !user.mfa.totp.secretAuthTag) {
+    return c.json({ error: `Account user '${user.email}' does not have TOTP MFA enabled.` }, 409);
+  }
+
+  let verified = false;
+  let recoveryCodeUsed = false;
+  const nextUser = structuredClone(user);
+  if (code) {
+    try {
+      verified = verifyTotpCode({
+        secretBase32: decryptTotpSecret({
+          ciphertext: user.mfa.totp.secretCiphertext,
+          iv: user.mfa.totp.secretIv,
+          authTag: user.mfa.totp.secretAuthTag,
+        }),
+        code,
+      });
+    } catch (err) {
+      const mapped = accountMfaErrorResponse(c, err);
+      if (mapped) return mapped;
+      throw err;
+    }
+  } else {
+    const recovery = verifyAndConsumeRecoveryCode(user.mfa.totp, recoveryCode);
+    verified = recovery.ok;
+    recoveryCodeUsed = recovery.ok;
+    if (recovery.ok) {
+      nextUser.mfa.totp = recovery.nextTotp;
+    }
+  }
+  if (!verified) {
+    return c.json({ error: 'MFA code is invalid or expired.' }, 400);
+  }
+
+  const now = new Date().toISOString();
+  nextUser.mfa.totp.enabledAt = null;
+  nextUser.mfa.totp.updatedAt = now;
+  nextUser.mfa.totp.sessionBoundaryAt = now;
+  nextUser.mfa.totp.secretCiphertext = null;
+  nextUser.mfa.totp.secretIv = null;
+  nextUser.mfa.totp.secretAuthTag = null;
+  nextUser.mfa.totp.pendingSecretCiphertext = null;
+  nextUser.mfa.totp.pendingSecretIv = null;
+  nextUser.mfa.totp.pendingSecretAuthTag = null;
+  nextUser.mfa.totp.pendingIssuedAt = null;
+  nextUser.mfa.totp.lastVerifiedAt = now;
+  nextUser.mfa.totp.recoveryCodes = [];
+  nextUser.mfa.totp.recoveryCodesIssuedAt = null;
+  nextUser.updatedAt = now;
+  await saveAccountUserRecordState(nextUser);
+
+  await revokeAccountSessionsForUserState(user.id);
+  await revokeAccountUserActionTokensForUserState(user.id, 'mfa_login');
+  const issued = await issueAccountSessionState({
+    accountId: access.accountId,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  const loginTouch = await recordAccountUserLoginState(user.id);
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    disabled: true,
+    recoveryCodeUsed,
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    user: accountUserView(loginTouch.record),
   });
 });
 

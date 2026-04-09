@@ -287,6 +287,7 @@ async function resolveAccountSessionContext(c: Context): Promise<{
   const suspendedAtMs = account?.suspendedAt ? Date.parse(account.suspendedAt) : Number.NaN;
   const sessionCreatedAtMs = Date.parse(session.createdAt);
   const passwordUpdatedAtMs = user?.passwordUpdatedAt ? Date.parse(user.passwordUpdatedAt) : Number.NaN;
+  const mfaSessionBoundaryAtMs = user?.mfa?.totp?.sessionBoundaryAt ? Date.parse(user.mfa.totp.sessionBoundaryAt) : Number.NaN;
   const sessionPredatesSuspension = account?.status === 'suspended'
     && Number.isFinite(suspendedAtMs)
     && Number.isFinite(sessionCreatedAtMs)
@@ -294,6 +295,9 @@ async function resolveAccountSessionContext(c: Context): Promise<{
   const sessionPredatesPasswordChange = Number.isFinite(passwordUpdatedAtMs)
     && Number.isFinite(sessionCreatedAtMs)
     && sessionCreatedAtMs < passwordUpdatedAtMs;
+  const sessionPredatesMfaChange = Number.isFinite(mfaSessionBoundaryAtMs)
+    && Number.isFinite(sessionCreatedAtMs)
+    && sessionCreatedAtMs < mfaSessionBoundaryAtMs;
   if (
     !user
     || user.status !== 'active'
@@ -301,6 +305,7 @@ async function resolveAccountSessionContext(c: Context): Promise<{
     || account.status === 'archived'
     || sessionPredatesSuspension
     || sessionPredatesPasswordChange
+    || sessionPredatesMfaChange
   ) {
     await revokeAccountSessionState(session.id);
     return null;

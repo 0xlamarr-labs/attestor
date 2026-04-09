@@ -8,7 +8,8 @@
  * - Local file-backed store only
  * - Tokens are hashed at rest
  * - Invite and password-reset delivery is still manual/operator-driven
- * - No MFA/TOTP, WebAuthn, or federated SSO/SAML yet
+ * - MFA login challenges are short-lived and API-delivered
+ * - No WebAuthn or federated SSO/SAML yet
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -16,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, resolve } from 'node:path';
 import type { AccountUserRole } from './account-user-store.js';
 
-export type AccountUserActionTokenPurpose = 'invite' | 'password_reset';
+export type AccountUserActionTokenPurpose = 'invite' | 'password_reset' | 'mfa_login';
 
 export interface AccountUserActionTokenRecord {
   id: string;
@@ -33,6 +34,9 @@ export interface AccountUserActionTokenRecord {
   consumedAt: string | null;
   revokedAt: string | null;
   issuedByAccountUserId: string | null;
+  attemptCount: number;
+  maxAttempts: number | null;
+  lastAttemptAt: string | null;
 }
 
 interface AccountUserActionTokenStoreFile {
@@ -55,6 +59,14 @@ export interface IssuePasswordResetTokenInput {
   email: string;
   issuedByAccountUserId: string | null;
   ttlMinutes?: number | null;
+}
+
+export interface IssueAccountMfaLoginTokenInput {
+  accountId: string;
+  accountUserId: string;
+  email: string;
+  ttlMinutes?: number | null;
+  maxAttempts?: number | null;
 }
 
 function storePath(): string {
@@ -83,13 +95,41 @@ function passwordResetTtlMinutes(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
 }
 
+function mfaLoginTtlMinutes(): number {
+  const parsed = Number.parseInt(process.env.ATTESTOR_MFA_LOGIN_TTL_MINUTES ?? '10', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+}
+
+function mfaLoginMaxAttempts(): number {
+  const parsed = Number.parseInt(process.env.ATTESTOR_MFA_LOGIN_MAX_ATTEMPTS ?? '5', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+}
+
+function normalizeRecord(record: AccountUserActionTokenRecord): AccountUserActionTokenRecord {
+  return {
+    ...record,
+    attemptCount: Number.isFinite(record.attemptCount) ? Number(record.attemptCount) : 0,
+    maxAttempts: record.maxAttempts === null || record.maxAttempts === undefined
+      ? null
+      : Number(record.maxAttempts),
+    lastAttemptAt: record.lastAttemptAt ?? null,
+  };
+}
+
+export function coerceAccountUserActionTokenRecord(value: unknown): AccountUserActionTokenRecord {
+  return normalizeRecord(value as AccountUserActionTokenRecord);
+}
+
 function loadStore(): AccountUserActionTokenStoreFile {
   const path = storePath();
   if (!existsSync(path)) return defaultStore();
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as AccountUserActionTokenStoreFile;
     if (parsed.version === 1 && Array.isArray(parsed.records)) {
-      return parsed;
+      return {
+        version: 1,
+        records: parsed.records.map((record) => normalizeRecord(record)),
+      };
     }
   } catch {
     // fall through to safe default
@@ -108,7 +148,10 @@ function isExpired(record: AccountUserActionTokenRecord, now = Date.now()): bool
 }
 
 function isUsable(record: AccountUserActionTokenRecord, now = Date.now()): boolean {
-  return !record.revokedAt && !record.consumedAt && !isExpired(record, now);
+  return !record.revokedAt
+    && !record.consumedAt
+    && !isExpired(record, now)
+    && (record.maxAttempts === null || record.attemptCount < record.maxAttempts);
 }
 
 function pruneExpired(store: AccountUserActionTokenStoreFile): boolean {
@@ -143,6 +186,7 @@ function buildActionTokenRecord(base: {
   role: AccountUserRole | null;
   issuedByAccountUserId: string | null;
   expiresAt: Date;
+  maxAttempts?: number | null;
 }): { token: string; record: AccountUserActionTokenRecord } {
   const token = `atok_${randomBytes(32).toString('hex')}`;
   const createdAt = new Date().toISOString();
@@ -163,6 +207,9 @@ function buildActionTokenRecord(base: {
       consumedAt: null,
       revokedAt: null,
       issuedByAccountUserId: base.issuedByAccountUserId,
+      attemptCount: 0,
+      maxAttempts: base.maxAttempts ?? null,
+      lastAttemptAt: null,
     },
   };
 }
@@ -202,6 +249,24 @@ export function buildPasswordResetTokenRecord(input: IssuePasswordResetTokenInpu
   });
 }
 
+export function buildAccountMfaLoginTokenRecord(input: IssueAccountMfaLoginTokenInput): {
+  token: string;
+  record: AccountUserActionTokenRecord;
+} {
+  const expiresAt = new Date(Date.now() + ((input.ttlMinutes ?? mfaLoginTtlMinutes()) * 60 * 1000));
+  return buildActionTokenRecord({
+    purpose: 'mfa_login',
+    accountId: input.accountId,
+    accountUserId: input.accountUserId,
+    email: input.email,
+    displayName: null,
+    role: null,
+    issuedByAccountUserId: null,
+    expiresAt,
+    maxAttempts: input.maxAttempts ?? mfaLoginMaxAttempts(),
+  });
+}
+
 export function issueAccountInviteToken(input: IssueAccountInviteTokenInput): {
   token: string;
   record: AccountUserActionTokenRecord;
@@ -237,6 +302,23 @@ export function issuePasswordResetToken(input: IssuePasswordResetTokenInput): {
   return { token: issued.token, record: issued.record, path: storePath() };
 }
 
+export function issueAccountMfaLoginToken(input: IssueAccountMfaLoginTokenInput): {
+  token: string;
+  record: AccountUserActionTokenRecord;
+  path: string;
+} {
+  const store = loadStore();
+  pruneExpired(store);
+  revokeMatching(
+    store,
+    (record) => record.purpose === 'mfa_login' && record.accountUserId === input.accountUserId,
+  );
+  const issued = buildAccountMfaLoginTokenRecord(input);
+  store.records.push(issued.record);
+  saveStore(store);
+  return { token: issued.token, record: issued.record, path: storePath() };
+}
+
 export function listAccountUserActionTokensByAccountId(
   accountId: string,
   options?: { purpose?: AccountUserActionTokenPurpose | null },
@@ -246,6 +328,7 @@ export function listAccountUserActionTokensByAccountId(
   const records = store.records
     .filter((record) => record.accountId === accountId)
     .filter((record) => !options?.purpose || record.purpose === options.purpose)
+    .map((record) => normalizeRecord(record))
     .sort((left, right) => left.createdAt < right.createdAt ? 1 : -1);
   return { records, path: storePath() };
 }
@@ -256,7 +339,7 @@ export function listAllAccountUserActionTokens(): {
 } {
   const store = loadStore();
   if (pruneExpired(store)) saveStore(store);
-  return { records: store.records, path: storePath() };
+  return { records: store.records.map((record) => normalizeRecord(record)), path: storePath() };
 }
 
 export function findAccountUserActionTokenByToken(token: string): AccountUserActionTokenRecord | null {
@@ -268,7 +351,7 @@ export function findAccountUserActionTokenByToken(token: string): AccountUserAct
     return null;
   }
   if (changed) saveStore(store);
-  return record;
+  return record ? normalizeRecord(record) : null;
 }
 
 export function consumeAccountUserActionToken(id: string): {
@@ -319,6 +402,21 @@ export function revokeAccountUserActionTokensForUser(
   }
   if (revokedCount > 0) saveStore(store);
   return { revokedCount, path: storePath() };
+}
+
+export function saveAccountUserActionTokenRecord(record: AccountUserActionTokenRecord): {
+  record: AccountUserActionTokenRecord;
+  path: string;
+} {
+  const store = loadStore();
+  const normalized = normalizeRecord(record);
+  const index = store.records.findIndex((entry) => entry.id === normalized.id);
+  if (index < 0) {
+    throw new Error(`Account user action token '${normalized.id}' was not found.`);
+  }
+  store.records[index] = normalized;
+  saveStore(store);
+  return { record: normalized, path: storePath() };
 }
 
 export function resetAccountUserActionTokenStoreForTests(): void {

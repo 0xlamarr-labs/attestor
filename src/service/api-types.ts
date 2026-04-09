@@ -267,6 +267,13 @@ export interface AccountBillingEntitlementResponse {
   entitlement: AccountBillingEntitlementRecord;
 }
 
+export interface AccountUserMfaSummaryView {
+  enabled: boolean;
+  method: 'totp' | null;
+  enrolledAt: string | null;
+  pendingEnrollment: boolean;
+}
+
 export interface AccountUserRecordView {
   id: string;
   accountId: string;
@@ -278,6 +285,7 @@ export interface AccountUserRecordView {
   updatedAt: string;
   deactivatedAt: string | null;
   lastLoginAt: string | null;
+  mfa: AccountUserMfaSummaryView;
 }
 
 export interface AccountUsersListResponse {
@@ -386,6 +394,38 @@ export interface AuthLoginResponse {
   account: AdminAccountRecord;
 }
 
+export interface AuthLoginMfaChallengeResponse {
+  mfaRequired: true;
+  challengeToken: string;
+  challenge: {
+    id: string;
+    method: 'totp';
+    expiresAt: string;
+    maxAttempts: number | null;
+    remainingAttempts: number | null;
+  };
+  user: AccountUserRecordView;
+  account: AdminAccountRecord;
+}
+
+export interface AuthMfaVerifyRequest {
+  challengeToken: string;
+  code?: string;
+  recoveryCode?: string;
+}
+
+export interface AuthMfaVerifyResponse {
+  verified: true;
+  recoveryCodeUsed: boolean;
+  session: {
+    id: string;
+    expiresAt: string;
+    source: 'account_session';
+  };
+  user: AccountUserRecordView;
+  account: AdminAccountRecord;
+}
+
 export interface AuthMeResponse {
   session: {
     id: string;
@@ -422,6 +462,68 @@ export interface AuthPasswordResetRequest {
 
 export interface AuthPasswordResetResponse {
   reset: true;
+}
+
+export interface AccountMfaSummaryResponse {
+  mfa: {
+    enabled: boolean;
+    method: 'totp' | null;
+    enrolledAt: string | null;
+    pendingEnrollment: boolean;
+    recoveryCodesRemaining: number;
+    lastVerifiedAt: string | null;
+    updatedAt: string | null;
+  };
+}
+
+export interface AccountMfaTotpEnrollRequest {
+  password: string;
+}
+
+export interface AccountMfaTotpEnrollResponse {
+  enrollment: {
+    method: 'totp';
+    issuer: string;
+    accountName: string;
+    secretBase32: string;
+    otpauthUrl: string;
+    digits: 6;
+    periodSeconds: 30;
+    algorithm: 'SHA1';
+    pendingIssuedAt: string;
+  };
+}
+
+export interface AccountMfaTotpConfirmRequest {
+  code: string;
+}
+
+export interface AccountMfaTotpConfirmResponse {
+  enabled: true;
+  recoveryCodes: string[];
+  session: {
+    id: string;
+    expiresAt: string;
+    source: 'account_session';
+  };
+  user: AccountUserRecordView;
+}
+
+export interface AccountMfaDisableRequest {
+  password: string;
+  code?: string;
+  recoveryCode?: string;
+}
+
+export interface AccountMfaDisableResponse {
+  disabled: true;
+  recoveryCodeUsed: boolean;
+  session: {
+    id: string;
+    expiresAt: string;
+    source: 'account_session';
+  };
+  user: AccountUserRecordView;
 }
 
 export interface AccountBillingCheckoutRequest {
