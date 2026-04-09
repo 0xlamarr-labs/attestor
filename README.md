@@ -184,6 +184,7 @@ npx tsx tests/live-api.test.ts
 npx tsx tests/live-postgres.test.ts
 npx tsx tests/connectors-and-filing.test.ts
 npx tsx tests/control-plane-backup.test.ts
+npx tsx tests/live-rate-limit-redis.test.ts
 npx tsx tests/live-snowflake.test.ts
 ```
 
@@ -255,7 +256,7 @@ Current service capabilities:
 - Readiness probe (`/api/v1/ready`) checking async backend, PKI, domains, and Redis state
 - SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
 - Plan-aware tenant rate limiting on pipeline routes with `429` + `Retry-After` and per-plan runtime defaults
-- Async queue hardening first slice: bounded BullMQ retry/backoff, exact paginated tenant-aware pending-job caps, admin queue summary/DLQ inspection, and manual failed-job retry
+- Async queue hardening first slice: bounded BullMQ retry/backoff, plan-aware BullMQ job priority, exact paginated tenant-aware pending-job caps, admin queue summary/DLQ inspection, and manual failed-job retry
 - Structured observability first slice: W3C `traceparent`/trace-id response headers on API routes, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter-status introspection, optional JSONL request logging via `ATTESTOR_OBSERVABILITY_LOG_PATH`, and optional OTLP trace export over HTTP/protobuf
 - Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or the current hosted tenant-key store, plus overlap-capped key rotation (`rotate` -> `deactivate/reactivate` -> `revoke`), plan-aware tenant rate limiting on pipeline routes, and admin account/tenant provisioning behind `ATTESTOR_ADMIN_API_KEY`, with database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
@@ -345,7 +346,7 @@ What it does not prove yet:
 - Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices and a required `Idempotency-Key`, `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account, and `GET /api/v1/account/billing/export` returns customer-visible billing export in JSON or CSV. In runtime, `customer.subscription.*`, `checkout.session.completed`, and invoice webhooks sync Stripe billing truth back into Attestor hosted account and tenant state.
 - Observability first slice: request spans can now export to an external OTLP collector over HTTP/protobuf using standard `OTEL_*` env vars, while `GET /api/v1/admin/telemetry` exposes the current exporter status/config summary. Boundary: traces only; no external metrics/log collector or full distributed trace backend yet.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
-- Async: BullMQ with split worker process, bounded retry/backoff, exact paginated tenant-aware per-tenant pending-job caps on async submit, admin queue/DLQ introspection (`GET /api/v1/admin/queue`, `GET /api/v1/admin/queue/dlq`) and manual failed-job retry (`POST /api/v1/admin/queue/jobs/:id/retry`). In-process fallback remains explicit when Redis unavailable. No BullMQ Pro queue groups, distributed/shared rate limiting, or broader scheduling policy yet.
+- Async: BullMQ with split worker process, plan-aware job priority, bounded retry/backoff, exact paginated tenant-aware per-tenant pending-job caps on async submit, admin queue/DLQ introspection (`GET /api/v1/admin/queue`, `GET /api/v1/admin/queue/dlq`) and manual failed-job retry (`POST /api/v1/admin/queue/jobs/:id/retry`). Pipeline-route rate limiting now supports a shared Redis-backed fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current Redis async backend is available; otherwise it falls back to in-memory single-node buckets. In-process fallback remains explicit when Redis unavailable. No BullMQ Pro queue groups, external/shared dead-letter system, or broader multi-node scheduling/isolation yet.
 - Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the current hosted tenant key store is configured; optional plan/quota metadata and rate-limit context now propagate into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
 - Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
@@ -413,6 +414,7 @@ What it does not prove yet:
 | `ATTESTOR_ACCOUNT_INVITE_TTL_HOURS` | Optional hosted invite token TTL in hours (default `72`) |
 | `ATTESTOR_PASSWORD_RESET_TTL_MINUTES` | Optional hosted password-reset token TTL in minutes (default `30`) |
 | `ATTESTOR_RATE_LIMIT_WINDOW_SECONDS` | Optional tenant pipeline rate-limit window size in seconds (default `60`) |
+| `ATTESTOR_RATE_LIMIT_REDIS_URL` | Optional explicit Redis URL for shared pipeline-route rate limiting. When unset, the limiter reuses the current Redis async backend when BullMQ is active. |
 | `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | Optional per-plan pipeline request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
 | `ATTESTOR_ASYNC_PENDING_<PLAN>_JOBS` | Optional per-plan pending async-job cap override used for tenant-aware BullMQ submit fairness (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
 | `ATTESTOR_ASYNC_ATTEMPTS` | Optional BullMQ retry-attempt ceiling for async jobs (default `3`) |
@@ -469,6 +471,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1405 tests across 11 suites: 557 unit + 495 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 35 control-plane backup/restore + 42 control-plane backup/restore shared PG + 83 live shared control-plane PG + 8 live OTLP export + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1417 tests across 12 suites: 557 unit + 495 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 35 control-plane backup/restore + 42 control-plane backup/restore shared PG + 83 live shared control-plane PG + 8 live OTLP export + 12 live shared Redis rate-limit + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |

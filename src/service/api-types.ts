@@ -902,6 +902,7 @@ export interface RateLimitContext {
   tenantId: string;
   planId: string;
   scope: 'pipeline_requests';
+  backend: 'memory' | 'redis';
   windowSeconds: number;
   requestsPerWindow: number | null;
   used: number;

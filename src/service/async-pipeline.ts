@@ -230,6 +230,32 @@ function tenantStateCounter(): TenantAsyncQueueSnapshot['states'] {
   };
 }
 
+async function failedReasonForJob(
+  queue: Queue<PipelineJobData, PipelineJobResult>,
+  job: Job<PipelineJobData, PipelineJobResult>,
+): Promise<string | null> {
+  if (typeof job.failedReason === 'string' && job.failedReason.trim() !== '') {
+    return job.failedReason;
+  }
+  const stackReason = job.stacktrace?.find((entry) => typeof entry === 'string' && entry.trim() !== '');
+  if (stackReason) {
+    return stackReason;
+  }
+  if (!job.id) return null;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const refreshed = await queue.getJob(job.id);
+  if (refreshed) {
+    if (typeof refreshed.failedReason === 'string' && refreshed.failedReason.trim() !== '') {
+      return refreshed.failedReason;
+    }
+    const refreshedStack = refreshed.stacktrace?.find((entry: string) => typeof entry === 'string' && entry.trim() !== '');
+    if (refreshedStack) {
+      return refreshedStack;
+    }
+  }
+  return null;
+}
+
 export function getAsyncRetryPolicy(config?: AsyncPipelineConfig): AsyncRetryPolicy {
   return resolveRetryPolicy(config);
 }
@@ -315,10 +341,11 @@ export async function getJobStatus(
     };
   }
   if (state === 'failed') {
+    const failedReason = await failedReasonForJob(queue, job);
     return {
       status: 'failed',
       result: null,
-      error: job.failedReason ?? 'Unknown error',
+      error: failedReason ?? 'Unknown error',
       submittedAt: job.data.requestedAt ?? (job.timestamp ? new Date(job.timestamp).toISOString() : null),
       attemptsMade: job.attemptsMade,
       maxAttempts: job.opts.attempts ?? resolveRetryPolicy().attempts,
@@ -425,13 +452,14 @@ export async function listFailedPipelineJobs(
 
     for (const job of jobs) {
       if (options?.tenantId && job.data.tenant?.tenantId !== options.tenantId) continue;
+      const failedReason = await failedReasonForJob(queue, job);
       records.push({
         jobId: String(job.id),
         name: job.name,
         tenantId: job.data.tenant?.tenantId ?? null,
         planId: job.data.tenant?.planId ?? null,
         state: await job.getState(),
-        failedReason: job.failedReason ?? null,
+        failedReason,
         attemptsMade: job.attemptsMade,
         maxAttempts: job.opts.attempts ?? resolveRetryPolicy().attempts,
         requestedAt: job.data.requestedAt ?? null,

@@ -109,7 +109,7 @@ async function run(): Promise<void> {
   await pg.createDatabase('attestor_control_plane');
 
   await resetSharedControlPlaneStoreForTests();
-  resetTenantRateLimiterForTests();
+  await resetTenantRateLimiterForTests();
   resetAdminAuditLogForTests();
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
@@ -548,7 +548,7 @@ async function run(): Promise<void> {
   } finally {
     server.close();
     await resetSharedControlPlaneStoreForTests();
-    resetTenantRateLimiterForTests();
+    await resetTenantRateLimiterForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();

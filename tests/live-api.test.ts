@@ -133,7 +133,7 @@ async function run() {
   process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_monthly';
   resetTenantKeyStoreForTests();
   resetUsageMeter();
-  resetTenantRateLimiterForTests();
+  await resetTenantRateLimiterForTests();
   resetAccountStoreForTests();
   resetAccountUserStoreForTests();
   resetAccountSessionStoreForTests();
@@ -552,7 +552,7 @@ async function run() {
           || failedStatus.error.includes('Async job payload requires')
           || failedStatus.error.includes('non-empty string')
           || failedStatus.error.includes('object'),
-        'Async Queue: worker exposes validation failure',
+        `Async Queue: worker exposes validation failure (actual=${failedStatus.error})`,
       );
       ok(failedStatus.maxAttempts >= 1, 'Async Queue: failed status reports retry ceiling');
       ok(failedStatus.tenantContext?.tenantId === 'tenant-dlq', 'Async Queue: failed status keeps tenant context');
@@ -2323,7 +2323,7 @@ async function run() {
     resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
-    resetTenantRateLimiterForTests();
+    await resetTenantRateLimiterForTests();
     resetAdminAuditLogForTests();
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();

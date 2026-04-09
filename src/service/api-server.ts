@@ -80,7 +80,12 @@ import {
   type TenantContext,
 } from './tenant-isolation.js';
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
-import { canConsumeTenantPipelineRequest, consumeTenantPipelineRequest, getTenantPipelineRateLimit } from './rate-limit.js';
+import {
+  configureTenantRateLimiter,
+  getTenantPipelineRateLimit,
+  reserveTenantPipelineRequest,
+  shutdownTenantRateLimiter,
+} from './rate-limit.js';
 import {
   tenantKeyStorePolicy,
   TenantKeyStoreError,
@@ -578,7 +583,7 @@ async function currentHostedAccount(c: Context): Promise<{
   tenant: TenantContext;
   account: HostedAccountRecord;
   usage: Awaited<ReturnType<typeof getUsageContextState>>;
-  rateLimit: ReturnType<typeof getTenantPipelineRateLimit>;
+  rateLimit: Awaited<ReturnType<typeof getTenantPipelineRateLimit>>;
 } | Response> {
   const tenant = currentTenant(c);
   const account = await findHostedAccountByTenantIdState(tenant.tenantId);
@@ -596,7 +601,7 @@ async function currentHostedAccount(c: Context): Promise<{
     tenant,
     account,
     usage: await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota),
-    rateLimit: getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
+    rateLimit: await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
   };
 }
 
@@ -1107,7 +1112,7 @@ app.get('/api/v1/auth/me', async (c) => {
 app.get('/api/v1/account/usage', async (c) => {
   const tenant = currentTenant(c);
   const usage = await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
-  const rateLimit = getTenantPipelineRateLimit(tenant.tenantId, tenant.planId);
+  const rateLimit = await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId);
   return c.json({
     tenantContext: {
       tenantId: tenant.tenantId,
@@ -3307,17 +3312,17 @@ app.post('/api/v1/pipeline/run', async (c) => {
         usage: quotaCheck.usage,
       }, 429);
     }
-    const rateCheck = canConsumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
-    if (!rateCheck.allowed) {
-      applyRateLimitHeaders(c, rateCheck.rateLimit, { includeRetryAfter: true });
+    const rateReservation = await reserveTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    if (!rateReservation.allowed) {
+      applyRateLimitHeaders(c, rateReservation.rateLimit, { includeRetryAfter: true });
       return c.json({
         error: 'Pipeline request rate limit exceeded for this tenant plan.',
         tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
         usage: quotaCheck.usage,
-        rateLimit: rateCheck.rateLimit,
+        rateLimit: rateReservation.rateLimit,
       }, 429);
     }
-    const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    const rateLimit = rateReservation.rateLimit;
     applyRateLimitHeaders(c, rateLimit);
 
     // ── Optional connector-backed execution ──
@@ -3653,6 +3658,7 @@ app.post('/api/v1/filing/export', async (c) => {
 let asyncBackendMode: 'bullmq' | 'in_process' = 'in_process';
 let bullmqQueue: Awaited<ReturnType<typeof createPipelineQueue>> | null = null;
 let bullmqWorker: Awaited<ReturnType<typeof createPipelineWorker>> | null = null;
+let sharedRedisUrl: string | null = null;
 
 // In-process fallback store
 interface AsyncJob {
@@ -3721,6 +3727,7 @@ let redisMode: string = 'none';
 try {
   const resolved = await resolveRedis();
   const redisUrl = `redis://${resolved.host}:${resolved.port}`;
+  sharedRedisUrl = redisUrl;
   bullmqQueue = createPipelineQueue({ redisUrl });
   bullmqWorker = createPipelineWorker({ redisUrl });
   asyncBackendMode = 'bullmq';
@@ -3770,39 +3777,42 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         usage: quotaCheck.usage,
       }, 429);
     }
-    const rateCheck = canConsumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
-    if (!rateCheck.allowed) {
-      applyRateLimitHeaders(c, rateCheck.rateLimit, { includeRetryAfter: true });
-      return c.json({
-        error: 'Pipeline request rate limit exceeded for this tenant plan.',
-        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
-        usage: quotaCheck.usage,
-        rateLimit: rateCheck.rateLimit,
-      }, 429);
-    }
-
     const submittedAt = new Date().toISOString();
 
     if (asyncBackendMode === 'bullmq' && bullmqQueue) {
+      reserveAsyncSubmission(tenant.tenantId);
       const queueAllowance = await canEnqueueTenantAsyncJob(bullmqQueue, tenant.tenantId, tenant.planId);
       const effectivePendingJobs = queueAllowance.snapshot.pendingJobs + currentAsyncSubmissionReservations(tenant.tenantId);
       if (
         !queueAllowance.allowed ||
         (queueAllowance.snapshot.enforced &&
           queueAllowance.snapshot.pendingLimit !== null &&
-          effectivePendingJobs >= queueAllowance.snapshot.pendingLimit)
+          effectivePendingJobs > queueAllowance.snapshot.pendingLimit)
       ) {
+        releaseAsyncSubmission(tenant.tenantId);
         return c.json({
           error: 'Too many unfinished async jobs are already queued for this tenant.',
           tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
           usage: quotaCheck.usage,
-          rateLimit: rateCheck.rateLimit,
+          rateLimit: await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
           asyncQueue: {
             tenantPendingJobs: effectivePendingJobs,
             tenantPendingLimit: queueAllowance.snapshot.pendingLimit,
             tenantIsolationEnforced: queueAllowance.snapshot.enforced,
             retryPolicy: getAsyncRetryPolicy(),
           },
+        }, 429);
+      }
+
+      const rateReservation = await reserveTenantPipelineRequest(tenant.tenantId, tenant.planId);
+      if (!rateReservation.allowed) {
+        releaseAsyncSubmission(tenant.tenantId);
+        applyRateLimitHeaders(c, rateReservation.rateLimit, { includeRetryAfter: true });
+        return c.json({
+          error: 'Pipeline request rate limit exceeded for this tenant plan.',
+          tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+          usage: quotaCheck.usage,
+          rateLimit: rateReservation.rateLimit,
         }, 429);
       }
 
@@ -3815,7 +3825,6 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         reportContract: body.reportContract,
         signingKeyPair: sign ? pki.signer.keyPair : undefined,
       };
-      reserveAsyncSubmission(tenant.tenantId);
       let jobId: string;
       try {
         ({ jobId } = await submitPipelineJob(
@@ -3831,7 +3840,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       } finally {
         releaseAsyncSubmission(tenant.tenantId);
       }
-      const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+      const rateLimit = rateReservation.rateLimit;
       applyRateLimitHeaders(c, rateLimit);
       const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
       const asyncQueue = await getAsyncQueueSummary(bullmqQueue, tenant.tenantId, tenant.planId);
@@ -3854,14 +3863,17 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
 
     // In-process fallback (explicit about mode)
     const inProcessSnapshot = inProcessTenantQueueSnapshot(tenant.tenantId, tenant.planId);
-    if (inProcessSnapshot.enforced && inProcessSnapshot.pendingLimit !== null && inProcessSnapshot.pendingJobs >= inProcessSnapshot.pendingLimit) {
+    reserveAsyncSubmission(tenant.tenantId);
+    const effectiveInProcessPendingJobs = inProcessSnapshot.pendingJobs + currentAsyncSubmissionReservations(tenant.tenantId);
+    if (inProcessSnapshot.enforced && inProcessSnapshot.pendingLimit !== null && effectiveInProcessPendingJobs > inProcessSnapshot.pendingLimit) {
+      releaseAsyncSubmission(tenant.tenantId);
       return c.json({
         error: 'Too many unfinished async jobs are already queued for this tenant.',
         tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
         usage: quotaCheck.usage,
-        rateLimit: rateCheck.rateLimit,
+        rateLimit: await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
         asyncQueue: {
-          tenantPendingJobs: inProcessSnapshot.pendingJobs,
+          tenantPendingJobs: effectiveInProcessPendingJobs,
           tenantPendingLimit: inProcessSnapshot.pendingLimit,
           tenantIsolationEnforced: inProcessSnapshot.enforced,
           retryPolicy: {
@@ -3876,7 +3888,18 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       }, 429);
     }
 
-    const rateLimit = consumeTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    const rateReservation = await reserveTenantPipelineRequest(tenant.tenantId, tenant.planId);
+    if (!rateReservation.allowed) {
+      releaseAsyncSubmission(tenant.tenantId);
+      applyRateLimitHeaders(c, rateReservation.rateLimit, { includeRetryAfter: true });
+      return c.json({
+        error: 'Pipeline request rate limit exceeded for this tenant plan.',
+        tenantContext: { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId },
+        usage: quotaCheck.usage,
+        rateLimit: rateReservation.rateLimit,
+      }, 429);
+    }
+    const rateLimit = rateReservation.rateLimit;
     applyRateLimitHeaders(c, rateLimit);
     const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
     const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -3891,6 +3914,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       error: null,
     };
     inProcessJobs.set(jobId, job);
+    releaseAsyncSubmission(tenant.tenantId);
 
     setImmediate(async () => {
       job.status = 'running';
@@ -4036,6 +4060,10 @@ app.get('/api/v1/ready', (c) => {
 
 export function startServer(port: number = 3700): { port: number; close: () => void } {
   const telemetry = initializeTelemetry('0.1.0');
+  configureTenantRateLimiter({
+    redisUrl: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() || sharedRedisUrl,
+    redisMode: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() ? 'explicit' : redisMode,
+  });
   if (telemetry.enabled && telemetry.endpoint) {
     console.log(`[telemetry] OTLP traces enabled (${telemetry.protocol}) -> ${telemetry.endpoint}`);
   } else if (telemetry.disabledReason) {
@@ -4049,6 +4077,7 @@ export function startServer(port: number = 3700): { port: number; close: () => v
       if (server && typeof (server as any).close === 'function') {
         (server as any).close();
       }
+      void shutdownTenantRateLimiter().catch(() => {});
       void shutdownTelemetry().catch(() => {});
     },
   };
