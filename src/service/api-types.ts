@@ -73,6 +73,10 @@ export interface AsyncPipelineSubmitResponse {
     tenantPendingJobs: number;
     tenantPendingLimit: number | null;
     tenantIsolationEnforced: boolean;
+    tenantActiveExecutions: number;
+    tenantActiveExecutionLimit: number | null;
+    tenantActiveExecutionEnforced: boolean;
+    tenantActiveExecutionBackend: 'memory' | 'redis';
     retryPolicy: {
       attempts: number;
       backoffMs: number;
@@ -634,6 +638,7 @@ export interface HostedPlanSummary {
   defaultMonthlyRunQuota: number | null;
   defaultPipelineRequestsPerWindow: number | null;
   defaultAsyncPendingJobsPerTenant: number | null;
+  defaultAsyncActiveJobsPerTenant: number | null;
   stripePriceConfigured: boolean;
   intendedFor: 'self_host' | 'hosted' | 'enterprise';
   defaultForHostedProvisioning: boolean;
@@ -645,6 +650,8 @@ export interface AdminListPlansResponse {
     hostedProvisioningPlanId: 'starter';
     maxActiveKeysPerTenant: number;
     rateLimitWindowSeconds: number;
+    asyncExecutionShared: boolean;
+    asyncExecutionBackend: 'memory' | 'redis';
   };
 }
 
@@ -824,6 +831,10 @@ export interface AdminAsyncQueueTenantSnapshot {
   pendingJobs: number;
   pendingLimit: number | null;
   enforced: boolean;
+  activeExecutions: number;
+  activeExecutionLimit: number | null;
+  activeExecutionEnforced: boolean;
+  activeExecutionBackend: 'memory' | 'redis';
   scanLimit: number;
   scanTruncated: boolean;
   states: {

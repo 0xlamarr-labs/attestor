@@ -19,15 +19,22 @@
  *
  * BOUNDARY:
  * - Single logical queue first slice
- * - Tenant fairness is enforced via per-tenant pending-job caps, not BullMQ Pro groups
+ * - Tenant fairness is enforced via per-tenant pending-job caps on submit plus shared tenant active-execution caps at worker runtime, not BullMQ Pro groups
  * - BullMQ failed jobs remain the runtime source of truth, but terminal failures are also copied into a persistent DLQ store
  * - No long-term job result persistence outside BullMQ retention
  */
 
 import { randomUUID } from 'node:crypto';
-import { Job, Queue, UnrecoverableError, Worker } from 'bullmq';
+import { DelayedError, Job, Queue, UnrecoverableError, Worker } from 'bullmq';
 import type { FinancialPipelineInput } from '../financial/pipeline.js';
 import type { AsyncDeadLetterRecord } from './async-dead-letter-store.js';
+import {
+  acquireTenantAsyncExecutionLease,
+  getTenantAsyncExecutionState,
+  heartbeatTenantAsyncExecutionLease,
+  releaseTenantAsyncExecutionLease,
+  tenantAsyncExecutionHeartbeatMs,
+} from './async-tenant-execution.js';
 import { removeAsyncDeadLetterRecordState, upsertAsyncDeadLetterRecordState } from './control-plane-store.js';
 import { resolvePlanAsyncQueue } from './plan-catalog.js';
 
@@ -68,6 +75,10 @@ export interface TenantAsyncQueueSnapshot {
   pendingJobs: number;
   pendingLimit: number | null;
   enforced: boolean;
+  activeExecutions: number;
+  activeExecutionLimit: number | null;
+  activeExecutionEnforced: boolean;
+  activeExecutionBackend: 'memory' | 'redis';
   scanLimit: number;
   scanTruncated: boolean;
   states: {
@@ -101,6 +112,7 @@ export interface AsyncPipelineConfig {
   redisUrl?: string;
   queueName?: string;
   jobTtlSeconds?: number;
+  processJob?: (job: Job<PipelineJobData, PipelineJobResult>) => Promise<PipelineJobResult>;
 }
 
 const DEFAULT_QUEUE = 'attestor-pipeline';
@@ -410,12 +422,13 @@ export async function getTenantAsyncQueueSnapshot(
   planId: string | null,
 ): Promise<TenantAsyncQueueSnapshot> {
   const scanLimit = normalizeTenantScanLimit();
-  const [waiting, active, delayed, prioritized, failed] = await Promise.all([
+  const [waiting, active, delayed, prioritized, failed, executionState] = await Promise.all([
     countTenantJobsByState(queue, tenantId, 'waiting'),
     countTenantJobsByState(queue, tenantId, 'active'),
     countTenantJobsByState(queue, tenantId, 'delayed'),
     countTenantJobsByState(queue, tenantId, 'prioritized'),
     countTenantJobsByState(queue, tenantId, 'failed'),
+    getTenantAsyncExecutionState(queue.name, tenantId, planId),
   ]);
   const states = tenantStateCounter();
   states.waiting = waiting;
@@ -431,6 +444,10 @@ export async function getTenantAsyncQueueSnapshot(
     pendingJobs: states.waiting + states.active + states.delayed + states.prioritized,
     pendingLimit: policy.pendingJobsPerTenant,
     enforced: policy.enforced,
+    activeExecutions: executionState.activeExecutions,
+    activeExecutionLimit: executionState.activeExecutionLimit,
+    activeExecutionEnforced: executionState.enforced,
+    activeExecutionBackend: executionState.backend,
     scanLimit,
     scanTruncated: false,
     states,
@@ -561,31 +578,74 @@ export async function retryFailedPipelineJob(
 export function createPipelineWorker(config?: AsyncPipelineConfig): Worker<PipelineJobData, PipelineJobResult> {
   const redis = parseRedisOpts(config?.redisUrl ?? process.env.REDIS_URL);
   const policy = resolveRetryPolicy(config);
+  const queueName = currentQueueName(config);
 
   const worker = new Worker<PipelineJobData, PipelineJobResult>(
-    currentQueueName(config),
-    async (job: Job<PipelineJobData, PipelineJobResult>) => {
+    queueName,
+    async (job: Job<PipelineJobData, PipelineJobResult>, token?: string) => {
       const start = Date.now();
-      const { runFinancialPipeline } = await import('../financial/pipeline.js');
-      const { generateKeyPair } = await import('../signing/keys.js');
 
       ensureValidPipelineJobData(job.data);
 
-      const input = job.data.input;
-      if (job.data.sign && !input.signingKeyPair) {
-        input.signingKeyPair = generateKeyPair();
+      const tenantContext = job.data.tenant;
+      const executionLease = await acquireTenantAsyncExecutionLease({
+        queueName,
+        tenantId: tenantContext.tenantId,
+        planId: tenantContext.planId,
+        jobId: String(job.id),
+      });
+      if (!executionLease.acquired) {
+        if (!token) {
+          throw new Error(`BullMQ worker token missing while requeueing tenant '${tenantContext.tenantId}'.`);
+        }
+        await job.moveToDelayed(Date.now() + executionLease.state.requeueDelayMs, token);
+        throw new DelayedError();
       }
 
-      const report = runFinancialPipeline(input);
+      let heartbeat: ReturnType<typeof setInterval> | null = null;
+      const heartbeatMs = tenantAsyncExecutionHeartbeatMs();
+      if (executionLease.state.enforced) {
+        heartbeat = setInterval(() => {
+          void heartbeatTenantAsyncExecutionLease({
+            queueName,
+            tenantId: tenantContext.tenantId,
+            planId: tenantContext.planId,
+            jobId: String(job.id),
+          }).catch(() => {});
+        }, heartbeatMs);
+      }
 
-      return {
-        runId: report.runId,
-        decision: report.decision,
-        proofMode: report.liveProof.mode,
-        certificateId: report.certificate?.certificateId ?? null,
-        completedAt: new Date().toISOString(),
-        durationMs: Date.now() - start,
-      };
+      try {
+        if (config?.processJob) {
+          return await config.processJob(job);
+        }
+
+        const { runFinancialPipeline } = await import('../financial/pipeline.js');
+        const { generateKeyPair } = await import('../signing/keys.js');
+        const input = job.data.input;
+        if (job.data.sign && !input.signingKeyPair) {
+          input.signingKeyPair = generateKeyPair();
+        }
+
+        const report = runFinancialPipeline(input);
+
+        return {
+          runId: report.runId,
+          decision: report.decision,
+          proofMode: report.liveProof.mode,
+          certificateId: report.certificate?.certificateId ?? null,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - start,
+        };
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
+        await releaseTenantAsyncExecutionLease({
+          queueName,
+          tenantId: tenantContext.tenantId,
+          planId: tenantContext.planId,
+          jobId: String(job.id),
+        }).catch(() => {});
+      }
     },
     {
       connection: redis,
@@ -601,6 +661,7 @@ export function createPipelineWorker(config?: AsyncPipelineConfig): Worker<Pipel
 
   worker.on('failed', (job, err) => {
     if (!job || !err) return;
+    if (err.name === 'DelayedError') return;
     void persistTerminalDeadLetterJob(job, err).catch(() => {});
   });
 

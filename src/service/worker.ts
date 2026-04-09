@@ -19,16 +19,20 @@
  * BOUNDARY:
  * - Single-queue, configurable concurrency (default 1)
  * - Shares Redis with API server
- * - Tenant fairness comes from per-tenant pending-job caps at API submit time, not BullMQ Pro queue groups
+ * - Tenant fairness comes from per-tenant pending-job caps at API submit time plus shared tenant active-execution caps at worker runtime
  * - Terminal failed jobs remain inspectable through the admin DLQ route and persist into the current DLQ store for retry/audit workflows
  * - Pipeline-route rate limiting is enforced on the API side and can use shared Redis-backed windows when configured
- * - No BullMQ Pro queue groups or broader multi-tenant queue isolation yet
+ * - No BullMQ Pro queue groups or broader weighted multi-tenant scheduling/isolation yet
  *
  * Run: npm run worker
  * Run: REDIS_URL=redis://prod:6379 npm run worker
  */
 
 import { resolveRedis } from './redis-auto.js';
+import {
+  configureTenantAsyncExecutionCoordinator,
+  shutdownTenantAsyncExecutionCoordinator,
+} from './async-tenant-execution.js';
 import { createPipelineWorker } from './async-pipeline.js';
 import type { Worker } from 'bullmq';
 
@@ -40,6 +44,7 @@ async function main() {
   try {
     const resolved = await resolveRedis();
     redisUrl = `redis://${resolved.host}:${resolved.port}`;
+    configureTenantAsyncExecutionCoordinator({ redisUrl, redisMode: resolved.mode });
     console.log(`[worker] Redis connected (${resolved.mode} @ ${resolved.host}:${resolved.port})`);
   } catch (err: any) {
     console.error(`[worker] FATAL: Redis required for worker mode but unavailable: ${err.message}`);
@@ -69,6 +74,7 @@ async function main() {
     console.log(`[worker] ${signal} received — draining in-flight jobs...`);
     try {
       await worker.close();
+      await shutdownTenantAsyncExecutionCoordinator().catch(() => {});
       console.log('[worker] Worker drained and closed.');
     } catch (err: any) {
       console.error(`[worker] Error during shutdown: ${err.message}`);

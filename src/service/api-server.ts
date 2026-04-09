@@ -87,6 +87,11 @@ import {
   shutdownTenantRateLimiter,
 } from './rate-limit.js';
 import {
+  configureTenantAsyncExecutionCoordinator,
+  getTenantAsyncExecutionCoordinatorStatus,
+  shutdownTenantAsyncExecutionCoordinator,
+} from './async-tenant-execution.js';
+import {
   tenantKeyStorePolicy,
   TenantKeyStoreError,
   type TenantKeyRecord,
@@ -175,6 +180,7 @@ import {
   findHostedPlanByStripePriceId,
   getHostedPlan,
   listHostedPlans,
+  resolvePlanAsyncExecution,
   resolvePlanAsyncQueue,
   resolvePlanRateLimit,
   resolvePlanSpec,
@@ -553,6 +559,7 @@ function adminPlanView() {
     defaultMonthlyRunQuota: plan.defaultMonthlyRunQuota,
     defaultPipelineRequestsPerWindow: resolvePlanRateLimit(plan.id).requestsPerWindow,
     defaultAsyncPendingJobsPerTenant: resolvePlanAsyncQueue(plan.id).pendingJobsPerTenant,
+    defaultAsyncActiveJobsPerTenant: resolvePlanAsyncExecution(plan.id).activeJobsPerTenant,
     stripePriceConfigured: resolvePlanStripePrice(plan.id).configured,
     intendedFor: plan.intendedFor,
     defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
@@ -2386,12 +2393,15 @@ app.get('/api/v1/admin/plans', (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
+  const asyncExecutionCoordinator = getTenantAsyncExecutionCoordinatorStatus();
   return c.json({
     plans: adminPlanView(),
     defaults: {
       hostedProvisioningPlanId: DEFAULT_HOSTED_PLAN_ID,
       maxActiveKeysPerTenant: tenantKeyStorePolicy().maxActiveKeysPerTenant,
       rateLimitWindowSeconds: defaultRateLimitWindowSeconds(),
+      asyncExecutionShared: asyncExecutionCoordinator.shared,
+      asyncExecutionBackend: asyncExecutionCoordinator.backend,
     },
   });
 });
@@ -3730,12 +3740,17 @@ function inProcessTenantQueueSnapshot(tenantId: string, planId: string | null) {
     if (job.status === 'failed') states.failed += 1;
   }
   const policy = resolvePlanAsyncQueue(planId);
+  const executionPolicy = resolvePlanAsyncExecution(planId);
   return {
     tenantId,
     planId,
     pendingJobs: states.waiting + states.active,
     pendingLimit: policy.pendingJobsPerTenant,
     enforced: policy.enforced,
+    activeExecutions: states.active,
+    activeExecutionLimit: executionPolicy.activeJobsPerTenant,
+    activeExecutionEnforced: executionPolicy.enforced,
+    activeExecutionBackend: 'memory' as const,
     scanLimit: Number.MAX_SAFE_INTEGER,
     scanTruncated: false,
     states,
@@ -3752,6 +3767,7 @@ try {
   const resolved = await resolveRedis();
   const redisUrl = `redis://${resolved.host}:${resolved.port}`;
   sharedRedisUrl = redisUrl;
+  configureTenantAsyncExecutionCoordinator({ redisUrl, redisMode: resolved.mode });
   bullmqQueue = createPipelineQueue({ redisUrl });
   bullmqWorker = createPipelineWorker({ redisUrl });
   asyncBackendMode = 'bullmq';
@@ -3823,6 +3839,10 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
             tenantPendingJobs: effectivePendingJobs,
             tenantPendingLimit: queueAllowance.snapshot.pendingLimit,
             tenantIsolationEnforced: queueAllowance.snapshot.enforced,
+            tenantActiveExecutions: queueAllowance.snapshot.activeExecutions,
+            tenantActiveExecutionLimit: queueAllowance.snapshot.activeExecutionLimit,
+            tenantActiveExecutionEnforced: queueAllowance.snapshot.activeExecutionEnforced,
+            tenantActiveExecutionBackend: queueAllowance.snapshot.activeExecutionBackend,
             retryPolicy: getAsyncRetryPolicy(),
           },
         }, 429);
@@ -3880,6 +3900,10 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
           tenantPendingJobs: asyncQueue.tenant?.pendingJobs ?? 0,
           tenantPendingLimit: asyncQueue.tenant?.pendingLimit ?? null,
           tenantIsolationEnforced: asyncQueue.tenant?.enforced ?? false,
+          tenantActiveExecutions: asyncQueue.tenant?.activeExecutions ?? 0,
+          tenantActiveExecutionLimit: asyncQueue.tenant?.activeExecutionLimit ?? null,
+          tenantActiveExecutionEnforced: asyncQueue.tenant?.activeExecutionEnforced ?? false,
+          tenantActiveExecutionBackend: asyncQueue.tenant?.activeExecutionBackend ?? 'memory',
           retryPolicy: asyncQueue.retryPolicy,
         },
       }, 202);
@@ -3900,6 +3924,10 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
           tenantPendingJobs: effectiveInProcessPendingJobs,
           tenantPendingLimit: inProcessSnapshot.pendingLimit,
           tenantIsolationEnforced: inProcessSnapshot.enforced,
+          tenantActiveExecutions: inProcessSnapshot.activeExecutions,
+          tenantActiveExecutionLimit: inProcessSnapshot.activeExecutionLimit,
+          tenantActiveExecutionEnforced: inProcessSnapshot.activeExecutionEnforced,
+          tenantActiveExecutionBackend: inProcessSnapshot.activeExecutionBackend,
           retryPolicy: {
             attempts: 1,
             backoffMs: 0,
@@ -4004,6 +4032,10 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         tenantPendingJobs: inProcessSnapshot.pendingJobs + 1,
         tenantPendingLimit: inProcessSnapshot.pendingLimit,
         tenantIsolationEnforced: inProcessSnapshot.enforced,
+        tenantActiveExecutions: inProcessSnapshot.activeExecutions,
+        tenantActiveExecutionLimit: inProcessSnapshot.activeExecutionLimit,
+        tenantActiveExecutionEnforced: inProcessSnapshot.activeExecutionEnforced,
+        tenantActiveExecutionBackend: inProcessSnapshot.activeExecutionBackend,
         retryPolicy: {
           attempts: 1,
           backoffMs: 0,
@@ -4100,6 +4132,10 @@ app.get('/api/v1/ready', (c) => {
 
 export function startServer(port: number = 3700): { port: number; close: () => void } {
   const telemetry = initializeTelemetry('0.1.0');
+  configureTenantAsyncExecutionCoordinator({
+    redisUrl: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() || sharedRedisUrl,
+    redisMode: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() ? 'explicit' : redisMode,
+  });
   configureTenantRateLimiter({
     redisUrl: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() || sharedRedisUrl,
     redisMode: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() ? 'explicit' : redisMode,
@@ -4117,6 +4153,7 @@ export function startServer(port: number = 3700): { port: number; close: () => v
       if (server && typeof (server as any).close === 'function') {
         (server as any).close();
       }
+      void shutdownTenantAsyncExecutionCoordinator().catch(() => {});
       void shutdownTenantRateLimiter().catch(() => {});
       void shutdownTelemetry().catch(() => {});
     },

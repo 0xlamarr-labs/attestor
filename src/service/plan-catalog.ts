@@ -16,6 +16,7 @@ export interface HostedPlanDefinition {
   defaultMonthlyRunQuota: number | null;
   defaultPipelineRequestsPerWindow: number | null;
   defaultAsyncPendingJobsPerTenant: number | null;
+  defaultAsyncActiveJobsPerTenant: number | null;
   intendedFor: 'self_host' | 'hosted' | 'enterprise';
   defaultForHostedProvisioning: boolean;
 }
@@ -45,6 +46,14 @@ export interface PlanAsyncQueueSpec {
   source: 'plan_default' | 'env_override' | 'custom_unlimited';
 }
 
+export interface PlanAsyncExecutionSpec {
+  planId: string;
+  activeJobsPerTenant: number | null;
+  enforced: boolean;
+  knownPlan: boolean;
+  source: 'plan_default' | 'env_override' | 'custom_unlimited';
+}
+
 export interface PlanStripePriceSpec {
   planId: string;
   priceId: string | null;
@@ -64,6 +73,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: null,
     defaultAsyncPendingJobsPerTenant: null,
+    defaultAsyncActiveJobsPerTenant: null,
     intendedFor: 'self_host',
     defaultForHostedProvisioning: false,
   },
@@ -74,6 +84,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultMonthlyRunQuota: 100,
     defaultPipelineRequestsPerWindow: 10,
     defaultAsyncPendingJobsPerTenant: 2,
+    defaultAsyncActiveJobsPerTenant: 1,
     intendedFor: 'hosted',
     defaultForHostedProvisioning: true,
   },
@@ -84,6 +95,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultMonthlyRunQuota: 1000,
     defaultPipelineRequestsPerWindow: 60,
     defaultAsyncPendingJobsPerTenant: 8,
+    defaultAsyncActiveJobsPerTenant: 2,
     intendedFor: 'hosted',
     defaultForHostedProvisioning: false,
   },
@@ -94,6 +106,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: 300,
     defaultAsyncPendingJobsPerTenant: 32,
+    defaultAsyncActiveJobsPerTenant: 4,
     intendedFor: 'enterprise',
     defaultForHostedProvisioning: false,
   },
@@ -115,6 +128,10 @@ function envOverrideNameForPlan(planId: HostedPlanId): string {
 
 function asyncPendingEnvNameForPlan(planId: HostedPlanId): string {
   return `ATTESTOR_ASYNC_PENDING_${planId.toUpperCase()}_JOBS`;
+}
+
+function asyncActiveEnvNameForPlan(planId: HostedPlanId): string {
+  return `ATTESTOR_ASYNC_ACTIVE_${planId.toUpperCase()}_JOBS`;
 }
 
 function stripePriceEnvNameForPlan(planId: HostedPlanId): string {
@@ -192,6 +209,33 @@ export function resolvePlanAsyncQueue(planId: string | null | undefined): PlanAs
     planId: plan.id,
     pendingJobsPerTenant,
     enforced: pendingJobsPerTenant !== null,
+    knownPlan: true,
+    source: parsedOverride !== null ? 'env_override' : 'plan_default',
+  };
+}
+
+export function resolvePlanAsyncExecution(planId: string | null | undefined): PlanAsyncExecutionSpec {
+  const resolvedPlanId = planId?.trim() || SELF_HOST_PLAN_ID;
+  const plan = getHostedPlan(resolvedPlanId);
+
+  if (!plan) {
+    return {
+      planId: resolvedPlanId,
+      activeJobsPerTenant: null,
+      enforced: false,
+      knownPlan: false,
+      source: 'custom_unlimited',
+    };
+  }
+
+  const rawOverride = process.env[asyncActiveEnvNameForPlan(plan.id)]?.trim() ?? '';
+  const parsedOverride = rawOverride ? normalizeRateLimit(Number.parseInt(rawOverride, 10)) : null;
+  const activeJobsPerTenant = parsedOverride ?? plan.defaultAsyncActiveJobsPerTenant;
+
+  return {
+    planId: plan.id,
+    activeJobsPerTenant,
+    enforced: activeJobsPerTenant !== null,
     knownPlan: true,
     source: parsedOverride !== null ? 'env_override' : 'plan_default',
   };

@@ -445,6 +445,7 @@ async function run() {
       ok(body.status === 'queued', 'Async: status=queued');
       ok(body.backendMode === 'in_process' || body.backendMode === 'bullmq', 'Async: backendMode truthful');
       ok(typeof body.asyncQueue?.tenantPendingJobs === 'number', 'Async: queue snapshot present');
+      ok(typeof body.asyncQueue?.tenantActiveExecutions === 'number', 'Async: active execution snapshot present');
       ok(body.asyncQueue?.retryPolicy?.attempts >= 1, 'Async: retry policy present');
       asyncJobId = body.jobId;
       console.log(`    jobId=${asyncJobId}, status=${body.status}, backend=${body.backendMode}`);
@@ -521,6 +522,7 @@ async function run() {
       ok(Boolean(rejectedQueueJob), 'Async Queue: one starter job rejected at pending cap');
       ok(acceptedQueueJob!.body.asyncQueue.tenantIsolationEnforced === true, 'Async Queue: starter tenant isolation enforced');
       ok(acceptedQueueJob!.body.asyncQueue.tenantPendingLimit === 1, 'Async Queue: starter tenant pending cap = 1');
+      ok(acceptedQueueJob!.body.asyncQueue.tenantActiveExecutionLimit === 1, 'Async Queue: starter tenant active execution cap = 1');
       ok(rejectedQueueJob!.body.asyncQueue.tenantPendingJobs >= 1, 'Async Queue: rejected response reports pending jobs');
       ok(rejectedQueueJob!.body.asyncQueue.tenantPendingLimit === 1, 'Async Queue: rejected response reports pending limit');
 
@@ -789,10 +791,12 @@ async function run() {
       const plansBody = await plansRes.json() as any;
       ok(plansBody.defaults.hostedProvisioningPlanId === 'starter', 'Admin Plans: hosted default = starter');
       ok(plansBody.defaults.rateLimitWindowSeconds === 2, 'Admin Plans: rate-limit window override exposed');
+      ok(plansBody.defaults.asyncExecutionShared === true, 'Admin Plans: async execution backend reported as shared');
       const starterPlan = plansBody.plans.find((entry: any) => entry.id === 'starter');
       ok(Boolean(starterPlan), 'Admin Plans: starter plan present');
       ok(starterPlan.defaultMonthlyRunQuota === 100, 'Admin Plans: starter quota = 100');
       ok(starterPlan.defaultPipelineRequestsPerWindow === 3, 'Admin Plans: starter rate limit = 3');
+      ok(starterPlan.defaultAsyncActiveJobsPerTenant === 1, 'Admin Plans: starter active execution cap = 1');
       ok(starterPlan.stripePriceConfigured === true, 'Admin Plans: starter Stripe price configured');
       ok(starterPlan.defaultForHostedProvisioning === true, 'Admin Plans: starter is hosted default');
 

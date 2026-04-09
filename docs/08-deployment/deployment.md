@@ -90,6 +90,11 @@ docker run \
 | `ATTESTOR_RATE_LIMIT_REDIS_URL` | No | None | Optional explicit Redis URL for shared pipeline-route rate limiting. When unset, the limiter reuses the current Redis async backend when BullMQ is active |
 | `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | No | Plan defaults | Per-plan request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
 | `ATTESTOR_ASYNC_PENDING_<PLAN>_JOBS` | No | Plan defaults | Per-plan pending async-job cap for tenant-aware BullMQ submit fairness (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
+| `ATTESTOR_ASYNC_ACTIVE_<PLAN>_JOBS` | No | Plan defaults | Per-plan active async-execution cap for shared tenant runtime isolation (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
+| `ATTESTOR_ASYNC_ACTIVE_LEASE_MS` | No | `15000` | Lease TTL for tenant active-execution slots |
+| `ATTESTOR_ASYNC_ACTIVE_HEARTBEAT_MS` | No | Derived from lease TTL | Heartbeat interval used to refresh active-execution leases while workers process jobs |
+| `ATTESTOR_ASYNC_ACTIVE_REQUEUE_DELAY_MS` | No | `1000` | Delay before a job that cannot acquire a tenant execution slot is requeued |
+| `ATTESTOR_ASYNC_ACTIVE_REDIS_URL` | No | None | Optional explicit Redis URL for shared tenant active-execution isolation. When unset, the coordinator reuses the current BullMQ Redis backend when available |
 | `ATTESTOR_ASYNC_ATTEMPTS` | No | `3` | BullMQ retry-attempt ceiling for async jobs |
 | `ATTESTOR_ASYNC_BACKOFF_MS` | No | `1000` | BullMQ exponential backoff base delay in milliseconds |
 | `ATTESTOR_ASYNC_MAX_STALLED_COUNT` | No | `1` | BullMQ stalled-job recovery ceiling before failing a job |
@@ -176,7 +181,7 @@ What is deployed today:
 - Tenant-aware pipeline throttling with plan defaults, `Retry-After`, and `429` responses. Uses a shared Redis fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current BullMQ Redis backend is available; otherwise falls back to in-memory single-node buckets
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed` processing with duplicate-event suppression, checkout/invoice summary persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
-- Async queue hardening first slice: plan-aware BullMQ job priority, bounded retry/backoff, exact paginated tenant-aware pending-job caps on async submit, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry. Terminal async failures persist into a file-backed DLQ store by default and move onto the shared PostgreSQL control-plane when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured
+- Async queue hardening first slice: plan-aware BullMQ job priority, bounded retry/backoff, exact paginated tenant-aware pending-job caps on async submit, shared Redis-backed tenant active-execution leases at worker runtime, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry. Terminal async failures persist into a file-backed DLQ store by default and move onto the shared PostgreSQL control-plane when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured
 - Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter status, optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`, and optional OTLP trace export over HTTP/protobuf
 - Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, webhook-driven plan/quota sync back into hosted tenant records, customer-visible checkout/invoice summary at `GET /api/v1/account`, and hosted billing export at `GET /api/v1/account/billing/export` (`format=json|csv`) with live Stripe or shared-ledger/mock-summary fallback
 - Control-plane backup/restore first slice: `npm run backup:control-plane` writes a logical snapshot of the hosted control-plane, including shared PostgreSQL-backed account/tenant/usage/billing-entitlement/async-DLQ/admin-audit/account-user/account-session/account-user-action-token state when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, plus the shared billing ledger export when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured. Ephemeral admin idempotency and Stripe webhook dedupe state can be included explicitly for DR drills. See [backup-restore-dr.md](backup-restore-dr.md)
@@ -184,7 +189,7 @@ What is deployed today:
 
 What is not yet implemented:
 - Multi-node horizontal scaling with load balancer
-- Multi-tenant queue groups or stronger multi-node isolation beyond per-tenant pending-job caps
+- BullMQ Pro queue groups or broader weighted multi-node scheduling/isolation beyond the current shared tenant active-execution caps
 - External log/metrics collector or full distributed tracing backend
 - External KMS-backed tenant key storage or shared multi-node key ledger
 - Full internal invoice line-item ledger, charge/invoice reconciliation beyond export-oriented summaries, Stripe-native feature entitlement service, or broader shared multi-node control-plane stores beyond the current hosted control-plane first slice
