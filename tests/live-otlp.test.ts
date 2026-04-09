@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import {
+  appendStructuredRequestLog,
   beginRequestTrace,
   completeRequestTrace,
   forceFlushTelemetry,
@@ -65,10 +66,13 @@ interface CapturedCollectorRequest {
 
 async function main(): Promise<void> {
   const previousEnv = {
+    OTEL_LOGS_EXPORTER: process.env.OTEL_LOGS_EXPORTER,
     OTEL_TRACES_EXPORTER: process.env.OTEL_TRACES_EXPORTER,
     OTEL_METRICS_EXPORTER: process.env.OTEL_METRICS_EXPORTER,
+    OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
     OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
     OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
+    OTEL_EXPORTER_OTLP_LOGS_PROTOCOL: process.env.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL,
     OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: process.env.OTEL_EXPORTER_OTLP_TRACES_PROTOCOL,
     OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: process.env.OTEL_EXPORTER_OTLP_METRICS_PROTOCOL,
     OTEL_METRIC_EXPORT_INTERVAL: process.env.OTEL_METRIC_EXPORT_INTERVAL,
@@ -99,8 +103,11 @@ async function main(): Promise<void> {
 
     process.env.OTEL_TRACES_EXPORTER = 'otlp';
     process.env.OTEL_METRICS_EXPORTER = 'otlp';
+    process.env.OTEL_LOGS_EXPORTER = 'otlp';
+    process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = `http://127.0.0.1:${collectorPort}/v1/logs`;
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = `http://127.0.0.1:${collectorPort}/v1/traces`;
     process.env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = `http://127.0.0.1:${collectorPort}/v1/metrics`;
+    process.env.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL = 'http/protobuf';
     process.env.OTEL_EXPORTER_OTLP_TRACES_PROTOCOL = 'http/protobuf';
     process.env.OTEL_EXPORTER_OTLP_METRICS_PROTOCOL = 'http/protobuf';
     process.env.OTEL_METRIC_EXPORT_INTERVAL = '200';
@@ -111,8 +118,10 @@ async function main(): Promise<void> {
     console.log('\n[Live OTLP Export]');
 
     ok(telemetry.enabled === true, 'OTLP: telemetry initializes enabled');
+    ok(telemetry.logs.enabled === true, 'OTLP: logs enabled');
     ok(telemetry.traces.enabled === true, 'OTLP: traces enabled');
     ok(telemetry.metrics.enabled === true, 'OTLP: metrics enabled');
+    ok(telemetry.logs.endpoint === `http://127.0.0.1:${collectorPort}/v1/logs`, 'OTLP: logs endpoint matches local collector');
     ok(telemetry.traces.endpoint === `http://127.0.0.1:${collectorPort}/v1/traces`, 'OTLP: trace endpoint matches local collector');
     ok(telemetry.metrics.endpoint === `http://127.0.0.1:${collectorPort}/v1/metrics`, 'OTLP: metrics endpoint matches local collector');
     ok(telemetry.serviceName === 'attestor-live-otlp-test', 'OTLP: service name propagated');
@@ -155,16 +164,47 @@ async function main(): Promise<void> {
       traceContextStatus: 'present',
     });
     observeBillingWebhookEvent('invoice.paid', 'applied');
+    appendStructuredRequestLog({
+      occurredAt: new Date().toISOString(),
+      route: '/api/v1/health',
+      path: '/api/v1/health',
+      method: 'GET',
+      statusCode: 200,
+      durationMs: 12,
+      traceId: trace.traceId,
+      spanId: trace.spanId,
+      parentSpanId: trace.parentSpanId,
+      traceFlags: trace.traceFlags,
+      tenantId: 'tenant-test',
+      planId: 'starter',
+      accountId: 'acct_test',
+      accountStatus: 'active',
+      rateLimited: false,
+      quotaRejected: false,
+      remoteAddress: '127.0.0.1',
+      userAgent: 'live-otlp-test',
+    });
 
     await forceFlushTelemetry();
-    await waitFor(() => collectorRequests.some((request) => request.path === '/v1/traces') && collectorRequests.some((request) => request.path === '/v1/metrics'));
+    await waitFor(() => (
+      collectorRequests.some((request) => request.path === '/v1/logs')
+      && collectorRequests.some((request) => request.path === '/v1/traces')
+      && collectorRequests.some((request) => request.path === '/v1/metrics')
+    ));
 
+    const logsExportRequest = collectorRequests.find((request) => request.path === '/v1/logs');
     const traceExportRequest = collectorRequests.find((request) => request.path === '/v1/traces');
     const metricsExportRequest = collectorRequests.find((request) => request.path === '/v1/metrics');
+    ok(!!logsExportRequest, 'OTLP: collector received logs export');
     ok(!!traceExportRequest, 'OTLP: collector received trace export');
     ok(!!metricsExportRequest, 'OTLP: collector received metrics export');
+    ok(logsExportRequest?.method === 'POST', 'OTLP: collector received logs POST export');
     ok(traceExportRequest?.method === 'POST', 'OTLP: collector received trace POST export');
     ok(metricsExportRequest?.method === 'POST', 'OTLP: collector received metrics POST export');
+    ok(
+      typeof logsExportRequest?.contentType === 'string' && logsExportRequest.contentType.includes('application/x-protobuf'),
+      'OTLP: logs export received protobuf content type',
+    );
     ok(
       typeof traceExportRequest?.contentType === 'string' && traceExportRequest.contentType.includes('application/x-protobuf'),
       'OTLP: trace export received protobuf content type',
@@ -173,6 +213,7 @@ async function main(): Promise<void> {
       typeof metricsExportRequest?.contentType === 'string' && metricsExportRequest.contentType.includes('application/x-protobuf'),
       'OTLP: metrics export received protobuf content type',
     );
+    ok((logsExportRequest?.bodyLength ?? 0) > 0, 'OTLP: collector received non-empty logs payload');
     ok((traceExportRequest?.bodyLength ?? 0) > 0, 'OTLP: collector received non-empty trace payload');
     ok((metricsExportRequest?.bodyLength ?? 0) > 0, 'OTLP: collector received non-empty metrics payload');
 
@@ -180,6 +221,9 @@ async function main(): Promise<void> {
   } finally {
     await shutdownTelemetry().catch(() => {});
     await new Promise<void>((resolve) => collector.close(() => resolve()));
+    if (previousEnv.OTEL_LOGS_EXPORTER === undefined) delete process.env.OTEL_LOGS_EXPORTER; else process.env.OTEL_LOGS_EXPORTER = previousEnv.OTEL_LOGS_EXPORTER;
+    if (previousEnv.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT === undefined) delete process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT; else process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT = previousEnv.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT;
+    if (previousEnv.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL === undefined) delete process.env.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL; else process.env.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL = previousEnv.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL;
     if (previousEnv.OTEL_TRACES_EXPORTER === undefined) delete process.env.OTEL_TRACES_EXPORTER; else process.env.OTEL_TRACES_EXPORTER = previousEnv.OTEL_TRACES_EXPORTER;
     if (previousEnv.OTEL_METRICS_EXPORTER === undefined) delete process.env.OTEL_METRICS_EXPORTER; else process.env.OTEL_METRICS_EXPORTER = previousEnv.OTEL_METRICS_EXPORTER;
     if (previousEnv.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT === undefined) delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; else process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = previousEnv.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;

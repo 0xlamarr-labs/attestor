@@ -116,18 +116,23 @@ docker run \
 | `ATTESTOR_HA_MODE` | No | `false` | Set to `true` to require HA-safe startup: external `REDIS_URL`, BullMQ mode, and shared `ATTESTOR_CONTROL_PLANE_PG_URL` |
 | `ATTESTOR_INSTANCE_ID` | No | Hostname | Optional stable instance label surfaced in `x-attestor-instance-id`, `/health`, `/ready`, and HA diagnostics |
 | `ATTESTOR_OBSERVABILITY_LOG_PATH` | No | None | Optional JSONL path for structured API request logs with trace correlation and tenant/account context |
+| `OTEL_LOGS_EXPORTER` | No | None | Set to `otlp` to enable OTLP structured log export |
 | `OTEL_TRACES_EXPORTER` | No | None | Set to `otlp` to enable OTLP trace export |
 | `OTEL_METRICS_EXPORTER` | No | None | Set to `otlp` to enable OTLP metrics export |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | None | Optional OTLP base endpoint; Attestor appends `/v1/traces` for traces and `/v1/metrics` for metrics |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | None | Optional OTLP base endpoint; Attestor appends `/v1/logs`, `/v1/traces`, and `/v1/metrics` for logs, traces, and metrics |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | No | None | Optional explicit OTLP logs endpoint |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | No | None | Optional explicit OTLP traces endpoint |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | No | None | Optional explicit OTLP metrics endpoint |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | No | `http/protobuf` | OTLP protocol override; only `http/protobuf` is supported in this first slice |
+| `OTEL_EXPORTER_OTLP_LOGS_PROTOCOL` | No | `http/protobuf` | OTLP logs protocol override; only `http/protobuf` is supported in this first slice |
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | No | `http/protobuf` | OTLP traces protocol override; only `http/protobuf` is supported in this first slice |
 | `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL` | No | `http/protobuf` | OTLP metrics protocol override; only `http/protobuf` is supported in this first slice |
 | `OTEL_EXPORTER_OTLP_HEADERS` | No | None | Optional comma-separated OTLP header list (`k=v,k2=v2`) |
+| `OTEL_EXPORTER_OTLP_LOGS_HEADERS` | No | None | Optional logs header override (`k=v,k2=v2`) |
 | `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | No | None | Optional traces header override (`k=v,k2=v2`) |
 | `OTEL_EXPORTER_OTLP_METRICS_HEADERS` | No | None | Optional metrics header override (`k=v,k2=v2`) |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` | No | None | Optional OTLP export timeout in milliseconds |
+| `OTEL_EXPORTER_OTLP_LOGS_TIMEOUT` | No | None | Optional logs export timeout in milliseconds |
 | `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` | No | None | Optional traces export timeout in milliseconds |
 | `OTEL_EXPORTER_OTLP_METRICS_TIMEOUT` | No | None | Optional metrics export timeout in milliseconds |
 | `OTEL_METRIC_EXPORT_TIMEOUT` | No | None | Optional fallback timeout for OTLP metrics export in milliseconds |
@@ -196,7 +201,7 @@ What is deployed today:
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed` processing with duplicate-event suppression, checkout/invoice summary persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
 - Async queue hardening first slice: plan-aware BullMQ job priority, bounded retry/backoff, exact paginated tenant-aware pending-job caps on async submit, shared Redis-backed tenant active-execution leases at worker runtime, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry. Terminal async failures persist into a file-backed DLQ store by default and move onto the shared PostgreSQL control-plane when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured
-- Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter status, optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`, and optional OTLP trace + metrics export over HTTP/protobuf
+- Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter status, optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`, and optional OTLP logs + trace + metrics export over HTTP/protobuf
 - HA runtime truth: all API responses include `x-attestor-instance-id`, while `GET /api/v1/health` and `GET /api/v1/ready` expose `instanceId` and `highAvailability` status for load-balancer debugging and readiness gating
 - Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, webhook-driven plan/quota sync back into hosted tenant records, customer-visible checkout/invoice summary at `GET /api/v1/account`, and hosted billing export at `GET /api/v1/account/billing/export` (`format=json|csv`) with live Stripe or shared-ledger/mock-summary fallback
 - Control-plane backup/restore first slice: `npm run backup:control-plane` writes a logical snapshot of the hosted control-plane, including shared PostgreSQL-backed account/tenant/usage/billing-entitlement/async-DLQ/admin-audit/account-user/account-session/account-user-action-token state when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, plus the shared billing ledger export when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured. Ephemeral admin idempotency and Stripe webhook dedupe state can be included explicitly for DR drills. See [backup-restore-dr.md](backup-restore-dr.md)
@@ -205,7 +210,7 @@ What is deployed today:
 What is not yet implemented:
 - Orchestrator-native autoscaling, rolling deploy coordination, or managed load-balancer integration beyond the current HA first slice
 - BullMQ Pro queue groups or broader weighted multi-node scheduling/isolation beyond the current shared tenant active-execution caps
-- No bundled external log collector or full distributed trace/metrics backend
+- No bundled external collector deployment or full distributed log/trace backend
 - External KMS-backed tenant key storage or shared multi-node key ledger
 - Full internal invoice line-item ledger, charge/invoice reconciliation beyond export-oriented summaries, Stripe-native feature entitlement service, or broader shared multi-node control-plane stores beyond the current hosted control-plane first slice
 - WebAuthn/passkeys, outbound email delivery for invite/reset/MFA recovery, and SSO/SAML

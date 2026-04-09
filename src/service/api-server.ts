@@ -325,6 +325,7 @@ app.use('/api/*', async (c, next) => {
       traceId: trace.traceId,
       spanId: trace.spanId,
       parentSpanId: trace.parentSpanId,
+      traceFlags: trace.traceFlags,
       tenantId: observedTenantId ?? tenant.tenantId ?? null,
       planId: observedPlanId ?? tenant.planId ?? null,
       accountId: observedAccountId ?? account?.id ?? null,

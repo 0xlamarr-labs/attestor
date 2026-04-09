@@ -5,8 +5,8 @@
  * - In-process metrics registry with Prometheus text exposition
  * - W3C trace-context-compatible request correlation headers
  * - Local JSONL structured request log when configured
- * - Optional OTLP trace + metrics export over HTTP/protobuf
- * - No external log collector or full distributed tracing backend yet
+ * - Optional OTLP trace + metrics + logs export over HTTP/protobuf
+ * - No bundled collector or full distributed trace/log backend yet
  */
 
 import { randomBytes } from 'node:crypto';
@@ -14,9 +14,12 @@ import { appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { ROOT_CONTEXT, SpanKind, SpanStatusCode, TraceFlags, trace, type Counter, type Histogram, type ObservableGauge, type Span } from '@opentelemetry/api';
+import { logs as otelLogsApi, SeverityNumber, type Logger as OtelLogger } from '@opentelemetry/api-logs';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
 import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { resourceFromAttributes } from '@opentelemetry/resources';
+import { BatchLogRecordProcessor, LoggerProvider as SdkLoggerProvider } from '@opentelemetry/sdk-logs';
 import { MeterProvider, PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { BatchSpanProcessor, NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import {
@@ -94,6 +97,7 @@ export interface StructuredRequestLogRecord {
   traceId: string;
   spanId: string;
   parentSpanId: string | null;
+  traceFlags: string;
   tenantId: string | null;
   planId: string | null;
   accountId: string | null;
@@ -120,6 +124,14 @@ interface TelemetryConfig {
   serviceName: string;
   serviceVersion: string;
   serviceInstanceId: string;
+  logs: {
+    enabled: boolean;
+    protocol: string | null;
+    endpoint: string | null;
+    headers: Record<string, string>;
+    timeoutMillis: number | null;
+    disabledReason: string | null;
+  };
   traces: {
     enabled: boolean;
     protocol: string | null;
@@ -157,6 +169,7 @@ export interface TelemetryStatus {
   serviceVersion: string;
   serviceInstanceId: string;
   disabledReason: string | null;
+  logs: TelemetrySignalStatus;
   traces: TelemetrySignalStatus;
   metrics: TelemetryMetricsStatus;
 }
@@ -168,7 +181,9 @@ const billingWebhookCounts = new Map<string, number>();
 let inFlightRequests = 0;
 let telemetryInitialized = false;
 let telemetryProvider: NodeTracerProvider | null = null;
+let telemetryLoggerProvider: SdkLoggerProvider | null = null;
 let telemetryMeterProvider: MeterProvider | null = null;
+let telemetryRequestLogger: OtelLogger | null = null;
 let telemetryHttpRequestCounter: Counter | null = null;
 let telemetryHttpRequestDurationHistogram: Histogram | null = null;
 let telemetryTraceContextCounter: Counter | null = null;
@@ -180,6 +195,13 @@ let telemetryStatus: TelemetryStatus = {
   serviceVersion: process.env.ATTESTOR_SERVICE_VERSION?.trim() || '0.1.0',
   serviceInstanceId: process.env.OTEL_SERVICE_INSTANCE_ID?.trim() || process.env.HOSTNAME?.trim() || process.env.COMPUTERNAME?.trim() || os.hostname(),
   disabledReason: 'Telemetry not initialized.',
+  logs: {
+    enabled: false,
+    protocol: null,
+    endpoint: null,
+    timeoutMillis: null,
+    disabledReason: 'Telemetry not initialized.',
+  },
   traces: {
     enabled: false,
     protocol: null,
@@ -315,6 +337,48 @@ function resolveTraceExporterConfig(): TelemetryConfig['traces'] {
   };
 }
 
+function resolveLogsExporterConfig(): TelemetryConfig['logs'] {
+  const protocol = (
+    process.env.OTEL_EXPORTER_OTLP_LOGS_PROTOCOL?.trim()
+    || process.env.OTEL_EXPORTER_OTLP_PROTOCOL?.trim()
+    || 'http/protobuf'
+  ).toLowerCase();
+
+  if (protocol !== 'http/protobuf') {
+    return {
+      enabled: false,
+      protocol,
+      endpoint: null,
+      headers: {},
+      timeoutMillis: null,
+      disabledReason: `Unsupported OTLP logs protocol '${protocol}'. Only http/protobuf is supported in this first slice.`,
+    };
+  }
+
+  const explicitEndpoint = process.env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?.trim()
+    || process.env.ATTESTOR_OTLP_LOGS_ENDPOINT?.trim()
+    || null;
+  const baseEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim() || null;
+  const exporterSetting = process.env.OTEL_LOGS_EXPORTER?.trim().toLowerCase() || '';
+  const enabled = explicitEndpoint !== null || baseEndpoint !== null || exporterSetting === 'otlp';
+  const endpoint = explicitEndpoint
+    ?? (baseEndpoint ? `${baseEndpoint.replace(/\/+$/, '')}/v1/logs` : null)
+    ?? (enabled ? 'http://127.0.0.1:4318/v1/logs' : null);
+
+  return {
+    enabled: enabled && endpoint !== null,
+    protocol,
+    endpoint,
+    headers: {
+      ...parseOtlpHeaders(process.env.OTEL_EXPORTER_OTLP_HEADERS),
+      ...parseOtlpHeaders(process.env.OTEL_EXPORTER_OTLP_LOGS_HEADERS),
+    },
+    timeoutMillis: parsePositiveInteger(process.env.OTEL_EXPORTER_OTLP_LOGS_TIMEOUT)
+      ?? parsePositiveInteger(process.env.OTEL_EXPORTER_OTLP_TIMEOUT),
+    disabledReason: enabled ? null : 'No OTLP logs exporter endpoint configured.',
+  };
+}
+
 function resolveMetricsExporterConfig(): TelemetryConfig['metrics'] {
   const protocol = (
     process.env.OTEL_EXPORTER_OTLP_METRICS_PROTOCOL?.trim()
@@ -365,6 +429,7 @@ function resolveTelemetryConfig(serviceVersion = '0.1.0'): TelemetryConfig {
     serviceName: process.env.OTEL_SERVICE_NAME?.trim() || 'attestor-api',
     serviceVersion,
     serviceInstanceId: process.env.OTEL_SERVICE_INSTANCE_ID?.trim() || process.env.HOSTNAME?.trim() || process.env.COMPUTERNAME?.trim() || os.hostname(),
+    logs: resolveLogsExporterConfig(),
     traces: resolveTraceExporterConfig(),
     metrics: resolveMetricsExporterConfig(),
   };
@@ -374,7 +439,7 @@ export function initializeTelemetry(serviceVersion = '0.1.0'): TelemetryStatus {
   if (telemetryInitialized) return telemetryStatus;
   telemetryInitialized = true;
   const config = resolveTelemetryConfig(serviceVersion);
-  const enabled = config.traces.enabled || config.metrics.enabled;
+  const enabled = config.logs.enabled || config.traces.enabled || config.metrics.enabled;
   const metricsExportIntervalMillis = config.metrics.exportIntervalMillis ?? 1000;
   const metricsExportTimeoutMillis = Math.min(
     config.metrics.timeoutMillis ?? metricsExportIntervalMillis,
@@ -387,7 +452,14 @@ export function initializeTelemetry(serviceVersion = '0.1.0'): TelemetryStatus {
     serviceInstanceId: config.serviceInstanceId,
     disabledReason: enabled
       ? null
-      : [config.traces.disabledReason, config.metrics.disabledReason].filter(Boolean).join(' / '),
+      : [config.logs.disabledReason, config.traces.disabledReason, config.metrics.disabledReason].filter(Boolean).join(' / '),
+    logs: {
+      enabled: config.logs.enabled,
+      protocol: config.logs.enabled ? config.logs.protocol : null,
+      endpoint: config.logs.enabled ? config.logs.endpoint : null,
+      timeoutMillis: config.logs.timeoutMillis,
+      disabledReason: config.logs.disabledReason,
+    },
     traces: {
       enabled: config.traces.enabled,
       protocol: config.traces.enabled ? config.traces.protocol : null,
@@ -409,6 +481,21 @@ export function initializeTelemetry(serviceVersion = '0.1.0'): TelemetryStatus {
     [ATTR_SERVICE_VERSION]: config.serviceVersion,
     [ATTR_SERVICE_INSTANCE_ID]: config.serviceInstanceId,
   });
+
+  if (config.logs.enabled && config.logs.endpoint) {
+    const exporter = new OTLPLogExporter({
+      url: config.logs.endpoint,
+      headers: config.logs.headers,
+      timeoutMillis: config.logs.timeoutMillis ?? undefined,
+    });
+    const provider = new SdkLoggerProvider({
+      resource,
+      processors: [new BatchLogRecordProcessor(exporter)],
+    });
+    otelLogsApi.setGlobalLoggerProvider(provider);
+    telemetryLoggerProvider = provider;
+    telemetryRequestLogger = provider.getLogger('attestor-api');
+  }
 
   if (config.traces.enabled && config.traces.endpoint) {
     const exporter = new OTLPTraceExporter({
@@ -467,6 +554,9 @@ export function initializeTelemetry(serviceVersion = '0.1.0'): TelemetryStatus {
 }
 
 export async function forceFlushTelemetry(): Promise<void> {
+  if (telemetryLoggerProvider) {
+    await telemetryLoggerProvider.forceFlush();
+  }
   if (telemetryProvider) {
     await telemetryProvider.forceFlush();
   }
@@ -476,10 +566,13 @@ export async function forceFlushTelemetry(): Promise<void> {
 }
 
 export async function shutdownTelemetry(): Promise<void> {
+  const loggerProvider = telemetryLoggerProvider;
   const provider = telemetryProvider;
   const meterProvider = telemetryMeterProvider;
+  telemetryLoggerProvider = null;
   telemetryProvider = null;
   telemetryMeterProvider = null;
+  telemetryRequestLogger = null;
   telemetryHttpRequestCounter = null;
   telemetryHttpRequestDurationHistogram = null;
   telemetryTraceContextCounter = null;
@@ -492,6 +585,13 @@ export async function shutdownTelemetry(): Promise<void> {
     serviceVersion: process.env.ATTESTOR_SERVICE_VERSION?.trim() || '0.1.0',
     serviceInstanceId: process.env.OTEL_SERVICE_INSTANCE_ID?.trim() || process.env.HOSTNAME?.trim() || process.env.COMPUTERNAME?.trim() || os.hostname(),
     disabledReason: 'Telemetry not initialized.',
+    logs: {
+      enabled: false,
+      protocol: null,
+      endpoint: null,
+      timeoutMillis: null,
+      disabledReason: 'Telemetry not initialized.',
+    },
     traces: {
       enabled: false,
       protocol: null,
@@ -508,6 +608,10 @@ export async function shutdownTelemetry(): Promise<void> {
       disabledReason: 'Telemetry not initialized.',
     },
   };
+  if (loggerProvider) {
+    await loggerProvider.shutdown();
+  }
+  otelLogsApi.disable();
   if (provider) {
     await provider.shutdown();
   }
@@ -646,6 +750,46 @@ export function observeBillingWebhookEvent(eventType: string, outcome: BillingWe
 }
 
 export function appendStructuredRequestLog(record: StructuredRequestLogRecord): void {
+  if (telemetryRequestLogger) {
+    const severity = record.statusCode >= 500
+      ? { number: SeverityNumber.ERROR, text: 'ERROR' }
+      : record.statusCode >= 400
+        ? { number: SeverityNumber.WARN, text: 'WARN' }
+        : { number: SeverityNumber.INFO, text: 'INFO' };
+    const traceFlags = record.traceFlags === '00' ? TraceFlags.NONE : TraceFlags.SAMPLED;
+    telemetryRequestLogger.emit({
+      eventName: 'attestor.http.request',
+      severityNumber: severity.number,
+      severityText: severity.text,
+      body: `${record.method} ${record.route} -> ${record.statusCode}`,
+      attributes: {
+        'attestor.occurred_at': record.occurredAt,
+        'attestor.http.route': record.route,
+        'attestor.http.path': record.path,
+        'attestor.http.method': record.method,
+        'attestor.http.status_code': record.statusCode,
+        'attestor.http.duration_ms': record.durationMs,
+        'attestor.trace.id': record.traceId,
+        'attestor.trace.span_id': record.spanId,
+        ...(record.parentSpanId ? { 'attestor.trace.parent_span_id': record.parentSpanId } : {}),
+        ...(record.tenantId ? { 'attestor.tenant.id': record.tenantId } : {}),
+        ...(record.planId ? { 'attestor.plan.id': record.planId } : {}),
+        ...(record.accountId ? { 'attestor.account.id': record.accountId } : {}),
+        ...(record.accountStatus ? { 'attestor.account.status': record.accountStatus } : {}),
+        ...(record.remoteAddress ? { 'client.address': record.remoteAddress } : {}),
+        ...(record.userAgent ? { 'user_agent.original': record.userAgent } : {}),
+        'attestor.rate_limited': record.rateLimited,
+        'attestor.quota_rejected': record.quotaRejected,
+      },
+      context: trace.setSpanContext(ROOT_CONTEXT, {
+        traceId: record.traceId,
+        spanId: record.spanId,
+        traceFlags,
+        isRemote: false,
+      }),
+    });
+  }
+
   const path = logPath();
   if (!path) return;
   mkdirSync(dirname(path), { recursive: true });
