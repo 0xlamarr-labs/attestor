@@ -8,7 +8,12 @@ import {
   exportHostedStripeBillingSnapshot,
   type HostedStripeChargeSnapshot,
   type HostedStripeInvoiceSnapshot,
+  type HostedStripeInvoiceLineItemSnapshot,
 } from './stripe-billing.js';
+import {
+  listBillingInvoiceLineItems,
+  type BillingInvoiceLineItemRecord,
+} from './billing-event-ledger.js';
 
 export interface HostedBillingExportCheckoutSummary {
   sessionId: string | null;
@@ -43,6 +48,23 @@ export interface HostedBillingExportChargeRecord {
   source: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary';
 }
 
+export interface HostedBillingExportInvoiceLineItemRecord {
+  lineItemId: string;
+  invoiceId: string;
+  subscriptionId: string | null;
+  priceId: string | null;
+  description: string | null;
+  currency: string | null;
+  amount: number | null;
+  subtotal: number | null;
+  quantity: number | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  proration: boolean | null;
+  captureMode: 'full' | 'partial';
+  source: 'stripe_live' | 'ledger_derived' | 'mock_summary';
+}
+
 export interface HostedBillingExportPayload {
   accountId: string;
   tenantId: string;
@@ -51,6 +73,7 @@ export interface HostedBillingExportPayload {
   checkout: HostedBillingExportCheckoutSummary;
   invoices: HostedBillingExportInvoiceRecord[];
   charges: HostedBillingExportChargeRecord[];
+  lineItems: HostedBillingExportInvoiceLineItemRecord[];
   summary: {
     dataSource: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary' | 'empty';
     mock: boolean;
@@ -58,6 +81,7 @@ export interface HostedBillingExportPayload {
     requestedLimit: number;
     invoiceCount: number;
     chargeCount: number;
+    lineItemCount: number;
   };
 }
 
@@ -120,6 +144,27 @@ function deriveChargesFromLedger(records: BillingEventRecord[]): HostedBillingEx
       source: 'ledger_derived' as const,
     }))
     .sort((left, right) => Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? ''));
+}
+
+function deriveLineItemsFromLedger(records: BillingInvoiceLineItemRecord[]): HostedBillingExportInvoiceLineItemRecord[] {
+  return records
+    .map((record) => ({
+      lineItemId: record.stripeInvoiceLineItemId,
+      invoiceId: record.stripeInvoiceId,
+      subscriptionId: record.stripeSubscriptionId,
+      priceId: record.stripePriceId,
+      description: record.description,
+      currency: record.currency,
+      amount: record.amount,
+      subtotal: record.subtotal,
+      quantity: record.quantity,
+      periodStart: record.periodStart,
+      periodEnd: record.periodEnd,
+      proration: record.proration,
+      captureMode: record.captureMode,
+      source: 'ledger_derived' as const,
+    }))
+    .sort((left, right) => Date.parse(right.periodStart ?? right.periodEnd ?? '') - Date.parse(left.periodStart ?? left.periodEnd ?? ''));
 }
 
 function summaryInvoices(account: HostedAccountRecord): HostedBillingExportInvoiceRecord[] {
@@ -188,6 +233,25 @@ function mapStripeCharges(records: HostedStripeChargeSnapshot[]): HostedBillingE
   }));
 }
 
+function mapStripeLineItems(records: HostedStripeInvoiceLineItemSnapshot[]): HostedBillingExportInvoiceLineItemRecord[] {
+  return records.map<HostedBillingExportInvoiceLineItemRecord>((record) => ({
+    lineItemId: record.lineItemId,
+    invoiceId: record.invoiceId,
+    subscriptionId: record.subscriptionId,
+    priceId: record.priceId,
+    description: record.description,
+    currency: record.currency,
+    amount: record.amount,
+    subtotal: record.subtotal,
+    quantity: record.quantity,
+    periodStart: record.periodStart,
+    periodEnd: record.periodEnd,
+    proration: record.proration,
+    captureMode: record.captureMode,
+    source: record.source === 'mock_summary' ? 'mock_summary' : 'stripe_live',
+  }));
+}
+
 export async function buildHostedBillingExport(options: {
   account: HostedAccountRecord;
   limit?: number | null;
@@ -206,26 +270,40 @@ export async function buildHostedBillingExport(options: {
         limit: Math.max(limit * 5, 50),
       })
     : [];
+  const ledgerLineItems = sharedBillingLedger
+    ? await listBillingInvoiceLineItems({
+        accountId: options.account.id,
+        limit: Math.max(limit * 50, 250),
+      })
+    : [];
 
   let invoices: HostedBillingExportInvoiceRecord[] = [];
   let charges: HostedBillingExportChargeRecord[] = [];
+  let lineItems: HostedBillingExportInvoiceLineItemRecord[] = [];
   let dataSource: HostedBillingExportPayload['summary']['dataSource'] = 'empty';
 
   if (stripeSnapshot.source === 'stripe_live') {
     invoices = mapStripeInvoices(stripeSnapshot.invoices);
     charges = mapStripeCharges(stripeSnapshot.charges);
+    lineItems = mapStripeLineItems(stripeSnapshot.lineItems);
     dataSource = 'stripe_live';
   } else if (ledgerRecords.length > 0) {
     invoices = deriveInvoicesFromLedger(ledgerRecords).slice(0, limit);
     charges = deriveChargesFromLedger(ledgerRecords).slice(0, limit);
+    const invoiceIds = new Set(invoices.map((invoice) => invoice.invoiceId));
+    lineItems = deriveLineItemsFromLedger(ledgerLineItems)
+      .filter((lineItem) => invoiceIds.has(lineItem.invoiceId))
+      .slice(0, Math.max(limit * 25, 100));
     dataSource = 'ledger_derived';
   } else if (stripeSnapshot.source === 'mock_summary') {
     invoices = mapStripeInvoices(stripeSnapshot.invoices);
     charges = mapStripeCharges(stripeSnapshot.charges);
+    lineItems = mapStripeLineItems(stripeSnapshot.lineItems);
     dataSource = 'mock_summary';
   } else {
     invoices = summaryInvoices(options.account);
     charges = summaryCharges(options.account);
+    lineItems = [];
     dataSource = invoices.length > 0 || charges.length > 0 ? 'summary_only' : 'empty';
   }
 
@@ -241,6 +319,7 @@ export async function buildHostedBillingExport(options: {
     },
     invoices,
     charges,
+    lineItems,
     summary: {
       dataSource,
       mock: stripeSnapshot.mock,
@@ -248,6 +327,7 @@ export async function buildHostedBillingExport(options: {
       requestedLimit: limit,
       invoiceCount: invoices.length,
       chargeCount: charges.length,
+      lineItemCount: lineItems.length,
     },
   };
 }
@@ -267,15 +347,23 @@ export function renderHostedBillingExportCsv(payload: HostedBillingExportPayload
       'tenantId',
       'source',
       'invoiceId',
+      'lineItemId',
       'chargeId',
       'status',
       'currency',
       'amountPaid',
       'amountDue',
       'amount',
+      'subtotal',
       'subscriptionId',
       'priceId',
       'billingReason',
+      'description',
+      'quantity',
+      'periodStart',
+      'periodEnd',
+      'proration',
+      'captureMode',
       'createdAt',
       'paidAt',
       'refunded',
@@ -291,14 +379,22 @@ export function renderHostedBillingExportCsv(payload: HostedBillingExportPayload
       invoice.source,
       invoice.invoiceId,
       '',
+      '',
       invoice.status ?? '',
       invoice.currency ?? '',
       invoice.amountPaid === null ? '' : String(invoice.amountPaid),
       invoice.amountDue === null ? '' : String(invoice.amountDue),
       '',
+      '',
       invoice.subscriptionId ?? '',
       invoice.priceId ?? '',
       invoice.billingReason ?? '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
       invoice.createdAt ?? '',
       invoice.paidAt ?? '',
       '',
@@ -313,18 +409,57 @@ export function renderHostedBillingExportCsv(payload: HostedBillingExportPayload
       payload.tenantId,
       charge.source,
       charge.invoiceId ?? '',
+      '',
       charge.chargeId ?? '',
       charge.status ?? '',
       charge.currency ?? '',
       '',
       '',
       charge.amount === null ? '' : String(charge.amount),
+      '',
       payload.stripeSubscriptionId ?? '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
       '',
       '',
       charge.createdAt ?? '',
       '',
       charge.refunded === null ? '' : String(charge.refunded),
+      '',
+    ].map(escapeCsv).join(','));
+  }
+
+  for (const lineItem of payload.lineItems) {
+    rows.push([
+      'line_item',
+      payload.accountId,
+      payload.tenantId,
+      lineItem.source,
+      lineItem.invoiceId,
+      lineItem.lineItemId,
+      '',
+      '',
+      lineItem.currency ?? '',
+      '',
+      '',
+      lineItem.amount === null ? '' : String(lineItem.amount),
+      lineItem.subtotal === null ? '' : String(lineItem.subtotal),
+      lineItem.subscriptionId ?? '',
+      lineItem.priceId ?? '',
+      '',
+      lineItem.description ?? '',
+      lineItem.quantity === null ? '' : String(lineItem.quantity),
+      lineItem.periodStart ?? '',
+      lineItem.periodEnd ?? '',
+      lineItem.proration === null ? '' : String(lineItem.proration),
+      lineItem.captureMode,
+      '',
+      '',
+      '',
       '',
     ].map(escapeCsv).join(','));
   }

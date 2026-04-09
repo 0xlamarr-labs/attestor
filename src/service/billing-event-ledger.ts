@@ -4,7 +4,7 @@
  * BOUNDARY:
  * - Optional PostgreSQL-backed shared ledger for billing webhook events
  * - Cross-node duplicate suppression via unique provider event ids
- * - Captures checkout completion and invoice lifecycle summaries, not full invoice line items
+ * - Captures checkout completion, invoice lifecycle summaries, and invoice line-item truth
  */
 
 import { randomUUID } from 'node:crypto';
@@ -31,6 +31,8 @@ export type BillingInvoiceStatus =
   | 'uncollectible'
   | 'void'
   | null;
+export type BillingInvoiceLineItemSource = 'stripe_webhook' | 'stripe_live_fetch';
+export type BillingInvoiceLineItemCaptureMode = 'full' | 'partial';
 
 export interface BillingEventRecord {
   id: string;
@@ -62,6 +64,31 @@ export interface BillingEventRecord {
   metadata: Record<string, unknown>;
 }
 
+export interface BillingInvoiceLineItemRecord {
+  id: string;
+  provider: BillingEventProvider;
+  accountId: string | null;
+  tenantId: string | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  stripeInvoiceId: string;
+  stripeInvoiceLineItemId: string;
+  stripePriceId: string | null;
+  description: string | null;
+  currency: string | null;
+  amount: number | null;
+  subtotal: number | null;
+  quantity: number | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  proration: boolean | null;
+  source: BillingInvoiceLineItemSource;
+  captureMode: BillingInvoiceLineItemCaptureMode;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type BillingEventClaim =
   | { kind: 'claimed'; payloadHash: string; record: BillingEventRecord }
   | { kind: 'duplicate'; payloadHash: string; record: BillingEventRecord }
@@ -77,11 +104,35 @@ export interface BillingEventListFilters {
 }
 
 export interface BillingEventLedgerSnapshot {
-  version: 1;
+  version: 2;
   provider: 'stripe';
   exportedAt: string;
+  eventRecordCount: number;
+  lineItemRecordCount: number;
   recordCount: number;
   records: BillingEventRecord[];
+  lineItems: BillingInvoiceLineItemRecord[];
+}
+
+export interface BillingInvoiceLineItemInput {
+  stripeInvoiceLineItemId: string;
+  stripePriceId?: string | null;
+  description?: string | null;
+  currency?: string | null;
+  amount?: number | null;
+  subtotal?: number | null;
+  quantity?: number | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  proration?: boolean | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BillingInvoiceLineItemListFilters {
+  accountId?: string | null;
+  tenantId?: string | null;
+  stripeInvoiceId?: string | null;
+  limit?: number | null;
 }
 
 type PgPool = {
@@ -180,6 +231,40 @@ async function ensureSchema(): Promise<void> {
           ADD COLUMN IF NOT EXISTS stripe_invoice_currency TEXT NULL,
           ADD COLUMN IF NOT EXISTS stripe_invoice_amount_paid BIGINT NULL,
           ADD COLUMN IF NOT EXISTS stripe_invoice_amount_due BIGINT NULL;
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.billing_invoice_line_items (
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          account_id TEXT NULL,
+          tenant_id TEXT NULL,
+          stripe_customer_id TEXT NULL,
+          stripe_subscription_id TEXT NULL,
+          stripe_invoice_id TEXT NOT NULL,
+          stripe_invoice_line_item_id TEXT NOT NULL,
+          stripe_price_id TEXT NULL,
+          description TEXT NULL,
+          currency TEXT NULL,
+          amount BIGINT NULL,
+          subtotal BIGINT NULL,
+          quantity BIGINT NULL,
+          period_start TIMESTAMPTZ NULL,
+          period_end TIMESTAMPTZ NULL,
+          proration BOOLEAN NULL,
+          source TEXT NOT NULL CHECK (source IN ('stripe_webhook', 'stripe_live_fetch')),
+          capture_mode TEXT NOT NULL CHECK (capture_mode IN ('full', 'partial')),
+          metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMPTZ NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS billing_invoice_line_items_provider_line_idx
+          ON attestor_control_plane.billing_invoice_line_items (provider, stripe_invoice_line_item_id);
+
+        CREATE INDEX IF NOT EXISTS billing_invoice_line_items_invoice_idx
+          ON attestor_control_plane.billing_invoice_line_items (stripe_invoice_id, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS billing_invoice_line_items_account_idx
+          ON attestor_control_plane.billing_invoice_line_items (account_id, updated_at DESC);
       `);
     })();
   }
@@ -237,6 +322,41 @@ function rowToRecord(row: Record<string, unknown>): BillingEventRecord {
     receivedAt: new Date(String(row.received_at)).toISOString(),
     processedAt: row.processed_at === null ? null : new Date(String(row.processed_at)).toISOString(),
     metadata: toNullableObject(row.metadata),
+  };
+}
+
+function toNullableLineItemSource(value: unknown): BillingInvoiceLineItemSource {
+  return value === 'stripe_live_fetch' ? 'stripe_live_fetch' : 'stripe_webhook';
+}
+
+function toNullableCaptureMode(value: unknown): BillingInvoiceLineItemCaptureMode {
+  return value === 'partial' ? 'partial' : 'full';
+}
+
+function rowToLineItemRecord(row: Record<string, unknown>): BillingInvoiceLineItemRecord {
+  return {
+    id: String(row.id),
+    provider: String(row.provider) as BillingEventProvider,
+    accountId: row.account_id === null ? null : String(row.account_id),
+    tenantId: row.tenant_id === null ? null : String(row.tenant_id),
+    stripeCustomerId: row.stripe_customer_id === null ? null : String(row.stripe_customer_id),
+    stripeSubscriptionId: row.stripe_subscription_id === null ? null : String(row.stripe_subscription_id),
+    stripeInvoiceId: String(row.stripe_invoice_id),
+    stripeInvoiceLineItemId: String(row.stripe_invoice_line_item_id),
+    stripePriceId: row.stripe_price_id === null ? null : String(row.stripe_price_id),
+    description: row.description === null ? null : String(row.description),
+    currency: row.currency === null ? null : String(row.currency),
+    amount: row.amount === null ? null : Number(row.amount),
+    subtotal: row.subtotal === null ? null : Number(row.subtotal),
+    quantity: row.quantity === null ? null : Number(row.quantity),
+    periodStart: row.period_start === null ? null : new Date(String(row.period_start)).toISOString(),
+    periodEnd: row.period_end === null ? null : new Date(String(row.period_end)).toISOString(),
+    proration: row.proration === null ? null : Boolean(row.proration),
+    source: toNullableLineItemSource(row.source),
+    captureMode: toNullableCaptureMode(row.capture_mode),
+    metadata: toNullableObject(row.metadata),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    updatedAt: new Date(String(row.updated_at)).toISOString(),
   };
 }
 
@@ -468,32 +588,174 @@ export async function listBillingEvents(filters: BillingEventListFilters = {}): 
   return result.rows.map(rowToRecord);
 }
 
+export async function upsertStripeInvoiceLineItems(input: {
+  accountId: string | null;
+  tenantId: string | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeInvoiceId: string;
+  lineItems: BillingInvoiceLineItemInput[];
+  source: BillingInvoiceLineItemSource;
+  captureMode: BillingInvoiceLineItemCaptureMode;
+  replaceExisting?: boolean;
+}): Promise<{ recordCount: number }> {
+  await ensureSchema();
+  const pool = await getPool();
+  if (input.replaceExisting) {
+    await pool.query(
+      `DELETE FROM attestor_control_plane.billing_invoice_line_items
+        WHERE provider = 'stripe' AND stripe_invoice_id = $1`,
+      [input.stripeInvoiceId],
+    );
+  }
+
+  let recordCount = 0;
+  for (const lineItem of input.lineItems) {
+    if (!lineItem.stripeInvoiceLineItemId?.trim()) continue;
+    const now = new Date().toISOString();
+    const lineId = `bill_line_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+    await pool.query(
+      `INSERT INTO attestor_control_plane.billing_invoice_line_items (
+        id, provider, account_id, tenant_id, stripe_customer_id, stripe_subscription_id,
+        stripe_invoice_id, stripe_invoice_line_item_id, stripe_price_id, description, currency,
+        amount, subtotal, quantity, period_start, period_end, proration, source, capture_mode,
+        metadata, created_at, updated_at
+      ) VALUES (
+        $1, 'stripe', $2, $3, $4, $5,
+        $6, $7, $8, $9, $10,
+        $11, $12, $13, $14::timestamptz, $15::timestamptz, $16, $17, $18,
+        $19::jsonb, $20::timestamptz, $21::timestamptz
+      )
+      ON CONFLICT (provider, stripe_invoice_line_item_id) DO UPDATE SET
+        account_id = EXCLUDED.account_id,
+        tenant_id = EXCLUDED.tenant_id,
+        stripe_customer_id = EXCLUDED.stripe_customer_id,
+        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+        stripe_invoice_id = EXCLUDED.stripe_invoice_id,
+        stripe_price_id = EXCLUDED.stripe_price_id,
+        description = EXCLUDED.description,
+        currency = EXCLUDED.currency,
+        amount = EXCLUDED.amount,
+        subtotal = EXCLUDED.subtotal,
+        quantity = EXCLUDED.quantity,
+        period_start = EXCLUDED.period_start,
+        period_end = EXCLUDED.period_end,
+        proration = EXCLUDED.proration,
+        source = EXCLUDED.source,
+        capture_mode = EXCLUDED.capture_mode,
+        metadata = EXCLUDED.metadata,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        lineId,
+        input.accountId,
+        input.tenantId,
+        input.stripeCustomerId ?? null,
+        input.stripeSubscriptionId ?? null,
+        input.stripeInvoiceId,
+        lineItem.stripeInvoiceLineItemId,
+        lineItem.stripePriceId ?? null,
+        lineItem.description ?? null,
+        lineItem.currency ?? null,
+        lineItem.amount ?? null,
+        lineItem.subtotal ?? null,
+        lineItem.quantity ?? null,
+        lineItem.periodStart ?? null,
+        lineItem.periodEnd ?? null,
+        lineItem.proration ?? null,
+        input.source,
+        input.captureMode,
+        JSON.stringify(lineItem.metadata ?? {}),
+        now,
+        now,
+      ],
+    );
+    recordCount += 1;
+  }
+
+  return { recordCount };
+}
+
+export async function listBillingInvoiceLineItems(
+  filters: BillingInvoiceLineItemListFilters = {},
+): Promise<BillingInvoiceLineItemRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const where: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  if (filters.accountId) {
+    where.push(`account_id = $${idx++}`);
+    params.push(filters.accountId);
+  }
+  if (filters.tenantId) {
+    where.push(`tenant_id = $${idx++}`);
+    params.push(filters.tenantId);
+  }
+  if (filters.stripeInvoiceId) {
+    where.push(`stripe_invoice_id = $${idx++}`);
+    params.push(filters.stripeInvoiceId);
+  }
+
+  const limit = Math.max(1, Math.min(5_000, filters.limit ?? 500));
+  params.push(limit);
+  const sql = `
+    SELECT *
+      FROM attestor_control_plane.billing_invoice_line_items
+      ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY updated_at DESC, stripe_invoice_line_item_id ASC
+      LIMIT $${idx}
+  `;
+  const result = await pool.query(sql, params);
+  return result.rows.map(rowToLineItemRecord);
+}
+
 export async function exportBillingEventLedgerSnapshot(): Promise<BillingEventLedgerSnapshot> {
   await ensureSchema();
   const pool = await getPool();
-  const result = await pool.query(`
-    SELECT *
-      FROM attestor_control_plane.billing_event_ledger
-      ORDER BY received_at ASC, provider_event_id ASC
-  `);
-  const records = result.rows.map(rowToRecord);
+  const [eventResult, lineItemResult] = await Promise.all([
+    pool.query(`
+      SELECT *
+        FROM attestor_control_plane.billing_event_ledger
+        ORDER BY received_at ASC, provider_event_id ASC
+    `),
+    pool.query(`
+      SELECT *
+        FROM attestor_control_plane.billing_invoice_line_items
+        ORDER BY updated_at ASC, stripe_invoice_id ASC, stripe_invoice_line_item_id ASC
+    `),
+  ]);
+  const records = eventResult.rows.map(rowToRecord);
+  const lineItems = lineItemResult.rows.map(rowToLineItemRecord);
   return {
-    version: 1,
+    version: 2,
     provider: 'stripe',
     exportedAt: new Date().toISOString(),
-    recordCount: records.length,
+    eventRecordCount: records.length,
+    lineItemRecordCount: lineItems.length,
+    recordCount: records.length + lineItems.length,
     records,
+    lineItems,
   };
 }
 
 export async function restoreBillingEventLedgerSnapshot(
-  snapshot: BillingEventLedgerSnapshot,
+  snapshot: BillingEventLedgerSnapshot | {
+    version: 1;
+    provider: 'stripe';
+    exportedAt: string;
+    recordCount: number;
+    records: BillingEventRecord[];
+  },
   options?: { replaceExisting?: boolean },
 ): Promise<{ recordCount: number }> {
   await ensureSchema();
   const pool = await getPool();
   if (options?.replaceExisting) {
-    await pool.query('TRUNCATE TABLE attestor_control_plane.billing_event_ledger');
+    await pool.query(`
+      TRUNCATE TABLE attestor_control_plane.billing_invoice_line_items,
+      attestor_control_plane.billing_event_ledger
+    `);
   }
 
   for (const record of snapshot.records) {
@@ -589,7 +851,69 @@ export async function restoreBillingEventLedgerSnapshot(
     );
   }
 
-  return { recordCount: snapshot.records.length };
+  const snapshotLineItems = 'lineItems' in snapshot ? snapshot.lineItems : [];
+  for (const lineItem of snapshotLineItems) {
+    await pool.query(
+      `INSERT INTO attestor_control_plane.billing_invoice_line_items (
+        id, provider, account_id, tenant_id, stripe_customer_id, stripe_subscription_id,
+        stripe_invoice_id, stripe_invoice_line_item_id, stripe_price_id, description, currency,
+        amount, subtotal, quantity, period_start, period_end, proration, source, capture_mode,
+        metadata, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10, $11,
+        $12, $13, $14, $15::timestamptz, $16::timestamptz, $17, $18, $19,
+        $20::jsonb, $21::timestamptz, $22::timestamptz
+      )
+      ON CONFLICT (provider, stripe_invoice_line_item_id) DO UPDATE SET
+        id = EXCLUDED.id,
+        account_id = EXCLUDED.account_id,
+        tenant_id = EXCLUDED.tenant_id,
+        stripe_customer_id = EXCLUDED.stripe_customer_id,
+        stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+        stripe_invoice_id = EXCLUDED.stripe_invoice_id,
+        stripe_price_id = EXCLUDED.stripe_price_id,
+        description = EXCLUDED.description,
+        currency = EXCLUDED.currency,
+        amount = EXCLUDED.amount,
+        subtotal = EXCLUDED.subtotal,
+        quantity = EXCLUDED.quantity,
+        period_start = EXCLUDED.period_start,
+        period_end = EXCLUDED.period_end,
+        proration = EXCLUDED.proration,
+        source = EXCLUDED.source,
+        capture_mode = EXCLUDED.capture_mode,
+        metadata = EXCLUDED.metadata,
+        created_at = EXCLUDED.created_at,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        lineItem.id,
+        lineItem.provider,
+        lineItem.accountId,
+        lineItem.tenantId,
+        lineItem.stripeCustomerId,
+        lineItem.stripeSubscriptionId,
+        lineItem.stripeInvoiceId,
+        lineItem.stripeInvoiceLineItemId,
+        lineItem.stripePriceId,
+        lineItem.description,
+        lineItem.currency,
+        lineItem.amount,
+        lineItem.subtotal,
+        lineItem.quantity,
+        lineItem.periodStart,
+        lineItem.periodEnd,
+        lineItem.proration,
+        lineItem.source,
+        lineItem.captureMode,
+        JSON.stringify(lineItem.metadata ?? {}),
+        lineItem.createdAt,
+        lineItem.updatedAt,
+      ],
+    );
+  }
+
+  return { recordCount: snapshot.records.length + snapshotLineItems.length };
 }
 
 export async function resetBillingEventLedgerForTests(): Promise<void> {

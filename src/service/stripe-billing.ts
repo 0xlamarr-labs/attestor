@@ -3,7 +3,7 @@
  *
  * BOUNDARY:
  * - Stripe-hosted checkout and portal only
- * - No internal invoice ledger or entitlement service yet
+ * - No Stripe-native entitlement service yet
  * - Supports a deterministic mock mode for local integration tests
  */
 
@@ -113,12 +113,30 @@ export interface HostedStripeChargeSnapshot {
   source: 'stripe_live' | 'mock_summary';
 }
 
+export interface HostedStripeInvoiceLineItemSnapshot {
+  lineItemId: string;
+  invoiceId: string;
+  subscriptionId: string | null;
+  priceId: string | null;
+  description: string | null;
+  currency: string | null;
+  amount: number | null;
+  subtotal: number | null;
+  quantity: number | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  proration: boolean | null;
+  captureMode: 'full' | 'partial';
+  source: 'stripe_live' | 'stripe_webhook' | 'mock_summary';
+}
+
 export interface HostedStripeBillingSnapshot {
   source: 'stripe_live' | 'mock_summary' | 'no_customer';
   mock: boolean;
   customerId: string | null;
   invoices: HostedStripeInvoiceSnapshot[];
   charges: HostedStripeChargeSnapshot[];
+  lineItems: HostedStripeInvoiceLineItemSnapshot[];
 }
 
 function stripeReferenceId(value: unknown): string | null {
@@ -145,6 +163,85 @@ function stripeInvoicePriceId(invoice: Stripe.Invoice): string | null {
     if (pricingPriceId) return pricingPriceId;
   }
   return null;
+}
+
+function stripeInvoiceLineItemPriceId(lineItem: Stripe.InvoiceLineItem): string | null {
+  const directPriceId = stripeReferenceId((lineItem as { price?: unknown }).price);
+  if (directPriceId) return directPriceId;
+  return stripeReferenceId(lineItem.pricing?.price_details?.price);
+}
+
+function stripeInvoiceLineItemProration(lineItem: Stripe.InvoiceLineItem): boolean | null {
+  const invoiceItemDetails = lineItem.parent?.invoice_item_details;
+  if (invoiceItemDetails && typeof invoiceItemDetails.proration === 'boolean') {
+    return invoiceItemDetails.proration;
+  }
+  const subscriptionItemDetails = lineItem.parent?.subscription_item_details;
+  if (subscriptionItemDetails && typeof subscriptionItemDetails.proration === 'boolean') {
+    return subscriptionItemDetails.proration;
+  }
+  return null;
+}
+
+function mapStripeInvoiceLineItem(
+  lineItem: Stripe.InvoiceLineItem,
+  source: HostedStripeInvoiceLineItemSnapshot['source'],
+  captureMode: HostedStripeInvoiceLineItemSnapshot['captureMode'],
+): HostedStripeInvoiceLineItemSnapshot {
+  return {
+    lineItemId: lineItem.id,
+    invoiceId: stripeReferenceId(lineItem.invoice) ?? 'invoice_missing',
+    subscriptionId: stripeReferenceId(lineItem.subscription),
+    priceId: stripeInvoiceLineItemPriceId(lineItem),
+    description: typeof lineItem.description === 'string' ? lineItem.description : null,
+    currency: typeof lineItem.currency === 'string' ? lineItem.currency : null,
+    amount: typeof lineItem.amount === 'number' ? lineItem.amount : null,
+    subtotal: typeof lineItem.subtotal === 'number' ? lineItem.subtotal : null,
+    quantity: typeof lineItem.quantity === 'number' ? lineItem.quantity : null,
+    periodStart: unixSecondsToIso(lineItem.period?.start),
+    periodEnd: unixSecondsToIso(lineItem.period?.end),
+    proration: stripeInvoiceLineItemProration(lineItem),
+    captureMode,
+    source,
+  };
+}
+
+export function extractInvoiceLineItemSnapshotsFromInvoice(invoice: Stripe.Invoice): {
+  lineItems: HostedStripeInvoiceLineItemSnapshot[];
+  hasMore: boolean;
+} {
+  const lines = invoice.lines?.data ?? [];
+  const hasMore = Boolean((invoice.lines as { has_more?: unknown } | null | undefined)?.has_more);
+  return {
+    lineItems: lines.map((lineItem) => mapStripeInvoiceLineItem(lineItem, 'stripe_webhook', hasMore ? 'partial' : 'full')),
+    hasMore,
+  };
+}
+
+export async function listHostedStripeInvoiceLineItems(options: {
+  invoiceId: string;
+  limit?: number;
+}): Promise<HostedStripeInvoiceLineItemSnapshot[]> {
+  if (!options.invoiceId?.trim() || useMockStripeBilling()) return [];
+  const pageSize = 100;
+  const maxRecords = Math.max(1, Math.min(5_000, options.limit ?? 1_000));
+  const records: HostedStripeInvoiceLineItemSnapshot[] = [];
+  let startingAfter: string | undefined;
+
+  while (records.length < maxRecords) {
+    const remaining = maxRecords - records.length;
+    const page = await stripeClient().invoices.listLineItems(options.invoiceId, {
+      limit: Math.min(pageSize, remaining),
+      starting_after: startingAfter,
+    });
+    if (page.data.length === 0) break;
+    records.push(...page.data.map((lineItem) => mapStripeInvoiceLineItem(lineItem, 'stripe_live', 'full')));
+    if (!page.has_more) break;
+    startingAfter = page.data[page.data.length - 1]?.id;
+    if (!startingAfter) break;
+  }
+
+  return records;
 }
 
 export async function createHostedCheckoutSession(options: {
@@ -258,6 +355,7 @@ export async function exportHostedStripeBillingSnapshot(options: {
       customerId: null,
       invoices: [],
       charges: [],
+      lineItems: [],
     };
   }
 
@@ -297,6 +395,7 @@ export async function exportHostedStripeBillingSnapshot(options: {
       customerId,
       invoices,
       charges,
+      lineItems: [],
     };
   }
 
@@ -305,6 +404,12 @@ export async function exportHostedStripeBillingSnapshot(options: {
     stripeClient().invoices.list({ customer: customerId, limit }),
     stripeClient().charges.list({ customer: customerId, limit }),
   ]);
+  const lineItems = (await Promise.all(
+    invoiceList.data.map(async (invoice) => listHostedStripeInvoiceLineItems({
+      invoiceId: invoice.id,
+      limit: 1_000,
+    })),
+  )).flat();
 
   return {
     source: 'stripe_live',
@@ -336,5 +441,6 @@ export async function exportHostedStripeBillingSnapshot(options: {
       createdAt: unixSecondsToIso(charge.created),
       source: 'stripe_live',
     })),
+    lineItems,
   };
 }

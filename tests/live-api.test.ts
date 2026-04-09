@@ -1723,7 +1723,41 @@ async function run() {
             },
             lines: {
               object: 'list',
-              data: [{ price: { id: 'price_pro_monthly' } }],
+              has_more: false,
+              data: [{
+                id: 'il_account_001_paid_1',
+                object: 'line_item',
+                invoice: 'in_account_001_paid',
+                amount: 5000,
+                subtotal: 5000,
+                currency: 'usd',
+                description: 'Attestor Pro Monthly',
+                quantity: 1,
+                subscription: 'sub_account_001',
+                pricing: {
+                  type: 'price_details',
+                  price_details: {
+                    price: 'price_pro_monthly',
+                  },
+                  unit_amount_decimal: '5000',
+                },
+                period: {
+                  start: Math.floor(Date.now() / 1000) - 3600,
+                  end: Math.floor(Date.now() / 1000),
+                },
+                parent: {
+                  type: 'subscription_item_details',
+                  invoice_item_details: null,
+                  subscription_item_details: {
+                    invoice_item: null,
+                    proration: false,
+                    proration_details: null,
+                    subscription: 'sub_account_001',
+                    subscription_item: 'si_account_001',
+                  },
+                },
+                metadata: {},
+              }],
             },
           },
         },
@@ -1811,6 +1845,14 @@ async function run() {
       const exportedCharge = accountBillingExportBody.charges.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
       ok(Boolean(exportedCharge), 'Account Billing Export: derived charge exported from invoice.paid');
       ok(exportedCharge.status === 'succeeded', 'Account Billing Export: derived charge status succeeded');
+      if (accountBillingExportBody.summary.dataSource === 'ledger_derived' || accountBillingExportBody.summary.dataSource === 'stripe_live') {
+        const exportedLineItem = accountBillingExportBody.lineItems.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
+        ok(Boolean(exportedLineItem), 'Account Billing Export: invoice line item exported when detailed billing truth is available');
+        ok(exportedLineItem.priceId === 'price_pro_monthly', 'Account Billing Export: invoice line item captures price id');
+        ok(accountBillingExportBody.summary.lineItemCount >= 1, 'Account Billing Export: line item count reported when detailed billing truth is available');
+      } else {
+        ok(accountBillingExportBody.summary.lineItemCount === 0, 'Account Billing Export: line items stay empty without shared billing ledger');
+      }
 
       const accountBillingExportCsvRes = await fetch(`${BASE}/api/v1/account/billing/export?format=csv&limit=5`, {
         headers: { Cookie: billingAdminCookie! },
@@ -1820,6 +1862,9 @@ async function run() {
       const accountBillingExportCsv = await accountBillingExportCsvRes.text();
       ok(accountBillingExportCsv.includes('recordType,accountId,tenantId'), 'Account Billing Export: csv header present');
       ok(accountBillingExportCsv.includes('invoice') && accountBillingExportCsv.includes('in_account_001_paid'), 'Account Billing Export: csv includes invoice row');
+      if (accountBillingExportBody.summary.lineItemCount > 0) {
+        ok(accountBillingExportCsv.includes('line_item') && accountBillingExportCsv.includes('il_account_001_paid_1'), 'Account Billing Export: csv includes invoice line item row when detailed billing truth is available');
+      }
 
       const adminBillingExportNoAuth = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export`);
       ok(adminBillingExportNoAuth.status === 401, 'Admin Account Billing Export: auth required');
@@ -1832,6 +1877,11 @@ async function run() {
       ok(adminBillingExportBody.accountId === createAccountBody.account.id, 'Admin Account Billing Export: account id matches');
       ok(adminBillingExportBody.summary.invoiceCount >= 1, 'Admin Account Billing Export: invoice count reported');
       ok(adminBillingExportBody.entitlement.status === 'active', 'Admin Account Billing Export: entitlement included');
+      if (adminBillingExportBody.summary.dataSource === 'ledger_derived' || adminBillingExportBody.summary.dataSource === 'stripe_live') {
+        ok(adminBillingExportBody.summary.lineItemCount >= 1, 'Admin Account Billing Export: line item count reported when detailed billing truth is available');
+      } else {
+        ok(adminBillingExportBody.summary.lineItemCount === 0, 'Admin Account Billing Export: line items stay empty without shared billing ledger');
+      }
 
       const adminBillingExportCsvRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export?format=csv&limit=5`, {
         headers: { Authorization: 'Bearer admin-secret' },

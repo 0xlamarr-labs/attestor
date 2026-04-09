@@ -581,6 +581,23 @@ export interface BillingExportChargeRecord {
   source: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary';
 }
 
+export interface BillingExportInvoiceLineItemRecord {
+  lineItemId: string;
+  invoiceId: string;
+  subscriptionId: string | null;
+  priceId: string | null;
+  description: string | null;
+  currency: string | null;
+  amount: number | null;
+  subtotal: number | null;
+  quantity: number | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  proration: boolean | null;
+  captureMode: 'full' | 'partial';
+  source: 'stripe_live' | 'ledger_derived' | 'mock_summary';
+}
+
 export interface AccountBillingExportResponse {
   accountId: string;
   tenantId: string;
@@ -590,6 +607,7 @@ export interface AccountBillingExportResponse {
   checkout: BillingExportCheckoutSummary;
   invoices: BillingExportInvoiceRecord[];
   charges: BillingExportChargeRecord[];
+  lineItems: BillingExportInvoiceLineItemRecord[];
   summary: {
     dataSource: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary' | 'empty';
     mock: boolean;
@@ -597,6 +615,7 @@ export interface AccountBillingExportResponse {
     requestedLimit: number;
     invoiceCount: number;
     chargeCount: number;
+    lineItemCount: number;
   };
 }
 

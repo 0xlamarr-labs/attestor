@@ -6,8 +6,10 @@ import { join } from 'node:path';
 import {
   claimStripeBillingEvent,
   finalizeStripeBillingEvent,
+  listBillingInvoiceLineItems,
   listBillingEvents,
   resetBillingEventLedgerForTests,
+  upsertStripeInvoiceLineItems,
 } from '../src/service/billing-event-ledger.js';
 import {
   createControlPlaneBackupSnapshot,
@@ -209,6 +211,28 @@ async function run(): Promise<void> {
       mappedPlanId: 'starter',
       metadata: { paidAt: '2026-04-07T00:00:00.000Z' },
     });
+    await upsertStripeInvoiceLineItems({
+      accountId: provisioned.account.id,
+      tenantId: 'tenant-backup-pg',
+      stripeCustomerId: 'cus_backup_pg',
+      stripeSubscriptionId: 'sub_backup_pg',
+      stripeInvoiceId: 'in_backup_pg_1',
+      source: 'stripe_webhook',
+      captureMode: 'full',
+      replaceExisting: true,
+      lineItems: [{
+        stripeInvoiceLineItemId: 'il_backup_pg_1',
+        stripePriceId: 'price_starter_monthly',
+        description: 'Attestor Starter Monthly',
+        currency: 'usd',
+        amount: 5000,
+        subtotal: 5000,
+        quantity: 1,
+        periodStart: '2026-04-01T00:00:00.000Z',
+        periodEnd: '2026-05-01T00:00:00.000Z',
+        proration: false,
+      }],
+    });
 
     const backup = await createControlPlaneBackupSnapshot({
       snapshotDir,
@@ -309,6 +333,9 @@ async function run(): Promise<void> {
     const restoredBillingEvents = await listBillingEvents({ accountId: provisioned.account.id, limit: 10 });
     ok(restoredBillingEvents.length === 1, 'Restore: billing ledger rows restored');
     ok(restoredBillingEvents[0].stripeInvoiceId === 'in_backup_pg_1', 'Restore: billing invoice id preserved');
+    const restoredBillingLineItems = await listBillingInvoiceLineItems({ accountId: provisioned.account.id, limit: 10 });
+    ok(restoredBillingLineItems.length === 1, 'Restore: billing invoice line items restored');
+    ok(restoredBillingLineItems[0].stripeInvoiceLineItemId === 'il_backup_pg_1', 'Restore: billing invoice line item id preserved');
 
     const bulkRecordCount = 1005;
     const bulkAccounts = Array.from({ length: bulkRecordCount }, (_, index) => {

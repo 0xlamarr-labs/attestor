@@ -211,6 +211,7 @@ import {
   isBillingEventLedgerConfigured,
   listBillingEvents,
   releaseStripeBillingEventClaim,
+  upsertStripeInvoiceLineItems,
 } from './billing-event-ledger.js';
 import {
   appendStructuredRequestLog,
@@ -229,6 +230,8 @@ import {
   StripeBillingError,
   createHostedBillingPortalSession,
   createHostedCheckoutSession,
+  extractInvoiceLineItemSnapshotsFromInvoice,
+  listHostedStripeInvoiceLineItems,
 } from './stripe-billing.js';
 import {
   buildHostedBillingExport,
@@ -2511,6 +2514,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       invoice.metadata,
       invoice.subscription_details?.metadata ?? null,
     );
+    const extractedInvoiceLineItems = extractInvoiceLineItemSnapshotsFromInvoice(invoice);
 
     let applied;
     try {
@@ -2605,6 +2609,64 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         monthlyRunQuota: resolvedPlan.monthlyRunQuota,
       });
     }
+
+    let persistedInvoiceLineItemCount = 0;
+    let persistedInvoiceLineItemCaptureMode: 'full' | 'partial' | null = null;
+    if (sharedBillingLedger && stripeInvoiceId) {
+      let lineItemsToPersist = extractedInvoiceLineItems.lineItems.map((lineItem) => ({
+        stripeInvoiceLineItemId: lineItem.lineItemId,
+        stripePriceId: lineItem.priceId,
+        description: lineItem.description,
+        currency: lineItem.currency,
+        amount: lineItem.amount,
+        subtotal: lineItem.subtotal,
+        quantity: lineItem.quantity,
+        periodStart: lineItem.periodStart,
+        periodEnd: lineItem.periodEnd,
+        proration: lineItem.proration,
+        metadata: {},
+      }));
+      let captureMode: 'full' | 'partial' = extractedInvoiceLineItems.hasMore ? 'partial' : 'full';
+      let source: 'stripe_webhook' | 'stripe_live_fetch' = 'stripe_webhook';
+      const canFetchCanonicalLineItems = process.env.ATTESTOR_STRIPE_USE_MOCK !== 'true'
+        && Boolean(process.env.STRIPE_API_KEY?.trim());
+      if (canFetchCanonicalLineItems) {
+        const canonicalLineItems = await listHostedStripeInvoiceLineItems({ invoiceId: stripeInvoiceId, limit: 5_000 });
+        if (canonicalLineItems.length > 0) {
+          lineItemsToPersist = canonicalLineItems.map((lineItem) => ({
+            stripeInvoiceLineItemId: lineItem.lineItemId,
+            stripePriceId: lineItem.priceId,
+            description: lineItem.description,
+            currency: lineItem.currency,
+            amount: lineItem.amount,
+            subtotal: lineItem.subtotal,
+            quantity: lineItem.quantity,
+            periodStart: lineItem.periodStart,
+            periodEnd: lineItem.periodEnd,
+            proration: lineItem.proration,
+            metadata: {},
+          }));
+          captureMode = 'full';
+          source = 'stripe_live_fetch';
+        }
+      }
+      if (lineItemsToPersist.length > 0) {
+        const persistedLineItems = await upsertStripeInvoiceLineItems({
+          accountId: applied.record.id,
+          tenantId: applied.record.primaryTenantId,
+          stripeCustomerId,
+          stripeSubscriptionId,
+          stripeInvoiceId,
+          lineItems: lineItemsToPersist,
+          source,
+          captureMode,
+          replaceExisting: captureMode === 'full',
+        });
+        persistedInvoiceLineItemCount = persistedLineItems.recordCount;
+        persistedInvoiceLineItemCaptureMode = captureMode;
+      }
+    }
+
     const entitlement = await syncHostedBillingEntitlement(applied.record, {
       lastEventId: event.id,
       lastEventType: event.type,
@@ -2648,6 +2710,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           entitlementAccessEnabled: entitlement.accessEnabled,
           effectivePlanId: entitlement.effectivePlanId,
           revokedSessionCount: revokedSessions,
+          invoiceLineItemCount: persistedInvoiceLineItemCount,
+          invoiceLineItemCaptureMode: persistedInvoiceLineItemCaptureMode,
         },
       });
       finalizedSharedEvent = true;
@@ -2697,6 +2761,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         nextBillingStatus: applied.nextBillingStatus,
         revokedSessionCount: revokedSessions,
         sharedLedger: sharedBillingLedger,
+        invoiceLineItemCount: persistedInvoiceLineItemCount,
+        invoiceLineItemCaptureMode: persistedInvoiceLineItemCaptureMode,
       },
     });
 
