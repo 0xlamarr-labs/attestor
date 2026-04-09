@@ -21,6 +21,7 @@ import { readUsageLedgerSnapshot, resetUsageMeter } from '../src/service/usage-m
 import { resetTenantRateLimiterForTests } from '../src/service/rate-limit.js';
 import { resetAccountStoreForTests } from '../src/service/account-store.js';
 import { resetAccountUserStoreForTests } from '../src/service/account-user-store.js';
+import { resetAccountUserActionTokenStoreForTests } from '../src/service/account-user-token-store.js';
 import { resetAccountSessionStoreForTests } from '../src/service/account-session-store.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
@@ -108,6 +109,7 @@ async function run() {
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(process.cwd(), '.attestor', 'live-api-usage-ledger.json');
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-accounts.json');
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-users.json');
+  process.env.ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-user-tokens.json');
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-account-sessions.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-admin-audit.json');
   process.env.ATTESTOR_ADMIN_IDEMPOTENCY_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-admin-idempotency.json');
@@ -982,12 +984,51 @@ async function run() {
       const createReadOnlyBody = await createReadOnlyRes.json() as any;
       ok(createReadOnlyBody.user.role === 'read_only', 'Account Users: read_only role persisted');
 
+      const inviteRes = await fetch(`${BASE}/api/v1/account/users/invites`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: accountAdminCookie!,
+        },
+        body: JSON.stringify({
+          email: 'invitee@account.example',
+          displayName: 'Invited User',
+          role: 'read_only',
+        }),
+      });
+      ok(inviteRes.status === 201, 'Account Users: invite status 201');
+      const inviteBody = await inviteRes.json() as any;
+      ok(inviteBody.invite.status === 'pending', 'Account Users: invite starts pending');
+      ok(typeof inviteBody.inviteToken === 'string' && inviteBody.inviteToken.startsWith('atok_'), 'Account Users: invite token returned once');
+
+      const invitesListRes = await fetch(`${BASE}/api/v1/account/users/invites`, {
+        headers: { Cookie: accountAdminCookie! },
+      });
+      ok(invitesListRes.status === 200, 'Account Users: invite list status 200');
+      const invitesListBody = await invitesListRes.json() as any;
+      ok(invitesListBody.invites.some((entry: any) => entry.id === inviteBody.invite.id && entry.status === 'pending'), 'Account Users: invite list shows pending invite');
+
+      const acceptInviteRes = await fetch(`${BASE}/api/v1/account/users/invites/accept`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inviteToken: inviteBody.inviteToken,
+          password: 'InviteAccept123!',
+        }),
+      });
+      ok(acceptInviteRes.status === 201, 'Account Users: invite accept status 201');
+      const acceptInviteBody = await acceptInviteRes.json() as any;
+      const invitedCookie = cookieHeaderFromResponse(acceptInviteRes);
+      ok(Boolean(invitedCookie), 'Account Users: invite accept issues session cookie');
+      ok(acceptInviteBody.accepted === true, 'Account Users: invite accept flag true');
+      ok(acceptInviteBody.user.email === 'invitee@account.example', 'Account Users: invite creates expected user');
+
       const usersListRes = await fetch(`${BASE}/api/v1/account/users`, {
         headers: { Cookie: accountAdminCookie! },
       });
       ok(usersListRes.status === 200, 'Account Users: list status 200');
       const usersListBody = await usersListRes.json() as any;
-      ok(usersListBody.users.length === 3, 'Account Users: list returns bootstrap + billing + read_only');
+      ok(usersListBody.users.length === 4, 'Account Users: list returns bootstrap + billing + read_only + invitee');
 
       const readOnlyLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
         method: 'POST',
@@ -998,13 +1039,57 @@ async function run() {
         }),
       });
       ok(readOnlyLoginRes.status === 200, 'Auth: read_only login status 200');
-      const readOnlyCookie = cookieHeaderFromResponse(readOnlyLoginRes);
+      let readOnlyCookie = cookieHeaderFromResponse(readOnlyLoginRes);
       ok(Boolean(readOnlyCookie), 'Auth: read_only login sets session cookie');
 
       const readOnlyUsersRes = await fetch(`${BASE}/api/v1/account/users`, {
         headers: { Cookie: readOnlyCookie! },
       });
       ok(readOnlyUsersRes.status === 403, 'RBAC: read_only user blocked from user listing');
+
+      const readOnlyPasswordChangeRes = await fetch(`${BASE}/api/v1/auth/password/change`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: readOnlyCookie!,
+        },
+        body: JSON.stringify({
+          currentPassword: 'ReadOnlyPass123!',
+          newPassword: 'ReadOnlyPass456!',
+        }),
+      });
+      ok(readOnlyPasswordChangeRes.status === 200, 'Auth: password change status 200');
+      const readOnlyPasswordChangeBody = await readOnlyPasswordChangeRes.json() as any;
+      const rotatedReadOnlyCookie = cookieHeaderFromResponse(readOnlyPasswordChangeRes);
+      ok(Boolean(rotatedReadOnlyCookie), 'Auth: password change rotates session cookie');
+      ok(readOnlyPasswordChangeBody.changed === true, 'Auth: password change returns changed=true');
+
+      const oldReadOnlySessionRes = await fetch(`${BASE}/api/v1/auth/me`, {
+        headers: { Cookie: readOnlyCookie! },
+      });
+      ok(oldReadOnlySessionRes.status === 401, 'Auth: pre-change read_only session is revoked');
+      readOnlyCookie = rotatedReadOnlyCookie;
+
+      const readOnlyOldPasswordLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'readonly@account.example',
+          password: 'ReadOnlyPass123!',
+        }),
+      });
+      ok(readOnlyOldPasswordLoginRes.status === 401, 'Auth: old read_only password no longer works');
+
+      const readOnlyNewPasswordLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'readonly@account.example',
+          password: 'ReadOnlyPass456!',
+        }),
+      });
+      ok(readOnlyNewPasswordLoginRes.status === 200, 'Auth: new read_only password works');
+      readOnlyCookie = cookieHeaderFromResponse(readOnlyNewPasswordLoginRes);
 
       const billingAdminLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
         method: 'POST',
@@ -1017,6 +1102,53 @@ async function run() {
       ok(billingAdminLoginRes.status === 200, 'Auth: billing_admin login status 200');
       let billingAdminCookie = cookieHeaderFromResponse(billingAdminLoginRes);
       ok(Boolean(billingAdminCookie), 'Auth: billing_admin login sets session cookie');
+
+      const billingResetRes = await fetch(`${BASE}/api/v1/account/users/${createBillingAdminBody.user.id}/password-reset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: accountAdminCookie!,
+        },
+        body: JSON.stringify({ ttlMinutes: 20 }),
+      });
+      ok(billingResetRes.status === 201, 'Account Users: password reset issue status 201');
+      const billingResetBody = await billingResetRes.json() as any;
+      ok(billingResetBody.reset.status === 'pending', 'Account Users: password reset token pending');
+      ok(typeof billingResetBody.resetToken === 'string' && billingResetBody.resetToken.startsWith('atok_'), 'Account Users: password reset token returned');
+
+      const billingPasswordResetApplyRes = await fetch(`${BASE}/api/v1/auth/password/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resetToken: billingResetBody.resetToken,
+          newPassword: 'BillingPass456!',
+        }),
+      });
+      ok(billingPasswordResetApplyRes.status === 200, 'Auth: password reset apply status 200');
+      const billingPasswordResetApplyBody = await billingPasswordResetApplyRes.json() as any;
+      ok(billingPasswordResetApplyBody.reset === true, 'Auth: password reset apply flag true');
+
+      const billingOldPasswordLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'billing@account.example',
+          password: 'BillingPass123!',
+        }),
+      });
+      ok(billingOldPasswordLoginRes.status === 401, 'Auth: billing_admin old password rejected after reset');
+
+      const billingNewPasswordLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'billing@account.example',
+          password: 'BillingPass456!',
+        }),
+      });
+      ok(billingNewPasswordLoginRes.status === 200, 'Auth: billing_admin new password accepted after reset');
+      billingAdminCookie = cookieHeaderFromResponse(billingNewPasswordLoginRes);
+      ok(Boolean(billingAdminCookie), 'Auth: billing_admin reset login sets new session cookie');
 
       const checkoutMissingKeyRes = await fetch(`${BASE}/api/v1/account/billing/checkout`, {
         method: 'POST',
@@ -1258,7 +1390,7 @@ async function run() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: 'billing@account.example',
-          password: 'BillingPass123!',
+          password: 'BillingPass456!',
         }),
       });
       ok(billingAdminReLoginRes.status === 200, 'Auth: billing_admin can log back in after manual reactivate');
@@ -1317,7 +1449,7 @@ async function run() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: 'billing@account.example',
-          password: 'BillingPass123!',
+          password: 'BillingPass456!',
         }),
       });
       ok(suspendedBillingLoginRes.status === 200, 'Auth: suspended billing_admin can re-login for billing self-service');
@@ -1589,7 +1721,7 @@ async function run() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: 'readonly@account.example',
-          password: 'ReadOnlyPass123!',
+          password: 'ReadOnlyPass456!',
         }),
       });
       ok(readOnlyAfterDeactivateLoginRes.status === 403, 'Auth: inactive read_only user cannot log in');
@@ -1607,7 +1739,7 @@ async function run() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: 'readonly@account.example',
-          password: 'ReadOnlyPass123!',
+          password: 'ReadOnlyPass456!',
         }),
       });
       ok(readOnlyReLoginRes.status === 200, 'Auth: reactivated read_only user can log in again');
@@ -2177,6 +2309,7 @@ async function run() {
   } finally {
     resetAccountStoreForTests();
     resetAccountUserStoreForTests();
+    resetAccountUserActionTokenStoreForTests();
     resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();

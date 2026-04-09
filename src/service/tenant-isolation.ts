@@ -176,11 +176,12 @@ export function tenantMiddleware() {
 
     loadTenantKeysFromEnv();
     const isAuthRoute = c.req.path.startsWith('/api/v1/auth/');
+    const isPublicInviteAcceptRoute = c.req.path === '/api/v1/account/users/invites/accept';
     const enforced = tenantKeys.size > 0 || await hasTenantKeyRecordsState();
     const session = await resolveAccountSessionContext(c);
     const tenant = session?.tenant ?? await extractTenantContext(c.req.header('authorization'));
 
-    if (enforced && !tenant && !isAuthRoute) {
+    if (enforced && !tenant && !isAuthRoute && !isPublicInviteAcceptRoute) {
       return c.json({ error: 'Valid tenant API key required in Authorization header' }, 401);
     }
 
@@ -206,7 +207,7 @@ export function tenantMiddleware() {
       c.req.raw.headers.set('x-attestor-account-session-id', session.sessionId);
     }
 
-    if (isAuthRoute) {
+    if (isAuthRoute || isPublicInviteAcceptRoute) {
       await next();
       return;
     }
@@ -285,16 +286,21 @@ async function resolveAccountSessionContext(c: Context): Promise<{
   const account = await findHostedAccountByIdState(session.accountId);
   const suspendedAtMs = account?.suspendedAt ? Date.parse(account.suspendedAt) : Number.NaN;
   const sessionCreatedAtMs = Date.parse(session.createdAt);
+  const passwordUpdatedAtMs = user?.passwordUpdatedAt ? Date.parse(user.passwordUpdatedAt) : Number.NaN;
   const sessionPredatesSuspension = account?.status === 'suspended'
     && Number.isFinite(suspendedAtMs)
     && Number.isFinite(sessionCreatedAtMs)
     && sessionCreatedAtMs <= suspendedAtMs;
+  const sessionPredatesPasswordChange = Number.isFinite(passwordUpdatedAtMs)
+    && Number.isFinite(sessionCreatedAtMs)
+    && sessionCreatedAtMs < passwordUpdatedAtMs;
   if (
     !user
     || user.status !== 'active'
     || !account
     || account.status === 'archived'
     || sessionPredatesSuspension
+    || sessionPredatesPasswordChange
   ) {
     await revokeAccountSessionState(session.id);
     return null;

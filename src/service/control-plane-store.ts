@@ -32,6 +32,7 @@ import {
 import {
   AccountUserStoreError,
   buildAccountUserRecord,
+  createPasswordHashState,
   createAccountUser as createAccountUserFile,
   findAccountUserByEmail as findAccountUserByEmailFile,
   findAccountUserById as findAccountUserByIdFile,
@@ -39,8 +40,8 @@ import {
   listAllAccountUsers as listAllAccountUsersFile,
   normalizeAccountUserEmail,
   recordAccountUserLogin as recordAccountUserLoginFile,
+  setAccountUserPassword as setAccountUserPasswordFile,
   setAccountUserStatus as setAccountUserStatusFile,
-  verifyAccountUserPasswordRecord,
   countAccountUsersForAccount as countAccountUsersForAccountFile,
   type AccountUserRecord,
   type AccountUserRole,
@@ -51,16 +52,33 @@ import {
   buildAccountSessionRecord,
   findAccountSessionByToken as findAccountSessionByTokenFile,
   hashAccountSessionToken,
+  isAccountSessionRecordExpired,
   issueAccountSession as issueAccountSessionFile,
   listAccountSessions as listAccountSessionsFile,
   revokeAccountSession as revokeAccountSessionFile,
   revokeAccountSessionByToken as revokeAccountSessionByTokenFile,
   revokeAccountSessionsForAccount as revokeAccountSessionsForAccountFile,
   revokeAccountSessionsForUser as revokeAccountSessionsForUserFile,
-  sessionTtlHours,
   type AccountSessionRecord,
   type IssueAccountSessionInput,
 } from './account-session-store.js';
+import {
+  buildAccountInviteTokenRecord,
+  buildPasswordResetTokenRecord,
+  consumeAccountUserActionToken as consumeAccountUserActionTokenFile,
+  findAccountUserActionTokenByToken as findAccountUserActionTokenByTokenFile,
+  hashAccountUserActionToken,
+  issueAccountInviteToken as issueAccountInviteTokenFile,
+  issuePasswordResetToken as issuePasswordResetTokenFile,
+  listAccountUserActionTokensByAccountId as listAccountUserActionTokensByAccountIdFile,
+  listAllAccountUserActionTokens as listAllAccountUserActionTokensFile,
+  revokeAccountUserActionToken as revokeAccountUserActionTokenFile,
+  revokeAccountUserActionTokensForUser as revokeAccountUserActionTokensForUserFile,
+  type AccountUserActionTokenPurpose,
+  type AccountUserActionTokenRecord,
+  type IssueAccountInviteTokenInput,
+  type IssuePasswordResetTokenInput,
+} from './account-user-token-store.js';
 import {
   exportHostedBillingEntitlementStoreSnapshot as exportHostedBillingEntitlementStoreSnapshotFile,
   findHostedBillingEntitlementByAccountId as findHostedBillingEntitlementByAccountIdFile,
@@ -172,6 +190,13 @@ export interface AccountSessionStoreSnapshot {
   exportedAt: string;
   recordCount: number;
   records: AccountSessionRecord[];
+}
+
+export interface AccountUserActionTokenStoreSnapshot {
+  version: 1;
+  exportedAt: string;
+  recordCount: number;
+  records: AccountUserActionTokenRecord[];
 }
 
 export interface BillingEntitlementStoreSnapshot extends HostedBillingEntitlementStoreSnapshot {}
@@ -352,6 +377,30 @@ async function ensureSchema(): Promise<void> {
 
         CREATE INDEX IF NOT EXISTS account_sessions_expiry_idx
           ON attestor_control_plane.account_sessions (expires_at ASC);
+
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.account_user_action_tokens (
+          token_id TEXT PRIMARY KEY,
+          purpose TEXT NOT NULL CHECK (purpose IN ('invite', 'password_reset')),
+          account_id TEXT NOT NULL REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
+          account_user_id TEXT NULL REFERENCES attestor_control_plane.account_users(account_user_id) ON DELETE CASCADE,
+          email TEXT NOT NULL,
+          role_id TEXT NULL CHECK (role_id IN ('account_admin', 'billing_admin', 'read_only')),
+          token_hash TEXT NOT NULL UNIQUE,
+          updated_at TIMESTAMPTZ NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL,
+          consumed_at TIMESTAMPTZ NULL,
+          revoked_at TIMESTAMPTZ NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS account_user_action_tokens_account_purpose_updated_idx
+          ON attestor_control_plane.account_user_action_tokens (account_id, purpose, updated_at DESC, token_id ASC);
+
+        CREATE INDEX IF NOT EXISTS account_user_action_tokens_user_purpose_updated_idx
+          ON attestor_control_plane.account_user_action_tokens (account_user_id, purpose, updated_at DESC, token_id ASC);
+
+        CREATE INDEX IF NOT EXISTS account_user_action_tokens_email_purpose_updated_idx
+          ON attestor_control_plane.account_user_action_tokens (email, purpose, updated_at DESC, token_id ASC);
 
         CREATE TABLE IF NOT EXISTS attestor_control_plane.billing_entitlements (
           account_id TEXT PRIMARY KEY REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
@@ -583,7 +632,11 @@ function coerceAccountUserRecord(value: unknown): AccountUserRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Invalid account user record in shared control-plane store.');
   }
-  return value as AccountUserRecord;
+  const record = value as AccountUserRecord;
+  return {
+    ...record,
+    passwordUpdatedAt: record.passwordUpdatedAt ?? record.updatedAt ?? record.createdAt,
+  };
 }
 
 function coerceAccountSessionRecord(value: unknown): AccountSessionRecord {
@@ -591,6 +644,13 @@ function coerceAccountSessionRecord(value: unknown): AccountSessionRecord {
     throw new Error('Invalid account session record in shared control-plane store.');
   }
   return value as AccountSessionRecord;
+}
+
+function coerceAccountUserActionTokenRecord(value: unknown): AccountUserActionTokenRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid account user action token record in shared control-plane store.');
+  }
+  return value as AccountUserActionTokenRecord;
 }
 
 function rowToHostedAccount(row: PgQueryResultRow): HostedAccountRecord {
@@ -620,6 +680,10 @@ function rowToAccountUser(row: PgQueryResultRow): AccountUserRecord {
 
 function rowToAccountSession(row: PgQueryResultRow): AccountSessionRecord {
   return coerceAccountSessionRecord(row.record_json);
+}
+
+function rowToAccountUserActionToken(row: PgQueryResultRow): AccountUserActionTokenRecord {
+  return coerceAccountUserActionTokenRecord(row.record_json);
 }
 
 function touchRecord(record: HostedAccountRecord): void {
@@ -1251,6 +1315,81 @@ async function upsertAccountSessionPg(record: AccountSessionRecord, executor?: P
   );
 }
 
+async function listAccountUserActionTokensPg(filters?: {
+  accountId?: string | null;
+  accountUserId?: string | null;
+  purpose?: AccountUserActionTokenPurpose | null;
+}): Promise<AccountUserActionTokenRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const where: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+  if (filters?.accountId) {
+    where.push(`account_id = $${idx++}`);
+    params.push(filters.accountId);
+  }
+  if (filters?.accountUserId) {
+    where.push(`account_user_id = $${idx++}`);
+    params.push(filters.accountUserId);
+  }
+  if (filters?.purpose) {
+    where.push(`purpose = $${idx++}`);
+    params.push(filters.purpose);
+  }
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_user_action_tokens
+      ${where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY updated_at DESC, token_id ASC`,
+    params,
+  );
+  return result.rows.map(rowToAccountUserActionToken);
+}
+
+async function upsertAccountUserActionTokenPg(
+  record: AccountUserActionTokenRecord,
+  executor?: PgPool | PgClient,
+): Promise<void> {
+  await ensureSchema();
+  const target = executor ?? await getPool();
+  await target.query(
+    `INSERT INTO attestor_control_plane.account_user_action_tokens (
+      token_id, purpose, account_id, account_user_id, email, role_id, token_hash,
+      updated_at, expires_at, consumed_at, revoked_at, record_json
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7,
+      $8::timestamptz, $9::timestamptz, $10::timestamptz, $11::timestamptz, $12::jsonb
+    )
+    ON CONFLICT (token_id) DO UPDATE SET
+      purpose = EXCLUDED.purpose,
+      account_id = EXCLUDED.account_id,
+      account_user_id = EXCLUDED.account_user_id,
+      email = EXCLUDED.email,
+      role_id = EXCLUDED.role_id,
+      token_hash = EXCLUDED.token_hash,
+      updated_at = EXCLUDED.updated_at,
+      expires_at = EXCLUDED.expires_at,
+      consumed_at = EXCLUDED.consumed_at,
+      revoked_at = EXCLUDED.revoked_at,
+      record_json = EXCLUDED.record_json`,
+    [
+      record.id,
+      record.purpose,
+      record.accountId,
+      record.accountUserId,
+      record.email,
+      record.role,
+      record.tokenHash,
+      record.updatedAt,
+      record.expiresAt,
+      record.consumedAt,
+      record.revokedAt,
+      JSON.stringify(record),
+    ],
+  );
+}
+
 async function findAccountSessionByTokenPg(token: string, options?: { touch?: boolean }): Promise<AccountSessionRecord | null> {
   await ensureSchema();
   const pool = await getPool();
@@ -1265,12 +1404,30 @@ async function findAccountSessionByTokenPg(token: string, options?: { touch?: bo
   if (!result.rows[0]) return null;
   const record = rowToAccountSession(result.rows[0]);
   const now = new Date();
-  if (record.revokedAt || Date.parse(record.expiresAt) <= now.getTime()) {
+  if (record.revokedAt || isAccountSessionRecordExpired(record, now.getTime())) {
     return null;
   }
   if (options?.touch) {
     record.lastSeenAt = now.toISOString();
     await upsertAccountSessionPg(record);
+  }
+  return record;
+}
+
+async function findAccountUserActionTokenByTokenPg(token: string): Promise<AccountUserActionTokenRecord | null> {
+  await ensureSchema();
+  const pool = await getPool();
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_user_action_tokens
+      WHERE token_hash = $1
+      LIMIT 1`,
+    [hashAccountUserActionToken(token)],
+  );
+  if (!result.rows[0]) return null;
+  const record = rowToAccountUserActionToken(result.rows[0]);
+  if (record.revokedAt || record.consumedAt || Date.parse(record.expiresAt) <= Date.now()) {
+    return null;
   }
   return record;
 }
@@ -2085,6 +2242,26 @@ export async function setAccountUserStatusState(
   });
 }
 
+export async function setAccountUserPasswordState(
+  id: string,
+  nextPassword: string,
+): Promise<{
+  record: AccountUserRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return setAccountUserPasswordFile(id, nextPassword);
+  const record = await findAccountUserByIdPg(id);
+  if (!record) {
+    throw new AccountUserStoreError('NOT_FOUND', `Account user '${id}' was not found.`);
+  }
+  const now = new Date().toISOString();
+  record.password = createPasswordHashState(nextPassword);
+  record.passwordUpdatedAt = now;
+  record.updatedAt = now;
+  await upsertAccountUserPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
 export async function issueAccountSessionState(input: IssueAccountSessionInput): Promise<{
   sessionToken: string;
   record: AccountSessionRecord;
@@ -2161,6 +2338,109 @@ export async function revokeAccountSessionsForAccountState(accountId: string): P
     if (!session.revokedAt) {
       session.revokedAt = new Date().toISOString();
       await upsertAccountSessionPg(session);
+      revokedCount += 1;
+    }
+  }
+  return { revokedCount, path: controlPlaneStoreSource() };
+}
+
+export async function listAccountUserActionTokensByAccountIdState(
+  accountId: string,
+  options?: { purpose?: AccountUserActionTokenPurpose | null },
+): Promise<{
+  records: AccountUserActionTokenRecord[];
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) return listAccountUserActionTokensByAccountIdFile(accountId, options);
+  return {
+    records: await listAccountUserActionTokensPg({ accountId, purpose: options?.purpose ?? null }),
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function findAccountUserActionTokenByTokenState(
+  token: string,
+): Promise<AccountUserActionTokenRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findAccountUserActionTokenByTokenFile(token);
+  return findAccountUserActionTokenByTokenPg(token);
+}
+
+export async function issueAccountInviteTokenState(
+  input: IssueAccountInviteTokenInput,
+): Promise<{ token: string; record: AccountUserActionTokenRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return issueAccountInviteTokenFile(input);
+  const existing = await listAccountUserActionTokensPg({ accountId: input.accountId, purpose: 'invite' });
+  for (const record of existing) {
+    if (record.email === normalizeAccountUserEmail(input.email) && !record.revokedAt && !record.consumedAt && Date.parse(record.expiresAt) > Date.now()) {
+      record.revokedAt = new Date().toISOString();
+      record.updatedAt = record.revokedAt;
+      await upsertAccountUserActionTokenPg(record);
+    }
+  }
+  const issued = buildAccountInviteTokenRecord(input);
+  await upsertAccountUserActionTokenPg(issued.record);
+  return { token: issued.token, record: issued.record, path: controlPlaneStoreSource() };
+}
+
+export async function issuePasswordResetTokenState(
+  input: IssuePasswordResetTokenInput,
+): Promise<{ token: string; record: AccountUserActionTokenRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return issuePasswordResetTokenFile(input);
+  const existing = await listAccountUserActionTokensPg({ accountUserId: input.accountUserId, purpose: 'password_reset' });
+  for (const record of existing) {
+    if (!record.revokedAt && !record.consumedAt && Date.parse(record.expiresAt) > Date.now()) {
+      record.revokedAt = new Date().toISOString();
+      record.updatedAt = record.revokedAt;
+      await upsertAccountUserActionTokenPg(record);
+    }
+  }
+  const issued = buildPasswordResetTokenRecord(input);
+  await upsertAccountUserActionTokenPg(issued.record);
+  return { token: issued.token, record: issued.record, path: controlPlaneStoreSource() };
+}
+
+export async function consumeAccountUserActionTokenState(
+  id: string,
+): Promise<{ record: AccountUserActionTokenRecord | null; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return consumeAccountUserActionTokenFile(id);
+  const records = await listAccountUserActionTokensPg();
+  const record = records.find((entry) => entry.id === id) ?? null;
+  if (!record || record.consumedAt || record.revokedAt || Date.parse(record.expiresAt) <= Date.now()) {
+    return { record: null, path: controlPlaneStoreSource() };
+  }
+  record.consumedAt = new Date().toISOString();
+  record.updatedAt = record.consumedAt;
+  await upsertAccountUserActionTokenPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function revokeAccountUserActionTokenState(
+  id: string,
+): Promise<{ record: AccountUserActionTokenRecord | null; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return revokeAccountUserActionTokenFile(id);
+  const records = await listAccountUserActionTokensPg();
+  const record = records.find((entry) => entry.id === id) ?? null;
+  if (!record) return { record: null, path: controlPlaneStoreSource() };
+  if (!record.revokedAt && !record.consumedAt) {
+    record.revokedAt = new Date().toISOString();
+    record.updatedAt = record.revokedAt;
+    await upsertAccountUserActionTokenPg(record);
+  }
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function revokeAccountUserActionTokensForUserState(
+  accountUserId: string,
+  purpose?: AccountUserActionTokenPurpose,
+): Promise<{ revokedCount: number; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return revokeAccountUserActionTokensForUserFile(accountUserId, purpose);
+  const records = await listAccountUserActionTokensPg({ accountUserId, purpose: purpose ?? null });
+  let revokedCount = 0;
+  for (const record of records) {
+    if (!record.revokedAt && !record.consumedAt && Date.parse(record.expiresAt) > Date.now()) {
+      record.revokedAt = new Date().toISOString();
+      record.updatedAt = record.revokedAt;
+      await upsertAccountUserActionTokenPg(record);
       revokedCount += 1;
     }
   }
@@ -2950,6 +3230,36 @@ export async function restoreAccountSessionStoreSnapshot(
   return { recordCount: snapshot.records.length };
 }
 
+export async function exportAccountUserActionTokenStoreSnapshot(): Promise<AccountUserActionTokenStoreSnapshot> {
+  const records = isSharedControlPlaneConfigured()
+    ? await listAccountUserActionTokensPg()
+    : listAllAccountUserActionTokensFile().records;
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: records.length,
+    records,
+  };
+}
+
+export async function restoreAccountUserActionTokenStoreSnapshot(
+  snapshot: AccountUserActionTokenStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    throw new Error('Shared control-plane PostgreSQL is not configured for account user action token restore.');
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.account_user_action_tokens');
+  }
+  for (const record of snapshot.records) {
+    await upsertAccountUserActionTokenPg(record);
+  }
+  return { recordCount: snapshot.records.length };
+}
+
 export async function exportHostedAccountStoreSnapshot(): Promise<HostedAccountStoreSnapshot> {
   const records = isSharedControlPlaneConfigured()
     ? await listHostedAccountsPg()
@@ -3101,6 +3411,7 @@ export async function resetSharedControlPlaneStoreForTests(): Promise<void> {
     DROP TABLE IF EXISTS attestor_control_plane.admin_idempotency;
     DROP TABLE IF EXISTS attestor_control_plane.admin_audit_log;
     DROP TABLE IF EXISTS attestor_control_plane.billing_entitlements;
+    DROP TABLE IF EXISTS attestor_control_plane.account_user_action_tokens;
     DROP TABLE IF EXISTS attestor_control_plane.account_sessions;
     DROP TABLE IF EXISTS attestor_control_plane.account_users;
     DROP TABLE IF EXISTS attestor_control_plane.usage_ledger;

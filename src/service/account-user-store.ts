@@ -9,7 +9,8 @@
  * - Local file-backed store only
  * - One account membership per email in this first slice
  * - Passwords use built-in scrypt (memory-hard) instead of Argon2id
- * - No invite flow, password reset, MFA, or SSO/SAML yet
+ * - Invite and password-reset flows exist, but delivery is still manual/operator-driven
+ * - No MFA or SSO/SAML yet
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -41,6 +42,7 @@ export interface AccountUserRecord {
   password: AccountUserPasswordState;
   createdAt: string;
   updatedAt: string;
+  passwordUpdatedAt: string;
   deactivatedAt: string | null;
   lastLoginAt: string | null;
 }
@@ -83,6 +85,13 @@ function defaultStore(): AccountUserStoreFile {
   return { version: 1, records: [] };
 }
 
+function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
+  return {
+    ...record,
+    passwordUpdatedAt: record.passwordUpdatedAt ?? record.updatedAt ?? record.createdAt,
+  };
+}
+
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -97,7 +106,10 @@ function loadStore(): AccountUserStoreFile {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as AccountUserStoreFile;
     if (parsed.version === 1 && Array.isArray(parsed.records)) {
-      return parsed;
+      return {
+        version: 1,
+        records: parsed.records.map((record) => normalizeRecord(record)),
+      };
     }
   } catch {
     // fall through to safe default
@@ -185,6 +197,7 @@ export function buildAccountUserRecord(input: CreateAccountUserInput): AccountUs
     password: hashPassword(input.password),
     createdAt: now,
     updatedAt: now,
+    passwordUpdatedAt: now,
     deactivatedAt: null,
     lastLoginAt: null,
   };
@@ -198,6 +211,7 @@ export function listAccountUsersByAccountId(accountId: string): {
   return {
     records: store.records
       .filter((entry) => entry.accountId === accountId)
+      .map((entry) => normalizeRecord(entry))
       .sort((left, right) => left.createdAt < right.createdAt ? -1 : 1),
     path: storePath(),
   };
@@ -208,7 +222,7 @@ export function listAllAccountUsers(): {
   path: string;
 } {
   const store = loadStore();
-  return { records: store.records, path: storePath() };
+  return { records: store.records.map((record) => normalizeRecord(record)), path: storePath() };
 }
 
 export function countAccountUsersForAccount(accountId: string): number {
@@ -218,12 +232,14 @@ export function countAccountUsersForAccount(accountId: string): number {
 
 export function findAccountUserById(id: string): AccountUserRecord | null {
   const store = loadStore();
-  return findRecord(store, id);
+  const record = findRecord(store, id);
+  return record ? normalizeRecord(record) : null;
 }
 
 export function findAccountUserByEmail(email: string): AccountUserRecord | null {
   const store = loadStore();
-  return store.records.find((entry) => entry.email === normalizeEmail(email)) ?? null;
+  const record = store.records.find((entry) => entry.email === normalizeEmail(email)) ?? null;
+  return record ? normalizeRecord(record) : null;
 }
 
 export function createAccountUser(input: CreateAccountUserInput): {
@@ -247,6 +263,23 @@ export function recordAccountUserLogin(id: string): {
   const record = requireRecord(store, id);
   record.lastLoginAt = new Date().toISOString();
   record.updatedAt = record.lastLoginAt;
+  saveStore(store);
+  return { record, path: storePath() };
+}
+
+export function setAccountUserPassword(
+  id: string,
+  nextPassword: string,
+): {
+  record: AccountUserRecord;
+  path: string;
+} {
+  const store = loadStore();
+  const record = requireRecord(store, id);
+  const now = new Date().toISOString();
+  record.password = hashPassword(nextPassword);
+  record.passwordUpdatedAt = now;
+  record.updatedAt = now;
   saveStore(store);
   return { record, path: storePath() };
 }

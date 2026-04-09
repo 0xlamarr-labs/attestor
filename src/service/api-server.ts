@@ -96,6 +96,7 @@ import {
   type AccountUserRole,
   verifyAccountUserPasswordRecord,
 } from './account-user-store.js';
+import { type AccountUserActionTokenRecord } from './account-user-token-store.js';
 import {
   sessionCookieName,
   sessionCookieSecure,
@@ -109,24 +110,31 @@ import {
   claimProcessedStripeWebhookState,
   canConsumePipelineRunState,
   countAccountUsersForAccountState,
+  consumeAccountUserActionTokenState,
   createAccountUserState,
   finalizeProcessedStripeWebhookState,
   consumePipelineRunState,
   findAccountUserByEmailState,
   findAccountUserByIdState,
+  findAccountUserActionTokenByTokenState,
   findHostedAccountByIdState,
   findHostedAccountByTenantIdState,
   findTenantRecordByTenantIdState,
   getUsageContextState,
+  issueAccountInviteTokenState,
   issueAccountSessionState,
   isSharedControlPlaneConfigured,
   issueTenantApiKeyState,
+  issuePasswordResetTokenState,
   listAccountUsersByAccountIdState,
+  listAccountUserActionTokensByAccountIdState,
   listHostedAccountsState,
   listTenantKeyRecordsState,
   provisionHostedAccountState,
   queryUsageLedgerState,
   recordAccountUserLoginState,
+  revokeAccountUserActionTokenState,
+  revokeAccountUserActionTokensForUserState,
   revokeAccountSessionByTokenState,
   revokeAccountSessionsForAccountState,
   revokeAccountSessionsForUserState,
@@ -139,6 +147,7 @@ import {
   lookupProcessedStripeWebhookState,
   releaseProcessedStripeWebhookClaimState,
   recordProcessedStripeWebhookState,
+  setAccountUserPasswordState,
   setAccountUserStatusState,
   setHostedAccountStatusState,
   setTenantApiKeyStatusState,
@@ -304,6 +313,41 @@ function accountUserView(record: AccountUserRecord) {
     deactivatedAt: record.deactivatedAt,
     lastLoginAt: record.lastLoginAt,
   };
+}
+
+function accountUserActionTokenStatus(record: AccountUserActionTokenRecord): 'pending' | 'consumed' | 'revoked' | 'expired' {
+  if (record.consumedAt) return 'consumed';
+  if (record.revokedAt) return 'revoked';
+  if (Date.parse(record.expiresAt) <= Date.now()) return 'expired';
+  return 'pending';
+}
+
+function accountUserActionTokenView(record: AccountUserActionTokenRecord) {
+  return {
+    id: record.id,
+    purpose: record.purpose,
+    accountId: record.accountId,
+    accountUserId: record.accountUserId,
+    email: record.email,
+    displayName: record.displayName,
+    role: record.role,
+    status: accountUserActionTokenStatus(record),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    expiresAt: record.expiresAt,
+    consumedAt: record.consumedAt,
+    revokedAt: record.revokedAt,
+  };
+}
+
+function setSessionCookieForRecord(c: Context, sessionToken: string, expiresAt: string): void {
+  setCookie(c, sessionCookieName(), sessionToken, {
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: sessionCookieSecure(),
+    path: '/api/v1',
+    expires: new Date(expiresAt),
+  });
 }
 
 function requireAccountSession(
@@ -932,13 +976,7 @@ app.post('/api/v1/auth/login', async (c) => {
   });
   const loginTouch = await recordAccountUserLoginState(user.id);
 
-  setCookie(c, sessionCookieName(), issued.sessionToken, {
-    httpOnly: true,
-    sameSite: 'Lax',
-    secure: sessionCookieSecure(),
-    path: '/api/v1',
-    expires: new Date(issued.record.expiresAt),
-  });
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
 
   return c.json({
     session: {
@@ -965,6 +1003,49 @@ app.post('/api/v1/auth/logout', async (c) => {
     path: '/api/v1',
   });
   return c.json({ loggedOut: true });
+});
+
+app.post('/api/v1/auth/password/change', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : '';
+  const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+  if (!currentPassword || !newPassword) {
+    return c.json({ error: 'currentPassword and newPassword are required.' }, 400);
+  }
+  if (!verifyAccountUserPasswordRecord(user.password, currentPassword)) {
+    return c.json({ error: 'Current password is invalid.' }, 403);
+  }
+  if (newPassword.length < 12) {
+    return c.json({ error: 'newPassword must be at least 12 characters long.' }, 400);
+  }
+
+  const updated = await setAccountUserPasswordState(user.id, newPassword);
+  await revokeAccountSessionsForUserState(user.id);
+  await revokeAccountUserActionTokensForUserState(user.id, 'password_reset');
+  const issued = await issueAccountSessionState({
+    accountId: access.accountId,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    changed: true,
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    user: accountUserView(updated.record),
+  });
 });
 
 app.get('/api/v1/auth/me', async (c) => {
@@ -1082,6 +1163,130 @@ app.post('/api/v1/account/users', async (c) => {
   }, 201);
 });
 
+app.get('/api/v1/account/users/invites', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const invites = await listAccountUserActionTokensByAccountIdState(access.accountId, { purpose: 'invite' });
+  return c.json({
+    invites: invites.records.map(accountUserActionTokenView),
+  });
+});
+
+app.post('/api/v1/account/users/invites', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+  const role = typeof body.role === 'string' ? body.role.trim() as AccountUserRole : null;
+  const expiresHours = typeof body.expiresHours === 'number' ? body.expiresHours : null;
+  if (!email || !displayName || !role) {
+    return c.json({ error: 'email, displayName, and role are required.' }, 400);
+  }
+  if (!['account_admin', 'billing_admin', 'read_only'].includes(role)) {
+    return c.json({ error: "role must be one of: account_admin, billing_admin, read_only." }, 400);
+  }
+  const existing = await findAccountUserByEmailState(email);
+  if (existing) {
+    return c.json({ error: `Account user '${email}' already exists.` }, 409);
+  }
+  const issued = await issueAccountInviteTokenState({
+    accountId: access.accountId,
+    email,
+    displayName,
+    role,
+    issuedByAccountUserId: access.accountUserId,
+    ttlHours: expiresHours,
+  });
+  return c.json({
+    invite: accountUserActionTokenView(issued.record),
+    inviteToken: issued.token,
+  }, 201);
+});
+
+app.post('/api/v1/account/users/invites/:id/revoke', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const invites = await listAccountUserActionTokensByAccountIdState(access.accountId, { purpose: 'invite' });
+  const target = invites.records.find((entry) => entry.id === c.req.param('id')) ?? null;
+  if (!target) {
+    return c.json({ error: `Invite '${c.req.param('id')}' was not found.` }, 404);
+  }
+  const revoked = await revokeAccountUserActionTokenState(target.id);
+  return c.json({
+    invite: accountUserActionTokenView(revoked.record ?? target),
+  });
+});
+
+app.post('/api/v1/account/users/invites/accept', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const inviteToken = typeof body.inviteToken === 'string' ? body.inviteToken.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!inviteToken || !password) {
+    return c.json({ error: 'inviteToken and password are required.' }, 400);
+  }
+  if (password.length < 12) {
+    return c.json({ error: 'password must be at least 12 characters long.' }, 400);
+  }
+
+  const invite = await findAccountUserActionTokenByTokenState(inviteToken);
+  if (!invite || invite.purpose !== 'invite' || !invite.role || !invite.displayName) {
+    return c.json({ error: 'Invite token is invalid or expired.' }, 400);
+  }
+  const account = await findHostedAccountByIdState(invite.accountId);
+  if (!account || account.status === 'archived') {
+    return c.json({ error: 'Invite account is not available.' }, 404);
+  }
+  const existing = await findAccountUserByEmailState(invite.email);
+  if (existing) {
+    return c.json({ error: `Account user '${invite.email}' already exists.` }, 409);
+  }
+
+  let created;
+  try {
+    created = await createAccountUserState({
+      accountId: invite.accountId,
+      email: invite.email,
+      displayName: invite.displayName,
+      password,
+      role: invite.role,
+    });
+  } catch (err) {
+    if (err instanceof AccountUserStoreError) {
+      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
+    }
+    throw err;
+  }
+  await consumeAccountUserActionTokenState(invite.id);
+  const loginTouch = await recordAccountUserLoginState(created.record.id);
+  const issued = await issueAccountSessionState({
+    accountId: invite.accountId,
+    accountUserId: created.record.id,
+    role: created.record.role,
+  });
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    accepted: true,
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    user: accountUserView(loginTouch.record),
+    account: adminAccountView(account),
+  }, 201);
+});
+
 app.post('/api/v1/account/users/:id/deactivate', async (c) => {
   const unauthorized = requireAccountSession(c, {
     roles: ['account_admin'],
@@ -1095,6 +1300,7 @@ app.post('/api/v1/account/users/:id/deactivate', async (c) => {
   try {
     const updated = await setAccountUserStatusState(user.id, 'inactive');
     await revokeAccountSessionsForUserState(user.id);
+    await revokeAccountUserActionTokensForUserState(user.id);
     return c.json({
       user: accountUserView(updated.record),
     });
@@ -1127,6 +1333,62 @@ app.post('/api/v1/account/users/:id/reactivate', async (c) => {
     }
     throw err;
   }
+});
+
+app.post('/api/v1/account/users/:id/password-reset', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(c.req.param('id'));
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: `Account user '${c.req.param('id')}' was not found.` }, 404);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  const ttlMinutes = typeof body.ttlMinutes === 'number' ? body.ttlMinutes : null;
+  const issued = await issuePasswordResetTokenState({
+    accountId: access.accountId,
+    accountUserId: user.id,
+    email: user.email,
+    issuedByAccountUserId: access.accountUserId,
+    ttlMinutes,
+  });
+  return c.json({
+    reset: accountUserActionTokenView(issued.record),
+    resetToken: issued.token,
+  }, 201);
+});
+
+app.post('/api/v1/auth/password/reset', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const resetToken = typeof body.resetToken === 'string' ? body.resetToken.trim() : '';
+  const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+  if (!resetToken || !newPassword) {
+    return c.json({ error: 'resetToken and newPassword are required.' }, 400);
+  }
+  if (newPassword.length < 12) {
+    return c.json({ error: 'newPassword must be at least 12 characters long.' }, 400);
+  }
+  const tokenRecord = await findAccountUserActionTokenByTokenState(resetToken);
+  if (!tokenRecord || tokenRecord.purpose !== 'password_reset' || !tokenRecord.accountUserId) {
+    return c.json({ error: 'Password reset token is invalid or expired.' }, 400);
+  }
+  const user = await findAccountUserByIdState(tokenRecord.accountUserId);
+  const account = user ? await findHostedAccountByIdState(user.accountId) : null;
+  if (!user || !account || account.id !== tokenRecord.accountId || account.status === 'archived') {
+    return c.json({ error: 'Password reset token is invalid or expired.' }, 400);
+  }
+  await setAccountUserPasswordState(user.id, newPassword);
+  await revokeAccountSessionsForUserState(user.id);
+  await revokeAccountUserActionTokensForUserState(user.id, 'password_reset');
+  await consumeAccountUserActionTokenState(tokenRecord.id);
+  deleteCookie(c, sessionCookieName(), {
+    path: '/api/v1',
+  });
+  return c.json({
+    reset: true,
+  });
 });
 
 app.post('/api/v1/account/billing/checkout', async (c) => {

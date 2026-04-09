@@ -306,6 +306,67 @@ export interface AccountSetUserStatusResponse {
   user: AccountUserRecordView;
 }
 
+export interface AccountUserActionTokenRecordView {
+  id: string;
+  purpose: 'invite' | 'password_reset';
+  accountId: string;
+  accountUserId: string | null;
+  email: string;
+  displayName: string | null;
+  role: 'account_admin' | 'billing_admin' | 'read_only' | null;
+  status: 'pending' | 'consumed' | 'revoked' | 'expired';
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  consumedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface AccountUserInvitesListResponse {
+  invites: AccountUserActionTokenRecordView[];
+}
+
+export interface AccountInviteUserRequest {
+  email: string;
+  displayName: string;
+  role: 'account_admin' | 'billing_admin' | 'read_only';
+  expiresHours?: number;
+}
+
+export interface AccountInviteUserResponse {
+  invite: AccountUserActionTokenRecordView;
+  inviteToken: string;
+}
+
+export interface AccountRevokeInviteResponse {
+  invite: AccountUserActionTokenRecordView;
+}
+
+export interface AccountAcceptInviteRequest {
+  inviteToken: string;
+  password: string;
+}
+
+export interface AccountAcceptInviteResponse {
+  accepted: true;
+  session: {
+    id: string;
+    expiresAt: string;
+    source: 'account_session';
+  };
+  user: AccountUserRecordView;
+  account: AdminAccountRecord;
+}
+
+export interface AccountIssuePasswordResetRequest {
+  ttlMinutes?: number;
+}
+
+export interface AccountIssuePasswordResetResponse {
+  reset: AccountUserActionTokenRecordView;
+  resetToken: string;
+}
+
 export interface AuthLoginRequest {
   email: string;
   password: string;
@@ -333,6 +394,30 @@ export interface AuthMeResponse {
 
 export interface AuthLogoutResponse {
   loggedOut: true;
+}
+
+export interface AuthPasswordChangeRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface AuthPasswordChangeResponse {
+  changed: true;
+  session: {
+    id: string;
+    expiresAt: string;
+    source: 'account_session';
+  };
+  user: AccountUserRecordView;
+}
+
+export interface AuthPasswordResetRequest {
+  resetToken: string;
+  newPassword: string;
+}
+
+export interface AuthPasswordResetResponse {
+  reset: true;
 }
 
 export interface AccountBillingCheckoutRequest {

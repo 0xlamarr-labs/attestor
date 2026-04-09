@@ -54,6 +54,11 @@ export function sessionTtlHours(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 12;
 }
 
+export function sessionIdleTimeoutMinutes(): number {
+  const parsed = Number.parseInt(process.env.ATTESTOR_SESSION_IDLE_TIMEOUT_MINUTES ?? '30', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+}
+
 export function sessionCookieSecure(): boolean {
   return /^(1|true|yes)$/i.test(process.env.ATTESTOR_SESSION_COOKIE_SECURE ?? '');
 }
@@ -70,8 +75,12 @@ export function hashAccountSessionToken(token: string): string {
   return hashToken(token);
 }
 
-function isExpired(record: AccountSessionRecord, now = Date.now()): boolean {
-  return Number.isFinite(Date.parse(record.expiresAt)) && Date.parse(record.expiresAt) <= now;
+export function isAccountSessionRecordExpired(record: AccountSessionRecord, now = Date.now()): boolean {
+  const absoluteExpired = Number.isFinite(Date.parse(record.expiresAt)) && Date.parse(record.expiresAt) <= now;
+  const idleTimeoutMs = sessionIdleTimeoutMinutes() * 60 * 1000;
+  const lastSeenMs = Date.parse(record.lastSeenAt);
+  const idleExpired = Number.isFinite(lastSeenMs) && (lastSeenMs + idleTimeoutMs) <= now;
+  return absoluteExpired || idleExpired;
 }
 
 function loadStore(): AccountSessionStoreFile {
@@ -97,7 +106,7 @@ function saveStore(store: AccountSessionStoreFile): void {
 function pruneExpiredSessions(store: AccountSessionStoreFile): boolean {
   const before = store.records.length;
   const now = Date.now();
-  store.records = store.records.filter((record) => !isExpired(record, now));
+  store.records = store.records.filter((record) => !isAccountSessionRecordExpired(record, now));
   return before !== store.records.length;
 }
 

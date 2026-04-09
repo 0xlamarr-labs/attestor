@@ -38,6 +38,7 @@ import {
   findAccountUserByEmail,
   resetAccountUserStoreForTests,
 } from '../src/service/account-user-store.js';
+import { resetAccountUserActionTokenStoreForTests } from '../src/service/account-user-token-store.js';
 import {
   findAccountSessionByToken,
   issueAccountSession,
@@ -101,6 +102,7 @@ async function run(): Promise<void> {
 
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = join(tempRoot, 'accounts.json');
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(tempRoot, 'account-users.json');
+  process.env.ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH = join(tempRoot, 'account-user-tokens.json');
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(tempRoot, 'account-sessions.json');
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = join(tempRoot, 'tenant-keys.json');
   process.env.ATTESTOR_USAGE_LEDGER_PATH = join(tempRoot, 'usage-ledger.json');
@@ -117,6 +119,7 @@ async function run(): Promise<void> {
 
   resetAccountStoreForTests();
   resetAccountUserStoreForTests();
+  resetAccountUserActionTokenStoreForTests();
   resetAccountSessionStoreForTests();
   resetTenantKeyStoreForTests();
   resetUsageMeter();
@@ -237,6 +240,7 @@ async function run(): Promise<void> {
 
     resetAccountStoreForTests();
     resetAccountUserStoreForTests();
+    resetAccountUserActionTokenStoreForTests();
     resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();
@@ -303,6 +307,7 @@ async function run(): Promise<void> {
   } finally {
     resetAccountStoreForTests();
     resetAccountUserStoreForTests();
+    resetAccountUserActionTokenStoreForTests();
     resetAccountSessionStoreForTests();
     resetTenantKeyStoreForTests();
     resetUsageMeter();

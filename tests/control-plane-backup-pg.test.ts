@@ -80,6 +80,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `postgres://cp_backup_pg:cp_backup_pg@localhost:${pgPort}/attestor_control_plane`;
   process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `postgres://cp_backup_pg:cp_backup_pg@localhost:${pgPort}/attestor_billing`;
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = join(tempRoot, 'account-users.json');
+  process.env.ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH = join(tempRoot, 'account-user-tokens.json');
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = join(tempRoot, 'account-sessions.json');
   process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(tempRoot, 'billing-entitlements.json');
   process.env.ATTESTOR_ADMIN_AUDIT_LOG_PATH = join(tempRoot, 'admin-audit-log.json');

@@ -28,6 +28,7 @@ import {
   exportAdminAuditLogStoreSnapshot,
   exportAdminIdempotencyStoreSnapshot,
   exportAccountSessionStoreSnapshot,
+  exportAccountUserActionTokenStoreSnapshot,
   exportAccountUserStoreSnapshot,
   exportHostedBillingEntitlementStoreSnapshot,
   exportStripeWebhookStoreSnapshot,
@@ -39,6 +40,7 @@ import {
   restoreAdminAuditLogStoreSnapshot,
   restoreAdminIdempotencyStoreSnapshot,
   restoreAccountSessionStoreSnapshot,
+  restoreAccountUserActionTokenStoreSnapshot,
   restoreAccountUserStoreSnapshot,
   restoreHostedBillingEntitlementStoreSnapshot,
   restoreStripeWebhookStoreSnapshot,
@@ -48,6 +50,7 @@ import {
   type AdminAuditLogStoreSnapshot,
   type AdminIdempotencyStoreSnapshot,
   type AccountSessionStoreSnapshot,
+  type AccountUserActionTokenStoreSnapshot,
   type AccountUserStoreSnapshot,
   type BillingEntitlementStoreSnapshot,
   type HostedAccountStoreSnapshot,
@@ -63,6 +66,7 @@ interface ControlPlaneComponentSpec {
     | 'account_store'
     | 'account_user_store'
     | 'account_session_store'
+    | 'account_user_action_token_store'
     | 'tenant_key_store'
     | 'usage_ledger'
     | 'billing_entitlement_store'
@@ -136,6 +140,12 @@ function componentSpecs(includeEphemeral: boolean): ControlPlaneComponentSpec[] 
       tier: sharedControlPlane ? 'shared_postgres' : 'ephemeral',
       sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ACCOUNT_SESSION_STORE_PATH', '.attestor/account-sessions.json'),
       snapshotFilename: 'account-session-store.json',
+    },
+    {
+      id: 'account_user_action_token_store',
+      tier: sharedControlPlane ? 'shared_postgres' : 'critical',
+      sourcePath: sharedControlPlane ? null : defaultPath('ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH', '.attestor/account-user-tokens.json'),
+      snapshotFilename: 'account-user-action-token-store.json',
     },
     {
       id: 'tenant_key_store',
@@ -263,6 +273,7 @@ export async function createControlPlaneBackupSnapshot(options?: {
         component.id === 'account_store'
         || component.id === 'account_user_store'
         || component.id === 'account_session_store'
+        || component.id === 'account_user_action_token_store'
         || component.id === 'tenant_key_store'
         || component.id === 'usage_ledger'
         || component.id === 'billing_entitlement_store'
@@ -275,6 +286,7 @@ export async function createControlPlaneBackupSnapshot(options?: {
         | HostedAccountStoreSnapshot
         | AccountUserStoreSnapshot
         | AccountSessionStoreSnapshot
+        | AccountUserActionTokenStoreSnapshot
         | TenantKeyStoreSnapshot
         | UsageLedgerStoreSnapshot
         | BillingEntitlementStoreSnapshot
@@ -287,6 +299,8 @@ export async function createControlPlaneBackupSnapshot(options?: {
         snapshot = await exportAccountUserStoreSnapshot();
       } else if (component.id === 'account_session_store') {
         snapshot = await exportAccountSessionStoreSnapshot();
+      } else if (component.id === 'account_user_action_token_store') {
+        snapshot = await exportAccountUserActionTokenStoreSnapshot();
       } else if (component.id === 'tenant_key_store') {
         snapshot = await exportTenantKeyStoreSnapshot();
       } else if (component.id === 'usage_ledger') {
@@ -447,6 +461,7 @@ export async function restoreControlPlaneBackupSnapshot(options: {
         component.id === 'account_store'
         || component.id === 'account_user_store'
         || component.id === 'account_session_store'
+        || component.id === 'account_user_action_token_store'
         || component.id === 'tenant_key_store'
         || component.id === 'usage_ledger'
         || component.id === 'billing_entitlement_store'
@@ -469,6 +484,9 @@ export async function restoreControlPlaneBackupSnapshot(options: {
       } else if (component.id === 'account_session_store') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as AccountSessionStoreSnapshot;
         await restoreAccountSessionStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
+      } else if (component.id === 'account_user_action_token_store') {
+        const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as AccountUserActionTokenStoreSnapshot;
+        await restoreAccountUserActionTokenStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });
       } else if (component.id === 'tenant_key_store') {
         const snapshot = JSON.parse(readFileSync(absoluteSnapshotPath, 'utf8')) as TenantKeyStoreSnapshot;
         await restoreTenantKeyStoreSnapshot(snapshot, { replaceExisting: options.replaceExisting ?? true });

@@ -70,6 +70,7 @@ async function run(): Promise<void> {
   const tenantKeyStorePath = join(tempRoot, 'tenant-keys.json');
   const usageLedgerPath = join(tempRoot, 'usage-ledger.json');
   const accountUserStorePath = join(tempRoot, 'account-users.json');
+  const accountUserTokenStorePath = join(tempRoot, 'account-user-tokens.json');
   const accountSessionStorePath = join(tempRoot, 'account-sessions.json');
   const adminAuditPath = join(tempRoot, 'admin-audit.json');
   const adminIdempotencyPath = join(tempRoot, 'admin-idempotency.json');
@@ -79,6 +80,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `postgres://control_plane_live:control_plane_live@localhost:${pgPort}/attestor_control_plane`;
   process.env.ATTESTOR_ACCOUNT_STORE_PATH = accountStorePath;
   process.env.ATTESTOR_ACCOUNT_USER_STORE_PATH = accountUserStorePath;
+  process.env.ATTESTOR_ACCOUNT_USER_TOKEN_STORE_PATH = accountUserTokenStorePath;
   process.env.ATTESTOR_ACCOUNT_SESSION_STORE_PATH = accountSessionStorePath;
   process.env.ATTESTOR_TENANT_KEY_STORE_PATH = tenantKeyStorePath;
   process.env.ATTESTOR_USAGE_LEDGER_PATH = usageLedgerPath;
@@ -144,6 +146,7 @@ async function run(): Promise<void> {
     ok(createAccountBody.initialKey.apiKey.startsWith('atk_'), 'Admin account create: API key issued');
     ok(!existsSync(accountStorePath), 'Shared PG: no local account store file created');
     ok(!existsSync(accountUserStorePath), 'Shared PG: no local account user store file created');
+    ok(!existsSync(accountUserTokenStorePath), 'Shared PG: no local account user token store file created');
     ok(!existsSync(accountSessionStorePath), 'Shared PG: no local account session store file created');
     ok(!existsSync(tenantKeyStorePath), 'Shared PG: no local tenant key store file created');
     ok(!existsSync(usageLedgerPath), 'Shared PG: no local usage ledger file created');
@@ -221,6 +224,35 @@ async function run(): Promise<void> {
     ok(meRes.status === 200, 'Account me via shared PG session: 200');
     const meBody = await meRes.json() as any;
     ok(meBody.session.role === 'account_admin', 'Account me via shared PG session: role persisted');
+
+    const inviteRes = await fetch(`${base}/api/v1/account/users/invites`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: accountSessionCookie!,
+      },
+      body: JSON.stringify({
+        email: 'invitee@pg-hosted.example',
+        displayName: 'PG Invitee',
+        role: 'read_only',
+      }),
+    });
+    ok(inviteRes.status === 201, 'Account invite via shared PG: 201');
+    const inviteBody = await inviteRes.json() as any;
+    ok(inviteBody.invite.status === 'pending', 'Account invite via shared PG: pending');
+    ok(!existsSync(accountUserTokenStorePath), 'Shared PG: invite does not create local token store file');
+
+    const acceptInviteRes = await fetch(`${base}/api/v1/account/users/invites/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        inviteToken: inviteBody.inviteToken,
+        password: 'PgInvitePass123!',
+      }),
+    });
+    ok(acceptInviteRes.status === 201, 'Account invite accept via shared PG: 201');
+    const acceptInviteBody = await acceptInviteRes.json() as any;
+    ok(acceptInviteBody.user.email === 'invitee@pg-hosted.example', 'Account invite accept via shared PG: user created');
 
     const sessionAccountRes = await fetch(`${base}/api/v1/account`, {
       headers: { Cookie: accountSessionCookie! },
