@@ -228,6 +228,13 @@ import {
   shutdownTelemetry,
 } from './observability.js';
 import {
+  deliverHostedInviteEmail,
+  deliverHostedPasswordResetEmail,
+  getHostedEmailDeliveryStatus,
+  HostedEmailDeliveryError,
+  shutdownHostedEmailDelivery,
+} from './email-delivery.js';
+import {
   StripeBillingError,
   createHostedBillingPortalSession,
   createHostedCheckoutSession,
@@ -646,6 +653,12 @@ function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
   if (err.code === 'DISABLED') return c.json({ error: err.message }, 503);
   if (err.code === 'NO_CUSTOMER') return c.json({ error: err.message }, 409);
   return c.json({ error: err.message }, 400);
+}
+
+function hostedEmailDeliveryErrorResponse(c: Context, err: unknown): Response | null {
+  if (!(err instanceof HostedEmailDeliveryError)) return null;
+  if (err.code === 'CONFIG') return c.json({ error: err.message }, 503);
+  return c.json({ error: err.message }, 502);
 }
 
 async function currentHostedAccount(c: Context): Promise<{
@@ -1714,6 +1727,10 @@ app.post('/api/v1/account/users/invites', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
@@ -1737,9 +1754,25 @@ app.post('/api/v1/account/users/invites', async (c) => {
     issuedByAccountUserId: access.accountUserId,
     ttlHours: expiresHours,
   });
+  let delivery;
+  try {
+    delivery = await deliverHostedInviteEmail({
+      recipientEmail: email,
+      displayName,
+      role,
+      accountName: account.accountName,
+      token: issued.token,
+    });
+  } catch (err) {
+    await revokeAccountUserActionTokenState(issued.record.id);
+    const mapped = hostedEmailDeliveryErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
   return c.json({
     invite: accountUserActionTokenView(issued.record),
-    inviteToken: issued.token,
+    ...(delivery.tokenReturned ? { inviteToken: issued.token } : {}),
+    delivery,
   }, 201);
 });
 
@@ -1874,6 +1907,10 @@ app.post('/api/v1/account/users/:id/password-reset', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
   const user = await findAccountUserByIdState(c.req.param('id'));
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: `Account user '${c.req.param('id')}' was not found.` }, 404);
@@ -1887,9 +1924,24 @@ app.post('/api/v1/account/users/:id/password-reset', async (c) => {
     issuedByAccountUserId: access.accountUserId,
     ttlMinutes,
   });
+  let delivery;
+  try {
+    delivery = await deliverHostedPasswordResetEmail({
+      recipientEmail: user.email,
+      displayName: user.displayName,
+      accountName: account.accountName,
+      token: issued.token,
+    });
+  } catch (err) {
+    await revokeAccountUserActionTokenState(issued.record.id);
+    const mapped = hostedEmailDeliveryErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
   return c.json({
     reset: accountUserActionTokenView(issued.record),
-    resetToken: issued.token,
+    ...(delivery.tokenReturned ? { resetToken: issued.token } : {}),
+    delivery,
   }, 201);
 });
 
@@ -3411,6 +3463,7 @@ app.get('/api/v1/admin/telemetry', (c) => {
   if (unauthorized) return unauthorized;
   return c.json({
     telemetry: getTelemetryStatus(),
+    emailDelivery: getHostedEmailDeliveryStatus(),
   });
 });
 
@@ -5040,11 +5093,12 @@ export function startServer(port: number = 3700): { port: number; close: () => v
   const server = serve({ fetch: app.fetch, port });
   return {
     port,
-    close: () => {
-      void forceFlushTelemetry().catch(() => {});
-      if (server && typeof (server as any).close === 'function') {
-        (server as any).close();
-      }
+      close: () => {
+        void forceFlushTelemetry().catch(() => {});
+        shutdownHostedEmailDelivery();
+        if (server && typeof (server as any).close === 'function') {
+          (server as any).close();
+        }
       void shutdownTenantAsyncExecutionCoordinator().catch(() => {});
       void shutdownTenantRateLimiter().catch(() => {});
       void shutdownTelemetry().catch(() => {});

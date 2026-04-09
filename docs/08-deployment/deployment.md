@@ -84,8 +84,20 @@ docker run \
 | `ATTESTOR_SESSION_TTL_HOURS` | No | `12` | Hosted customer session TTL in hours |
 | `ATTESTOR_SESSION_IDLE_TIMEOUT_MINUTES` | No | `30` | Hosted customer session idle timeout in minutes |
 | `ATTESTOR_SESSION_COOKIE_SECURE` | No | `false` | Mark hosted customer session cookies as `Secure` |
-| `ATTESTOR_ACCOUNT_INVITE_TTL_HOURS` | No | `72` | Hosted invite token TTL in hours for manual-delivery onboarding |
-| `ATTESTOR_PASSWORD_RESET_TTL_MINUTES` | No | `30` | Hosted password-reset token TTL in minutes for manual-delivery reset flows |
+| `ATTESTOR_EMAIL_DELIVERY_MODE` | No | `manual` | Hosted invite/reset delivery mode: `manual` or `smtp` |
+| `ATTESTOR_EMAIL_FROM` | No | None | Sender address used for hosted SMTP invite/reset delivery |
+| `ATTESTOR_EMAIL_REPLY_TO` | No | None | Optional reply-to address for hosted SMTP invite/reset delivery |
+| `ATTESTOR_SMTP_URL` | No | None | Optional SMTP connection URL for hosted invite/reset delivery |
+| `ATTESTOR_SMTP_HOST` | No | None | SMTP host for hosted invite/reset delivery when `ATTESTOR_SMTP_URL` is not set |
+| `ATTESTOR_SMTP_PORT` | No | None | SMTP port for hosted invite/reset delivery when `ATTESTOR_SMTP_URL` is not set |
+| `ATTESTOR_SMTP_USER` | No | None | Optional SMTP username |
+| `ATTESTOR_SMTP_PASS` | No | None | Optional SMTP password |
+| `ATTESTOR_SMTP_SECURE` | No | `false` | Enable SMTPS for hosted invite/reset delivery |
+| `ATTESTOR_SMTP_IGNORE_TLS` | No | `false` | Skip STARTTLS for local/test SMTP delivery |
+| `ATTESTOR_ACCOUNT_INVITE_BASE_URL` | No | None | Optional hosted invite URL base; Attestor appends `?token=...` |
+| `ATTESTOR_PASSWORD_RESET_BASE_URL` | No | None | Optional hosted password-reset URL base; Attestor appends `?token=...` |
+| `ATTESTOR_ACCOUNT_INVITE_TTL_HOURS` | No | `72` | Hosted invite token TTL in hours |
+| `ATTESTOR_PASSWORD_RESET_TTL_MINUTES` | No | `30` | Hosted password-reset token TTL in minutes |
 | `ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY` | No | None | Dedicated secret for encrypting hosted TOTP seeds at rest; falls back to `ATTESTOR_ADMIN_API_KEY` when unset |
 | `ATTESTOR_MFA_ISSUER` | No | `Attestor` | Issuer label embedded into generated `otpauth://` TOTP enrollment URLs |
 | `ATTESTOR_MFA_LOGIN_TTL_MINUTES` | No | `10` | Hosted MFA login challenge TTL in minutes |
@@ -196,12 +208,12 @@ What is deployed today:
 - Shared Redis queue between API and worker
 - PostgreSQL RLS tenant isolation
 - Hosted tenant key lifecycle with rotate -> deactivate/reactivate -> revoke, `lastUsedAt`, and max-2 active overlap
-- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, manual-delivery invite/password-reset flows, TOTP MFA enrollment/verify/disable + recovery codes, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
+- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, invite/password-reset flows with manual or SMTP delivery, TOTP MFA enrollment/verify/disable + recovery codes, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
 - Tenant-aware pipeline throttling with plan defaults, `Retry-After`, and `429` responses. Uses a shared Redis fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current BullMQ Redis backend is available; otherwise falls back to in-memory single-node buckets
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `charge.succeeded|failed|refunded`, and `entitlements.active_entitlement_summary.updated` processing with duplicate-event suppression, checkout/invoice summary persistence, shared invoice line-item persistence, shared charge persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event + invoice line-item + charge history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
 - Async queue hardening first slice: plan-aware BullMQ job priority, bounded retry/backoff, exact paginated tenant-aware pending-job caps on async submit, shared Redis-backed tenant active-execution leases at worker runtime, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry. Terminal async failures persist into a file-backed DLQ store by default and move onto the shared PostgreSQL control-plane when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured
-- Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter status, optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`, and optional OTLP logs + trace + metrics export over HTTP/protobuf
+- Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter status plus email-delivery status, optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`, optional OTLP logs + trace + metrics export over HTTP/protobuf, and a bundled local Collector -> LGTM reference stack via `docker-compose.observability.yml` + `ops/otel/collector-config.yaml`
 - HA runtime truth: all API responses include `x-attestor-instance-id`, while `GET /api/v1/health` and `GET /api/v1/ready` expose `instanceId` and `highAvailability` status for load-balancer debugging and readiness gating
 - Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, webhook-driven plan/quota sync back into hosted tenant records, customer-visible checkout/invoice summary at `GET /api/v1/account`, and hosted billing export at `GET /api/v1/account/billing/export` (`format=json|csv`) with live Stripe or shared-ledger/mock-summary fallback
 - Control-plane backup/restore first slice: `npm run backup:control-plane` writes a logical snapshot of the hosted control-plane, including shared PostgreSQL-backed account/tenant/usage/billing-entitlement/async-DLQ/admin-audit/account-user/account-session/account-user-action-token state when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, plus the shared billing ledger export when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured. Ephemeral admin idempotency and Stripe webhook dedupe state can be included explicitly for DR drills. See [backup-restore-dr.md](backup-restore-dr.md)
@@ -210,7 +222,7 @@ What is deployed today:
 What is not yet implemented:
 - Orchestrator-native autoscaling, rolling deploy coordination, or managed load-balancer integration beyond the current HA first slice
 - BullMQ Pro queue groups or broader weighted multi-node scheduling/isolation beyond the current shared tenant active-execution caps
-- No bundled external collector deployment or full distributed log/trace backend
+- No managed production collector rollout, alerting stack, or long-retention distributed log/trace backend
 - External KMS-backed tenant key storage or shared multi-node key ledger
 - Full charge/invoice reconciliation beyond the current event + line-item + charge ledger first slice, Stripe-native feature entitlement service, or broader shared multi-node control-plane stores beyond the current hosted control-plane first slice
-- WebAuthn/passkeys, outbound email delivery for invite/reset/MFA recovery, and SSO/SAML
+- WebAuthn/passkeys and SSO/SAML, plus richer outbound email delivery features such as provider webhooks and delivery analytics

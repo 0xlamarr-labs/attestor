@@ -350,7 +350,16 @@ export interface AccountInviteUserRequest {
 
 export interface AccountInviteUserResponse {
   invite: AccountUserActionTokenRecordView;
-  inviteToken: string;
+  inviteToken?: string | null;
+  delivery: {
+    mode: 'manual' | 'smtp';
+    channel: 'api_response' | 'smtp';
+    delivered: boolean;
+    recipient: string;
+    messageId: string | null;
+    actionUrl: string | null;
+    tokenReturned: boolean;
+  };
 }
 
 export interface AccountRevokeInviteResponse {
@@ -379,7 +388,16 @@ export interface AccountIssuePasswordResetRequest {
 
 export interface AccountIssuePasswordResetResponse {
   reset: AccountUserActionTokenRecordView;
-  resetToken: string;
+  resetToken?: string | null;
+  delivery: {
+    mode: 'manual' | 'smtp';
+    channel: 'api_response' | 'smtp';
+    delivered: boolean;
+    recipient: string;
+    messageId: string | null;
+    actionUrl: string | null;
+    tokenReturned: boolean;
+  };
 }
 
 export interface AuthLoginRequest {
