@@ -105,6 +105,7 @@ export interface HostedStripeChargeSnapshot {
   chargeId: string | null;
   invoiceId: string | null;
   amount: number | null;
+  amountRefunded: number | null;
   currency: string | null;
   status: 'succeeded' | 'pending' | 'failed' | null;
   paid: boolean | null;
@@ -445,6 +446,7 @@ export async function exportHostedStripeBillingSnapshot(options: {
             chargeId: `ch_mock_${options.account.id}`,
             invoiceId: options.account.billing.lastInvoiceId,
             amount: options.account.billing.lastInvoiceAmountPaid,
+            amountRefunded: 0,
             currency: options.account.billing.lastInvoiceCurrency,
             status: 'succeeded',
             paid: true,
@@ -498,6 +500,7 @@ export async function exportHostedStripeBillingSnapshot(options: {
       chargeId: charge.id,
       invoiceId: stripeReferenceId((charge as Stripe.Charge & { invoice?: unknown }).invoice),
       amount: typeof charge.amount === 'number' ? charge.amount : null,
+      amountRefunded: typeof charge.amount_refunded === 'number' ? charge.amount_refunded : null,
       currency: typeof charge.currency === 'string' ? charge.currency : null,
       status: charge.status === 'succeeded' || charge.status === 'pending' || charge.status === 'failed'
         ? charge.status

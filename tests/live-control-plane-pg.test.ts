@@ -675,6 +675,78 @@ async function run(): Promise<void> {
     ok(adminEntitlementsBody.records[0].status === 'delinquent', 'Admin billing entitlements via shared PG: delinquent status reflected');
     ok(adminEntitlementsBody.records[0].provider === 'stripe', 'Admin billing entitlements via shared PG: provider switched to stripe');
 
+    const invoicePaidPayload = JSON.stringify({
+      id: 'evt_pg_live_invoice_paid_1',
+      object: 'event',
+      type: 'invoice.paid',
+      created: 1712555400,
+      data: {
+        object: {
+          id: 'in_pg_live_001',
+          object: 'invoice',
+          customer: 'cus_pg_live_001',
+          subscription: 'sub_pg_live_001',
+          status: 'paid',
+          currency: 'usd',
+          amount_paid: 5000,
+          amount_due: 5000,
+          billing_reason: 'subscription_cycle',
+          metadata: {
+            attestorAccountId: createAccountBody.account.id,
+          },
+          status_transitions: {
+            paid_at: 1712555400,
+          },
+          lines: {
+            object: 'list',
+            has_more: false,
+            data: [{
+              id: 'il_pg_live_001_1',
+              object: 'line_item',
+              invoice: 'in_pg_live_001',
+              amount: 5000,
+              subtotal: 5000,
+              currency: 'usd',
+              description: 'Attestor Pro Monthly',
+              quantity: 1,
+              subscription: 'sub_pg_live_001',
+              pricing: {
+                type: 'price_details',
+                price_details: {
+                  price: 'price_pro_monthly',
+                },
+                unit_amount_decimal: '5000',
+              },
+              period: {
+                start: 1712551800,
+                end: 1712555400,
+              },
+              parent: {
+                type: 'subscription_item_details',
+                invoice_item_details: null,
+                subscription_item_details: {
+                  proration: false,
+                },
+              },
+            }],
+          },
+        },
+      },
+    });
+    const invoicePaidSignature = stripe.webhooks.generateTestHeaderString({
+      payload: invoicePaidPayload,
+      secret: process.env.STRIPE_WEBHOOK_SECRET!,
+    });
+    const invoicePaidRes = await fetch(`${base}/api/v1/billing/stripe/webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Stripe-Signature': invoicePaidSignature,
+      },
+      body: invoicePaidPayload,
+    });
+    ok(invoicePaidRes.status === 200, 'Shared PG invoice paid webhook: accepted');
+
     const chargePayload = JSON.stringify({
       id: 'evt_pg_live_charge_1',
       object: 'event',
@@ -772,6 +844,19 @@ async function run(): Promise<void> {
     const exportedCharge = adminBillingExportBody.charges.find((entry: any) => entry.chargeId === 'ch_pg_live_001');
     ok(Boolean(exportedCharge), 'Admin account billing export via shared PG: charge ledger exported');
     ok(adminBillingExportBody.entitlementFeatures.lookupKeys.includes('attestor.pro.api'), 'Admin account billing export via shared PG: entitlement lookup keys exported');
+    ok(adminBillingExportBody.reconciliation.summary.status === 'reconciled', 'Admin account billing export via shared PG: reconciliation is fully reconciled');
+    const reconciledInvoice = adminBillingExportBody.reconciliation.invoices.find((entry: any) => entry.invoiceId === 'in_pg_live_001');
+    ok(Boolean(reconciledInvoice), 'Admin account billing export via shared PG: reconciliation includes paid invoice');
+    ok(reconciledInvoice.checks.lineItemsVsInvoice.status === 'match', 'Admin account billing export via shared PG: line items match invoice');
+    ok(reconciledInvoice.checks.chargesVsInvoicePaid.status === 'match', 'Admin account billing export via shared PG: charges match invoice payment');
+
+    const adminBillingReconciliationRes = await fetch(`${base}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/reconciliation?limit=5`, {
+      headers: { Authorization: 'Bearer admin-shared-control-plane' },
+    });
+    ok(adminBillingReconciliationRes.status === 200, 'Admin account billing reconciliation via shared PG: 200');
+    const adminBillingReconciliationBody = await adminBillingReconciliationRes.json() as any;
+    ok(adminBillingReconciliationBody.reconciliation.summary.reconciledCount >= 1, 'Admin account billing reconciliation via shared PG: reconciled invoice counted');
+    ok(adminBillingReconciliationBody.reconciliation.summary.attentionCount === 0, 'Admin account billing reconciliation via shared PG: no reconciliation drift');
 
     console.log(`  Shared control-plane PG tests: ${passed} passed, 0 failed\n`);
   } finally {

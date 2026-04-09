@@ -44,6 +44,7 @@ export interface HostedBillingExportChargeRecord {
   chargeId: string | null;
   invoiceId: string | null;
   amount: number | null;
+  amountRefunded: number | null;
   currency: string | null;
   status: 'succeeded' | 'pending' | 'failed' | null;
   paid: boolean | null;
@@ -109,6 +110,24 @@ function newestRecord(a: BillingEventRecord, b: BillingEventRecord): BillingEven
   return aTs >= bTs ? a : b;
 }
 
+function newestNonNullValue<T>(
+  records: BillingEventRecord[],
+  selector: (record: BillingEventRecord) => T | null | undefined,
+): T | null {
+  let selected: T | null = null;
+  let selectedTs = -Infinity;
+  for (const record of records) {
+    const value = selector(record);
+    if (value === null || value === undefined) continue;
+    const ts = Date.parse(record.processedAt ?? record.receivedAt);
+    if (ts >= selectedTs) {
+      selected = value;
+      selectedTs = ts;
+    }
+  }
+  return selected;
+}
+
 function deriveInvoicesFromLedger(records: BillingEventRecord[]): HostedBillingExportInvoiceRecord[] {
   const groups = new Map<string, BillingEventRecord[]>();
   for (const record of records) {
@@ -122,15 +141,18 @@ function deriveInvoicesFromLedger(records: BillingEventRecord[]): HostedBillingE
       const latest = invoiceRecords.reduce(newestRecord);
       return {
         invoiceId,
-        status: latest.stripeInvoiceStatus,
-        currency: latest.stripeInvoiceCurrency,
-        amountPaid: latest.stripeInvoiceAmountPaid,
-        amountDue: latest.stripeInvoiceAmountDue,
-        subscriptionId: latest.stripeSubscriptionId,
-        priceId: latest.stripePriceId,
-        billingReason: metadataString(latest.metadata, 'billingReason'),
+        status: newestNonNullValue(invoiceRecords, (record) => record.stripeInvoiceStatus),
+        currency: newestNonNullValue(invoiceRecords, (record) => record.stripeInvoiceCurrency),
+        amountPaid: newestNonNullValue(invoiceRecords, (record) => record.stripeInvoiceAmountPaid),
+        amountDue: newestNonNullValue(invoiceRecords, (record) => record.stripeInvoiceAmountDue),
+        subscriptionId: newestNonNullValue(invoiceRecords, (record) => record.stripeSubscriptionId),
+        priceId: newestNonNullValue(invoiceRecords, (record) => record.stripePriceId),
+        billingReason: newestNonNullValue(invoiceRecords, (record) => metadataString(record.metadata, 'billingReason')),
         createdAt: latest.receivedAt,
-        paidAt: metadataString(latest.metadata, 'paidAt') ?? (latest.eventType === 'invoice.paid' ? (latest.processedAt ?? latest.receivedAt) : null),
+        paidAt: newestNonNullValue(invoiceRecords, (record) => (
+          metadataString(record.metadata, 'paidAt')
+          ?? (record.eventType === 'invoice.paid' ? (record.processedAt ?? record.receivedAt) : null)
+        )),
         lastEventType: latest.eventType,
         source: 'ledger_derived',
       };
@@ -144,6 +166,7 @@ function deriveChargesFromLedger(records: BillingChargeRecord[]): HostedBillingE
       chargeId: record.stripeChargeId,
       invoiceId: record.stripeInvoiceId,
       amount: record.amount,
+      amountRefunded: record.amountRefunded,
       currency: record.currency,
       status: record.status,
       paid: record.paid,
@@ -200,6 +223,7 @@ function summaryCharges(account: HostedAccountRecord): HostedBillingExportCharge
         chargeId: null,
         invoiceId: account.billing.lastInvoiceId,
         amount: account.billing.lastInvoiceAmountPaid,
+        amountRefunded: 0,
         currency: account.billing.lastInvoiceCurrency,
         status: 'succeeded',
         paid: true,
@@ -232,6 +256,7 @@ function mapStripeCharges(records: HostedStripeChargeSnapshot[]): HostedBillingE
     chargeId: record.chargeId,
     invoiceId: record.invoiceId,
     amount: record.amount,
+    amountRefunded: record.amountRefunded,
     currency: record.currency,
     status: record.status,
     paid: record.paid,
@@ -405,6 +430,7 @@ export function renderHostedBillingExportCsv(payload: HostedBillingExportPayload
       'amountPaid',
       'amountDue',
       'amount',
+      'amountRefunded',
       'subtotal',
       'subscriptionId',
       'priceId',
@@ -437,6 +463,7 @@ export function renderHostedBillingExportCsv(payload: HostedBillingExportPayload
       invoice.amountDue === null ? '' : String(invoice.amountDue),
       '',
       '',
+      '',
       invoice.subscriptionId ?? '',
       invoice.priceId ?? '',
       invoice.billingReason ?? '',
@@ -467,6 +494,7 @@ export function renderHostedBillingExportCsv(payload: HostedBillingExportPayload
       '',
       '',
       charge.amount === null ? '' : String(charge.amount),
+      charge.amountRefunded === null ? '' : String(charge.amountRefunded),
       '',
       payload.stripeSubscriptionId ?? '',
       '',
@@ -498,6 +526,7 @@ export function renderHostedBillingExportCsv(payload: HostedBillingExportPayload
       '',
       '',
       lineItem.amount === null ? '' : String(lineItem.amount),
+      '',
       lineItem.subtotal === null ? '' : String(lineItem.subtotal),
       lineItem.subscriptionId ?? '',
       lineItem.priceId ?? '',

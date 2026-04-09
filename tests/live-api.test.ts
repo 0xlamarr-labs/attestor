@@ -1901,6 +1901,8 @@ async function run() {
       ok(accountBillingExportBody.checkout.sessionId === checkoutBody.checkoutSessionId, 'Account Billing Export: checkout session propagated');
       ok(accountBillingExportBody.entitlementFeatures.lookupKeys.includes('attestor.pro.api'), 'Account Billing Export: entitlement lookup keys exported');
       ok(accountBillingExportBody.entitlementFeatures.featureIds.includes('feat_pro_api'), 'Account Billing Export: entitlement feature ids exported');
+      ok(accountBillingExportBody.reconciliation.summary.status === 'partial', 'Account Billing Export: reconciliation is partial without detailed line-item truth');
+      ok(accountBillingExportBody.reconciliation.summary.invoiceCount >= 1, 'Account Billing Export: reconciliation invoice count reported');
       ok(accountBillingExportBody.summary.dataSource === 'ledger_derived' || accountBillingExportBody.summary.dataSource === 'mock_summary', 'Account Billing Export: data source is ledger-derived or mock-summary');
       const exportedInvoice = accountBillingExportBody.invoices.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
       ok(Boolean(exportedInvoice), 'Account Billing Export: paid invoice exported');
@@ -1916,6 +1918,10 @@ async function run() {
       } else {
         ok(accountBillingExportBody.summary.lineItemCount === 0, 'Account Billing Export: line items stay empty without shared billing ledger');
       }
+      const exportedReconciliationInvoice = accountBillingExportBody.reconciliation.invoices.find((entry: any) => entry.invoiceId === 'in_account_001_paid');
+      ok(Boolean(exportedReconciliationInvoice), 'Account Billing Export: reconciliation includes paid invoice');
+      ok(exportedReconciliationInvoice.checks.chargesVsInvoicePaid.status === 'match', 'Account Billing Export: reconciliation matches paid charges');
+      ok(exportedReconciliationInvoice.checks.lineItemsVsInvoice.status === 'unavailable', 'Account Billing Export: reconciliation marks missing line items as unavailable in mock-summary mode');
 
       const accountBillingExportCsvRes = await fetch(`${BASE}/api/v1/account/billing/export?format=csv&limit=5`, {
         headers: { Cookie: billingAdminCookie! },
@@ -1940,11 +1946,28 @@ async function run() {
       ok(adminBillingExportBody.accountId === createAccountBody.account.id, 'Admin Account Billing Export: account id matches');
       ok(adminBillingExportBody.summary.invoiceCount >= 1, 'Admin Account Billing Export: invoice count reported');
       ok(adminBillingExportBody.entitlement.status === 'active', 'Admin Account Billing Export: entitlement included');
+      ok(adminBillingExportBody.reconciliation.summary.status === 'partial', 'Admin Account Billing Export: reconciliation partial without shared billing ledger');
       if (adminBillingExportBody.summary.dataSource === 'ledger_derived' || adminBillingExportBody.summary.dataSource === 'stripe_live') {
         ok(adminBillingExportBody.summary.lineItemCount >= 1, 'Admin Account Billing Export: line item count reported when detailed billing truth is available');
       } else {
         ok(adminBillingExportBody.summary.lineItemCount === 0, 'Admin Account Billing Export: line items stay empty without shared billing ledger');
       }
+
+      const accountBillingReconciliationRes = await fetch(`${BASE}/api/v1/account/billing/reconciliation?limit=5`, {
+        headers: { Cookie: billingAdminCookie! },
+      });
+      ok(accountBillingReconciliationRes.status === 200, 'Account Billing Reconciliation: status 200');
+      const accountBillingReconciliationBody = await accountBillingReconciliationRes.json() as any;
+      ok(accountBillingReconciliationBody.accountId === createAccountBody.account.id, 'Account Billing Reconciliation: account id matches');
+      ok(accountBillingReconciliationBody.reconciliation.summary.status === 'partial', 'Account Billing Reconciliation: partial summary without shared line-item truth');
+
+      const adminBillingReconciliationRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/reconciliation?limit=5`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(adminBillingReconciliationRes.status === 200, 'Admin Account Billing Reconciliation: status 200');
+      const adminBillingReconciliationBody = await adminBillingReconciliationRes.json() as any;
+      ok(adminBillingReconciliationBody.reconciliation.summary.invoiceCount >= 1, 'Admin Account Billing Reconciliation: invoice count reported');
+      ok(adminBillingReconciliationBody.reconciliation.summary.partialCount >= 1, 'Admin Account Billing Reconciliation: partial reconciliation counted');
 
       const adminBillingExportCsvRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export?format=csv&limit=5`, {
         headers: { Authorization: 'Bearer admin-secret' },

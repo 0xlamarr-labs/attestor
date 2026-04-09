@@ -16,8 +16,10 @@
  * - POST /api/v1/account/billing/checkout — create Stripe Checkout subscription session
  * - POST /api/v1/account/billing/portal — create Stripe Billing Portal session
  * - GET  /api/v1/account/billing/export — export hosted billing summary/history as JSON or CSV
+ * - GET  /api/v1/account/billing/reconciliation — per-account charge/invoice reconciliation view
  * - GET/POST /api/v1/admin/accounts  — hosted operator account provisioning
  * - GET  /api/v1/admin/accounts/:id/billing/export — operator billing export for a hosted account
+ * - GET  /api/v1/admin/accounts/:id/billing/reconciliation — operator billing reconciliation for a hosted account
  * - POST /api/v1/admin/accounts/:id/billing/stripe — attach Stripe billing ids/status
  * - POST /api/v1/admin/accounts/:id/suspend|reactivate|archive — hosted account lifecycle
  * - GET  /api/v1/admin/plans         — hosted plan catalog + defaults
@@ -247,6 +249,7 @@ import {
   buildHostedBillingExport,
   renderHostedBillingExportCsv,
 } from './billing-export.js';
+import { buildHostedBillingReconciliation } from './billing-reconciliation.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -2083,6 +2086,7 @@ app.get('/api/v1/account/billing/export', async (c) => {
     entitlement,
     limit: parsedLimit ?? undefined,
   });
+  const reconciliation = buildHostedBillingReconciliation(payload);
 
   if (format === 'csv') {
     c.header('content-type', 'text/csv; charset=utf-8');
@@ -2094,6 +2098,46 @@ app.get('/api/v1/account/billing/export', async (c) => {
   return c.json({
     ...payload,
     entitlement: billingEntitlementView(entitlement),
+    reconciliation,
+  });
+});
+
+app.get('/api/v1/account/billing/reconciliation', async (c) => {
+  const roleGate = requireAccountSession(c, {
+    roles: ['account_admin', 'billing_admin', 'read_only'],
+  });
+  if (roleGate) return roleGate;
+  const current = await currentHostedAccount(c);
+  if (current instanceof Response) return current;
+
+  c.set('obs.accountId', current.account.id);
+  c.set('obs.accountStatus', current.account.status);
+  c.set('obs.tenantId', current.account.primaryTenantId);
+  c.set('obs.planId', current.tenant.planId ?? current.account.billing.lastCheckoutPlanId ?? null);
+
+  const rawLimit = c.req.query('limit');
+  const parsedLimit = rawLimit === undefined
+    ? null
+    : Number.parseInt(rawLimit, 10);
+  if (rawLimit !== undefined && (parsedLimit === null || !Number.isFinite(parsedLimit) || parsedLimit <= 0)) {
+    return c.json({ error: 'limit must be a positive integer.' }, 400);
+  }
+
+  const entitlement = await readHostedBillingEntitlement(current.account);
+  const payload = await buildHostedBillingExport({
+    account: current.account,
+    entitlement,
+    limit: parsedLimit ?? undefined,
+  });
+  const reconciliation = buildHostedBillingReconciliation(payload);
+
+  return c.json({
+    accountId: current.account.id,
+    tenantId: current.account.primaryTenantId,
+    stripeCustomerId: current.account.billing.stripeCustomerId,
+    stripeSubscriptionId: current.account.billing.stripeSubscriptionId,
+    entitlement: billingEntitlementView(entitlement),
+    reconciliation,
   });
 });
 
@@ -3292,6 +3336,7 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
     entitlement,
     limit: parsedLimit ?? undefined,
   });
+  const reconciliation = buildHostedBillingReconciliation(payload);
 
   if (format === 'csv') {
     c.header('content-type', 'text/csv; charset=utf-8');
@@ -3303,6 +3348,47 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
   return c.json({
     ...payload,
     entitlement: billingEntitlementView(entitlement),
+    reconciliation,
+  });
+});
+
+app.get('/api/v1/admin/accounts/:id/billing/reconciliation', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const account = await findHostedAccountByIdState(c.req.param('id'));
+  if (!account) {
+    return c.json({ error: `Hosted account '${c.req.param('id')}' not found.` }, 404);
+  }
+
+  c.set('obs.accountId', account.id);
+  c.set('obs.accountStatus', account.status);
+  c.set('obs.tenantId', account.primaryTenantId);
+  c.set('obs.planId', account.billing.lastCheckoutPlanId ?? null);
+
+  const rawLimit = c.req.query('limit');
+  const parsedLimit = rawLimit === undefined
+    ? null
+    : Number.parseInt(rawLimit, 10);
+  if (rawLimit !== undefined && (parsedLimit === null || !Number.isFinite(parsedLimit) || parsedLimit <= 0)) {
+    return c.json({ error: 'limit must be a positive integer.' }, 400);
+  }
+
+  const entitlement = await readHostedBillingEntitlement(account);
+  const payload = await buildHostedBillingExport({
+    account,
+    entitlement,
+    limit: parsedLimit ?? undefined,
+  });
+  const reconciliation = buildHostedBillingReconciliation(payload);
+
+  return c.json({
+    accountId: account.id,
+    tenantId: account.primaryTenantId,
+    stripeCustomerId: account.billing.stripeCustomerId,
+    stripeSubscriptionId: account.billing.stripeSubscriptionId,
+    entitlement: billingEntitlementView(entitlement),
+    reconciliation,
   });
 });
 

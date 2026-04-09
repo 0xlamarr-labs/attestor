@@ -594,6 +594,7 @@ export interface BillingExportChargeRecord {
   chargeId: string | null;
   invoiceId: string | null;
   amount: number | null;
+  amountRefunded: number | null;
   currency: string | null;
   status: 'succeeded' | 'pending' | 'failed' | null;
   paid: boolean | null;
@@ -636,6 +637,7 @@ export interface AccountBillingExportResponse {
   charges: BillingExportChargeRecord[];
   lineItems: BillingExportInvoiceLineItemRecord[];
   entitlementFeatures: BillingExportEntitlementFeatures;
+  reconciliation: AccountBillingReconciliationSummary;
   summary: {
     dataSource: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary' | 'empty';
     mock: boolean;
@@ -645,6 +647,59 @@ export interface AccountBillingExportResponse {
     chargeCount: number;
     lineItemCount: number;
   };
+}
+
+export interface BillingReconciliationCheck {
+  status: 'match' | 'mismatch' | 'unavailable';
+  basis: 'invoice_amount_due' | 'invoice_amount_paid' | null;
+  expectedAmount: number | null;
+  actualAmount: number | null;
+}
+
+export interface BillingReconciliationInvoiceRecord {
+  invoiceId: string;
+  source: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary';
+  currency: string | null;
+  invoiceStatus: string | null;
+  amountPaid: number | null;
+  amountDue: number | null;
+  chargeCount: number;
+  lineItemCount: number;
+  chargeAmountTotal: number | null;
+  chargeNetAmountTotal: number | null;
+  lineItemAmountTotal: number | null;
+  lineItemSubtotalTotal: number | null;
+  checks: {
+    lineItemsVsInvoice: BillingReconciliationCheck;
+    chargesVsInvoicePaid: BillingReconciliationCheck;
+    netChargesVsInvoicePaid: BillingReconciliationCheck;
+  };
+  overallStatus: 'reconciled' | 'partial' | 'needs_attention';
+  reasons: string[];
+}
+
+export interface AccountBillingReconciliationSummary {
+  invoices: BillingReconciliationInvoiceRecord[];
+  summary: {
+    status: 'reconciled' | 'partial' | 'needs_attention' | 'empty';
+    dataSource: 'stripe_live' | 'ledger_derived' | 'summary_only' | 'mock_summary' | 'empty';
+    sharedBillingLedger: boolean;
+    invoiceCount: number;
+    reconciledCount: number;
+    partialCount: number;
+    attentionCount: number;
+    chargeRecordCount: number;
+    lineItemRecordCount: number;
+  };
+}
+
+export interface AccountBillingReconciliationResponse {
+  accountId: string;
+  tenantId: string;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  entitlement: AccountBillingEntitlementRecord;
+  reconciliation: AccountBillingReconciliationSummary;
 }
 
 export interface AdminTenantKeyRecord {
@@ -973,6 +1028,7 @@ export interface AdminBillingEntitlementsResponse {
 }
 
 export interface AdminAccountBillingExportResponse extends AccountBillingExportResponse {}
+export interface AdminAccountBillingReconciliationResponse extends AccountBillingReconciliationResponse {}
 
 export interface AdminAsyncQueueTenantSnapshot {
   tenantId: string;
@@ -1087,8 +1143,10 @@ export const API_ROUTES = {
   ACCOUNT_BILLING_CHECKOUT: '/api/v1/account/billing/checkout',
   ACCOUNT_BILLING_PORTAL: '/api/v1/account/billing/portal',
   ACCOUNT_BILLING_EXPORT: '/api/v1/account/billing/export',
+  ACCOUNT_BILLING_RECONCILIATION: '/api/v1/account/billing/reconciliation',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
   ADMIN_ACCOUNT_BILLING_EXPORT: '/api/v1/admin/accounts/:id/billing/export',
+  ADMIN_ACCOUNT_BILLING_RECONCILIATION: '/api/v1/admin/accounts/:id/billing/reconciliation',
   ADMIN_ACCOUNT_SUSPEND: '/api/v1/admin/accounts/:id/suspend',
   ADMIN_ACCOUNT_REACTIVATE: '/api/v1/admin/accounts/:id/reactivate',
   ADMIN_ACCOUNT_ARCHIVE: '/api/v1/admin/accounts/:id/archive',
