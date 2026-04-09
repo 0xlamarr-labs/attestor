@@ -103,6 +103,17 @@ docker run \
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | No | `24` | Replay retention window for admin idempotency records |
 | `ATTESTOR_BILLING_LEDGER_PG_URL` | No | None | Shared PostgreSQL-backed Stripe billing event ledger used by `/api/v1/admin/billing/events`, checkout/invoice lifecycle history, and cross-node webhook dedupe |
 | `ATTESTOR_OBSERVABILITY_LOG_PATH` | No | None | Optional JSONL path for structured API request logs with trace correlation and tenant/account context |
+| `OTEL_TRACES_EXPORTER` | No | None | Set to `otlp` to enable OTLP trace export |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | None | Optional OTLP base endpoint; Attestor appends `/v1/traces` |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | No | None | Optional explicit OTLP traces endpoint |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | No | `http/protobuf` | OTLP protocol override; only `http/protobuf` is supported in this first slice |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | No | `http/protobuf` | OTLP traces protocol override; only `http/protobuf` is supported in this first slice |
+| `OTEL_EXPORTER_OTLP_HEADERS` | No | None | Optional comma-separated OTLP header list (`k=v,k2=v2`) |
+| `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | No | None | Optional traces header override (`k=v,k2=v2`) |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | No | None | Optional OTLP export timeout in milliseconds |
+| `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` | No | None | Optional traces export timeout in milliseconds |
+| `OTEL_SERVICE_NAME` | No | `attestor-api` | OpenTelemetry service name for exported request spans |
+| `OTEL_SERVICE_INSTANCE_ID` | No | Hostname | OpenTelemetry service instance id for exported request spans |
 | `STRIPE_API_KEY` | No | None | Stripe secret API key for hosted Checkout and Billing Portal session creation |
 | `STRIPE_WEBHOOK_SECRET` | No | None | Stripe signing secret for `POST /api/v1/billing/stripe/webhook` |
 | `ATTESTOR_STRIPE_PRICE_STARTER` | No | None | Stripe recurring price id for the hosted `starter` plan |
@@ -164,7 +175,7 @@ What is deployed today:
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed` processing with duplicate-event suppression, checkout/invoice summary persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
 - Async queue hardening first slice: bounded BullMQ retry/backoff, exact paginated tenant-aware pending-job caps on async submit, `GET /api/v1/admin/queue` summary, `GET /api/v1/admin/queue/dlq` failed-job inspection, and `POST /api/v1/admin/queue/jobs/:id/retry` manual retry
-- Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, and optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`
+- Observability first slice: W3C trace-context-compatible response headers, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter status, optional JSONL request logs via `ATTESTOR_OBSERVABILITY_LOG_PATH`, and optional OTLP trace export over HTTP/protobuf
 - Tenant-authenticated Stripe Checkout and Billing Portal entrypoints, with env-mapped Stripe price ids, required `Idempotency-Key` on Checkout, webhook-driven plan/quota sync back into hosted tenant records, customer-visible checkout/invoice summary at `GET /api/v1/account`, and hosted billing export at `GET /api/v1/account/billing/export` (`format=json|csv`) with live Stripe or shared-ledger/mock-summary fallback
 - Control-plane backup/restore first slice: `npm run backup:control-plane` writes a logical snapshot of the hosted control-plane, including shared PostgreSQL-backed account/tenant/usage/billing-entitlement/admin-audit/account-user/account-session/account-user-action-token state when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, plus the shared billing ledger export when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured. Ephemeral admin idempotency and Stripe webhook dedupe state can be included explicitly for DR drills. See [backup-restore-dr.md](backup-restore-dr.md)
 - Health + readiness probes
@@ -174,6 +185,6 @@ What is not yet implemented:
 - Job priority scheduling policy or shared/distributed rate limiting
 - External/shared dead-letter queue beyond BullMQ's failed-job set
 - Multi-tenant queue groups or stronger multi-node isolation beyond per-tenant pending-job caps
-- External log/metrics collector, OTLP exporter, or full distributed tracing backend
+- External log/metrics collector or full distributed tracing backend
 - External KMS-backed tenant key storage or shared multi-node key ledger
 - Full internal invoice line-item ledger, charge/invoice reconciliation beyond export-oriented summaries, Stripe-native feature entitlement service, or broader shared multi-node control-plane stores beyond the current hosted control-plane first slice

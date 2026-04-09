@@ -1847,6 +1847,16 @@ async function run() {
       ok(observabilityLog.some((entry: any) => entry.route === '/api/v1/health' && entry.traceId), 'Observability Log: health request captured with trace id');
       ok(observabilityLog.some((entry: any) => entry.route === '/api/v1/billing/stripe/webhook' && entry.accountId === createAccountBody.account.id), 'Observability Log: billing webhook captured with account context');
 
+      const telemetryNoAuth = await fetch(`${BASE}/api/v1/admin/telemetry`);
+      ok(telemetryNoAuth.status === 401, 'Admin Telemetry: auth required');
+
+      const telemetryRes = await fetch(`${BASE}/api/v1/admin/telemetry`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(telemetryRes.status === 200, 'Admin Telemetry: status 200');
+      const telemetryBody = await telemetryRes.json() as any;
+      ok(telemetryBody.telemetry.enabled === false, 'Admin Telemetry: disabled by default without OTLP env');
+
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
 

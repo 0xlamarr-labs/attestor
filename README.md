@@ -256,7 +256,7 @@ Current service capabilities:
 - SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
 - Plan-aware tenant rate limiting on pipeline routes with `429` + `Retry-After` and per-plan runtime defaults
 - Async queue hardening first slice: bounded BullMQ retry/backoff, exact paginated tenant-aware pending-job caps, admin queue summary/DLQ inspection, and manual failed-job retry
-- Structured observability first slice: W3C `traceparent`/trace-id response headers on API routes, Prometheus-text metrics at `GET /api/v1/admin/metrics`, and optional JSONL request logging via `ATTESTOR_OBSERVABILITY_LOG_PATH`
+- Structured observability first slice: W3C `traceparent`/trace-id response headers on API routes, Prometheus-text metrics at `GET /api/v1/admin/metrics`, `GET /api/v1/admin/telemetry` exporter-status introspection, optional JSONL request logging via `ATTESTOR_OBSERVABILITY_LOG_PATH`, and optional OTLP trace export over HTTP/protobuf
 - Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or the current hosted tenant-key store, plus overlap-capped key rotation (`rotate` -> `deactivate/reactivate` -> `revoke`), plan-aware tenant rate limiting on pipeline routes, and admin account/tenant provisioning behind `ATTESTOR_ADMIN_API_KEY`, with database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
 - XBRL filing export auto-summary in signed pipeline responses
@@ -267,7 +267,7 @@ Current service boundaries:
 - Single-node API + worker split (no multi-instance horizontal scaling or load balancer)
 - In-process async fallback when all Redis tiers unavailable (jobs lost on restart)
 - No persistent long-term job result store, queue-group isolation, or external/shared dead-letter system beyond BullMQ's failed-job set
-- No external log/metrics collector, OTLP exporter, or full distributed trace backend yet
+- No external log/metrics collector or full distributed trace backend yet
 
 ## Reviewer Authority
 
@@ -343,6 +343,7 @@ What it does not prove yet:
 - Control-plane backup / restore first slice: `npm run backup:control-plane` creates a logical snapshot of the hosted control-plane, including shared PostgreSQL-backed account/tenant/usage/billing-entitlement/admin-audit/account-user/account-session/account-user-action-token state when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, plus the shared PostgreSQL billing event ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is configured. Ephemeral idempotency/webhook stores can be included explicitly for DR drills, restore verifies snapshot checksums before writing, and admin audit snapshots with a broken hash chain are rejected instead of being imported. This is still a logical snapshot path, not PostgreSQL PITR or Redis queue recovery.
 - Stripe reconciliation first slice: `POST /api/v1/billing/stripe/webhook` verifies Stripe signatures, de-duplicates by `event.id`, reconciles hosted account billing state from `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, and `invoice.payment_failed`, and suspends/reactivates account access based on subscription status. When `ATTESTOR_CONTROL_PLANE_PG_URL` is set, duplicate suppression moves onto a shared PostgreSQL claim/finalize path with advisory-lock guarded processing instead of the local processed-event file; when `ATTESTOR_BILLING_LEDGER_PG_URL` is set, the same route also claims and finalizes events in the shared PostgreSQL billing ledger. This now persists checkout-completion and last-invoice summary truth, feeds the hosted billing entitlement read model, and backs hosted billing export with shared event history, but it is still not a full internal invoice line-item ledger or Stripe-native feature entitlement service.
 - Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices and a required `Idempotency-Key`, `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account, and `GET /api/v1/account/billing/export` returns customer-visible billing export in JSON or CSV. In runtime, `customer.subscription.*`, `checkout.session.completed`, and invoice webhooks sync Stripe billing truth back into Attestor hosted account and tenant state.
+- Observability first slice: request spans can now export to an external OTLP collector over HTTP/protobuf using standard `OTEL_*` env vars, while `GET /api/v1/admin/telemetry` exposes the current exporter status/config summary. Boundary: traces only; no external metrics/log collector or full distributed trace backend yet.
 - PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
 - Async: BullMQ with split worker process, bounded retry/backoff, exact paginated tenant-aware per-tenant pending-job caps on async submit, admin queue/DLQ introspection (`GET /api/v1/admin/queue`, `GET /api/v1/admin/queue/dlq`) and manual failed-job retry (`POST /api/v1/admin/queue/jobs/:id/retry`). In-process fallback remains explicit when Redis unavailable. No BullMQ Pro queue groups, distributed/shared rate limiting, or broader scheduling policy yet.
 - Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the current hosted tenant key store is configured; optional plan/quota metadata and rate-limit context now propagate into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
@@ -428,6 +429,17 @@ What it does not prove yet:
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | Optional retention window for encrypted admin replay payloads (default `24`) |
 | `ATTESTOR_BILLING_LEDGER_PG_URL` | Optional PostgreSQL connection URL for the shared Stripe billing event ledger used by `/api/v1/admin/billing/events` and cross-node webhook dedupe |
 | `ATTESTOR_OBSERVABILITY_LOG_PATH` | Optional JSONL path for structured API request logs with trace correlation and tenant/account context |
+| `OTEL_TRACES_EXPORTER` | Set to `otlp` to enable OTLP trace export (default remains disabled unless an OTLP endpoint/exporter is configured) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional OTLP base endpoint; Attestor appends `/v1/traces` for trace export |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Optional explicit OTLP traces endpoint override |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | Optional OTLP protocol override; this first slice supports `http/protobuf` only |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` | Optional traces protocol override; this first slice supports `http/protobuf` only |
+| `OTEL_EXPORTER_OTLP_HEADERS` | Optional comma-separated OTLP header list (`k=v,k2=v2`) |
+| `OTEL_EXPORTER_OTLP_TRACES_HEADERS` | Optional trace-export header override (`k=v,k2=v2`) |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | Optional OTLP export timeout in milliseconds |
+| `OTEL_EXPORTER_OTLP_TRACES_TIMEOUT` | Optional trace export timeout in milliseconds |
+| `OTEL_SERVICE_NAME` | Optional OpenTelemetry service name override for exported request spans |
+| `OTEL_SERVICE_INSTANCE_ID` | Optional OpenTelemetry service instance id override |
 | `STRIPE_API_KEY` | Stripe secret API key for hosted Checkout and Billing Portal session creation |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret for `POST /api/v1/billing/stripe/webhook` |
 | `ATTESTOR_STRIPE_PRICE_STARTER` | Stripe recurring price id for the hosted `starter` plan |
@@ -457,6 +469,6 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1394 tests across 10 suites: 557 unit + 492 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 35 control-plane backup/restore + 42 control-plane backup/restore shared PG + 83 live shared control-plane PG + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1405 tests across 11 suites: 557 unit + 495 live API + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 35 control-plane backup/restore + 42 control-plane backup/restore shared PG + 83 live shared control-plane PG + 8 live OTLP export + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |
