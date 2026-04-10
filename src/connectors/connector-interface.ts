@@ -67,6 +67,31 @@ export interface ConnectorExecutionResult {
     tables: string[];
     attestationHash: string;
     source: string;
+    columnFingerprint?: string | null;
+    constraintFingerprint?: string | null;
+    indexFingerprint?: string | null;
+    contentFingerprint?: string | null;
+    txidSnapshot?: string | null;
+    tableFingerprints?: Array<{
+      tableName: string;
+      rowCount: number;
+      sampledRowCount: number;
+      rowLimit: number;
+      mode: 'full' | 'truncated' | 'unavailable';
+      orderBy: string[];
+      contentHash: string | null;
+      maxXmin?: string | null;
+    }> | null;
+    historicalComparison?: {
+      historyKey: string;
+      previousCapturedAt: string;
+      previousAttestationHash: string;
+      currentAttestationHash: string;
+      schemaChanged: boolean;
+      dataChanged: boolean;
+      contentChanged: boolean;
+      summary: string;
+    } | null;
   } | null;
 }
 

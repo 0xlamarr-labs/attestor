@@ -182,10 +182,35 @@ export interface SchemaAttestationSummary {
   scope: 'schema_attestation_full' | 'schema_attestation_connector' | 'execution_context_only';
   executionContextHash: string | null;
   provider: string | null;
+  txidSnapshot: string | null;
+  columnFingerprint: string | null;
+  constraintFingerprint: string | null;
+  indexFingerprint: string | null;
   schemaFingerprint: string | null;
   sentinelFingerprint: string | null;
+  contentFingerprint: string | null;
   tableNames: string[] | null;
   attestationHash: string | null;
+  tableFingerprints: Array<{
+    tableName: string;
+    rowCount: number;
+    sampledRowCount: number;
+    rowLimit: number;
+    mode: 'full' | 'truncated' | 'unavailable';
+    orderBy: string[];
+    maxXmin: string | null;
+    contentHash: string | null;
+  }> | null;
+  historicalComparison: {
+    historyKey: string;
+    previousCapturedAt: string;
+    previousAttestationHash: string;
+    currentAttestationHash: string;
+    schemaChanged: boolean;
+    dataChanged: boolean;
+    contentChanged: boolean;
+    summary: string;
+  } | null;
 }
 
 // ─── Health ─────────────────────────────────────────────────────────────────

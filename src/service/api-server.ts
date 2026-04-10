@@ -515,6 +515,88 @@ function accountPasskeyCredentialView(record: AccountUserRecord['passkeys']['cre
   };
 }
 
+function schemaAttestationSummaryFromFull(attestation: any) {
+  return {
+    present: true,
+    scope: 'schema_attestation_full' as const,
+    executionContextHash: attestation.executionContextHash,
+    provider: 'postgres',
+    txidSnapshot: attestation.txidSnapshot ?? null,
+    columnFingerprint: attestation.columnFingerprint ?? null,
+    constraintFingerprint: attestation.constraintFingerprint ?? null,
+    indexFingerprint: attestation.indexFingerprint ?? null,
+    schemaFingerprint: attestation.schemaFingerprint,
+    sentinelFingerprint: attestation.sentinelFingerprint,
+    contentFingerprint: attestation.contentFingerprint ?? null,
+    tableNames: attestation.tables,
+    attestationHash: attestation.attestationHash,
+    tableFingerprints: Array.isArray(attestation.tableContentFingerprints)
+      ? attestation.tableContentFingerprints.map((entry: any) => {
+        const sentinel = Array.isArray(attestation.sentinels)
+          ? attestation.sentinels.find((candidate: any) => candidate.tableName === entry.tableName)
+          : null;
+        return {
+          tableName: entry.tableName,
+          rowCount: entry.rowCount,
+          sampledRowCount: entry.sampledRowCount,
+          rowLimit: entry.rowLimit,
+          mode: entry.mode,
+          orderBy: entry.orderBy,
+          maxXmin: sentinel?.maxXmin ?? null,
+          contentHash: entry.contentHash ?? null,
+        };
+      })
+      : null,
+    historicalComparison: attestation.historicalComparison ?? null,
+  };
+}
+
+function schemaAttestationSummaryFromConnector(
+  connectorExecution: any,
+  connectorProvider: string | null,
+) {
+  const attestation = connectorExecution?.schemaAttestation;
+  if (attestation) {
+    return {
+      present: true,
+      scope: 'schema_attestation_connector' as const,
+      executionContextHash: connectorExecution.executionContextHash,
+      provider: connectorProvider,
+      txidSnapshot: attestation.txidSnapshot ?? null,
+      columnFingerprint: attestation.columnFingerprint ?? null,
+      constraintFingerprint: attestation.constraintFingerprint ?? null,
+      indexFingerprint: attestation.indexFingerprint ?? null,
+      schemaFingerprint: attestation.schemaFingerprint,
+      sentinelFingerprint: attestation.sentinelFingerprint,
+      contentFingerprint: attestation.contentFingerprint ?? null,
+      tableNames: attestation.tables,
+      attestationHash: attestation.attestationHash,
+      tableFingerprints: attestation.tableFingerprints ?? null,
+      historicalComparison: attestation.historicalComparison ?? null,
+    };
+  }
+  if (connectorExecution?.executionContextHash) {
+    return {
+      present: true,
+      scope: 'execution_context_only' as const,
+      executionContextHash: connectorExecution.executionContextHash,
+      provider: connectorProvider,
+      txidSnapshot: null,
+      columnFingerprint: null,
+      constraintFingerprint: null,
+      indexFingerprint: null,
+      schemaFingerprint: null,
+      sentinelFingerprint: null,
+      contentFingerprint: null,
+      tableNames: null,
+      attestationHash: null,
+      tableFingerprints: null,
+      historicalComparison: null,
+    };
+  }
+  return null;
+}
+
 function accountUserActionTokenStatus(record: AccountUserActionTokenRecord): 'pending' | 'consumed' | 'revoked' | 'expired' {
   if (record.consumedAt) return 'consumed';
   if (record.revokedAt) return 'revoked';
@@ -5189,34 +5271,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
       signingMode: sign ? 'keyless' : null,
       connectorUsed: connectorProvider,
       // Schema/data-state attestation
-      schemaAttestation: fullSchemaAttestation ? {
-        present: true,
-        scope: 'schema_attestation_full' as const,
-        executionContextHash: fullSchemaAttestation.executionContextHash,
-        provider: 'postgres',
-        schemaFingerprint: fullSchemaAttestation.schemaFingerprint,
-        sentinelFingerprint: fullSchemaAttestation.sentinelFingerprint,
-        tableNames: fullSchemaAttestation.tables,
-        attestationHash: fullSchemaAttestation.attestationHash,
-      } : connectorExecution?.schemaAttestation ? {
-        present: true,
-        scope: 'schema_attestation_connector' as const,
-        executionContextHash: connectorExecution.executionContextHash,
-        provider: connectorProvider,
-        schemaFingerprint: connectorExecution.schemaAttestation.schemaFingerprint,
-        sentinelFingerprint: connectorExecution.schemaAttestation.sentinelFingerprint,
-        tableNames: connectorExecution.schemaAttestation.tables,
-        attestationHash: connectorExecution.schemaAttestation.attestationHash,
-      } : connectorExecution?.executionContextHash ? {
-        present: true,
-        scope: 'execution_context_only' as const,
-        executionContextHash: connectorExecution.executionContextHash,
-        provider: connectorProvider,
-        schemaFingerprint: null,
-        sentinelFingerprint: null,
-        tableNames: null,
-        attestationHash: null,
-      } : null,
+      schemaAttestation: fullSchemaAttestation
+        ? schemaAttestationSummaryFromFull(fullSchemaAttestation)
+        : schemaAttestationSummaryFromConnector(connectorExecution, connectorProvider),
       // Tenant context (from middleware)
       tenantContext: (() => {
         return { tenantId: tenant.tenantId, source: tenant.source, planId: tenant.planId };

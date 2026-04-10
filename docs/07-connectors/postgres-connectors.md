@@ -23,20 +23,24 @@ Attestor includes an optional PostgreSQL connector for real-database proof and a
 
 ### Schema/Data-State Attestation
 
-The PostgreSQL prove helper now captures a bounded schema/data-state attestation before governed execution.
+The PostgreSQL prove helper now captures a bounded verifier-facing schema/data-state attestation before governed execution.
 
 What exists today:
 
 - schema/table discovery from bounded SQL parsing
-- schema fingerprint capture
+- column + constraint + index fingerprint capture
 - sentinel/data-state fingerprint capture
+- bounded per-table content hashing with truthful `full|truncated|unavailable` mode
+- `txid_current_snapshot()` capture for point-in-time transaction context
+- historical comparison against the previous local attestation for the same scope
 - execution-context binding inside the Postgres prove flow
+- full verifier-facing schema-attestation summary on the API `postgres-prove` path
 
-What is still not uniform across every surface:
+What remains bounded:
 
-- full verifier-facing schema-attestation material in every API/kit response
-- historical attestation comparison across time
-- full table-content hashing or snapshot export
+- content hashing is sampled up to `ATTESTOR_SCHEMA_CONTENT_HASH_MAX_ROWS` rows per table and will surface `truncated` when a table exceeds that limit
+- historical comparison is local persistence, not target-database history or CDC
+- no target-database snapshot export or WAL-level proof
 
 ## Predictive Guardrails
 
@@ -84,6 +88,8 @@ Clauses are defined in the query intent, evaluated against actual execution resu
 | `ATTESTOR_PG_TIMEOUT_MS` | 10000 | Query timeout in milliseconds |
 | `ATTESTOR_PG_MAX_ROWS` | 10000 | Maximum result rows |
 | `ATTESTOR_PG_ALLOWED_SCHEMAS` | (none) | Comma-separated schema allowlist |
+| `ATTESTOR_SCHEMA_CONTENT_HASH_MAX_ROWS` | 1000 | Maximum sampled rows per table for bounded content hashing |
+| `ATTESTOR_SCHEMA_ATTESTATION_HISTORY_PATH` | `.attestor/postgres-schema-attestations.json` | Local history store used for repeated attestation comparison across time |
 
 ## Readiness Check
 
@@ -120,7 +126,15 @@ When a real PostgreSQL-backed proof run occurs, the authority bundle and verific
 
 These fields make a real DB-backed kit immediately distinguishable from a fixture-based kit without digging into the full report.
 
-The deeper `schemaAttestation` object is currently captured inside the Postgres prove flow and the self-contained proof script. Service/API surfaces still expose a smaller summary rather than the full attestation object.
+The deeper `schemaAttestation` object is now surfaced through the full `postgres-prove` API path as a verifier-facing summary, including:
+
+- `columnFingerprint`
+- `constraintFingerprint`
+- `indexFingerprint`
+- `contentFingerprint`
+- `txidSnapshot`
+- per-table bounded content fingerprints
+- historical comparison against the previous local attestation, when available
 
 ## Demo Bootstrap
 

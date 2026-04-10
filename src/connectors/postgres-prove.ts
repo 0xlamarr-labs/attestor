@@ -11,7 +11,8 @@
 
 import { executePostgresQuery, loadPostgresConfig, isPostgresConfigured, reportPostgresReadiness, type PostgresConfig, type PostgresExecutionResult } from './postgres.js';
 import { runPredictivePreflight, type PredictiveGuardrailResult } from './predictive-guardrails.js';
-import { captureSchemaAttestation, type SchemaAttestation } from './schema-attestation.js';
+import { captureSchemaAttestation, type HistoricalSchemaComparison, type SchemaAttestation } from './schema-attestation.js';
+import { buildSchemaAttestationHistoryKey, recordSchemaAttestationHistory } from './schema-attestation-history.js';
 import type { ExecutionEvidence } from '../financial/types.js';
 
 export interface PostgresProveResult {
@@ -31,6 +32,8 @@ export interface PostgresProveResult {
   };
   /** Schema and data-state attestation (when execution succeeded). */
   schemaAttestation: SchemaAttestation | null;
+  /** Comparison against the previous local attestation for the same attestation scope. */
+  historicalComparison: HistoricalSchemaComparison | null;
   /** Why Postgres was not used (if not attempted). */
   skipReason: string | null;
 }
@@ -50,6 +53,7 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
       execution: null,
       postgresEvidence: { executionContextHash: null, executionTimestamp: null, provider: 'postgres' },
       schemaAttestation: null,
+      historicalComparison: null,
       skipReason: readiness.message,
     };
   }
@@ -70,6 +74,7 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
       execution: null, // truthful: no execution occurred
       postgresEvidence: { executionContextHash: null, executionTimestamp: null, provider: 'postgres' },
       schemaAttestation: null,
+      historicalComparison: null,
       skipReason: `Predictive guardrail denied execution: ${preflight.signals.filter((s) => s.severity === 'critical').map((s) => s.detail).join('; ')}`,
     };
   }
@@ -103,6 +108,8 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
   // Update attestation with execution context hash
   if (schemaAttestation && pgResult.executionContextHash) {
     schemaAttestation.executionContextHash = pgResult.executionContextHash;
+    schemaAttestation.historyKey = buildSchemaAttestationHistoryKey(schemaAttestation);
+    schemaAttestation.historicalComparison = recordSchemaAttestationHistory(schemaAttestation);
   }
 
   // Step 5: Convert to ExecutionEvidence with truthful evidence separation
@@ -136,6 +143,7 @@ export async function runPostgresProve(sql: string): Promise<PostgresProveResult
       provider: 'postgres',
     },
     schemaAttestation,
+    historicalComparison: schemaAttestation?.historicalComparison ?? null,
     skipReason: null,
   };
 }

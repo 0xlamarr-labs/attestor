@@ -311,14 +311,8 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 - Demo bootstrap via `pg-demo-init`
 - Self-contained proof run via `scripts/real-db-proof.ts`
 - Execution provider and execution-context evidence in bundle and kit
-- Schema/data-state attestation: schema fingerprint, sentinel data, attestation hash in the Postgres prove path
-- API responses distinguish `schema_attestation_full`, `schema_attestation_connector`, and `execution_context_only` evidence scopes
-
-What it does not prove yet:
-
-- Full verifier-facing schema attestation surfaced uniformly across every API connector path
-- Table-level content hashing
-- Historical data-state attestation comparison across time
+- Deep schema/data-state attestation in the Postgres prove path: column + constraint + index fingerprints, txid snapshot, per-table bounded content fingerprints, attestation hash, and persisted historical comparison across time
+- API responses distinguish `schema_attestation_full`, `schema_attestation_connector`, and `execution_context_only` evidence scopes, with verifier-facing schema attestation details surfaced on the full Postgres prove path
 
 ## Current Capability Maturity
 
@@ -328,6 +322,7 @@ What it does not prove yet:
 - Secure encrypted token store (AES-256-GCM) as default OIDC persistence for both read and write. Plaintext cache is not read by default. Legacy import: `ATTESTOR_PLAINTEXT_TOKEN_IMPORT=1` (one-time). Plaintext write: `ATTESTOR_PLAINTEXT_TOKEN_FALLBACK=1` (opt-in).
 - xBRL US-GAAP 2024 + xBRL-CSV EBA DPM 2.0 adapters registered in API filing export
 - Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport (R4 schema-validated) + QRDA III generation with 5-tier local/runtime validation all passing zero errors (structural self-validation + CMS IG XPath + real CMS 2026 Schematron + Cypress-equivalent Layers 2-6), plus live VSAC Layer 7 expansion (11/11 curated targets) and real ONC Cypress zero-error validation on the demo service
+- PostgreSQL proof path now ships verifier-facing schema attestation through the API/CLI full prove path, including structure fingerprints, bounded table-content hashing, txid snapshot capture, and historical attestation comparison via local history persistence
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
 - Redis async backend with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis → in-process fallback). BullMQ active when any Redis tier resolves.
 - Split API/worker deployment (single-node first slice): `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown. Not horizontal multi-node — see Capability modules.
@@ -525,7 +520,7 @@ What it does not prove yet:
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1805 tests across 23 suites: 557 unit + 588 live API + 35 live account passkeys + 30 live account email delivery + 27 live account OIDC SSO + 43 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 38 control-plane backup/restore + 51 control-plane backup/restore shared PG + 148 live shared control-plane PG + 21 live OTLP export + 32 observability bundle + 15 DR bundle + 18 Kubernetes HA bundle + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1826 tests across 23 suites: 557 unit + 588 live API + 35 live account passkeys + 30 live account email delivery + 27 live account OIDC SSO + 64 live PostgreSQL + 38 connector/filing + 98 healthcare E2E + 38 control-plane backup/restore + 51 control-plane backup/restore shared PG + 148 live shared control-plane PG + 21 live OTLP export + 32 observability bundle + 15 DR bundle + 18 Kubernetes HA bundle + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live Cypress connectivity + 3 live VSAC connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |
 | `ATTESTOR_WORKER_HEALTH_PORT` | Optional worker probe port exposing `/health` and `/ready` for orchestrator liveness/readiness checks (default `9808`) |

@@ -1,27 +1,24 @@
 /**
  * Schema and Data-State Attestation
  *
- * Captures bounded, verifiable evidence of the database schema and data state
- * at the time of a governed query execution. This is NOT a full database
- * snapshot — it is a fingerprint that proves:
+ * Captures bounded, verifier-facing evidence of database structure and data state
+ * at the time of a governed query execution.
  *
- * 1. WHICH tables existed with WHICH columns and types (schema fingerprint)
- * 2. HOW MUCH data was in each table at query time (row count sentinels)
- * 3. WHETHER any rows were modified since a reference point (xmin sentinel)
+ * What this now proves:
+ * 1. Which columns existed, in what order, with what defaults/nullability
+ * 2. Which constraints and indexes were present on the attested tables
+ * 3. Per-table row-count/xmin sentinels
+ * 4. Bounded per-table content fingerprints over deterministic row samples
+ * 5. Historical attestation deltas across repeated captures outside the target DB
  *
  * HONEST BOUNDARIES:
- * - Proves schema structure, not data content
- * - Detects volume changes, not specific row mutations
- * - xmin-based change detection is bounded (transaction-ID wraparound limits)
- * - This is evidence, not a full audit trail — CDC is needed for row-level attribution
- *
- * ZERO TARGET DATABASE CHANGES REQUIRED.
- * All queries use information_schema and pg_catalog — read-only, safe.
+ * - Content hashing is bounded by ATTTESTOR_SCHEMA_CONTENT_HASH_MAX_ROWS and will
+ *   surface `mode=truncated` if the table is larger than the sampled window
+ * - Historical comparison persists locally; it does not write to the target DB
+ * - This is attestation evidence, not a full CDC/audit trail
  */
 
 import { createHash } from 'node:crypto';
-
-// ─── Types ──────────────────────────────────────────────────────────────────
 
 export interface SchemaColumn {
   tableName: string;
@@ -32,42 +29,71 @@ export interface SchemaColumn {
   ordinalPosition: number;
 }
 
+export interface SchemaConstraint {
+  tableName: string;
+  constraintName: string;
+  constraintType: string;
+  columnNames: string[];
+  referencedTableName: string | null;
+  referencedColumnNames: string[];
+  checkClause: string | null;
+}
+
+export interface SchemaIndex {
+  tableName: string;
+  indexName: string;
+  indexDefinition: string;
+}
+
 export interface TableSentinel {
   tableName: string;
   rowCount: number;
-  /** Max transaction ID — detects any row modification since last check. */
   maxXmin: string | null;
+}
+
+export interface TableContentFingerprint {
+  tableName: string;
+  rowCount: number;
+  sampledRowCount: number;
+  rowLimit: number;
+  mode: 'full' | 'truncated' | 'unavailable';
+  orderBy: string[];
+  contentHash: string | null;
+}
+
+export interface HistoricalSchemaComparison {
+  historyKey: string;
+  previousCapturedAt: string;
+  previousAttestationHash: string;
+  currentAttestationHash: string;
+  schemaChanged: boolean;
+  dataChanged: boolean;
+  contentChanged: boolean;
+  summary: string;
 }
 
 export interface SchemaAttestation {
   version: '1.0';
   type: 'attestor.schema_attestation.v1';
   capturedAt: string;
-  /** Database context hash at capture time. */
   executionContextHash: string | null;
-  /** Schema fingerprint: SHA-256 of ordered column definitions. */
-  schemaFingerprint: string;
-  /** Per-table column definitions. */
-  columns: SchemaColumn[];
-  /** Per-table data sentinels. */
-  sentinels: TableSentinel[];
-  /** Sentinel fingerprint: SHA-256 of ordered sentinel values. */
-  sentinelFingerprint: string;
-  /** Combined attestation hash: schema + sentinels. */
-  attestationHash: string;
-  /** Tables that were attested. */
-  tables: string[];
-  /** Schema name. */
+  txidSnapshot: string | null;
   schemaName: string;
-}
-
-export interface SchemaComparisonResult {
-  schemaChanged: boolean;
-  dataChanged: boolean;
-  /** Per-table comparison. */
-  tableChanges: TableChange[];
-  /** Summary. */
-  summary: string;
+  tables: string[];
+  columns: SchemaColumn[];
+  constraints: SchemaConstraint[];
+  indexes: SchemaIndex[];
+  sentinels: TableSentinel[];
+  tableContentFingerprints: TableContentFingerprint[];
+  columnFingerprint: string;
+  constraintFingerprint: string;
+  indexFingerprint: string;
+  schemaFingerprint: string;
+  sentinelFingerprint: string;
+  contentFingerprint: string;
+  attestationHash: string;
+  historyKey: string | null;
+  historicalComparison: HistoricalSchemaComparison | null;
 }
 
 export interface TableChange {
@@ -77,14 +103,139 @@ export interface TableChange {
   previousRowCount: number | null;
   currentRowCount: number | null;
   xminChanged: boolean;
+  contentChanged: boolean;
+  previousContentHash: string | null;
+  currentContentHash: string | null;
 }
 
-// ─── Schema Capture (PostgreSQL) ────────────────────────────────────────────
+export interface SchemaComparisonResult {
+  schemaChanged: boolean;
+  dataChanged: boolean;
+  contentChanged: boolean;
+  tableChanges: TableChange[];
+  summary: string;
+}
 
-/**
- * Capture schema attestation from a live PostgreSQL connection.
- * Requires an active pg Client that is already connected.
- */
+function sha256(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 32);
+}
+
+function contentHashRowLimit(): number {
+  const parsed = Number.parseInt(process.env.ATTESTOR_SCHEMA_CONTENT_HASH_MAX_ROWS ?? '1000', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1000;
+}
+
+function quoteIdent(identifier: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+    throw new Error(`Unsafe SQL identifier '${identifier}' for schema attestation.`);
+  }
+  return `"${identifier}"`;
+}
+
+function canonicalizeValue(value: unknown): string {
+  if (value === null || value === undefined) return 'null';
+  if (Buffer.isBuffer(value)) return JSON.stringify(`base64:${value.toString('base64')}`);
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (Array.isArray(value)) return `[${value.map((entry) => canonicalizeValue(entry)).join(',')}]`;
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalizeValue(entry)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function canonicalizeRow(row: Record<string, unknown>, orderedColumns: string[]): string {
+  const parts = orderedColumns.map((column) => `${JSON.stringify(column)}:${canonicalizeValue(row[column])}`);
+  return `{${parts.join(',')}}`;
+}
+
+function groupConstraints(rows: any[]): SchemaConstraint[] {
+  const grouped = new Map<string, SchemaConstraint>();
+  for (const row of rows) {
+    const key = `${row.table_name}::${row.constraint_name}`;
+    const existing: SchemaConstraint = grouped.get(key) ?? {
+      tableName: row.table_name,
+      constraintName: row.constraint_name,
+      constraintType: row.constraint_type,
+      columnNames: [],
+      referencedTableName: row.referenced_table_name ?? null,
+      referencedColumnNames: [],
+      checkClause: row.check_clause ?? null,
+    };
+    if (typeof row.column_name === 'string' && !existing.columnNames.includes(row.column_name)) {
+      existing.columnNames.push(row.column_name);
+    }
+    if (typeof row.referenced_column_name === 'string' && !existing.referencedColumnNames.includes(row.referenced_column_name)) {
+      existing.referencedColumnNames.push(row.referenced_column_name);
+    }
+    grouped.set(key, existing);
+  }
+  return [...grouped.values()].sort((left, right) =>
+    left.tableName.localeCompare(right.tableName)
+    || left.constraintType.localeCompare(right.constraintType)
+    || left.constraintName.localeCompare(right.constraintName));
+}
+
+function primaryKeyColumnsForTable(constraints: SchemaConstraint[], tableName: string): string[] {
+  return constraints
+    .filter((constraint) => constraint.tableName === tableName && constraint.constraintType === 'PRIMARY KEY')
+    .flatMap((constraint) => constraint.columnNames);
+}
+
+async function captureTableContentFingerprint(options: {
+  client: any;
+  schemaName: string;
+  tableName: string;
+  columns: SchemaColumn[];
+  rowCount: number;
+  primaryKeyColumns: string[];
+}): Promise<TableContentFingerprint> {
+  const rowLimit = contentHashRowLimit();
+  const orderedColumns = options.columns
+    .sort((left, right) => left.ordinalPosition - right.ordinalPosition)
+    .map((column) => column.columnName);
+  const orderBy = options.primaryKeyColumns.length > 0 ? [...options.primaryKeyColumns] : ['ctid'];
+  try {
+    const projection = orderedColumns.map((column) => quoteIdent(column));
+    if (options.primaryKeyColumns.length === 0) {
+      projection.push('ctid::text AS "__attestor_ctid"');
+      orderedColumns.push('__attestor_ctid');
+    }
+    const orderSql = options.primaryKeyColumns.length > 0
+      ? options.primaryKeyColumns.map((column) => quoteIdent(column)).join(', ')
+      : 'ctid';
+    const rowsResult = await options.client.query(
+      `SELECT ${projection.join(', ')}
+         FROM ${quoteIdent(options.schemaName)}.${quoteIdent(options.tableName)}
+        ORDER BY ${orderSql}
+        LIMIT $1`,
+      [rowLimit],
+    );
+    const rowStrings = rowsResult.rows.map((row: Record<string, unknown>) => canonicalizeRow(row, orderedColumns));
+    return {
+      tableName: options.tableName,
+      rowCount: options.rowCount,
+      sampledRowCount: rowsResult.rows.length,
+      rowLimit,
+      mode: options.rowCount > rowLimit ? 'truncated' : 'full',
+      orderBy,
+      contentHash: sha256(rowStrings.join('\n')),
+    };
+  } catch {
+    return {
+      tableName: options.tableName,
+      rowCount: options.rowCount,
+      sampledRowCount: 0,
+      rowLimit,
+      mode: 'unavailable',
+      orderBy,
+      contentHash: null,
+    };
+  }
+}
+
 export async function captureSchemaAttestation(
   client: any,
   schemaName: string,
@@ -93,135 +244,209 @@ export async function captureSchemaAttestation(
 ): Promise<SchemaAttestation> {
   const capturedAt = new Date().toISOString();
 
-  // 1. Schema fingerprint — query information_schema.columns
-  const colResult = await client.query(`
-    SELECT table_name, column_name, data_type, is_nullable, column_default, ordinal_position
-    FROM information_schema.columns
-    WHERE table_schema = $1 AND table_name = ANY($2)
-    ORDER BY table_name, ordinal_position
-  `, [schemaName, tables]);
+  const txidSnapshotResult = await client.query('SELECT txid_current_snapshot()::text AS snapshot');
+  const txidSnapshot = txidSnapshotResult.rows[0]?.snapshot ?? null;
 
-  const columns: SchemaColumn[] = colResult.rows.map((r: any) => ({
-    tableName: r.table_name,
-    columnName: r.column_name,
-    dataType: r.data_type,
-    isNullable: r.is_nullable,
-    columnDefault: r.column_default,
-    ordinalPosition: Number(r.ordinal_position),
+  const colResult = await client.query(
+    `
+      SELECT table_name, column_name, data_type, is_nullable, column_default, ordinal_position
+      FROM information_schema.columns
+      WHERE table_schema = $1
+        AND table_name = ANY($2)
+      ORDER BY table_name, ordinal_position
+    `,
+    [schemaName, tables],
+  );
+
+  const columns: SchemaColumn[] = colResult.rows.map((row: any) => ({
+    tableName: row.table_name,
+    columnName: row.column_name,
+    dataType: row.data_type,
+    isNullable: row.is_nullable,
+    columnDefault: row.column_default,
+    ordinalPosition: Number(row.ordinal_position),
   }));
 
-  const schemaFingerprint = createHash('sha256')
-    .update(JSON.stringify(columns))
-    .digest('hex')
-    .slice(0, 32);
+  const constraintResult = await client.query(
+    `
+      SELECT
+        tc.table_name,
+        tc.constraint_name,
+        tc.constraint_type,
+        kcu.column_name,
+        ccu.table_name AS referenced_table_name,
+        ccu.column_name AS referenced_column_name,
+        cc.check_clause
+      FROM information_schema.table_constraints tc
+      LEFT JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_schema = kcu.constraint_schema
+       AND tc.constraint_name = kcu.constraint_name
+       AND tc.table_name = kcu.table_name
+      LEFT JOIN information_schema.constraint_column_usage ccu
+        ON tc.constraint_schema = ccu.constraint_schema
+       AND tc.constraint_name = ccu.constraint_name
+      LEFT JOIN information_schema.check_constraints cc
+        ON tc.constraint_schema = cc.constraint_schema
+       AND tc.constraint_name = cc.constraint_name
+      WHERE tc.table_schema = $1
+        AND tc.table_name = ANY($2)
+      ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position NULLS LAST, ccu.column_name NULLS LAST
+    `,
+    [schemaName, tables],
+  );
+  const constraints = groupConstraints(constraintResult.rows);
 
-  // 2. Data sentinels — COUNT(*) + MAX(xmin) per table
+  const indexResult = await client.query(
+    `
+      SELECT tablename AS table_name, indexname AS index_name, indexdef AS index_definition
+      FROM pg_indexes
+      WHERE schemaname = $1
+        AND tablename = ANY($2)
+      ORDER BY tablename, indexname
+    `,
+    [schemaName, tables],
+  );
+  const indexes: SchemaIndex[] = indexResult.rows.map((row: any) => ({
+    tableName: row.table_name,
+    indexName: row.index_name,
+    indexDefinition: row.index_definition,
+  }));
+
   const sentinels: TableSentinel[] = [];
-  for (const table of tables) {
+  const tableContentFingerprints: TableContentFingerprint[] = [];
+  for (const tableName of tables) {
+    let sentinel: TableSentinel = { tableName, rowCount: 0, maxXmin: null };
     try {
-      const sentResult = await client.query(
-        `SELECT COUNT(*)::int AS row_count, MAX(xmin::text::bigint)::text AS max_xmin FROM "${schemaName}"."${table}"`
+      const sentinelResult = await client.query(
+        `SELECT COUNT(*)::int AS row_count, MAX(xmin::text::bigint)::text AS max_xmin
+           FROM ${quoteIdent(schemaName)}.${quoteIdent(tableName)}`,
       );
-      sentinels.push({
-        tableName: table,
-        rowCount: sentResult.rows[0]?.row_count ?? 0,
-        maxXmin: sentResult.rows[0]?.max_xmin ?? null,
-      });
+      sentinel = {
+        tableName,
+        rowCount: sentinelResult.rows[0]?.row_count ?? 0,
+        maxXmin: sentinelResult.rows[0]?.max_xmin ?? null,
+      };
     } catch {
-      // Table might not exist or access denied — record as zero
-      sentinels.push({ tableName: table, rowCount: 0, maxXmin: null });
+      sentinel = { tableName, rowCount: 0, maxXmin: null };
     }
+    sentinels.push(sentinel);
+    tableContentFingerprints.push(await captureTableContentFingerprint({
+      client,
+      schemaName,
+      tableName,
+      columns: columns.filter((column) => column.tableName === tableName),
+      rowCount: sentinel.rowCount,
+      primaryKeyColumns: primaryKeyColumnsForTable(constraints, tableName),
+    }));
   }
 
-  const sentinelFingerprint = createHash('sha256')
-    .update(JSON.stringify(sentinels))
-    .digest('hex')
-    .slice(0, 32);
-
-  // 3. Combined attestation hash
-  const attestationHash = createHash('sha256')
-    .update(`${schemaFingerprint}|${sentinelFingerprint}|${capturedAt}`)
-    .digest('hex')
-    .slice(0, 32);
+  const columnFingerprint = sha256(JSON.stringify(columns));
+  const constraintFingerprint = sha256(JSON.stringify(constraints));
+  const indexFingerprint = sha256(JSON.stringify(indexes));
+  const schemaFingerprint = sha256(`${columnFingerprint}|${constraintFingerprint}|${indexFingerprint}`);
+  const sentinelFingerprint = sha256(JSON.stringify(sentinels));
+  const contentFingerprint = sha256(JSON.stringify(tableContentFingerprints));
+  const attestationHash = sha256(
+    `${schemaFingerprint}|${sentinelFingerprint}|${contentFingerprint}|${txidSnapshot ?? ''}|${capturedAt}`,
+  );
 
   return {
     version: '1.0',
     type: 'attestor.schema_attestation.v1',
     capturedAt,
     executionContextHash,
-    schemaFingerprint,
-    columns,
-    sentinels,
-    sentinelFingerprint,
-    attestationHash,
-    tables,
+    txidSnapshot,
     schemaName,
+    tables,
+    columns,
+    constraints,
+    indexes,
+    sentinels,
+    tableContentFingerprints,
+    columnFingerprint,
+    constraintFingerprint,
+    indexFingerprint,
+    schemaFingerprint,
+    sentinelFingerprint,
+    contentFingerprint,
+    attestationHash,
+    historyKey: null,
+    historicalComparison: null,
   };
 }
 
-// ─── Schema Comparison ──────────────────────────────────────────────────────
-
-/**
- * Compare two schema attestations to detect changes.
- */
 export function compareSchemaAttestations(
   previous: SchemaAttestation,
   current: SchemaAttestation,
 ): SchemaComparisonResult {
   const schemaChanged = previous.schemaFingerprint !== current.schemaFingerprint;
+  const contentChanged = previous.contentFingerprint !== current.contentFingerprint;
 
-  const prevSentinelMap = new Map(previous.sentinels.map(s => [s.tableName, s]));
-  const currSentinelMap = new Map(current.sentinels.map(s => [s.tableName, s]));
+  const prevSentinelMap = new Map(previous.sentinels.map((sentinel) => [sentinel.tableName, sentinel]));
+  const currSentinelMap = new Map(current.sentinels.map((sentinel) => [sentinel.tableName, sentinel]));
+  const prevContentMap = new Map(previous.tableContentFingerprints.map((fingerprint) => [fingerprint.tableName, fingerprint]));
+  const currContentMap = new Map(current.tableContentFingerprints.map((fingerprint) => [fingerprint.tableName, fingerprint]));
 
   const allTables = new Set([...previous.tables, ...current.tables]);
   const tableChanges: TableChange[] = [];
   let anyDataChanged = false;
 
-  for (const table of allTables) {
-    const prev = prevSentinelMap.get(table);
-    const curr = currSentinelMap.get(table);
+  for (const tableName of allTables) {
+    const previousColumns = previous.columns.filter((column) => column.tableName === tableName);
+    const currentColumns = current.columns.filter((column) => column.tableName === tableName);
+    const previousConstraints = previous.constraints.filter((constraint) => constraint.tableName === tableName);
+    const currentConstraints = current.constraints.filter((constraint) => constraint.tableName === tableName);
+    const previousIndexes = previous.indexes.filter((index) => index.tableName === tableName);
+    const currentIndexes = current.indexes.filter((index) => index.tableName === tableName);
+    const prevSentinel = prevSentinelMap.get(tableName);
+    const currSentinel = currSentinelMap.get(tableName);
+    const prevContent = prevContentMap.get(tableName);
+    const currContent = currContentMap.get(tableName);
 
-    const rowCountChanged = (prev?.rowCount ?? -1) !== (curr?.rowCount ?? -1);
-    const xminChanged = (prev?.maxXmin ?? '') !== (curr?.maxXmin ?? '');
+    const tableSchemaChanged =
+      JSON.stringify(previousColumns) !== JSON.stringify(currentColumns)
+      || JSON.stringify(previousConstraints) !== JSON.stringify(currentConstraints)
+      || JSON.stringify(previousIndexes) !== JSON.stringify(currentIndexes);
+    const rowCountChanged = (prevSentinel?.rowCount ?? -1) !== (currSentinel?.rowCount ?? -1);
+    const xminChanged = (prevSentinel?.maxXmin ?? '') !== (currSentinel?.maxXmin ?? '');
+    const tableContentChanged = (prevContent?.contentHash ?? '') !== (currContent?.contentHash ?? '')
+      || (prevContent?.mode ?? '') !== (currContent?.mode ?? '');
 
-    if (rowCountChanged || xminChanged) anyDataChanged = true;
-
-    // Check if columns changed for this specific table
-    const prevCols = previous.columns.filter(c => c.tableName === table);
-    const currCols = current.columns.filter(c => c.tableName === table);
-    const tblSchemaChanged = JSON.stringify(prevCols) !== JSON.stringify(currCols);
+    if (rowCountChanged || xminChanged || tableContentChanged) {
+      anyDataChanged = true;
+    }
 
     tableChanges.push({
-      tableName: table,
-      schemaChanged: tblSchemaChanged,
+      tableName,
+      schemaChanged: tableSchemaChanged,
       rowCountChanged,
-      previousRowCount: prev?.rowCount ?? null,
-      currentRowCount: curr?.rowCount ?? null,
+      previousRowCount: prevSentinel?.rowCount ?? null,
+      currentRowCount: currSentinel?.rowCount ?? null,
       xminChanged,
+      contentChanged: tableContentChanged,
+      previousContentHash: prevContent?.contentHash ?? null,
+      currentContentHash: currContent?.contentHash ?? null,
     });
   }
 
-  const changedTables = tableChanges.filter(t => t.schemaChanged || t.rowCountChanged || t.xminChanged);
+  const changedTables = tableChanges.filter((table) =>
+    table.schemaChanged || table.rowCountChanged || table.xminChanged || table.contentChanged);
   const summary = changedTables.length === 0
-    ? `No changes detected across ${allTables.size} tables.`
-    : `${changedTables.length} of ${allTables.size} tables changed: ${changedTables.map(t => t.tableName).join(', ')}.`;
+    ? `No schema/data changes detected across ${allTables.size} attested tables.`
+    : `${changedTables.length} of ${allTables.size} attested tables changed: ${changedTables.map((table) => table.tableName).join(', ')}.`;
 
-  return { schemaChanged, dataChanged: anyDataChanged, tableChanges, summary };
+  return {
+    schemaChanged,
+    dataChanged: anyDataChanged,
+    contentChanged,
+    tableChanges,
+    summary,
+  };
 }
 
-// ─── Offline Schema Fingerprint (for fixture/SQLite) ────────────────────────
-
-/**
- * Create a schema fingerprint from column definitions without a live DB connection.
- * Used for fixture-based runs where we know the schema statically.
- */
 export function createOfflineSchemaFingerprint(
   columns: { tableName: string; columnName: string; dataType: string }[],
 ): string {
-  return createHash('sha256')
-    .update(JSON.stringify(columns.sort((a, b) =>
-      a.tableName.localeCompare(b.tableName) || a.columnName.localeCompare(b.columnName)
-    )))
-    .digest('hex')
-    .slice(0, 32);
+  return sha256(JSON.stringify(columns.sort((left, right) =>
+    left.tableName.localeCompare(right.tableName) || left.columnName.localeCompare(right.columnName))));
 }
