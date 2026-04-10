@@ -46,6 +46,7 @@ async function main(): Promise<void> {
     ATTESTOR_ASYNC_ACTIVE_STARTER_JOBS: process.env.ATTESTOR_ASYNC_ACTIVE_STARTER_JOBS,
     ATTESTOR_ASYNC_WORKER_CONCURRENCY: process.env.ATTESTOR_ASYNC_WORKER_CONCURRENCY,
     ATTESTOR_ASYNC_ACTIVE_REDIS_URL: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL,
+    ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS: process.env.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS,
   };
 
   const redis = new RedisMemoryServer();
@@ -59,6 +60,9 @@ async function main(): Promise<void> {
   process.env.ATTESTOR_ASYNC_ACTIVE_STARTER_JOBS = '1';
   process.env.ATTESTOR_ASYNC_WORKER_CONCURRENCY = '2';
   process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL = redisUrl;
+  // Keep weighted dispatch effectively out of the way here so this suite stays focused
+  // on active-execution isolation rather than plan-level fairness.
+  process.env.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS = '1';
 
   const startTimes = new Map<string, number[]>();
   let concurrentRunning = 0;
@@ -174,6 +178,7 @@ async function main(): Promise<void> {
     if (previousEnv.ATTESTOR_ASYNC_ACTIVE_STARTER_JOBS === undefined) delete process.env.ATTESTOR_ASYNC_ACTIVE_STARTER_JOBS; else process.env.ATTESTOR_ASYNC_ACTIVE_STARTER_JOBS = previousEnv.ATTESTOR_ASYNC_ACTIVE_STARTER_JOBS;
     if (previousEnv.ATTESTOR_ASYNC_WORKER_CONCURRENCY === undefined) delete process.env.ATTESTOR_ASYNC_WORKER_CONCURRENCY; else process.env.ATTESTOR_ASYNC_WORKER_CONCURRENCY = previousEnv.ATTESTOR_ASYNC_WORKER_CONCURRENCY;
     if (previousEnv.ATTESTOR_ASYNC_ACTIVE_REDIS_URL === undefined) delete process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL; else process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL = previousEnv.ATTESTOR_ASYNC_ACTIVE_REDIS_URL;
+    if (previousEnv.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS === undefined) delete process.env.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS; else process.env.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS = previousEnv.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS;
   }
 }
 

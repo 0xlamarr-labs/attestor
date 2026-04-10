@@ -19,7 +19,7 @@
  *
  * BOUNDARY:
  * - Single logical queue first slice
- * - Tenant fairness is enforced via per-tenant pending-job caps on submit plus shared tenant active-execution caps at worker runtime, not BullMQ Pro groups
+ * - Tenant fairness is enforced via per-tenant pending-job caps on submit plus shared tenant active-execution caps and shared weighted dispatch windows at worker runtime, not BullMQ Pro groups
  * - BullMQ failed jobs remain the runtime source of truth, but terminal failures are also copied into a persistent DLQ store
  * - No long-term job result persistence outside BullMQ retention
  */
@@ -35,8 +35,12 @@ import {
   releaseTenantAsyncExecutionLease,
   tenantAsyncExecutionHeartbeatMs,
 } from './async-tenant-execution.js';
+import {
+  acquireTenantAsyncWeightedDispatchPermit,
+  getTenantAsyncWeightedDispatchState,
+} from './async-weighted-dispatch.js';
 import { removeAsyncDeadLetterRecordState, upsertAsyncDeadLetterRecordState } from './control-plane-store.js';
-import { resolvePlanAsyncQueue } from './plan-catalog.js';
+import { resolvePlanAsyncDispatch, resolvePlanAsyncQueue } from './plan-catalog.js';
 
 export interface PipelineJobTenantContext {
   tenantId: string;
@@ -79,6 +83,12 @@ export interface TenantAsyncQueueSnapshot {
   activeExecutionLimit: number | null;
   activeExecutionEnforced: boolean;
   activeExecutionBackend: 'memory' | 'redis';
+  weightedDispatchEnforced: boolean;
+  weightedDispatchBackend: 'memory' | 'redis';
+  weightedDispatchWeight: number | null;
+  weightedDispatchWindowMs: number | null;
+  weightedDispatchNextEligibleAt: string | null;
+  weightedDispatchWaitMs: number;
   scanLimit: number;
   scanTruncated: boolean;
   states: {
@@ -422,13 +432,14 @@ export async function getTenantAsyncQueueSnapshot(
   planId: string | null,
 ): Promise<TenantAsyncQueueSnapshot> {
   const scanLimit = normalizeTenantScanLimit();
-  const [waiting, active, delayed, prioritized, failed, executionState] = await Promise.all([
+  const [waiting, active, delayed, prioritized, failed, executionState, dispatchState] = await Promise.all([
     countTenantJobsByState(queue, tenantId, 'waiting'),
     countTenantJobsByState(queue, tenantId, 'active'),
     countTenantJobsByState(queue, tenantId, 'delayed'),
     countTenantJobsByState(queue, tenantId, 'prioritized'),
     countTenantJobsByState(queue, tenantId, 'failed'),
     getTenantAsyncExecutionState(queue.name, tenantId, planId),
+    getTenantAsyncWeightedDispatchState(queue.name, tenantId, planId),
   ]);
   const states = tenantStateCounter();
   states.waiting = waiting;
@@ -448,6 +459,12 @@ export async function getTenantAsyncQueueSnapshot(
     activeExecutionLimit: executionState.activeExecutionLimit,
     activeExecutionEnforced: executionState.enforced,
     activeExecutionBackend: executionState.backend,
+    weightedDispatchEnforced: dispatchState.enabled,
+    weightedDispatchBackend: dispatchState.backend,
+    weightedDispatchWeight: dispatchState.dispatchWeight,
+    weightedDispatchWindowMs: dispatchState.dispatchWindowMs,
+    weightedDispatchNextEligibleAt: dispatchState.nextEligibleAt,
+    weightedDispatchWaitMs: dispatchState.waitMs,
     scanLimit,
     scanTruncated: false,
     states,
@@ -588,6 +605,22 @@ export function createPipelineWorker(config?: AsyncPipelineConfig): Worker<Pipel
       ensureValidPipelineJobData(job.data);
 
       const tenantContext = job.data.tenant;
+      const dispatchPermit = await acquireTenantAsyncWeightedDispatchPermit({
+        queueName,
+        tenantId: tenantContext.tenantId,
+        planId: tenantContext.planId,
+      });
+      if (!dispatchPermit.acquired) {
+        if (!token) {
+          throw new Error(`BullMQ worker token missing while rescheduling weighted dispatch for tenant '${tenantContext.tenantId}'.`);
+        }
+        const delayUntil = dispatchPermit.state.nextEligibleAt
+          ? new Date(dispatchPermit.state.nextEligibleAt).getTime()
+          : Date.now() + Math.max(50, dispatchPermit.state.dispatchWindowMs ?? resolvePlanAsyncDispatch(tenantContext.planId).dispatchWindowMs ?? 100);
+        await job.moveToDelayed(delayUntil, token);
+        throw new DelayedError();
+      }
+
       const executionLease = await acquireTenantAsyncExecutionLease({
         queueName,
         tenantId: tenantContext.tenantId,

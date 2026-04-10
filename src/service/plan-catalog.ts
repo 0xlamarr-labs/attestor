@@ -17,6 +17,7 @@ export interface HostedPlanDefinition {
   defaultPipelineRequestsPerWindow: number | null;
   defaultAsyncPendingJobsPerTenant: number | null;
   defaultAsyncActiveJobsPerTenant: number | null;
+  defaultAsyncDispatchWeight: number | null;
   intendedFor: 'self_host' | 'hosted' | 'enterprise';
   defaultForHostedProvisioning: boolean;
 }
@@ -54,6 +55,16 @@ export interface PlanAsyncExecutionSpec {
   source: 'plan_default' | 'env_override' | 'custom_unlimited';
 }
 
+export interface PlanAsyncDispatchSpec {
+  planId: string;
+  dispatchWeight: number | null;
+  dispatchWindowMs: number | null;
+  enabled: boolean;
+  knownPlan: boolean;
+  baseIntervalMs: number;
+  source: 'plan_default' | 'env_override' | 'custom_disabled';
+}
+
 export interface PlanStripePriceSpec {
   planId: string;
   priceId: string | null;
@@ -74,6 +85,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultPipelineRequestsPerWindow: null,
     defaultAsyncPendingJobsPerTenant: null,
     defaultAsyncActiveJobsPerTenant: null,
+    defaultAsyncDispatchWeight: null,
     intendedFor: 'self_host',
     defaultForHostedProvisioning: false,
   },
@@ -85,6 +97,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultPipelineRequestsPerWindow: 10,
     defaultAsyncPendingJobsPerTenant: 2,
     defaultAsyncActiveJobsPerTenant: 1,
+    defaultAsyncDispatchWeight: 1,
     intendedFor: 'hosted',
     defaultForHostedProvisioning: true,
   },
@@ -96,6 +109,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultPipelineRequestsPerWindow: 60,
     defaultAsyncPendingJobsPerTenant: 8,
     defaultAsyncActiveJobsPerTenant: 2,
+    defaultAsyncDispatchWeight: 2,
     intendedFor: 'hosted',
     defaultForHostedProvisioning: false,
   },
@@ -107,6 +121,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     defaultPipelineRequestsPerWindow: 300,
     defaultAsyncPendingJobsPerTenant: 32,
     defaultAsyncActiveJobsPerTenant: 4,
+    defaultAsyncDispatchWeight: 4,
     intendedFor: 'enterprise',
     defaultForHostedProvisioning: false,
   },
@@ -134,6 +149,10 @@ function asyncActiveEnvNameForPlan(planId: HostedPlanId): string {
   return `ATTESTOR_ASYNC_ACTIVE_${planId.toUpperCase()}_JOBS`;
 }
 
+function asyncDispatchWeightEnvNameForPlan(planId: HostedPlanId): string {
+  return `ATTESTOR_ASYNC_DISPATCH_${planId.toUpperCase()}_WEIGHT`;
+}
+
 function stripePriceEnvNameForPlan(planId: HostedPlanId): string {
   return `ATTESTOR_STRIPE_PRICE_${planId.toUpperCase()}`;
 }
@@ -141,6 +160,11 @@ function stripePriceEnvNameForPlan(planId: HostedPlanId): string {
 export function defaultRateLimitWindowSeconds(): number {
   const raw = Number.parseInt(process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS ?? '60', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : 60;
+}
+
+export function defaultAsyncDispatchBaseIntervalMs(): number {
+  const raw = Number.parseInt(process.env.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS ?? '600', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 600;
 }
 
 export function listHostedPlans(): HostedPlanDefinition[] {
@@ -237,6 +261,39 @@ export function resolvePlanAsyncExecution(planId: string | null | undefined): Pl
     activeJobsPerTenant,
     enforced: activeJobsPerTenant !== null,
     knownPlan: true,
+    source: parsedOverride !== null ? 'env_override' : 'plan_default',
+  };
+}
+
+export function resolvePlanAsyncDispatch(planId: string | null | undefined): PlanAsyncDispatchSpec {
+  const resolvedPlanId = planId?.trim() || SELF_HOST_PLAN_ID;
+  const plan = getHostedPlan(resolvedPlanId);
+  const baseIntervalMs = defaultAsyncDispatchBaseIntervalMs();
+
+  if (!plan) {
+    return {
+      planId: resolvedPlanId,
+      dispatchWeight: null,
+      dispatchWindowMs: null,
+      enabled: false,
+      knownPlan: false,
+      baseIntervalMs,
+      source: 'custom_disabled',
+    };
+  }
+
+  const rawOverride = process.env[asyncDispatchWeightEnvNameForPlan(plan.id)]?.trim() ?? '';
+  const parsedOverride = rawOverride ? normalizeRateLimit(Number.parseInt(rawOverride, 10)) : null;
+  const dispatchWeight = parsedOverride ?? plan.defaultAsyncDispatchWeight;
+  const dispatchWindowMs = dispatchWeight === null ? null : Math.max(50, Math.floor(baseIntervalMs / dispatchWeight));
+
+  return {
+    planId: plan.id,
+    dispatchWeight,
+    dispatchWindowMs,
+    enabled: dispatchWeight !== null,
+    knownPlan: true,
+    baseIntervalMs,
     source: parsedOverride !== null ? 'env_override' : 'plan_default',
   };
 }

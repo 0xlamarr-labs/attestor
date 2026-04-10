@@ -97,6 +97,11 @@ import {
   shutdownTenantAsyncExecutionCoordinator,
 } from './async-tenant-execution.js';
 import {
+  configureTenantAsyncWeightedDispatchCoordinator,
+  getTenantAsyncWeightedDispatchCoordinatorStatus,
+  shutdownTenantAsyncWeightedDispatchCoordinator,
+} from './async-weighted-dispatch.js';
+import {
   evaluateApiHighAvailabilityState,
   resolveServiceInstanceId,
 } from './high-availability.js';
@@ -212,6 +217,7 @@ import {
   findHostedPlanByStripePriceId,
   getHostedPlan,
   listHostedPlans,
+  resolvePlanAsyncDispatch,
   resolvePlanAsyncExecution,
   resolvePlanAsyncQueue,
   resolvePlanRateLimit,
@@ -672,6 +678,8 @@ function adminPlanView() {
     defaultPipelineRequestsPerWindow: resolvePlanRateLimit(plan.id).requestsPerWindow,
     defaultAsyncPendingJobsPerTenant: resolvePlanAsyncQueue(plan.id).pendingJobsPerTenant,
     defaultAsyncActiveJobsPerTenant: resolvePlanAsyncExecution(plan.id).activeJobsPerTenant,
+    defaultAsyncDispatchWeight: resolvePlanAsyncDispatch(plan.id).dispatchWeight,
+    defaultAsyncDispatchWindowMs: resolvePlanAsyncDispatch(plan.id).dispatchWindowMs,
     stripePriceConfigured: resolvePlanStripePrice(plan.id).configured,
     intendedFor: plan.intendedFor,
     defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
@@ -3618,6 +3626,7 @@ app.get('/api/v1/admin/plans', (c) => {
   if (unauthorized) return unauthorized;
 
   const asyncExecutionCoordinator = getTenantAsyncExecutionCoordinatorStatus();
+  const asyncWeightedDispatchCoordinator = getTenantAsyncWeightedDispatchCoordinatorStatus();
   return c.json({
     plans: adminPlanView(),
     defaults: {
@@ -3626,6 +3635,8 @@ app.get('/api/v1/admin/plans', (c) => {
       rateLimitWindowSeconds: defaultRateLimitWindowSeconds(),
       asyncExecutionShared: asyncExecutionCoordinator.shared,
       asyncExecutionBackend: asyncExecutionCoordinator.backend,
+      asyncWeightedDispatchShared: asyncWeightedDispatchCoordinator.shared,
+      asyncWeightedDispatchBackend: asyncWeightedDispatchCoordinator.backend,
     },
   });
 });
@@ -4976,6 +4987,7 @@ function inProcessTenantQueueSnapshot(tenantId: string, planId: string | null) {
   }
   const policy = resolvePlanAsyncQueue(planId);
   const executionPolicy = resolvePlanAsyncExecution(planId);
+  const dispatchPolicy = resolvePlanAsyncDispatch(planId);
   return {
     tenantId,
     planId,
@@ -4986,6 +4998,12 @@ function inProcessTenantQueueSnapshot(tenantId: string, planId: string | null) {
     activeExecutionLimit: executionPolicy.activeJobsPerTenant,
     activeExecutionEnforced: executionPolicy.enforced,
     activeExecutionBackend: 'memory' as const,
+    weightedDispatchEnforced: false,
+    weightedDispatchBackend: 'memory' as const,
+    weightedDispatchWeight: dispatchPolicy.dispatchWeight,
+    weightedDispatchWindowMs: dispatchPolicy.dispatchWindowMs,
+    weightedDispatchNextEligibleAt: null,
+    weightedDispatchWaitMs: 0,
     scanLimit: Number.MAX_SAFE_INTEGER,
     scanTruncated: false,
     states,
@@ -5003,6 +5021,7 @@ try {
   const redisUrl = `redis://${resolved.host}:${resolved.port}`;
   sharedRedisUrl = redisUrl;
   configureTenantAsyncExecutionCoordinator({ redisUrl, redisMode: resolved.mode });
+  configureTenantAsyncWeightedDispatchCoordinator({ redisUrl, redisMode: resolved.mode });
   bullmqQueue = createPipelineQueue({ redisUrl });
   bullmqWorker = createPipelineWorker({ redisUrl });
   asyncBackendMode = 'bullmq';
@@ -5071,16 +5090,22 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
           usage: quotaCheck.usage,
           rateLimit: await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
           asyncQueue: {
-            tenantPendingJobs: effectivePendingJobs,
-            tenantPendingLimit: queueAllowance.snapshot.pendingLimit,
-            tenantIsolationEnforced: queueAllowance.snapshot.enforced,
-            tenantActiveExecutions: queueAllowance.snapshot.activeExecutions,
-            tenantActiveExecutionLimit: queueAllowance.snapshot.activeExecutionLimit,
-            tenantActiveExecutionEnforced: queueAllowance.snapshot.activeExecutionEnforced,
-            tenantActiveExecutionBackend: queueAllowance.snapshot.activeExecutionBackend,
-            retryPolicy: getAsyncRetryPolicy(),
-          },
-        }, 429);
+          tenantPendingJobs: effectivePendingJobs,
+          tenantPendingLimit: queueAllowance.snapshot.pendingLimit,
+          tenantIsolationEnforced: queueAllowance.snapshot.enforced,
+          tenantActiveExecutions: queueAllowance.snapshot.activeExecutions,
+          tenantActiveExecutionLimit: queueAllowance.snapshot.activeExecutionLimit,
+          tenantActiveExecutionEnforced: queueAllowance.snapshot.activeExecutionEnforced,
+          tenantActiveExecutionBackend: queueAllowance.snapshot.activeExecutionBackend,
+          tenantWeightedDispatchEnforced: queueAllowance.snapshot.weightedDispatchEnforced,
+          tenantWeightedDispatchBackend: queueAllowance.snapshot.weightedDispatchBackend,
+          tenantWeightedDispatchWeight: queueAllowance.snapshot.weightedDispatchWeight,
+          tenantWeightedDispatchWindowMs: queueAllowance.snapshot.weightedDispatchWindowMs,
+          tenantWeightedDispatchNextEligibleAt: queueAllowance.snapshot.weightedDispatchNextEligibleAt,
+          tenantWeightedDispatchWaitMs: queueAllowance.snapshot.weightedDispatchWaitMs,
+          retryPolicy: getAsyncRetryPolicy(),
+        },
+      }, 429);
       }
 
       const rateReservation = await reserveTenantPipelineRequest(tenant.tenantId, tenant.planId);
@@ -5139,6 +5164,12 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
           tenantActiveExecutionLimit: asyncQueue.tenant?.activeExecutionLimit ?? null,
           tenantActiveExecutionEnforced: asyncQueue.tenant?.activeExecutionEnforced ?? false,
           tenantActiveExecutionBackend: asyncQueue.tenant?.activeExecutionBackend ?? 'memory',
+          tenantWeightedDispatchEnforced: asyncQueue.tenant?.weightedDispatchEnforced ?? false,
+          tenantWeightedDispatchBackend: asyncQueue.tenant?.weightedDispatchBackend ?? 'memory',
+          tenantWeightedDispatchWeight: asyncQueue.tenant?.weightedDispatchWeight ?? null,
+          tenantWeightedDispatchWindowMs: asyncQueue.tenant?.weightedDispatchWindowMs ?? null,
+          tenantWeightedDispatchNextEligibleAt: asyncQueue.tenant?.weightedDispatchNextEligibleAt ?? null,
+          tenantWeightedDispatchWaitMs: asyncQueue.tenant?.weightedDispatchWaitMs ?? 0,
           retryPolicy: asyncQueue.retryPolicy,
         },
       }, 202);
@@ -5163,6 +5194,12 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
           tenantActiveExecutionLimit: inProcessSnapshot.activeExecutionLimit,
           tenantActiveExecutionEnforced: inProcessSnapshot.activeExecutionEnforced,
           tenantActiveExecutionBackend: inProcessSnapshot.activeExecutionBackend,
+          tenantWeightedDispatchEnforced: inProcessSnapshot.weightedDispatchEnforced,
+          tenantWeightedDispatchBackend: inProcessSnapshot.weightedDispatchBackend,
+          tenantWeightedDispatchWeight: inProcessSnapshot.weightedDispatchWeight,
+          tenantWeightedDispatchWindowMs: inProcessSnapshot.weightedDispatchWindowMs,
+          tenantWeightedDispatchNextEligibleAt: inProcessSnapshot.weightedDispatchNextEligibleAt,
+          tenantWeightedDispatchWaitMs: inProcessSnapshot.weightedDispatchWaitMs,
           retryPolicy: {
             attempts: 1,
             backoffMs: 0,
@@ -5271,6 +5308,12 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         tenantActiveExecutionLimit: inProcessSnapshot.activeExecutionLimit,
         tenantActiveExecutionEnforced: inProcessSnapshot.activeExecutionEnforced,
         tenantActiveExecutionBackend: inProcessSnapshot.activeExecutionBackend,
+        tenantWeightedDispatchEnforced: inProcessSnapshot.weightedDispatchEnforced,
+        tenantWeightedDispatchBackend: inProcessSnapshot.weightedDispatchBackend,
+        tenantWeightedDispatchWeight: inProcessSnapshot.weightedDispatchWeight,
+        tenantWeightedDispatchWindowMs: inProcessSnapshot.weightedDispatchWindowMs,
+        tenantWeightedDispatchNextEligibleAt: inProcessSnapshot.weightedDispatchNextEligibleAt,
+        tenantWeightedDispatchWaitMs: inProcessSnapshot.weightedDispatchWaitMs,
         retryPolicy: {
           attempts: 1,
           backoffMs: 0,
@@ -5382,6 +5425,10 @@ export function startServer(port: number = 3700): { port: number; close: () => v
     redisUrl: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() || sharedRedisUrl,
     redisMode: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() ? 'explicit' : redisMode,
   });
+  configureTenantAsyncWeightedDispatchCoordinator({
+    redisUrl: process.env.ATTESTOR_ASYNC_DISPATCH_REDIS_URL?.trim() || sharedRedisUrl,
+    redisMode: process.env.ATTESTOR_ASYNC_DISPATCH_REDIS_URL?.trim() ? 'explicit' : redisMode,
+  });
   configureTenantRateLimiter({
     redisUrl: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() || sharedRedisUrl,
     redisMode: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() ? 'explicit' : redisMode,
@@ -5417,6 +5464,7 @@ export function startServer(port: number = 3700): { port: number; close: () => v
           (server as any).close();
         }
       void shutdownTenantAsyncExecutionCoordinator().catch(() => {});
+      void shutdownTenantAsyncWeightedDispatchCoordinator().catch(() => {});
       void shutdownTenantRateLimiter().catch(() => {});
       void shutdownTelemetry().catch(() => {});
     },

@@ -77,6 +77,12 @@ export interface AsyncPipelineSubmitResponse {
     tenantActiveExecutionLimit: number | null;
     tenantActiveExecutionEnforced: boolean;
     tenantActiveExecutionBackend: 'memory' | 'redis';
+    tenantWeightedDispatchEnforced: boolean;
+    tenantWeightedDispatchBackend: 'memory' | 'redis';
+    tenantWeightedDispatchWeight: number | null;
+    tenantWeightedDispatchWindowMs: number | null;
+    tenantWeightedDispatchNextEligibleAt: string | null;
+    tenantWeightedDispatchWaitMs: number;
     retryPolicy: {
       attempts: number;
       backoffMs: number;
@@ -1132,6 +1138,12 @@ export interface AdminAsyncQueueTenantSnapshot {
   activeExecutionLimit: number | null;
   activeExecutionEnforced: boolean;
   activeExecutionBackend: 'memory' | 'redis';
+  weightedDispatchEnforced: boolean;
+  weightedDispatchBackend: 'memory' | 'redis';
+  weightedDispatchWeight: number | null;
+  weightedDispatchWindowMs: number | null;
+  weightedDispatchNextEligibleAt: string | null;
+  weightedDispatchWaitMs: number;
   scanLimit: number;
   scanTruncated: boolean;
   states: {

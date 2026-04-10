@@ -127,6 +127,7 @@ async function run() {
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
   process.env.ATTESTOR_RATE_LIMIT_PRO_REQUESTS = '20';
   process.env.ATTESTOR_ASYNC_PENDING_STARTER_JOBS = '1';
+  process.env.ATTESTOR_ASYNC_DISPATCH_BASE_INTERVAL_MS = '400';
   process.env.ATTESTOR_STRIPE_USE_MOCK = 'true';
   process.env.STRIPE_API_KEY = 'sk_test_live_api_mock';
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_api_test';
@@ -449,6 +450,8 @@ async function run() {
       ok(body.backendMode === 'in_process' || body.backendMode === 'bullmq', 'Async: backendMode truthful');
       ok(typeof body.asyncQueue?.tenantPendingJobs === 'number', 'Async: queue snapshot present');
       ok(typeof body.asyncQueue?.tenantActiveExecutions === 'number', 'Async: active execution snapshot present');
+      ok(typeof body.asyncQueue?.tenantWeightedDispatchEnforced === 'boolean', 'Async: weighted dispatch enforcement surfaced');
+      ok(typeof body.asyncQueue?.tenantWeightedDispatchWeight === 'number' || body.asyncQueue?.tenantWeightedDispatchWeight === null, 'Async: weighted dispatch weight surfaced');
       ok(body.asyncQueue?.retryPolicy?.attempts >= 1, 'Async: retry policy present');
       asyncJobId = body.jobId;
       console.log(`    jobId=${asyncJobId}, status=${body.status}, backend=${body.backendMode}`);
@@ -526,6 +529,9 @@ async function run() {
       ok(acceptedQueueJob!.body.asyncQueue.tenantIsolationEnforced === true, 'Async Queue: starter tenant isolation enforced');
       ok(acceptedQueueJob!.body.asyncQueue.tenantPendingLimit === 1, 'Async Queue: starter tenant pending cap = 1');
       ok(acceptedQueueJob!.body.asyncQueue.tenantActiveExecutionLimit === 1, 'Async Queue: starter tenant active execution cap = 1');
+      ok(acceptedQueueJob!.body.asyncQueue.tenantWeightedDispatchEnforced === true, 'Async Queue: starter weighted dispatch enforced');
+      ok(acceptedQueueJob!.body.asyncQueue.tenantWeightedDispatchWeight === 1, 'Async Queue: starter weighted dispatch weight = 1');
+      ok(acceptedQueueJob!.body.asyncQueue.tenantWeightedDispatchWindowMs === 400, 'Async Queue: starter weighted dispatch window = 400ms');
       ok(rejectedQueueJob!.body.asyncQueue.tenantPendingJobs >= 1, 'Async Queue: rejected response reports pending jobs');
       ok(rejectedQueueJob!.body.asyncQueue.tenantPendingLimit === 1, 'Async Queue: rejected response reports pending limit');
 
@@ -576,6 +582,8 @@ async function run() {
       ok(adminQueueBody.retryPolicy.attempts >= 1, 'Admin Queue: retry policy exposed');
       ok(adminQueueBody.tenant?.tenantId === 'tenant-dlq', 'Admin Queue: tenant snapshot returned');
       ok(adminQueueBody.counts.failed >= 1, 'Admin Queue: failed count reflected');
+      ok(typeof adminQueueBody.tenant?.weightedDispatchEnforced === 'boolean', 'Admin Queue: weighted dispatch enforcement surfaced');
+      ok(typeof adminQueueBody.tenant?.weightedDispatchWindowMs === 'number' || adminQueueBody.tenant?.weightedDispatchWindowMs === null, 'Admin Queue: weighted dispatch window surfaced');
 
       const dlqNoAuth = await fetch(`${BASE}/api/v1/admin/queue/dlq`);
       ok(dlqNoAuth.status === 401, 'Admin DLQ: auth required');
@@ -795,11 +803,14 @@ async function run() {
       ok(plansBody.defaults.hostedProvisioningPlanId === 'starter', 'Admin Plans: hosted default = starter');
       ok(plansBody.defaults.rateLimitWindowSeconds === 2, 'Admin Plans: rate-limit window override exposed');
       ok(plansBody.defaults.asyncExecutionShared === true, 'Admin Plans: async execution backend reported as shared');
+      ok(plansBody.defaults.asyncWeightedDispatchShared === true, 'Admin Plans: async weighted dispatch backend reported as shared');
       const starterPlan = plansBody.plans.find((entry: any) => entry.id === 'starter');
       ok(Boolean(starterPlan), 'Admin Plans: starter plan present');
       ok(starterPlan.defaultMonthlyRunQuota === 100, 'Admin Plans: starter quota = 100');
       ok(starterPlan.defaultPipelineRequestsPerWindow === 3, 'Admin Plans: starter rate limit = 3');
       ok(starterPlan.defaultAsyncActiveJobsPerTenant === 1, 'Admin Plans: starter active execution cap = 1');
+      ok(starterPlan.defaultAsyncDispatchWeight === 1, 'Admin Plans: starter dispatch weight = 1');
+      ok(starterPlan.defaultAsyncDispatchWindowMs === 400, 'Admin Plans: starter dispatch window = 400ms');
       ok(starterPlan.stripePriceConfigured === true, 'Admin Plans: starter Stripe price configured');
       ok(starterPlan.defaultForHostedProvisioning === true, 'Admin Plans: starter is hosted default');
 

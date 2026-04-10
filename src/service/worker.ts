@@ -19,11 +19,11 @@
  * BOUNDARY:
  * - Single-queue, configurable concurrency (default 1)
  * - Shares Redis with API server
- * - Tenant fairness comes from per-tenant pending-job caps at API submit time plus shared tenant active-execution caps at worker runtime
+ * - Tenant fairness comes from per-tenant pending-job caps at API submit time plus shared tenant active-execution caps and shared weighted dispatch windows at worker runtime
  * - Terminal failed jobs remain inspectable through the admin DLQ route and persist into the current DLQ store for retry/audit workflows
  * - Pipeline-route rate limiting is enforced on the API side and can use shared Redis-backed windows when configured
  * - Dedicated worker health/readiness HTTP surface for orchestrator probes
- * - No BullMQ Pro queue groups or broader weighted multi-tenant scheduling/isolation yet
+ * - No BullMQ Pro queue groups; weighted fairness currently uses the OSS/runtime Redis-backed dispatch coordinator
  *
  * Run: npm run worker
  * Run: REDIS_URL=redis://prod:6379 npm run worker
@@ -36,6 +36,10 @@ import {
   configureTenantAsyncExecutionCoordinator,
   shutdownTenantAsyncExecutionCoordinator,
 } from './async-tenant-execution.js';
+import {
+  configureTenantAsyncWeightedDispatchCoordinator,
+  shutdownTenantAsyncWeightedDispatchCoordinator,
+} from './async-weighted-dispatch.js';
 import {
   evaluateWorkerHighAvailabilityState,
   resolveServiceInstanceId,
@@ -102,6 +106,10 @@ async function main() {
     redisUrl = `redis://${resolved.host}:${resolved.port}`;
     resolvedRedisMode = resolved.mode;
     configureTenantAsyncExecutionCoordinator({ redisUrl, redisMode: resolved.mode });
+    configureTenantAsyncWeightedDispatchCoordinator({
+      redisUrl: process.env.ATTESTOR_ASYNC_DISPATCH_REDIS_URL?.trim() || redisUrl,
+      redisMode: process.env.ATTESTOR_ASYNC_DISPATCH_REDIS_URL?.trim() ? 'explicit' : resolved.mode,
+    });
     console.log(`[worker] Redis connected (${resolved.mode} @ ${resolved.host}:${resolved.port})`);
   } catch (err: any) {
     console.error(`[worker] FATAL: Redis required for worker mode but unavailable: ${err.message}`);
@@ -153,6 +161,7 @@ async function main() {
       await new Promise<void>((resolve, reject) => healthServer.close((err) => err ? reject(err) : resolve())).catch(() => {});
       await worker.close();
       await shutdownTenantAsyncExecutionCoordinator().catch(() => {});
+      await shutdownTenantAsyncWeightedDispatchCoordinator().catch(() => {});
       console.log('[worker] Worker drained and closed.');
     } catch (err: any) {
       console.error(`[worker] Error during shutdown: ${err.message}`);
