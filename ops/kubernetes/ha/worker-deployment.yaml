@@ -4,6 +4,8 @@ metadata:
   name: attestor-worker
 spec:
   replicas: 2
+  minReadySeconds: 10
+  progressDeadlineSeconds: 600
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
@@ -18,7 +20,29 @@ spec:
       labels:
         app.kubernetes.io/name: attestor-worker
     spec:
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 90
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: attestor-worker
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: attestor-worker
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: attestor-worker
       containers:
         - name: worker
           image: ghcr.io/your-org/attestor-worker:latest
@@ -38,6 +62,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            - name: ATTESTOR_WORKER_HEALTH_PORT
+              value: "9808"
             - name: REDIS_URL
               valueFrom:
                 secretKeyRef:
@@ -54,6 +80,34 @@ spec:
                 secretKeyRef:
                   name: attestor-runtime-secrets
                   key: admin-api-key
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 20"]
+          ports:
+            - containerPort: 9808
+              name: health
+          startupProbe:
+            httpGet:
+              path: /health
+              port: health
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: health
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
           resources:
             requests:
               cpu: 250m

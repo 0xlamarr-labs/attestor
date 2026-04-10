@@ -672,14 +672,24 @@ export async function checkRedisHealth(config?: AsyncPipelineConfig): Promise<{
   available: boolean;
   message: string;
 }> {
+  let client: any = null;
   try {
     const IORedis = (await import('ioredis')).default;
     const redis = parseRedisOpts(config?.redisUrl ?? process.env.REDIS_URL);
-    const client = new IORedis(redis);
+    client = new IORedis({
+      ...redis,
+      lazyConnect: true,
+    });
+    await client.connect();
     const pong = await client.ping();
     await client.quit();
     return { available: pong === 'PONG', message: `Redis reachable at ${redis.host}:${redis.port}` };
   } catch (err: any) {
+    if (client) {
+      try {
+        client.disconnect();
+      } catch {}
+    }
     return { available: false, message: `Redis not reachable: ${err.message}` };
   }
 }

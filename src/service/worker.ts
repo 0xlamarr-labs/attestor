@@ -22,12 +22,14 @@
  * - Tenant fairness comes from per-tenant pending-job caps at API submit time plus shared tenant active-execution caps at worker runtime
  * - Terminal failed jobs remain inspectable through the admin DLQ route and persist into the current DLQ store for retry/audit workflows
  * - Pipeline-route rate limiting is enforced on the API side and can use shared Redis-backed windows when configured
+ * - Dedicated worker health/readiness HTTP surface for orchestrator probes
  * - No BullMQ Pro queue groups or broader weighted multi-tenant scheduling/isolation yet
  *
  * Run: npm run worker
  * Run: REDIS_URL=redis://prod:6379 npm run worker
  */
 
+import { createServer, type Server } from 'node:http';
 import type { Worker } from 'bullmq';
 import { resolveRedis } from './redis-auto.js';
 import {
@@ -38,7 +40,56 @@ import {
   evaluateWorkerHighAvailabilityState,
   resolveServiceInstanceId,
 } from './high-availability.js';
-import { createPipelineWorker } from './async-pipeline.js';
+import { checkRedisHealth, createPipelineWorker } from './async-pipeline.js';
+
+function workerHealthPort(): number {
+  const parsed = Number.parseInt(process.env.ATTESTOR_WORKER_HEALTH_PORT?.trim() ?? '9808', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 9808;
+}
+
+async function startWorkerHealthServer(options: {
+  port: number;
+  instanceId: string;
+  redisUrl: string;
+  highAvailability: ReturnType<typeof evaluateWorkerHighAvailabilityState>;
+  ready: () => boolean;
+  shuttingDown: () => boolean;
+}): Promise<Server> {
+  const server = createServer(async (req, res) => {
+    const path = req.url?.split('?')[0] ?? '/';
+    if (path !== '/health' && path !== '/ready') {
+      res.statusCode = 404;
+      res.end('not found');
+      return;
+    }
+
+    const redis = await checkRedisHealth({ redisUrl: options.redisUrl });
+    const ready = options.ready() && !options.shuttingDown() && redis.available && (!options.highAvailability.enabled || options.highAvailability.ready);
+    const payload = {
+      status: path === '/health'
+        ? (options.shuttingDown() ? 'shutting_down' : 'healthy')
+        : (ready ? 'ready' : 'not_ready'),
+      instanceId: options.instanceId,
+      queueBackend: 'bullmq',
+      highAvailability: options.highAvailability,
+      redis,
+      shuttingDown: options.shuttingDown(),
+    };
+
+    res.statusCode = path === '/health'
+      ? (options.shuttingDown() ? 503 : 200)
+      : (ready ? 200 : 503);
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    res.end(JSON.stringify(payload));
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(options.port, '0.0.0.0', () => resolve());
+  });
+
+  return server;
+}
 
 async function main() {
   console.log('[worker] Attestor Pipeline Worker starting...');
@@ -71,6 +122,18 @@ async function main() {
   const worker: Worker = createPipelineWorker({ redisUrl });
   console.log(`[worker] Pipeline worker active — listening for jobs on queue 'attestor-pipeline'`);
 
+  let shuttingDown = false;
+  let ready = true;
+  const healthServer = await startWorkerHealthServer({
+    port: workerHealthPort(),
+    instanceId,
+    redisUrl,
+    highAvailability,
+    ready: () => ready,
+    shuttingDown: () => shuttingDown,
+  });
+  console.log(`[worker] Health probe server listening on port ${workerHealthPort()}`);
+
   worker.on('completed', (job) => {
     console.log(`[worker] Job ${job.id} completed: ${job.returnvalue?.decision ?? 'unknown'} (${job.returnvalue?.durationMs ?? '?'}ms)`);
   });
@@ -81,12 +144,13 @@ async function main() {
     console.error(`[worker] Worker error: ${err.message}`);
   });
 
-  let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
+    ready = false;
     console.log(`[worker] ${signal} received — draining in-flight jobs...`);
     try {
+      await new Promise<void>((resolve, reject) => healthServer.close((err) => err ? reject(err) : resolve())).catch(() => {});
       await worker.close();
       await shutdownTenantAsyncExecutionCoordinator().catch(() => {});
       console.log('[worker] Worker drained and closed.');

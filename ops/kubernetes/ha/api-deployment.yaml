@@ -4,6 +4,8 @@ metadata:
   name: attestor-api
 spec:
   replicas: 2
+  minReadySeconds: 15
+  progressDeadlineSeconds: 600
   revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
@@ -19,6 +21,28 @@ spec:
         app.kubernetes.io/name: attestor-api
     spec:
       terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: attestor-api
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: attestor-api
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: attestor-api
       containers:
         - name: api
           image: ghcr.io/your-org/attestor-api:latest
@@ -58,15 +82,32 @@ spec:
                 secretKeyRef:
                   name: attestor-runtime-secrets
                   key: admin-api-key
+            - name: ATTESTOR_METRICS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: metrics-api-key
+                  optional: true
             - name: ATTESTOR_HOSTED_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: attestor-runtime-secrets
                   key: hosted-oidc-client-secret
                   optional: true
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 15"]
           ports:
             - containerPort: 3700
               name: http
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
               path: /api/v1/ready
