@@ -24,6 +24,7 @@ export type AdminAuditAction =
   | 'tenant_key.rotated'
   | 'tenant_key.deactivated'
   | 'tenant_key.reactivated'
+  | 'tenant_key.recovered'
   | 'tenant_key.revoked';
 
 export interface AdminAuditRecord {

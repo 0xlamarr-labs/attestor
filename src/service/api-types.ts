@@ -921,6 +921,13 @@ export interface AdminTenantKeyRecord {
   planId: string | null;
   monthlyRunQuota: number | null;
   apiKeyPreview: string;
+  sealedStorage: {
+    enabled: boolean;
+    provider: 'vault_transit' | null;
+    keyName: string | null;
+    sealedAt: string | null;
+    breakGlassRecoverable: boolean;
+  };
   status: 'active' | 'inactive' | 'revoked';
   createdAt: string;
   lastUsedAt: string | null;
@@ -961,6 +968,14 @@ export interface AdminRotateTenantKeyResponse {
 
 export interface AdminTenantKeyStatusResponse {
   key: AdminTenantKeyRecord;
+}
+
+export interface AdminRecoverTenantKeyRequest {
+  reason?: string;
+}
+
+export interface AdminRecoverTenantKeyResponse {
+  key: AdminTenantKeyRecord & { apiKey: string };
 }
 
 export interface AdminAccountBillingSummary {
@@ -1388,6 +1403,7 @@ export const API_ROUTES = {
   ADMIN_TENANT_KEY_ROTATE: '/api/v1/admin/tenant-keys/:id/rotate',
   ADMIN_TENANT_KEY_DEACTIVATE: '/api/v1/admin/tenant-keys/:id/deactivate',
   ADMIN_TENANT_KEY_REACTIVATE: '/api/v1/admin/tenant-keys/:id/reactivate',
+  ADMIN_TENANT_KEY_RECOVER: '/api/v1/admin/tenant-keys/:id/recover',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',
   AUTH_PASSKEY_OPTIONS: '/api/v1/auth/passkeys/options',

@@ -105,6 +105,7 @@ import {
 } from './billing-entitlement-store.js';
 import {
   findActiveTenantKey as findActiveTenantKeyFile,
+  findTenantKeyRecordById as findTenantKeyRecordByIdFile,
   findTenantRecordByTenantId as findTenantRecordByTenantIdFile,
   hasTenantKeyRecords as hasTenantKeyRecordsFile,
   issueTenantApiKey as issueTenantApiKeyFile,
@@ -153,6 +154,11 @@ import {
   type StripeWebhookLookup,
   type StripeWebhookRecord,
 } from './stripe-webhook-store.js';
+import {
+  assertTenantKeyRecoveryEnabled,
+  recoverSecretEnvelope,
+  sealSecretEnvelope,
+} from './secret-envelope.js';
 import {
   listAsyncDeadLetterRecords as listAsyncDeadLetterRecordsFile,
   normalizeAsyncDeadLetterRecord,
@@ -663,6 +669,7 @@ function normalizeTenantKeyRecord(record: TenantKeyRecord): TenantKeyRecord {
     rotatedFromKeyId: record.rotatedFromKeyId ?? null,
     supersededByKeyId: record.supersededByKeyId ?? null,
     supersededAt: record.supersededAt ?? null,
+    recoveryEnvelope: record.recoveryEnvelope ?? null,
   };
 }
 
@@ -819,7 +826,41 @@ function buildTenantKeyRecord(options: {
     rotatedFromKeyId: options.rotatedFromKeyId ?? null,
     supersededByKeyId: null,
     supersededAt: null,
+    recoveryEnvelope: null,
   };
+}
+
+async function maybeSealTenantKeyRecord(record: TenantKeyRecord, apiKey: string): Promise<TenantKeyRecord> {
+  const recoveryEnvelope = await sealSecretEnvelope(apiKey, {
+    scope: 'tenant_api_key',
+    tenantKeyId: record.id,
+    tenantId: record.tenantId,
+    tenantName: record.tenantName,
+    planId: record.planId ?? 'community',
+    createdAt: record.createdAt,
+  });
+  if (!recoveryEnvelope) return record;
+  return {
+    ...record,
+    recoveryEnvelope,
+  };
+}
+
+async function recoverTenantKeyMaterial(record: TenantKeyRecord): Promise<string> {
+  if (record.status === 'revoked') {
+    throw new TenantKeyStoreError(
+      'INVALID_STATE',
+      `Tenant key '${record.id}' is revoked and cannot be recovered.`,
+    );
+  }
+  if (!record.recoveryEnvelope) {
+    throw new TenantKeyStoreError(
+      'INVALID_STATE',
+      `Tenant key '${record.id}' is not stored in recoverable sealed form.`,
+    );
+  }
+  assertTenantKeyRecoveryEnabled();
+  return recoverSecretEnvelope(record.recoveryEnvelope);
 }
 
 function usageContextFromRecord(
@@ -1557,40 +1598,51 @@ export async function provisionHostedAccountState(input: {
 }> {
   if (!isSharedControlPlaneConfigured()) {
     const account = createHostedAccountFile(input.account);
-    const issued = issueTenantApiKeyFile(input.key);
+    const issued = await issueTenantApiKeyState(input.key);
     return {
       account: account.record,
       initialKey: issued.record,
       apiKey: issued.apiKey,
-      path: account.path,
+      path: issued.path ?? account.path,
     };
   }
+
+  const now = new Date().toISOString();
+  const apiKey = `atk_${randomBytes(24).toString('hex')}`;
+  const resolvedPlan = resolvePlanSpec({
+    planId: input.key.planId,
+    monthlyRunQuota: input.key.monthlyRunQuota,
+    defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
+  });
+  const accountRecord = normalizeHostedAccountRecord({
+    id: `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    accountName: input.account.accountName,
+    contactEmail: input.account.contactEmail,
+    primaryTenantId: input.account.primaryTenantId,
+    status: 'active',
+    createdAt: now,
+    updatedAt: now,
+    suspendedAt: null,
+    archivedAt: null,
+    billing: defaultBillingState(),
+  });
+  let keyRecord = buildTenantKeyRecord({
+    tenantId: input.key.tenantId,
+    tenantName: input.key.tenantName,
+    planId: resolvedPlan.planId,
+    monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+    apiKey,
+    createdAt: now,
+  });
+  keyRecord = await maybeSealTenantKeyRecord(keyRecord, apiKey);
 
   await ensureSchema();
   const pool = await getPool();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const now = new Date().toISOString();
-    const accountRecord = normalizeHostedAccountRecord({
-      id: `acct_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
-      accountName: input.account.accountName,
-      contactEmail: input.account.contactEmail,
-      primaryTenantId: input.account.primaryTenantId,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-      suspendedAt: null,
-      archivedAt: null,
-      billing: defaultBillingState(),
-    });
     await upsertHostedAccountPg(accountRecord, client);
 
-    const resolvedPlan = resolvePlanSpec({
-      planId: input.key.planId,
-      monthlyRunQuota: input.key.monthlyRunQuota,
-      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
-    });
     const existing = await client.query(
       `SELECT COUNT(*)::int AS active_count
          FROM attestor_control_plane.tenant_api_keys
@@ -1606,15 +1658,6 @@ export async function provisionHostedAccountState(input: {
       );
     }
 
-    const apiKey = `atk_${randomBytes(24).toString('hex')}`;
-    const keyRecord = buildTenantKeyRecord({
-      tenantId: input.key.tenantId,
-      tenantName: input.key.tenantName,
-      planId: resolvedPlan.planId,
-      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
-      apiKey,
-      createdAt: now,
-    });
     await upsertTenantKeyPg(keyRecord, client);
     await client.query('COMMIT');
     return {
@@ -2003,7 +2046,7 @@ export async function issueTenantApiKeyState(input: IssueTenantKeyInput): Promis
     );
   }
   const apiKey = `atk_${randomBytes(24).toString('hex')}`;
-  const record = buildTenantKeyRecord({
+  let record = buildTenantKeyRecord({
     tenantId: input.tenantId,
     tenantName: input.tenantName,
     planId: resolvedPlan.planId,
@@ -2011,6 +2054,7 @@ export async function issueTenantApiKeyState(input: IssueTenantKeyInput): Promis
     apiKey,
     createdAt: new Date().toISOString(),
   });
+  record = await maybeSealTenantKeyRecord(record, apiKey);
   await upsertTenantKeyPg(record);
   return { apiKey, record, path: controlPlaneStoreSource() };
 }
@@ -2054,7 +2098,7 @@ export async function rotateTenantApiKeyState(id: string, input?: RotateTenantKe
   });
   const apiKey = `atk_${randomBytes(24).toString('hex')}`;
   const createdAt = new Date().toISOString();
-  const record = buildTenantKeyRecord({
+  let record = buildTenantKeyRecord({
     tenantId: sourceRecord.tenantId,
     tenantName: sourceRecord.tenantName,
     planId: resolvedPlan.planId,
@@ -2063,6 +2107,7 @@ export async function rotateTenantApiKeyState(id: string, input?: RotateTenantKe
     createdAt,
     rotatedFromKeyId: sourceRecord.id,
   });
+  record = await maybeSealTenantKeyRecord(record, apiKey);
   sourceRecord.supersededByKeyId = record.id;
   sourceRecord.supersededAt = createdAt;
   await upsertTenantKeyPg(sourceRecord);
@@ -2308,6 +2353,37 @@ export async function createAccountUserState(input: CreateAccountUserInput): Pro
   const record = buildAccountUserRecord(input);
   await upsertAccountUserPg(record);
   return { record, path: controlPlaneStoreSource() };
+}
+
+export async function recoverTenantApiKeyState(id: string): Promise<{
+  record: TenantKeyRecord;
+  apiKey: string;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) {
+    const current = findTenantKeyRecordByIdFile(id);
+    if (!current.record) {
+      throw new TenantKeyStoreError('NOT_FOUND', `Tenant key record not found: ${id}`);
+    }
+    const apiKey = await recoverTenantKeyMaterial(current.record);
+    return {
+      record: current.record,
+      apiKey,
+      path: current.path,
+    };
+  }
+
+  const records = await listTenantKeyRecordsPg();
+  const record = records.find((entry) => entry.id === id);
+  if (!record) {
+    throw new TenantKeyStoreError('NOT_FOUND', `Tenant key record not found: ${id}`);
+  }
+  const apiKey = await recoverTenantKeyMaterial(record);
+  return {
+    record,
+    apiKey,
+    path: controlPlaneStoreSource(),
+  };
 }
 
 export async function saveAccountUserRecordState(record: AccountUserRecord): Promise<{

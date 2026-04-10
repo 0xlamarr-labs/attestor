@@ -199,6 +199,7 @@ import {
   listTenantKeyRecordsState,
   provisionHostedAccountState,
   queryUsageLedgerState,
+  recoverTenantApiKeyState,
   recordAccountUserLoginState,
   revokeAccountUserActionTokenState,
   revokeAccountUserActionTokensForUserState,
@@ -274,6 +275,7 @@ import {
   HostedEmailDeliveryError,
   shutdownHostedEmailDelivery,
 } from './email-delivery.js';
+import { getSecretEnvelopeStatus, SecretEnvelopeError } from './secret-envelope.js';
 import {
   StripeBillingError,
   createHostedBillingPortalSession,
@@ -867,6 +869,13 @@ function adminTenantKeyView(record: TenantKeyRecord) {
     rotatedFromKeyId: record.rotatedFromKeyId,
     supersededByKeyId: record.supersededByKeyId,
     supersededAt: record.supersededAt,
+    sealedStorage: {
+      enabled: Boolean(record.recoveryEnvelope),
+      provider: record.recoveryEnvelope?.provider ?? null,
+      keyName: record.recoveryEnvelope?.keyName ?? null,
+      sealedAt: record.recoveryEnvelope?.sealedAt ?? null,
+      breakGlassRecoverable: Boolean(record.recoveryEnvelope),
+    },
   };
 }
 
@@ -924,6 +933,14 @@ function accountMfaErrorResponse(c: Context, err: unknown): Response | null {
     return c.json({ error: err.message }, 503);
   }
   return null;
+}
+
+function secretEnvelopeErrorResponse(c: Context, err: unknown): Response | null {
+  if (!(err instanceof SecretEnvelopeError)) return null;
+  if (err.code === 'DISABLED') {
+    return c.json({ error: err.message }, 409);
+  }
+  return c.json({ error: err.message }, 503);
 }
 
 function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
@@ -4320,6 +4337,7 @@ app.get('/api/v1/admin/telemetry', (c) => {
   return c.json({
     telemetry: getTelemetryStatus(),
     emailDelivery: getHostedEmailDeliveryStatus(),
+    secretEnvelope: getSecretEnvelopeStatus(),
   });
 });
 
@@ -5011,6 +5029,59 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', async (c) => {
       requestHash: adminMutation.requestHash,
       metadata: {
         tenantName: result.record.tenantName,
+      },
+    },
+  });
+
+  return c.json(responseBody);
+});
+
+app.post('/api/v1/admin/tenant-keys/:id/recover', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({}));
+  const requestPayload = {
+    id: c.req.param('id'),
+    reason: typeof body.reason === 'string' ? body.reason.trim() : '',
+  };
+  const adminMutation = await adminMutationRequest(c, 'admin.tenant_keys.recover', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  let recovered;
+  try {
+    recovered = await recoverTenantApiKeyState(c.req.param('id'));
+  } catch (err) {
+    const tenantError = tenantKeyStoreErrorResponse(c, err);
+    if (tenantError) return tenantError;
+    const secretError = secretEnvelopeErrorResponse(c, err);
+    if (secretError) return secretError;
+    throw err;
+  }
+
+  const responseBody = await finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.tenant_keys.recover',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      key: {
+        ...adminTenantKeyView(recovered.record),
+        apiKey: recovered.apiKey,
+      },
+    },
+    audit: {
+      action: 'tenant_key.recovered',
+      tenantId: recovered.record.tenantId,
+      tenantKeyId: recovered.record.id,
+      planId: recovered.record.planId,
+      monthlyRunQuota: recovered.record.monthlyRunQuota,
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        tenantName: recovered.record.tenantName,
+        provider: recovered.record.recoveryEnvelope?.provider ?? null,
+        keyName: recovered.record.recoveryEnvelope?.keyName ?? null,
+        reason: requestPayload.reason || null,
       },
     },
   });

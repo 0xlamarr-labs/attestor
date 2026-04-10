@@ -12,14 +12,17 @@
  */
 
 import {
-  issueTenantApiKey,
-  listTenantKeyRecords,
-  revokeTenantApiKey,
-  rotateTenantApiKey,
-  setTenantApiKeyStatus,
   tenantKeyStorePolicy,
   TenantKeyStoreError,
 } from './tenant-key-store.js';
+import {
+  issueTenantApiKeyState,
+  listTenantKeyRecordsState,
+  recoverTenantApiKeyState,
+  revokeTenantApiKeyState,
+  rotateTenantApiKeyState,
+  setTenantApiKeyStatusState,
+} from './control-plane-store.js';
 import { DEFAULT_HOSTED_PLAN_ID, listHostedPlans, resolvePlanRateLimit, resolvePlanStripePrice, validHostedPlanIds } from './plan-catalog.js';
 
 function readFlag(flag: string, fallback?: string): string | undefined {
@@ -38,6 +41,7 @@ function printUsage(): void {
   console.log('  rotate --id <tenant-key-record-id> [--plan <plan>] [--quota <n>]');
   console.log('  deactivate --id <tenant-key-record-id>');
   console.log('  reactivate --id <tenant-key-record-id>');
+  console.log('  recover --id <tenant-key-record-id>');
   console.log('  revoke --id <tenant-key-record-id>');
 }
 
@@ -50,7 +54,7 @@ async function main() {
   }
 
   if (command === 'list') {
-    const { records, path } = listTenantKeyRecords();
+    const { records, path } = await listTenantKeyRecordsState();
     console.log(`Store: ${path}`);
     if (records.length === 0) {
       console.log('No tenant API keys issued yet.');
@@ -64,6 +68,7 @@ async function main() {
         `plan=${record.planId ?? 'community'}`,
         `quota=${record.monthlyRunQuota ?? 'unlimited'}`,
         `preview=${record.apiKeyPreview}`,
+        `sealed=${record.recoveryEnvelope?.provider ?? '-'}`,
         `status=${record.status}`,
         `lastUsed=${record.lastUsedAt ?? 'never'}`,
         `rotatedFrom=${record.rotatedFromKeyId ?? '-'}`,
@@ -108,7 +113,7 @@ async function main() {
       process.exit(1);
     }
 
-    const { apiKey, record, path } = issueTenantApiKey({
+    const { apiKey, record, path } = await issueTenantApiKeyState({
       tenantId,
       tenantName,
       planId,
@@ -139,7 +144,7 @@ async function main() {
       console.error(`rotate received unknown --plan '${planId}'. Valid plans: ${validHostedPlanIds().join(', ')}`);
       process.exit(1);
     }
-    const { apiKey, record, previousRecord, path } = rotateTenantApiKey(id, {
+    const { apiKey, record, previousRecord, path } = await rotateTenantApiKeyState(id, {
       planId: planId ?? null,
       monthlyRunQuota: Number.isFinite(monthlyRunQuota as number) ? monthlyRunQuota : null,
     });
@@ -160,9 +165,24 @@ async function main() {
       process.exit(1);
     }
     const nextStatus = command === 'deactivate' ? 'inactive' : 'active';
-    const { record, path } = setTenantApiKeyStatus(id, nextStatus);
+    const { record, path } = await setTenantApiKeyStatusState(id, nextStatus);
     console.log(`Store: ${path}`);
     console.log(`${command}d ${record.id} (${record.apiKeyPreview}) -> status=${record.status}`);
+    return;
+  }
+
+  if (command === 'recover') {
+    const id = readFlag('--id');
+    if (!id) {
+      console.error('recover requires --id');
+      process.exit(1);
+    }
+    const { record, apiKey, path } = await recoverTenantApiKeyState(id);
+    console.log(`Store: ${path}`);
+    console.log(`Recovered ${record.id} (${record.apiKeyPreview}) for tenant ${record.tenantId}`);
+    console.log('');
+    console.log('API key - break-glass recovery, handle with care:');
+    console.log(apiKey);
     return;
   }
 
@@ -172,7 +192,7 @@ async function main() {
       console.error('revoke requires --id');
       process.exit(1);
     }
-    const result = revokeTenantApiKey(id);
+    const result = await revokeTenantApiKeyState(id);
     if (!result.record) {
       console.error(`Tenant key record not found: ${id}`);
       process.exit(1);

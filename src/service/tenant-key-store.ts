@@ -16,6 +16,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DEFAULT_HOSTED_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
+import type { SecretEnvelopeRecord } from './secret-envelope.js';
 
 export type TenantKeyStatus = 'active' | 'inactive' | 'revoked';
 
@@ -35,6 +36,7 @@ export interface TenantKeyRecord {
   rotatedFromKeyId: string | null;
   supersededByKeyId: string | null;
   supersededAt: string | null;
+  recoveryEnvelope: SecretEnvelopeRecord | null;
 }
 
 interface LegacyTenantKeyRecordV1 {
@@ -109,6 +111,21 @@ function defaultStore(): TenantKeyStoreFile {
   return { version: 2, records: [] };
 }
 
+function normalizeRecord(record: TenantKeyRecord): TenantKeyRecord {
+  return {
+    ...record,
+    planId: record.planId ?? null,
+    monthlyRunQuota: typeof record.monthlyRunQuota === 'number' ? record.monthlyRunQuota : null,
+    lastUsedAt: record.lastUsedAt ?? null,
+    deactivatedAt: record.deactivatedAt ?? null,
+    revokedAt: record.revokedAt ?? null,
+    rotatedFromKeyId: record.rotatedFromKeyId ?? null,
+    supersededByKeyId: record.supersededByKeyId ?? null,
+    supersededAt: record.supersededAt ?? null,
+    recoveryEnvelope: record.recoveryEnvelope ?? null,
+  };
+}
+
 function migrateLegacyRecord(record: LegacyTenantKeyRecordV1): TenantKeyRecord {
   return {
     ...record,
@@ -118,6 +135,7 @@ function migrateLegacyRecord(record: LegacyTenantKeyRecordV1): TenantKeyRecord {
     rotatedFromKeyId: null,
     supersededByKeyId: null,
     supersededAt: null,
+    recoveryEnvelope: null,
   };
 }
 
@@ -127,7 +145,10 @@ function loadStore(): TenantKeyStoreFile {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as TenantKeyStoreFile | TenantKeyStoreFileV1;
     if (parsed.version === 2 && Array.isArray(parsed.records)) {
-      return parsed;
+      return {
+        version: 2,
+        records: parsed.records.map((record) => normalizeRecord(record as TenantKeyRecord)),
+      };
     }
     if (parsed.version === 1 && Array.isArray(parsed.records)) {
       return {
@@ -195,6 +216,7 @@ function buildTenantKeyRecord(options: {
     rotatedFromKeyId: options.rotatedFromKeyId ?? null,
     supersededByKeyId: null,
     supersededAt: null,
+    recoveryEnvelope: null,
   };
 }
 
@@ -340,6 +362,28 @@ export function revokeTenantApiKey(id: string): {
   }
   record.status = 'revoked';
   record.revokedAt = new Date().toISOString();
+  saveStore(store);
+  return { record, path: storePath() };
+}
+
+export function findTenantKeyRecordById(id: string): {
+  record: TenantKeyRecord | null;
+  path: string;
+} {
+  const store = loadStore();
+  return {
+    record: store.records.find((entry) => entry.id === id) ?? null,
+    path: storePath(),
+  };
+}
+
+export function setTenantKeyRecoveryEnvelope(id: string, recoveryEnvelope: SecretEnvelopeRecord | null): {
+  record: TenantKeyRecord;
+  path: string;
+} {
+  const store = loadStore();
+  const record = requireRecord(store, id);
+  record.recoveryEnvelope = recoveryEnvelope;
   saveStore(store);
   return { record, path: storePath() };
 }
