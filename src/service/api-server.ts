@@ -5353,19 +5353,40 @@ app.post('/api/v1/pipeline/run', async (c) => {
       rateLimit,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
-      // Auto-filing: when sign=true and filing adapter is available, include XBRL mapping summary
-      filingExport: (sign && report.certificate) ? (() => {
+      // Auto-filing: when sign=true and filing adapter is available, include XBRL summary + issued report package
+      ...(await (async () => {
+        if (!sign || !report.certificate) {
+          return { filingExport: null, filingPackage: null };
+        }
         try {
           const adapter = filingRegistry.get('xbrl-us-gaap-2024');
-          if (!adapter) return null;
+          if (!adapter) return { filingExport: null, filingPackage: null };
+          const { issueFilingPackage } = await import('../filing/report-package.js');
           const envelope = buildCounterpartyEnvelope(
             report.runId, report.decision, report.certificate?.certificateId ?? null,
             report.evidenceChain?.terminalHash ?? '', report.execution?.rows ?? [], report.liveProof.mode,
           );
           const mapping = adapter.mapToTaxonomy(envelope);
-          return { adapterId: adapter.id, coveragePercent: mapping.coveragePercent, mappedCount: mapping.mapped.length };
-        } catch { return null; }
-      })() : null,
+          const pkg = adapter.generatePackage(mapping);
+          pkg.evidenceLink = {
+            runId: report.runId,
+            certificateId: report.certificate?.certificateId ?? null,
+            evidenceChainTerminal: report.evidenceChain?.terminalHash ?? '',
+          };
+          pkg.issuedPackage = await issueFilingPackage(pkg);
+          return {
+            filingExport: { adapterId: adapter.id, coveragePercent: mapping.coveragePercent, mappedCount: mapping.mapped.length },
+            filingPackage: {
+              adapterId: adapter.id,
+              coveragePercent: mapping.coveragePercent,
+              mappedCount: mapping.mapped.length,
+              issuedPackage: pkg.issuedPackage,
+            },
+          };
+        } catch {
+          return { filingExport: null, filingPackage: null };
+        }
+      })()),
     });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
@@ -5489,6 +5510,8 @@ app.post('/api/v1/filing/export', async (c) => {
     const mapping = adapter.mapToTaxonomy(envelope);
     const pkg = adapter.generatePackage(mapping);
     pkg.evidenceLink = { runId, certificateId: certificateId ?? null, evidenceChainTerminal: evidenceChainTerminal ?? '' };
+    const { issueFilingPackage } = await import('../filing/report-package.js');
+    pkg.issuedPackage = await issueFilingPackage(pkg);
 
     return c.json({
       adapterId: adapter.id,

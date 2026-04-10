@@ -14,6 +14,7 @@ import { strict as assert } from 'node:assert';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
+import JSZip from 'jszip';
 import Stripe from 'stripe';
 import { startServer } from '../src/service/api-server.js';
 import { issueTenantApiKey, resetTenantKeyStoreForTests, revokeTenantApiKey } from '../src/service/tenant-key-store.js';
@@ -274,6 +275,10 @@ async function run() {
       ok(body.trustChain.type === 'attestor.trust_chain.v1', 'Pipeline(signed): trust chain type');
       ok(body.trustChain.ca?.type === 'attestor.ca_certificate.v1', 'Pipeline(signed): CA cert in chain');
       ok(body.trustChain.leaf?.type === 'attestor.leaf_certificate.v1', 'Pipeline(signed): leaf cert in chain');
+      ok(body.filingPackage !== null, 'Pipeline(signed): filing package present');
+      ok(body.filingPackage.adapterId === 'xbrl-us-gaap-2024', 'Pipeline(signed): filing package adapter');
+      ok(body.filingPackage.issuedPackage.fileExtension === '.xbr', 'Pipeline(signed): filing package uses .xbr');
+      ok(body.filingPackage.issuedPackage.archive.base64.length > 0, 'Pipeline(signed): filing archive base64 present');
       console.log(`    cert=${fullCert.certificateId}, chain: CA=${body.trustChain.ca.name}, leaf=${body.trustChain.leaf.subject}`);
     }
 
@@ -336,6 +341,11 @@ async function run() {
       ok(body.package.content.facts.length > 0, 'Filing: package has facts');
       ok(body.package.evidenceLink.runId === 'filing-test-1', 'Filing: evidence link runId');
       ok(body.package.evidenceLink.certificateId === 'cert_test123', 'Filing: evidence link certId');
+      ok(body.package.issuedPackage.fileExtension === '.xbr', 'Filing: report package uses .xbr');
+      ok(body.package.issuedPackage.files.some((f: any) => f.path === 'META-INF/reportPackage.json'), 'Filing: includes reportPackage.json');
+      const zip = await JSZip.loadAsync(Buffer.from(body.package.issuedPackage.archive.base64, 'base64'));
+      ok(zip.file(`${body.package.issuedPackage.topLevelDirectory}/META-INF/reportPackage.json`) !== null, 'Filing: zip metadata exists');
+      ok(zip.file(`${body.package.issuedPackage.topLevelDirectory}/${body.package.issuedPackage.reportPath}`) !== null, 'Filing: zip report exists');
       console.log(`    mapped=${body.mapping.mappedCount}, coverage=${body.mapping.coveragePercent}%, facts=${body.package.content.facts.length}`);
     }
 

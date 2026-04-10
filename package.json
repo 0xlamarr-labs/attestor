@@ -70,6 +70,7 @@
     "hono": "^4.12.10",
     "ioredis": "^5.10.1",
     "jose": "^6.2.2",
+    "jszip": "^3.10.1",
     "nodemailer": "^8.0.5",
     "openai": "^4.77.3",
     "openid-client": "^6.8.2",

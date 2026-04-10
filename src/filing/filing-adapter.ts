@@ -111,6 +111,8 @@ export interface FilingPackage {
   content: Record<string, unknown>;
   /** Validation results. */
   validation: FilingValidation;
+  /** Issued report-package artifact (when packaging has been performed). */
+  issuedPackage?: FilingIssuedPackage | null;
   /** Link back to Attestor evidence. */
   evidenceLink: {
     runId: string;
@@ -124,6 +126,30 @@ export interface FilingValidation {
   errors: string[];
   warnings: string[];
   coveragePercent: number;
+}
+
+export interface FilingIssuedPackage {
+  packageType: 'non-inline-xbrl' | 'unconstrained';
+  fileExtension: '.xbr' | '.zip';
+  documentType: string;
+  topLevelDirectory: string;
+  reportPath: string;
+  files: FilingIssuedPackageFile[];
+  archive: {
+    fileName: string;
+    mediaType: 'application/zip';
+    byteSize: number;
+    sha256: string;
+    base64: string;
+  };
+  warnings: string[];
+}
+
+export interface FilingIssuedPackageFile {
+  path: string;
+  mediaType: string;
+  sizeBytes: number;
+  sha256: string;
 }
 
 // ─── Filing Adapter Registry ────────────────────────────────────────────────

@@ -91,7 +91,7 @@ Current boundary:
 - Finance is the most complete end-to-end implementation.
 - Healthcare is a pack-first second domain.
 - Snowflake is a real connector module, not yet a top-level prove flow.
-- XBRL is a real mapping/export adapter with API export, not yet a full filing issuance workflow.
+- XBRL is a real mapping/export adapter with API export and report-package issuance; the remaining boundary is regulator-specific validation/submission, not package creation.
 - PKI-backed issuance and chain verification exist on the API path; default CLI/kit issuance still centers on direct Ed25519 signer keys.
 
 ## Reviewer Authority
@@ -122,7 +122,7 @@ Replay across runs is detectable. Reviewer identity can be operator-asserted or 
 
 - Broader end-to-end domain implementations beyond finance
 - Top-level non-PostgreSQL prove routing
-- Filing issuance wired into authority closure by default
+- Regulator-specific submission and validation beyond the issued filing package
 - Full IAM/session lifecycle
 - PKI as the default verifier path across all CLI/kit flows
 - Redis-backed async service mode as the default API backend

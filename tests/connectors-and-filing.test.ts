@@ -5,6 +5,7 @@
  */
 
 import { strict as assert } from 'node:assert';
+import JSZip from 'jszip';
 
 let passed = 0;
 function ok(condition: boolean, msg: string): void { assert(condition, msg); passed++; }
@@ -110,7 +111,47 @@ async function run() {
     ok((pkg.content as any).facts.length === mapping.mapped.length, 'XBRL: facts count = mapped count');
     ok((pkg.content as any).schemaRef.includes('us-gaap'), 'XBRL: schema ref present');
 
+    const { issueFilingPackage } = await import('../src/filing/report-package.js');
+    pkg.evidenceLink = { runId: envelope.runId, certificateId: envelope.certificateId, evidenceChainTerminal: envelope.evidenceChainTerminal };
+    pkg.issuedPackage = await issueFilingPackage(pkg);
+    ok(pkg.issuedPackage !== null, 'XBRL: issued package present');
+    ok(pkg.issuedPackage!.fileExtension === '.xbr', 'XBRL: issued package uses .xbr');
+    ok(pkg.issuedPackage!.files.some((f) => f.path === 'META-INF/reportPackage.json'), 'XBRL: reportPackage.json included');
+    ok(pkg.issuedPackage!.files.some((f) => f.path.startsWith('reports/') && f.path.endsWith('.xbrl')), 'XBRL: XBRL report included');
+
+    const issuedZip = await JSZip.loadAsync(Buffer.from(pkg.issuedPackage!.archive.base64, 'base64'));
+    ok(issuedZip.file(`${pkg.issuedPackage!.topLevelDirectory}/META-INF/reportPackage.json`) !== null, 'XBRL: zip has metadata file');
+    ok(issuedZip.file(`${pkg.issuedPackage!.topLevelDirectory}/${pkg.issuedPackage!.reportPath}`) !== null, 'XBRL: zip has report file');
+
     console.log(`    package: ${(pkg.content as any).facts.length} facts, valid=${pkg.validation.valid}, warnings=${pkg.validation.warnings.length}`);
+  }
+
+  // ═══ xBRL-CSV PACKAGING ═══
+  console.log('\n  [xBRL-CSV Filing Package]');
+  {
+    const { xbrlCsvEbaAdapter } = await import('../src/filing/xbrl-csv-adapter.js');
+    const { buildCounterpartyEnvelope } = await import('../src/filing/xbrl-adapter.js');
+    const { issueFilingPackage } = await import('../src/filing/report-package.js');
+
+    const rows = [
+      { counterparty_name: 'Bank of Nova Scotia', exposure_usd: 250000000, credit_rating: 'AA-', sector: 'Banking' },
+    ];
+    const envelope = buildCounterpartyEnvelope('csv-run', 'pass', 'cert_csv', 'csvhash', rows, 'live_runtime');
+    const mapping = xbrlCsvEbaAdapter.mapToTaxonomy(envelope);
+    const pkg = xbrlCsvEbaAdapter.generatePackage(mapping);
+    pkg.evidenceLink = { runId: envelope.runId, certificateId: envelope.certificateId, evidenceChainTerminal: envelope.evidenceChainTerminal };
+    pkg.issuedPackage = await issueFilingPackage(pkg);
+
+    ok(pkg.issuedPackage!.reportPath.endsWith('.json'), 'xBRL-CSV: report path is JSON-rooted');
+    ok(pkg.issuedPackage!.files.some((f) => f.path.startsWith('reports/') && f.path.endsWith('.csv')), 'xBRL-CSV: CSV file included');
+
+    const issuedZip = await JSZip.loadAsync(Buffer.from(pkg.issuedPackage!.archive.base64, 'base64'));
+    const metadataEntry = issuedZip.file(`${pkg.issuedPackage!.topLevelDirectory}/${pkg.issuedPackage!.reportPath}`);
+    ok(metadataEntry !== null, 'xBRL-CSV: metadata file exists');
+    const metadataJson = JSON.parse(await metadataEntry!.async('string'));
+    ok(metadataJson.documentInfo.documentType === 'https://xbrl.org/2021/xbrl-csv', 'xBRL-CSV: official documentType');
+
+    console.log(`    package: files=${pkg.issuedPackage!.files.length}, csv=${pkg.issuedPackage!.files.filter((f) => f.path.endsWith('.csv')).length}`);
   }
 
   // ═══ FILING ADAPTER REGISTRY ═══

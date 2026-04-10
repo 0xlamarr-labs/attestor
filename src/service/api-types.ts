@@ -48,6 +48,12 @@ export interface SyncPipelineRunResponse {
   identitySource: 'operator_asserted' | 'oidc_verified' | 'pki_bound';
   reviewerName: string | null;
   filingExport: { adapterId: string; coveragePercent: number; mappedCount: number } | null;
+  filingPackage: {
+    adapterId: string;
+    coveragePercent: number;
+    mappedCount: number;
+    issuedPackage: Record<string, unknown>;
+  } | null;
 }
 
 // ─── Async Pipeline ─────────────────────────────────────────────────────────
