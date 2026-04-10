@@ -28,6 +28,7 @@
  * - GET  /api/v1/admin/billing/entitlements — hosted billing entitlement read model
  * - GET  /api/v1/admin/audit         — tamper-evident hosted admin ledger
  * - GET  /api/v1/admin/telemetry     — OTLP exporter status / config summary
+ * - GET  /api/v1/metrics             — Prometheus scrape endpoint with dedicated metrics token or admin fallback
  * - GET  /api/v1/admin/queue         — async queue summary + retry policy
  * - GET  /api/v1/admin/queue/dlq     — failed-job / dead-letter inspection
  * - POST /api/v1/admin/queue/jobs/:id/retry — manual retry of failed async jobs
@@ -519,6 +520,20 @@ function currentAdminAuthorized(c: Context): Response | null {
   }
 
   return null;
+}
+
+function currentMetricsAuthorized(c: Context): Response | null {
+  const configured = process.env.ATTESTOR_METRICS_API_KEY?.trim();
+  if (configured) {
+    const authHeader = c.req.header('authorization') ?? '';
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!token || token !== configured) {
+      return c.json({ error: 'Valid metrics API key required in Authorization header.' }, 401);
+    }
+    return null;
+  }
+
+  return currentAdminAuthorized(c);
 }
 
 function stripeClient(): Stripe {
@@ -3742,6 +3757,16 @@ app.get('/api/v1/admin/billing/entitlements', async (c) => {
 
 app.get('/api/v1/admin/metrics', (c) => {
   const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  return c.body(renderPrometheusMetrics('0.1.0'), 200, {
+    'content-type': 'text/plain; version=0.0.4; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+});
+
+app.get('/api/v1/metrics', (c) => {
+  const unauthorized = currentMetricsAuthorized(c);
   if (unauthorized) return unauthorized;
 
   return c.body(renderPrometheusMetrics('0.1.0'), 200, {

@@ -169,7 +169,8 @@ export function tenantMiddleware() {
       c.req.path === '/api/v1/health' ||
       c.req.path === '/api/v1/ready' ||
       c.req.path === '/api/v1/domains' ||
-      c.req.path === '/api/v1/connectors'
+      c.req.path === '/api/v1/connectors' ||
+      c.req.path === '/api/v1/metrics'
     ) {
       return next();
     }

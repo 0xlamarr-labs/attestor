@@ -1,0 +1,40 @@
+groups:
+  - name: attestor-availability
+    rules:
+      - alert: AttestorApiDown
+        expr: up{job="attestor-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Attestor API target is down
+          description: Prometheus cannot scrape the Attestor metrics endpoint.
+
+      - alert: OTelCollectorDown
+        expr: up{job="otel-collector"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: OpenTelemetry Collector target is down
+          description: Prometheus cannot scrape the OTel Collector metrics exporter.
+
+  - name: attestor-traffic
+    rules:
+      - alert: AttestorHttp5xxBurst
+        expr: sum(increase(attestor_http_requests_total{status_code=~"5.."}[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Attestor API is serving 5xx responses
+          description: One or more Attestor routes emitted HTTP 5xx responses in the last 10 minutes.
+
+      - alert: AttestorBillingWebhookFailures
+        expr: sum(increase(attestor_billing_webhook_events_total{outcome=~"conflict|signature_invalid"}[15m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Attestor billing webhooks are failing validation or reconciliation
+          description: Stripe webhook processing recorded conflicts or invalid signatures in the last 15 minutes.

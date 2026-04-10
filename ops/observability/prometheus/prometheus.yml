@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: attestor-api
+    metrics_path: /api/v1/metrics
+    authorization:
+      type: Bearer
+      credentials: metrics-secret
+    static_configs:
+      - targets:
+          - attestor-api:3700
+
+  - job_name: otel-collector
+    static_configs:
+      - targets:
+          - otel-collector:8889

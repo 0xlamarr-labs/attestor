@@ -11,15 +11,25 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
   batch:
     timeout: 1s
     send_batch_size: 512
 
 exporters:
-  otlp/lgtm:
-    endpoint: lgtm:4317
+  otlp/tempo:
+    endpoint: tempo:4317
     tls:
       insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
   debug:
     verbosity: basic
 
@@ -31,13 +41,13 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlp/lgtm, debug]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo, debug]
     metrics:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlp/lgtm, debug]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, debug]
     logs:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [otlp/lgtm, debug]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki, debug]

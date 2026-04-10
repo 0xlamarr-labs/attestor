@@ -122,6 +122,7 @@ async function run() {
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-observability.jsonl');
   process.env.ATTESTOR_SESSION_COOKIE_SECURE = 'false';
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
+  process.env.ATTESTOR_METRICS_API_KEY = 'metrics-secret';
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
   process.env.ATTESTOR_RATE_LIMIT_PRO_REQUESTS = '20';
@@ -2158,6 +2159,22 @@ async function run() {
         le: '+Inf',
       })[0];
       ok(typeof durationCount === 'number' && typeof plusInfBucket === 'number' && plusInfBucket === durationCount, 'Admin Metrics: +Inf bucket matches histogram count');
+
+      const scrapeMetricsNoAuth = await fetch(`${BASE}/api/v1/metrics`);
+      ok(scrapeMetricsNoAuth.status === 401, 'Scrape Metrics: auth required');
+
+      const scrapeMetricsWrongAuth = await fetch(`${BASE}/api/v1/metrics`, {
+        headers: { Authorization: 'Bearer wrong-secret' },
+      });
+      ok(scrapeMetricsWrongAuth.status === 401, 'Scrape Metrics: wrong token rejected');
+
+      const scrapeMetricsRes = await fetch(`${BASE}/api/v1/metrics`, {
+        headers: { Authorization: 'Bearer metrics-secret' },
+      });
+      ok(scrapeMetricsRes.status === 200, 'Scrape Metrics: status 200');
+      ok((scrapeMetricsRes.headers.get('content-type') ?? '').includes('text/plain'), 'Scrape Metrics: content type is text/plain');
+      const scrapeMetricsBody = await scrapeMetricsRes.text();
+      ok(scrapeMetricsBody.includes('attestor_http_requests_total'), 'Scrape Metrics: request counter exposed');
 
       const observabilityLog = readFileSync(process.env.ATTESTOR_OBSERVABILITY_LOG_PATH!, 'utf8').trim().split(/\r?\n/).map((line) => JSON.parse(line));
       ok(observabilityLog.some((entry: any) => entry.route === '/api/v1/health' && entry.traceId), 'Observability Log: health request captured with trace id');

@@ -1225,6 +1225,7 @@ export interface RateLimitContext {
 // ─── Route Constants ────────────────────────────────────────────────────────
 
 export const API_ROUTES = {
+  METRICS: '/api/v1/metrics',
   PIPELINE_RUN: '/api/v1/pipeline/run',
   PIPELINE_RUN_ASYNC: '/api/v1/pipeline/run-async',
   PIPELINE_STATUS: '/api/v1/pipeline/status/:jobId',
