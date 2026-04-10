@@ -18,16 +18,21 @@ Current backup tooling covers:
   - Stripe webhook dedupe store
 - optional shared PostgreSQL billing event ledger export/import
 
-Current backup tooling does **not** provide:
+Current application-level snapshot tooling does **not** provide by itself:
 
-- PostgreSQL point-in-time recovery (PITR)
-- WAL archiving
-- physical replication
-- Redis persistence or queue replay
-- full invoice line-item restore beyond the export-oriented billing event ledger
+- physical PostgreSQL replication
+- automated failover
+- exact in-flight job replay semantics beyond BullMQ + Redis durability
 - restore of optional observability JSONL logs
 
-This is a **logical snapshot first slice**. For production PostgreSQL disaster recovery, use regular PostgreSQL backup/WAL procedures in addition to Attestor snapshots.
+This remains a **logical snapshot first slice** for control-plane state. The repo now also ships an operator bundle for PostgreSQL WAL archiving/PITR and Redis/BullMQ durability:
+
+- [docker-compose.dr.yml](../../docker-compose.dr.yml)
+- [ops/postgres/pitr/postgresql-pitr.conf](../../ops/postgres/pitr/postgresql-pitr.conf)
+- [ops/postgres/pitr/restore-wal.sh](../../ops/postgres/pitr/restore-wal.sh)
+- [ops/postgres/pitr/README.md](../../ops/postgres/pitr/README.md)
+- [ops/redis/redis-recovery.conf](../../ops/redis/redis-recovery.conf)
+- [ops/redis/README.md](../../ops/redis/README.md)
 
 ## Why this exists
 
@@ -53,12 +58,16 @@ Use both layers:
 2. **Native PostgreSQL backups**
    - `pg_dump` / logical dumps for routine export
    - continuous archiving / WAL-based PITR for serious DR
+3. **Durable Redis/BullMQ runtime**
+   - Redis AOF + RDB persistence for queue and shared runtime state
+   - BullMQ recovery expectations documented alongside Redis durability
 
 Official references:
 
 - [PostgreSQL Backup and Restore](https://www.postgresql.org/docs/current/backup.html)
 - [PostgreSQL `pg_dump`](https://www.postgresql.org/docs/current/app-pgdump.html)
 - [PostgreSQL Continuous Archiving and PITR](https://www.postgresql.org/docs/current/continuous-archiving.html)
+- [Redis Persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
 - [AWS Disaster Recovery Strategies](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)
 
 ## Backup command
@@ -122,6 +131,47 @@ Restore behavior:
 
 If a billing ledger snapshot is present but PostgreSQL is not configured, restore fails fast instead of silently skipping shared billing truth.
 
+## PostgreSQL PITR bundle
+
+The repo ships a PITR-oriented PostgreSQL config and restore helper:
+
+- `docker-compose.dr.yml` mounts `ops/postgres/pitr/postgresql-pitr.conf`
+- `postgresql-pitr.conf` enables:
+  - `wal_level = replica`
+  - `archive_mode = on`
+  - `archive_timeout = 60s`
+  - `restore_command = '/etc/postgresql/restore-wal.sh %f %p'`
+- `restore-wal.sh` copies archived WAL files back into place during restore
+
+Recommended drill:
+
+1. Take the Attestor control-plane snapshot.
+2. Take a PostgreSQL base backup with `pg_basebackup`.
+3. Preserve the WAL archive directory.
+4. Restore the base backup onto a replacement PostgreSQL node.
+5. Create `recovery.signal` in the target PostgreSQL data directory.
+6. Start PostgreSQL with `postgresql-pitr.conf` and the archived WAL directory mounted.
+7. Restore the Attestor control-plane snapshot on top for file-backed and export-backed state.
+8. Start Attestor API + worker against the recovered PostgreSQL + Redis pair.
+
+This is a shipped operator bundle, not automatic replica promotion or managed failover.
+
+## Redis / BullMQ recovery bundle
+
+The repo ships a Redis durability reference at `ops/redis/redis-recovery.conf` and wires it into `docker-compose.dr.yml`.
+
+Current Redis recovery stance:
+
+- `appendonly yes`
+- `appendfsync everysec`
+- RDB snapshots remain enabled as an additional checkpoint layer
+
+BullMQ recovery expectation:
+
+- queued jobs survive according to Redis durability
+- in-flight jobs may be retried or marked stalled after process loss
+- the in-process fallback path is still non-durable
+
 ## Critical vs ephemeral state
 
 ### Critical
@@ -181,7 +231,7 @@ It is not yet equivalent to:
 
 - automated replicated control-plane storage
 - zero-downtime failover
-- PITR-backed enterprise database operations
+- orchestrated multi-region failover
 
 ## Current boundary
 
@@ -189,5 +239,5 @@ This improves operational safety materially, but it does not replace the longer-
 
 - move the remaining non-shared control-plane edges fully off local files in all deployments
 - add broader shared multi-node stores
-- add Redis/queue recovery policy beyond BullMQ retention
-- add production PostgreSQL backup automation outside the application
+- add fully automated PostgreSQL backup scheduling and retention policy outside the application
+- add managed Redis failover / queue recovery operations beyond the shipped durability bundle

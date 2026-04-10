@@ -337,6 +337,23 @@ export function deriveHostedAccountStatusFromStripeSubscriptionStatus(
   return 'suspended';
 }
 
+function deriveStripeSubscriptionStatusFromInvoiceEvent(
+  eventType: string,
+  currentStatus: StripeSubscriptionStatus,
+): StripeSubscriptionStatus {
+  if (eventType === 'invoice.paid') {
+    if (currentStatus === 'paused' || currentStatus === 'canceled') return currentStatus;
+    if (currentStatus === 'trialing') return 'trialing';
+    return 'active';
+  }
+  if (eventType === 'invoice.payment_failed') {
+    if (currentStatus === 'paused' || currentStatus === 'canceled') return currentStatus;
+    if (currentStatus === 'unpaid') return 'unpaid';
+    return 'past_due';
+  }
+  return currentStatus;
+}
+
 export function createHostedAccount(input: CreateHostedAccountInput): {
   record: HostedAccountRecord;
   path: string;
@@ -643,6 +660,10 @@ export function applyStripeInvoiceState(options: {
 
   const previousStatus = record.status;
   const previousBillingStatus = record.billing.stripeSubscriptionStatus;
+  const nextBillingStatus = deriveStripeSubscriptionStatusFromInvoiceEvent(
+    options.eventType,
+    record.billing.stripeSubscriptionStatus,
+  );
   const paidAt = options.eventType === 'invoice.paid'
     ? (options.paidAt ?? new Date().toISOString())
     : record.billing.lastInvoicePaidAt;
@@ -658,6 +679,7 @@ export function applyStripeInvoiceState(options: {
     provider: 'stripe',
     stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
     stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripeSubscriptionStatus: nextBillingStatus,
     stripePriceId: options.stripePriceId ?? record.billing.stripePriceId,
     lastInvoiceId: options.invoiceId,
     lastInvoiceStatus: normalizedInvoiceStatus,
@@ -673,6 +695,16 @@ export function applyStripeInvoiceState(options: {
     lastWebhookEventType: options.eventType,
     lastWebhookProcessedAt: new Date().toISOString(),
   };
+
+  const derivedStatus = deriveHostedAccountStatusFromStripeSubscriptionStatus(nextBillingStatus);
+  if (record.status !== 'archived' && derivedStatus && record.status !== derivedStatus) {
+    record.status = derivedStatus;
+    if (derivedStatus === 'active') {
+      record.suspendedAt = null;
+    } else if (derivedStatus === 'suspended') {
+      record.suspendedAt = new Date().toISOString();
+    }
+  }
 
   touchRecord(record);
   saveStore(store);

@@ -1,0 +1,76 @@
+version: '3.9'
+
+services:
+  postgres-dr:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: attestor
+      POSTGRES_PASSWORD: attestor
+      POSTGRES_DB: attestor
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+    volumes:
+      - postgres-dr-data:/var/lib/postgresql/data
+      - postgres-dr-archive:/var/lib/postgresql/archive
+      - ./ops/postgres/pitr/postgresql-pitr.conf:/etc/postgresql/postgresql.conf:ro
+      - ./ops/postgres/pitr/restore-wal.sh:/etc/postgresql/restore-wal.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U attestor -d attestor']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis-dr:
+    image: redis:7
+    restart: unless-stopped
+    command: ['redis-server', '/usr/local/etc/redis/redis.conf']
+    volumes:
+      - redis-dr-data:/data
+      - ./ops/redis/redis-recovery.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    command: npm run serve
+    restart: unless-stopped
+    depends_on:
+      postgres-dr:
+        condition: service_healthy
+      redis-dr:
+        condition: service_healthy
+    environment:
+      PORT: 3700
+      REDIS_URL: redis://redis-dr:6379
+      ATTESTOR_CONTROL_PLANE_PG_URL: postgresql://attestor:attestor@postgres-dr:5432/attestor
+      ATTESTOR_BILLING_LEDGER_PG_URL: postgresql://attestor:attestor@postgres-dr:5432/attestor
+      ATTESTOR_HA_MODE: 'true'
+    ports:
+      - '3700:3700'
+
+  worker:
+    build: .
+    command: npm run worker
+    restart: unless-stopped
+    depends_on:
+      postgres-dr:
+        condition: service_healthy
+      redis-dr:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis-dr:6379
+      ATTESTOR_CONTROL_PLANE_PG_URL: postgresql://attestor:attestor@postgres-dr:5432/attestor
+      ATTESTOR_BILLING_LEDGER_PG_URL: postgresql://attestor:attestor@postgres-dr:5432/attestor
+      ATTESTOR_HA_MODE: 'true'
+
+volumes:
+  postgres-dr-data:
+  postgres-dr-archive:
+  redis-dr-data:

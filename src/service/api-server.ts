@@ -12,12 +12,14 @@
  * - GET  /api/v1/connectors          — registered database connectors
  * - GET  /api/v1/account             — current hosted account summary for tenant-authenticated callers
  * - GET  /api/v1/account/entitlement — current hosted billing entitlement truth
+ * - GET  /api/v1/account/features    — current hosted feature entitlement truth
  * - GET  /api/v1/account/usage       — current hosted usage/rate-limit summary
  * - POST /api/v1/account/billing/checkout — create Stripe Checkout subscription session
  * - POST /api/v1/account/billing/portal — create Stripe Billing Portal session
  * - GET  /api/v1/account/billing/export — export hosted billing summary/history as JSON or CSV
  * - GET  /api/v1/account/billing/reconciliation — per-account charge/invoice reconciliation view
  * - GET/POST /api/v1/admin/accounts  — hosted operator account provisioning
+ * - GET  /api/v1/admin/accounts/:id/features — operator hosted feature entitlement truth
  * - GET  /api/v1/admin/accounts/:id/billing/export — operator billing export for a hosted account
  * - GET  /api/v1/admin/accounts/:id/billing/reconciliation — operator billing reconciliation for a hosted account
  * - POST /api/v1/admin/accounts/:id/billing/stripe — attach Stripe billing ids/status
@@ -202,6 +204,7 @@ import {
   type HostedBillingEntitlementRecord,
   type HostedBillingEntitlementStatus,
 } from './billing-entitlement-store.js';
+import { buildHostedFeatureServiceView } from './billing-feature-service.js';
 import {
   DEFAULT_HOSTED_PLAN_ID,
   defaultRateLimitWindowSeconds,
@@ -1839,6 +1842,13 @@ app.get('/api/v1/account/entitlement', async (c) => {
   return c.json({
     entitlement: billingEntitlementView(entitlement),
   });
+});
+
+app.get('/api/v1/account/features', async (c) => {
+  const current = await currentHostedAccount(c);
+  if (current instanceof Response) return current;
+  const entitlement = await readHostedBillingEntitlement(current.account);
+  return c.json(buildHostedFeatureServiceView(entitlement));
 });
 
 app.get('/api/v1/account/users', async (c) => {
@@ -3533,6 +3543,19 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
     entitlement: billingEntitlementView(entitlement),
     reconciliation,
   });
+});
+
+app.get('/api/v1/admin/accounts/:id/features', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const accountId = c.req.param('id');
+  const account = await findHostedAccountByIdState(accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${accountId}' was not found.` }, 404);
+  }
+  const entitlement = await readHostedBillingEntitlement(account);
+  return c.json(buildHostedFeatureServiceView(entitlement));
 });
 
 app.get('/api/v1/admin/accounts/:id/billing/reconciliation', async (c) => {

@@ -898,6 +898,16 @@ async function run() {
       ok(accountEntitlementBody.entitlement.accountId === createAccountBody.account.id, 'Account Entitlement: account id matches');
       ok(accountEntitlementBody.entitlement.effectivePlanId === 'starter', 'Account Entitlement: starter plan reflected');
 
+      const accountFeaturesInitialRes = await fetch(`${BASE}/api/v1/account/features`, {
+        headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
+      });
+      ok(accountFeaturesInitialRes.status === 200, 'Account Features: initial status 200');
+      const accountFeaturesInitialBody = await accountFeaturesInitialRes.json() as any;
+      const starterApiFeature = accountFeaturesInitialBody.features.find((entry: any) => entry.key === 'api.access');
+      ok(Boolean(starterApiFeature), 'Account Features: api.access feature present');
+      ok(starterApiFeature.granted === true, 'Account Features: api.access initially granted by plan default');
+      ok(starterApiFeature.grantSource === 'plan_default', 'Account Features: api.access initial source is plan default');
+
       const bootstrapRes = await fetch(`${BASE}/api/v1/account/users/bootstrap`, {
         method: 'POST',
         headers: {
@@ -1782,6 +1792,18 @@ async function run() {
       ok(typeof invoicePaidBody.billing.lastInvoicePaidAt === 'string', 'Stripe Webhook: invoice paid stores paid timestamp');
       ok(invoicePaidBody.billing.delinquentSince === null, 'Stripe Webhook: invoice paid clears delinquentSince');
 
+      const billingAdminPostInvoiceLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'billing@account.example',
+          password: 'BillingPass456!',
+        }),
+      });
+      ok(billingAdminPostInvoiceLoginRes.status === 200, 'Auth: billing_admin can re-login after invoice recovery');
+      billingAdminCookie = cookieHeaderFromResponse(billingAdminPostInvoiceLoginRes);
+      ok(Boolean(billingAdminCookie), 'Auth: billing_admin invoice recovery login refreshes session cookie');
+
       const portalReadyRes = await fetch(`${BASE}/api/v1/account/billing/portal`, {
         method: 'POST',
         headers: { Cookie: billingAdminCookie! },
@@ -1878,6 +1900,33 @@ async function run() {
       ok(accountEntitlementAfterSummaryBody.entitlement.stripeEntitlementLookupKeys.includes('attestor.pro.api'), 'Account Entitlement: lookup keys persisted from Stripe entitlement summary');
       ok(accountEntitlementAfterSummaryBody.entitlement.stripeEntitlementFeatureIds.includes('feat_pro_api'), 'Account Entitlement: feature ids persisted from Stripe entitlement summary');
       ok(typeof accountEntitlementAfterSummaryBody.entitlement.stripeEntitlementSummaryUpdatedAt === 'string', 'Account Entitlement: entitlement summary timestamp stored');
+
+      const accountFeaturesRes = await fetch(`${BASE}/api/v1/account/features`, {
+        headers: { Cookie: billingAdminCookie! },
+      });
+      ok(accountFeaturesRes.status === 200, 'Account Features: status 200 after entitlement summary');
+      const accountFeaturesBody = await accountFeaturesRes.json() as any;
+      ok(accountFeaturesBody.summary.stripeSummaryPresent === true, 'Account Features: stripe summary marked present');
+      const apiFeature = accountFeaturesBody.features.find((entry: any) => entry.key === 'api.access');
+      ok(Boolean(apiFeature), 'Account Features: api.access feature still present');
+      ok(apiFeature.granted === true, 'Account Features: api.access granted after Stripe entitlement summary');
+      ok(apiFeature.grantSource === 'stripe_entitlement', 'Account Features: api.access source switches to Stripe entitlement');
+      ok(apiFeature.matchedLookupKeys.includes('attestor.pro.api'), 'Account Features: api.access matched Stripe lookup key');
+      const exportFeature = accountFeaturesBody.features.find((entry: any) => entry.key === 'billing.export');
+      ok(Boolean(exportFeature), 'Account Features: billing.export feature present');
+      ok(exportFeature.grantSource === 'stripe_entitlement', 'Account Features: billing.export source switches to Stripe entitlement');
+      const reconciliationFeature = accountFeaturesBody.features.find((entry: any) => entry.key === 'billing.reconciliation');
+      ok(Boolean(reconciliationFeature), 'Account Features: billing.reconciliation feature present');
+      ok(reconciliationFeature.granted === false, 'Account Features: missing Stripe-managed reconciliation entitlement stays disabled');
+      ok(reconciliationFeature.grantSource === 'stripe_not_granted', 'Account Features: reconciliation shows Stripe-not-granted status');
+
+      const adminAccountFeaturesRes = await fetch(`${BASE}/api/v1/admin/accounts/${createAccountBody.account.id}/features`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(adminAccountFeaturesRes.status === 200, 'Admin Account Features: status 200');
+      const adminAccountFeaturesBody = await adminAccountFeaturesRes.json() as any;
+      ok(adminAccountFeaturesBody.summary.stripeGrantedCount >= 2, 'Admin Account Features: stripe-backed features counted');
+      ok(adminAccountFeaturesBody.features.some((entry: any) => entry.key === 'billing.export' && entry.grantSource === 'stripe_entitlement'), 'Admin Account Features: export feature visible to admin');
 
       const accountAdminPostInvoiceLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
         method: 'POST',

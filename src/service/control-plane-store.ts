@@ -1896,6 +1896,25 @@ export async function applyStripeInvoiceStateState(options: {
   const record = match.record;
   const previousStatus = record.status;
   const previousBillingStatus = record.billing.stripeSubscriptionStatus;
+  const nextBillingStatus = options.eventType === 'invoice.paid'
+    ? (
+      record.billing.stripeSubscriptionStatus === 'paused'
+      || record.billing.stripeSubscriptionStatus === 'canceled'
+        ? record.billing.stripeSubscriptionStatus
+        : record.billing.stripeSubscriptionStatus === 'trialing'
+          ? 'trialing'
+          : 'active'
+    )
+    : options.eventType === 'invoice.payment_failed'
+      ? (
+        record.billing.stripeSubscriptionStatus === 'paused'
+        || record.billing.stripeSubscriptionStatus === 'canceled'
+          ? record.billing.stripeSubscriptionStatus
+          : record.billing.stripeSubscriptionStatus === 'unpaid'
+            ? 'unpaid'
+            : 'past_due'
+      )
+      : record.billing.stripeSubscriptionStatus;
   const paidAt = options.eventType === 'invoice.paid'
     ? (options.paidAt ?? new Date().toISOString())
     : record.billing.lastInvoicePaidAt;
@@ -1910,6 +1929,7 @@ export async function applyStripeInvoiceStateState(options: {
     provider: 'stripe',
     stripeCustomerId: options.stripeCustomerId ?? record.billing.stripeCustomerId,
     stripeSubscriptionId: options.stripeSubscriptionId ?? record.billing.stripeSubscriptionId,
+    stripeSubscriptionStatus: nextBillingStatus,
     stripePriceId: options.stripePriceId ?? record.billing.stripePriceId,
     lastInvoiceId: options.invoiceId,
     lastInvoiceStatus: normalizedInvoiceStatus,
@@ -1925,6 +1945,15 @@ export async function applyStripeInvoiceStateState(options: {
     lastWebhookEventType: options.eventType,
     lastWebhookProcessedAt: new Date().toISOString(),
   };
+  const derivedStatus = deriveHostedAccountStatusFromStripeSubscriptionStatus(nextBillingStatus);
+  if (record.status !== 'archived' && derivedStatus && record.status !== derivedStatus) {
+    record.status = derivedStatus;
+    if (derivedStatus === 'active') {
+      record.suspendedAt = null;
+    } else if (derivedStatus === 'suspended') {
+      record.suspendedAt = new Date().toISOString();
+    }
+  }
   touchRecord(record);
   await upsertHostedAccountPg(record);
   return {

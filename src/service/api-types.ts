@@ -270,6 +270,51 @@ export interface AccountBillingEntitlementResponse {
   entitlement: AccountBillingEntitlementRecord;
 }
 
+export interface AccountFeatureRecord {
+  key:
+    | 'api.access'
+    | 'account.users'
+    | 'billing.checkout'
+    | 'billing.portal'
+    | 'billing.export'
+    | 'billing.reconciliation'
+    | 'async.pipeline'
+    | 'iam.oidc_sso'
+    | 'healthcare.validation';
+  displayName: string;
+  description: string;
+  category: 'access' | 'account' | 'billing' | 'runtime' | 'identity' | 'domain';
+  granted: boolean;
+  available: boolean;
+  grantSource: 'stripe_entitlement' | 'plan_default' | 'stripe_not_granted' | 'not_in_plan';
+  planEligible: boolean;
+  stripeManaged: boolean;
+  stripeSummaryPresent: boolean;
+  configuredLookupKeys: string[];
+  matchedLookupKeys: string[];
+}
+
+export interface AccountFeaturesResponse {
+  accountId: string;
+  tenantId: string;
+  effectivePlanId: string | null;
+  provider: 'manual' | 'stripe';
+  entitlementStatus: 'provisioned' | 'checkout_completed' | 'active' | 'trialing' | 'delinquent' | 'suspended' | 'archived';
+  accessEnabled: boolean;
+  stripeSummaryUpdatedAt: string | null;
+  features: AccountFeatureRecord[];
+  summary: {
+    featureCount: number;
+    grantedCount: number;
+    availableCount: number;
+    stripeGrantedCount: number;
+    planDefaultCount: number;
+    stripeDeniedCount: number;
+    notInPlanCount: number;
+    stripeSummaryPresent: boolean;
+  };
+}
+
 export interface AccountUserMfaSummaryView {
   enabled: boolean;
   method: 'totp' | null;
@@ -1187,12 +1232,14 @@ export const API_ROUTES = {
   FILING_EXPORT: '/api/v1/filing/export',
   ACCOUNT_USAGE: '/api/v1/account/usage',
   ACCOUNT_SUMMARY: '/api/v1/account',
+  ACCOUNT_FEATURES: '/api/v1/account/features',
   ACCOUNT_OIDC: '/api/v1/account/oidc',
   ACCOUNT_BILLING_CHECKOUT: '/api/v1/account/billing/checkout',
   ACCOUNT_BILLING_PORTAL: '/api/v1/account/billing/portal',
   ACCOUNT_BILLING_EXPORT: '/api/v1/account/billing/export',
   ACCOUNT_BILLING_RECONCILIATION: '/api/v1/account/billing/reconciliation',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
+  ADMIN_ACCOUNT_FEATURES: '/api/v1/admin/accounts/:id/features',
   ADMIN_ACCOUNT_BILLING_EXPORT: '/api/v1/admin/accounts/:id/billing/export',
   ADMIN_ACCOUNT_BILLING_RECONCILIATION: '/api/v1/admin/accounts/:id/billing/reconciliation',
   ADMIN_ACCOUNT_SUSPEND: '/api/v1/admin/accounts/:id/suspend',

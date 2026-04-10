@@ -212,6 +212,11 @@ async function run(): Promise<void> {
     const entitlementBody = await entitlementRes.json() as any;
     ok(entitlementBody.entitlement.provider === 'manual', 'Tenant entitlement summary: provider starts manual');
 
+    const initialFeaturesRes = await fetch(`${base}/api/v1/account/features`, { headers: tenantAuth });
+    ok(initialFeaturesRes.status === 200, 'Tenant features summary: 200');
+    const initialFeaturesBody = await initialFeaturesRes.json() as any;
+    ok(initialFeaturesBody.features.some((entry: any) => entry.key === 'api.access' && entry.grantSource === 'plan_default'), 'Tenant features summary: api.access starts as plan-default feature');
+
     const bootstrapRes = await fetch(`${base}/api/v1/account/users/bootstrap`, {
       method: 'POST',
       headers: {
@@ -835,6 +840,46 @@ async function run(): Promise<void> {
     const adminEntitlementsAfterFeaturesBody = await adminEntitlementsAfterFeaturesRes.json() as any;
     ok(adminEntitlementsAfterFeaturesBody.records[0].stripeEntitlementLookupKeys.includes('attestor.pro.api'), 'Admin billing entitlements via shared PG: lookup keys persisted');
     ok(adminEntitlementsAfterFeaturesBody.records[0].stripeEntitlementFeatureIds.includes('feat_pro_api'), 'Admin billing entitlements via shared PG: feature ids persisted');
+
+    const postInvoiceLoginRes = await fetch(`${base}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: 'owner@pg-hosted.example',
+        password: 'PgOwnerPass123!',
+      }),
+    });
+    ok(postInvoiceLoginRes.status === 200, 'Shared PG post-invoice login: challenge response');
+    const postInvoiceLoginBody = await postInvoiceLoginRes.json() as any;
+    ok(postInvoiceLoginBody.mfaRequired === true, 'Shared PG post-invoice login still enforces MFA');
+
+    const postInvoiceVerifyRes = await fetch(`${base}/api/v1/auth/mfa/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeToken: postInvoiceLoginBody.challengeToken,
+        code: generateCurrentTotpCode(mfaEnrollBody.enrollment.secretBase32),
+      }),
+    });
+    ok(postInvoiceVerifyRes.status === 200, 'Shared PG post-invoice MFA verify: 200');
+    accountSessionCookie = postInvoiceVerifyRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    ok(Boolean(accountSessionCookie), 'Shared PG post-invoice MFA verify: fresh session cookie returned');
+
+    const accountFeaturesRes = await fetch(`${base}/api/v1/account/features`, {
+      headers: { Cookie: accountSessionCookie! },
+    });
+    ok(accountFeaturesRes.status === 200, 'Account features via shared PG: 200');
+    const accountFeaturesBody = await accountFeaturesRes.json() as any;
+    ok(accountFeaturesBody.summary.stripeSummaryPresent === true, 'Account features via shared PG: stripe summary visible');
+    ok(accountFeaturesBody.features.some((entry: any) => entry.key === 'api.access' && entry.grantSource === 'stripe_entitlement'), 'Account features via shared PG: api feature backed by Stripe entitlement');
+    ok(accountFeaturesBody.features.some((entry: any) => entry.key === 'billing.reconciliation' && entry.grantSource === 'stripe_not_granted'), 'Account features via shared PG: missing Stripe reconciliation entitlement reported');
+
+    const adminFeaturesRes = await fetch(`${base}/api/v1/admin/accounts/${createAccountBody.account.id}/features`, {
+      headers: { Authorization: 'Bearer admin-shared-control-plane' },
+    });
+    ok(adminFeaturesRes.status === 200, 'Admin account features via shared PG: 200');
+    const adminFeaturesBody = await adminFeaturesRes.json() as any;
+    ok(adminFeaturesBody.summary.grantedCount >= 2, 'Admin account features via shared PG: granted feature count reported');
 
     const adminBillingExportRes = await fetch(`${base}/api/v1/admin/accounts/${createAccountBody.account.id}/billing/export?limit=5`, {
       headers: { Authorization: 'Bearer admin-shared-control-plane' },
