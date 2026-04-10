@@ -22,9 +22,21 @@ import { resetBillingEventLedgerForTests } from '../src/service/billing-event-le
 import {
   claimProcessedStripeWebhookState,
   finalizeProcessedStripeWebhookState,
+  findAccountUserByEmailState,
+  issueAccountPasskeyChallengeTokenState,
   releaseProcessedStripeWebhookClaimState,
   resetSharedControlPlaneStoreForTests,
+  saveAccountUserRecordState,
 } from '../src/service/control-plane-store.js';
+import { buildAccountUserPasskeyCredentialRecord } from '../src/service/account-passkeys.js';
+import {
+  authFixtureCredential,
+  authenticationChallenge,
+  authenticationResponse,
+  registrationChallenge,
+  registrationResponse,
+  webauthnOrigin,
+} from './helpers/passkey-fixtures.js';
 
 let passed = 0;
 const stripe = new Stripe('sk_test_live_control_plane');
@@ -125,6 +137,10 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_monthly';
   process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_monthly';
   process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_monthly';
+  process.env.ATTESTOR_WEBAUTHN_RP_ID = 'dev.dontneeda.pw';
+  process.env.ATTESTOR_WEBAUTHN_ORIGIN = webauthnOrigin;
+  process.env.ATTESTOR_WEBAUTHN_RP_NAME = 'Attestor Test';
+  process.env.ATTESTOR_WEBAUTHN_REQUIRE_USER_VERIFICATION = 'false';
 
   await pg.initialise();
   await pg.start();
@@ -292,6 +308,112 @@ async function run(): Promise<void> {
     ok(mfaSummaryRes.status === 200, 'Shared PG MFA summary: 200');
     const mfaSummaryBody = await mfaSummaryRes.json() as any;
     ok(mfaSummaryBody.mfa.enabled === true, 'Shared PG MFA summary: enabled=true');
+
+    const passkeyOptionsRes = await fetch(`${base}/api/v1/account/passkeys/register/options`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: accountSessionCookie!,
+      },
+      body: JSON.stringify({
+        password: 'PgOwnerPass123!',
+        preferredAuthenticatorType: 'localDevice',
+      }),
+    });
+    ok(passkeyOptionsRes.status === 200, 'Shared PG passkey register options: 200');
+    ok(!existsSync(accountUserTokenStorePath), 'Shared PG passkey register options: no local token store created');
+
+    const passkeyUser = await findAccountUserByEmailState('owner@pg-hosted.example');
+    ok(Boolean(passkeyUser), 'Shared PG passkey seed: user lookup available');
+    const seededRegistrationToken = await issueAccountPasskeyChallengeTokenState({
+      purpose: 'passkey_registration',
+      accountId: passkeyUser!.accountId,
+      accountUserId: passkeyUser!.id,
+      email: passkeyUser!.email,
+      context: {
+        challenge: registrationChallenge,
+        rpId: 'dev.dontneeda.pw',
+        origin: webauthnOrigin,
+        userHandle: 'shared-pg-passkey-user-handle',
+      },
+    });
+
+    const passkeyRegisterVerifyRes = await fetch(`${base}/api/v1/account/passkeys/register/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: accountSessionCookie!,
+      },
+      body: JSON.stringify({
+        challengeToken: seededRegistrationToken.token,
+        response: registrationResponse,
+      }),
+    });
+    ok(passkeyRegisterVerifyRes.status === 200, 'Shared PG passkey register verify: 200');
+    const passkeyRegisterVerifyBody = await passkeyRegisterVerifyRes.json() as any;
+    ok(passkeyRegisterVerifyBody.user.passkeys.credentialCount === 1, 'Shared PG passkey register verify: count=1');
+    ok(!existsSync(accountUserStorePath), 'Shared PG passkey register verify: no local user store created');
+
+    const passkeyUserForAuth = await findAccountUserByEmailState('owner@pg-hosted.example');
+    ok(Boolean(passkeyUserForAuth), 'Shared PG passkey auth seed: user lookup available');
+    const nextPasskeyUser = structuredClone(passkeyUserForAuth!);
+    nextPasskeyUser.passkeys.userHandle = nextPasskeyUser.passkeys.userHandle || 'shared-pg-passkey-user-handle';
+    nextPasskeyUser.passkeys.credentials = [
+      buildAccountUserPasskeyCredentialRecord({
+        credential: {
+          id: authFixtureCredential.id,
+          publicKey: Buffer.from(authFixtureCredential.publicKey),
+          counter: authFixtureCredential.counter,
+        },
+        transports: ['internal'],
+        aaguid: null,
+        deviceType: 'singleDevice',
+        backedUp: false,
+      }),
+    ];
+    nextPasskeyUser.passkeys.updatedAt = new Date().toISOString();
+    nextPasskeyUser.updatedAt = nextPasskeyUser.passkeys.updatedAt;
+    await saveAccountUserRecordState(nextPasskeyUser);
+
+    const passkeyAuthOptionsRes = await fetch(`${base}/api/v1/auth/passkeys/options`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'owner@pg-hosted.example' }),
+    });
+    ok(passkeyAuthOptionsRes.status === 200, 'Shared PG passkey auth options: 200');
+    ok(!existsSync(accountUserTokenStorePath), 'Shared PG passkey auth options: no local token store created');
+
+    const seededAuthenticationToken = await issueAccountPasskeyChallengeTokenState({
+      purpose: 'passkey_authentication',
+      accountId: nextPasskeyUser.accountId,
+      accountUserId: nextPasskeyUser.id,
+      email: nextPasskeyUser.email,
+      context: {
+        challenge: authenticationChallenge,
+        rpId: 'dev.dontneeda.pw',
+        origin: webauthnOrigin,
+      },
+    });
+
+    const passkeyAuthVerifyRes = await fetch(`${base}/api/v1/auth/passkeys/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challengeToken: seededAuthenticationToken.token,
+        response: authenticationResponse,
+      }),
+    });
+    ok(passkeyAuthVerifyRes.status === 200, 'Shared PG passkey auth verify: 200');
+    const passkeyAuthVerifyBody = await passkeyAuthVerifyRes.json() as any;
+    ok(passkeyAuthVerifyBody.upstreamAuth?.provider === 'passkey', 'Shared PG passkey auth verify: provider=passkey');
+    const passkeySessionCookie = passkeyAuthVerifyRes.headers.get('set-cookie')?.split(';', 1)[0] ?? null;
+    ok(Boolean(passkeySessionCookie), 'Shared PG passkey auth verify: session cookie returned');
+    ok(!existsSync(accountSessionStorePath), 'Shared PG passkey auth verify: no local session store created');
+
+    const passkeyMeRes = await fetch(`${base}/api/v1/auth/me`, {
+      headers: { Cookie: passkeySessionCookie! },
+    });
+    ok(passkeyMeRes.status === 200, 'Shared PG passkey auth session: /me works');
 
     const mfaLoginRes = await fetch(`${base}/api/v1/auth/login`, {
       method: 'POST',

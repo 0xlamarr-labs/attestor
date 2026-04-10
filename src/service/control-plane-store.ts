@@ -37,6 +37,7 @@ import {
   findAccountUserByEmail as findAccountUserByEmailFile,
   findAccountUserById as findAccountUserByIdFile,
   findAccountUserByOidcIdentity as findAccountUserByOidcIdentityFile,
+  findAccountUserByPasskeyCredentialId as findAccountUserByPasskeyCredentialIdFile,
   listAccountUsersByAccountId as listAccountUsersByAccountIdFile,
   listAllAccountUsers as listAllAccountUsersFile,
   normalizeAccountUserEmail,
@@ -66,11 +67,13 @@ import {
 } from './account-session-store.js';
 import {
   buildAccountMfaLoginTokenRecord,
+  buildAccountPasskeyChallengeTokenRecord,
   buildAccountInviteTokenRecord,
   buildPasswordResetTokenRecord,
   consumeAccountUserActionToken as consumeAccountUserActionTokenFile,
   findAccountUserActionTokenByToken as findAccountUserActionTokenByTokenFile,
   hashAccountUserActionToken,
+  issueAccountPasskeyChallengeToken as issueAccountPasskeyChallengeTokenFile,
   issueAccountMfaLoginToken as issueAccountMfaLoginTokenFile,
   issueAccountInviteToken as issueAccountInviteTokenFile,
   issuePasswordResetToken as issuePasswordResetTokenFile,
@@ -82,6 +85,7 @@ import {
   type AccountUserActionTokenPurpose,
   type AccountUserActionTokenRecord,
   type IssueAccountMfaLoginTokenInput,
+  type IssueAccountPasskeyChallengeTokenInput,
   type IssueAccountInviteTokenInput,
   type IssuePasswordResetTokenInput,
 } from './account-user-token-store.js';
@@ -402,7 +406,7 @@ async function ensureSchema(): Promise<void> {
 
         CREATE TABLE IF NOT EXISTS attestor_control_plane.account_user_action_tokens (
           token_id TEXT PRIMARY KEY,
-          purpose TEXT NOT NULL CHECK (purpose IN ('invite', 'password_reset', 'mfa_login')),
+          purpose TEXT NOT NULL CHECK (purpose IN ('invite', 'password_reset', 'mfa_login', 'passkey_registration', 'passkey_authentication')),
           account_id TEXT NOT NULL REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
           account_user_id TEXT NULL REFERENCES attestor_control_plane.account_users(account_user_id) ON DELETE CASCADE,
           email TEXT NOT NULL,
@@ -429,7 +433,7 @@ async function ensureSchema(): Promise<void> {
 
         ALTER TABLE attestor_control_plane.account_user_action_tokens
           ADD CONSTRAINT account_user_action_tokens_purpose_check
-          CHECK (purpose IN ('invite', 'password_reset', 'mfa_login'));
+          CHECK (purpose IN ('invite', 'password_reset', 'mfa_login', 'passkey_registration', 'passkey_authentication'));
 
         CREATE TABLE IF NOT EXISTS attestor_control_plane.billing_entitlements (
           account_id TEXT PRIMARY KEY REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
@@ -2285,6 +2289,17 @@ export async function findAccountUserByOidcIdentityState(
       && identity.subject.trim() === normalizedSubject)) ?? null;
 }
 
+export async function findAccountUserByPasskeyCredentialIdState(
+  credentialId: string,
+): Promise<AccountUserRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findAccountUserByPasskeyCredentialIdFile(credentialId);
+  const normalizedCredentialId = credentialId.trim();
+  if (!normalizedCredentialId) return null;
+  const records = await listAllAccountUsersPg();
+  return records.find((record) =>
+    record.passkeys?.credentials?.some((credential) => credential.credentialId === normalizedCredentialId)) ?? null;
+}
+
 export async function createAccountUserState(input: CreateAccountUserInput): Promise<{
   record: AccountUserRecord;
   path: string | null;
@@ -2531,6 +2546,23 @@ export async function issueAccountMfaLoginTokenState(
     }
   }
   const issued = buildAccountMfaLoginTokenRecord(input);
+  await upsertAccountUserActionTokenPg(issued.record);
+  return { token: issued.token, record: issued.record, path: controlPlaneStoreSource() };
+}
+
+export async function issueAccountPasskeyChallengeTokenState(
+  input: IssueAccountPasskeyChallengeTokenInput,
+): Promise<{ token: string; record: AccountUserActionTokenRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return issueAccountPasskeyChallengeTokenFile(input);
+  const existing = await listAccountUserActionTokensPg({ accountUserId: input.accountUserId, purpose: input.purpose });
+  for (const record of existing) {
+    if (!record.revokedAt && !record.consumedAt && Date.parse(record.expiresAt) > Date.now()) {
+      record.revokedAt = new Date().toISOString();
+      record.updatedAt = record.revokedAt;
+      await upsertAccountUserActionTokenPg(record);
+    }
+  }
+  const issued = buildAccountPasskeyChallengeTokenRecord(input);
   await upsertAccountUserActionTokenPg(issued.record);
   return { token: issued.token, record: issued.record, path: controlPlaneStoreSource() };
 }

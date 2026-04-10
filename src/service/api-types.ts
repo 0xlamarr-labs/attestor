@@ -334,6 +334,13 @@ export interface AccountUserFederationSummaryView {
   lastOidcLoginAt: string | null;
 }
 
+export interface AccountUserPasskeySummaryView {
+  enabled: boolean;
+  credentialCount: number;
+  userHandleConfigured: boolean;
+  lastUsedAt: string | null;
+}
+
 export interface AccountUserRecordView {
   id: string;
   accountId: string;
@@ -346,6 +353,7 @@ export interface AccountUserRecordView {
   deactivatedAt: string | null;
   lastLoginAt: string | null;
   mfa: AccountUserMfaSummaryView;
+  passkeys: AccountUserPasskeySummaryView;
   federation: AccountUserFederationSummaryView;
 }
 
@@ -381,7 +389,7 @@ export interface AccountSetUserStatusResponse {
 
 export interface AccountUserActionTokenRecordView {
   id: string;
-  purpose: 'invite' | 'password_reset';
+  purpose: 'invite' | 'password_reset' | 'mfa_login' | 'passkey_registration' | 'passkey_authentication';
   accountId: string;
   accountUserId: string | null;
   email: string;
@@ -473,13 +481,20 @@ export interface AuthOidcUpstreamView {
   subject: string;
 }
 
+export interface AuthPasskeyUpstreamView {
+  provider: 'passkey';
+  credentialId: string;
+}
+
+export type AuthUpstreamAuthView = AuthOidcUpstreamView | AuthPasskeyUpstreamView;
+
 export interface AuthLoginResponse {
   session: {
     id: string;
     expiresAt: string;
     source: 'account_session';
   };
-  upstreamAuth?: AuthOidcUpstreamView;
+  upstreamAuth?: AuthUpstreamAuthView;
   user: AccountUserRecordView;
   account: AdminAccountRecord;
 }
@@ -489,12 +504,12 @@ export interface AuthLoginMfaChallengeResponse {
   challengeToken: string;
   challenge: {
     id: string;
-    method: 'totp';
+    method: 'totp' | 'passkey_totp_fallback';
     expiresAt: string;
     maxAttempts: number | null;
     remainingAttempts: number | null;
   };
-  upstreamAuth?: AuthOidcUpstreamView;
+  upstreamAuth?: AuthUpstreamAuthView;
   user: AccountUserRecordView;
   account: AdminAccountRecord;
 }
@@ -526,6 +541,80 @@ export interface AuthMfaVerifyResponse {
   };
   user: AccountUserRecordView;
   account: AdminAccountRecord;
+}
+
+export interface AccountPasskeyCredentialView {
+  id: string;
+  credentialId: string;
+  transports: Array<'ble' | 'cable' | 'hybrid' | 'internal' | 'nfc' | 'smart-card' | 'usb'>;
+  aaguid: string | null;
+  deviceType: 'singleDevice' | 'multiDevice' | null;
+  backedUp: boolean | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface AccountPasskeysResponse {
+  passkeys: {
+    enabled: boolean;
+    credentialCount: number;
+    userHandleConfigured: boolean;
+    lastUsedAt: string | null;
+    updatedAt: string | null;
+    credentials: AccountPasskeyCredentialView[];
+  };
+}
+
+export interface AccountPasskeyRegisterOptionsRequest {
+  password: string;
+  preferredAuthenticatorType?: 'securityKey' | 'localDevice' | 'remoteDevice';
+}
+
+export interface AccountPasskeyRegisterOptionsResponse {
+  challengeToken: string;
+  registration: Record<string, unknown>;
+  rp: {
+    id: string;
+    name: string;
+    origin: string;
+  };
+}
+
+export interface AccountPasskeyRegisterVerifyRequest {
+  challengeToken: string;
+  response: Record<string, unknown>;
+}
+
+export interface AccountPasskeyRegisterVerifyResponse {
+  registered: true;
+  passkey: AccountPasskeyCredentialView;
+  user: AccountUserRecordView;
+}
+
+export interface AccountPasskeyDeleteRequest {
+  password: string;
+}
+
+export interface AccountPasskeyDeleteResponse {
+  deleted: true;
+  passkeyId: string;
+  user: AccountUserRecordView;
+}
+
+export interface AuthPasskeyOptionsRequest {
+  email?: string;
+}
+
+export interface AuthPasskeyOptionsResponse {
+  challengeToken: string;
+  authentication: Record<string, unknown>;
+  mode: 'usernameless' | 'email_lookup';
+  hintedUser: AccountUserRecordView | null;
+}
+
+export interface AuthPasskeyVerifyRequest {
+  challengeToken: string;
+  response: Record<string, unknown>;
 }
 
 export interface AuthMeResponse {
@@ -1247,6 +1336,10 @@ export const API_ROUTES = {
   ACCOUNT_SUMMARY: '/api/v1/account',
   ACCOUNT_FEATURES: '/api/v1/account/features',
   ACCOUNT_OIDC: '/api/v1/account/oidc',
+  ACCOUNT_PASSKEYS: '/api/v1/account/passkeys',
+  ACCOUNT_PASSKEYS_REGISTER_OPTIONS: '/api/v1/account/passkeys/register/options',
+  ACCOUNT_PASSKEYS_REGISTER_VERIFY: '/api/v1/account/passkeys/register/verify',
+  ACCOUNT_PASSKEYS_DELETE: '/api/v1/account/passkeys/:id/delete',
   ACCOUNT_BILLING_CHECKOUT: '/api/v1/account/billing/checkout',
   ACCOUNT_BILLING_PORTAL: '/api/v1/account/billing/portal',
   ACCOUNT_BILLING_EXPORT: '/api/v1/account/billing/export',
@@ -1272,6 +1365,8 @@ export const API_ROUTES = {
   ADMIN_TENANT_KEY_REACTIVATE: '/api/v1/admin/tenant-keys/:id/reactivate',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',
+  AUTH_PASSKEY_OPTIONS: '/api/v1/auth/passkeys/options',
+  AUTH_PASSKEY_VERIFY: '/api/v1/auth/passkeys/verify',
   AUTH_OIDC_LOGIN: '/api/v1/auth/oidc/login',
   AUTH_OIDC_CALLBACK: '/api/v1/auth/oidc/callback',
   BILLING_STRIPE_WEBHOOK: '/api/v1/billing/stripe/webhook',

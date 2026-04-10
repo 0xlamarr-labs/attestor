@@ -10,7 +10,7 @@
  * - One account membership per email in this first slice
  * - Passwords and recovery codes use built-in scrypt (memory-hard) instead of Argon2id
  * - Invite and password-reset flows exist, with manual or SMTP delivery handled elsewhere
- * - TOTP MFA and hosted OIDC SSO first slices are shipped; WebAuthn/passkeys and SAML are not
+ * - TOTP MFA, hosted OIDC SSO, and WebAuthn/passkeys first slices are shipped; SAML is not
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -71,6 +71,36 @@ export interface AccountUserOidcState {
   identities: AccountUserOidcIdentityRecord[];
 }
 
+export type AccountUserPasskeyTransport =
+  | 'ble'
+  | 'cable'
+  | 'hybrid'
+  | 'internal'
+  | 'nfc'
+  | 'smart-card'
+  | 'usb';
+
+export type AccountUserPasskeyDeviceType = 'singleDevice' | 'multiDevice';
+
+export interface AccountUserPasskeyCredentialRecord {
+  id: string;
+  credentialId: string;
+  publicKey: string;
+  counter: number;
+  transports: AccountUserPasskeyTransport[];
+  aaguid: string | null;
+  deviceType: AccountUserPasskeyDeviceType | null;
+  backedUp: boolean | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface AccountUserPasskeyState {
+  userHandle: string | null;
+  credentials: AccountUserPasskeyCredentialRecord[];
+  updatedAt: string | null;
+}
+
 export interface AccountUserMfaState {
   totp: AccountUserTotpState;
 }
@@ -93,6 +123,7 @@ export interface AccountUserRecord {
   deactivatedAt: string | null;
   lastLoginAt: string | null;
   mfa: AccountUserMfaState;
+  passkeys: AccountUserPasskeyState;
   federation: AccountUserFederationState;
 }
 
@@ -158,6 +189,39 @@ export function defaultAccountUserMfaState(): AccountUserMfaState {
   };
 }
 
+function normalizePasskeyTransport(value: unknown): AccountUserPasskeyTransport | null {
+  switch (value) {
+    case 'ble':
+    case 'cable':
+    case 'hybrid':
+    case 'internal':
+    case 'nfc':
+    case 'smart-card':
+    case 'usb':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizePasskeyDeviceType(value: unknown): AccountUserPasskeyDeviceType | null {
+  switch (value) {
+    case 'singleDevice':
+    case 'multiDevice':
+      return value;
+    default:
+      return null;
+  }
+}
+
+export function defaultAccountUserPasskeyState(): AccountUserPasskeyState {
+  return {
+    userHandle: null,
+    credentials: [],
+    updatedAt: null,
+  };
+}
+
 export function defaultAccountUserFederationState(): AccountUserFederationState {
   return {
     oidc: {
@@ -168,9 +232,11 @@ export function defaultAccountUserFederationState(): AccountUserFederationState 
 
 function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
   const defaults = defaultAccountUserMfaState();
+  const passkeyDefaults = defaultAccountUserPasskeyState();
   const federationDefaults = defaultAccountUserFederationState();
   const rawMfa = (record as Partial<AccountUserRecord>).mfa;
   const rawTotp = rawMfa?.totp;
+  const rawPasskeys = (record as Partial<AccountUserRecord>).passkeys;
   const rawFederation = (record as Partial<AccountUserRecord>).federation;
   const rawOidc = rawFederation?.oidc;
   return {
@@ -187,7 +253,35 @@ function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
             consumedAt: entry.consumedAt ?? null,
           }))
           : [],
-      },
+        },
+    },
+    passkeys: {
+      ...passkeyDefaults,
+      ...(rawPasskeys ?? {}),
+      userHandle: typeof rawPasskeys?.userHandle === 'string' && rawPasskeys.userHandle.trim()
+        ? rawPasskeys.userHandle.trim()
+        : null,
+      credentials: Array.isArray(rawPasskeys?.credentials)
+        ? rawPasskeys.credentials
+          .map((entry) => ({
+            id: String(entry.id ?? '').trim(),
+            credentialId: String(entry.credentialId ?? '').trim(),
+            publicKey: String(entry.publicKey ?? '').trim(),
+            counter: Number.isFinite(entry.counter) ? Number(entry.counter) : 0,
+            transports: Array.isArray(entry.transports)
+              ? entry.transports
+                .map(normalizePasskeyTransport)
+                .filter((transport): transport is AccountUserPasskeyTransport => Boolean(transport))
+              : [],
+            aaguid: typeof entry.aaguid === 'string' && entry.aaguid.trim() ? entry.aaguid.trim() : null,
+            deviceType: normalizePasskeyDeviceType(entry.deviceType),
+            backedUp: typeof entry.backedUp === 'boolean' ? entry.backedUp : null,
+            createdAt: String(entry.createdAt ?? ''),
+            lastUsedAt: typeof entry.lastUsedAt === 'string' ? entry.lastUsedAt : null,
+          }))
+          .filter((entry) => entry.id && entry.credentialId && entry.publicKey && entry.createdAt)
+        : [],
+      updatedAt: typeof rawPasskeys?.updatedAt === 'string' ? rawPasskeys.updatedAt : null,
     },
     federation: {
       oidc: {
@@ -323,6 +417,7 @@ export function buildAccountUserRecord(input: CreateAccountUserInput): AccountUs
     deactivatedAt: null,
     lastLoginAt: null,
     mfa: defaultAccountUserMfaState(),
+    passkeys: defaultAccountUserPasskeyState(),
     federation: defaultAccountUserFederationState(),
   };
 }
@@ -363,6 +458,15 @@ export function findAccountUserById(id: string): AccountUserRecord | null {
 export function findAccountUserByEmail(email: string): AccountUserRecord | null {
   const store = loadStore();
   const record = store.records.find((entry) => entry.email === normalizeEmail(email)) ?? null;
+  return record ? normalizeRecord(record) : null;
+}
+
+export function findAccountUserByPasskeyCredentialId(credentialId: string): AccountUserRecord | null {
+  const normalizedCredentialId = credentialId.trim();
+  if (!normalizedCredentialId) return null;
+  const store = loadStore();
+  const record = store.records.find((entry) =>
+    entry.passkeys?.credentials?.some((credential) => credential.credentialId === normalizedCredentialId)) ?? null;
   return record ? normalizeRecord(record) : null;
 }
 

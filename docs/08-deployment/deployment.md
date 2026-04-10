@@ -96,6 +96,11 @@ docker run \
 | `ATTESTOR_SMTP_IGNORE_TLS` | No | `false` | Skip STARTTLS for local/test SMTP delivery |
 | `ATTESTOR_ACCOUNT_INVITE_BASE_URL` | No | None | Optional hosted invite URL base; Attestor appends `?token=...` |
 | `ATTESTOR_PASSWORD_RESET_BASE_URL` | No | None | Optional hosted password-reset URL base; Attestor appends `?token=...` |
+| `ATTESTOR_WEBAUTHN_RP_ID` | No | Request hostname | Optional RP ID override for hosted WebAuthn/passkey ceremonies |
+| `ATTESTOR_WEBAUTHN_ORIGIN` | No | Request origin | Optional origin override for hosted WebAuthn/passkey ceremonies |
+| `ATTESTOR_WEBAUTHN_RP_NAME` | No | `Attestor` | Hosted WebAuthn/passkey relying-party display name |
+| `ATTESTOR_WEBAUTHN_REQUIRE_USER_VERIFICATION` | No | `false` | When `true`, hosted passkey registration/authentication upgrades from the SimpleWebAuthn passkeys baseline (`preferred`/`false`) to strict UV enforcement (`required`/`true`) |
+| `ATTESTOR_WEBAUTHN_STATE_TTL_MINUTES` | No | `10` | Hosted passkey challenge TTL in minutes |
 | `ATTESTOR_ACCOUNT_INVITE_TTL_HOURS` | No | `72` | Hosted invite token TTL in hours |
 | `ATTESTOR_PASSWORD_RESET_TTL_MINUTES` | No | `30` | Hosted password-reset token TTL in minutes |
 | `ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY` | No | None | Dedicated secret for encrypting hosted TOTP seeds at rest; falls back to `ATTESTOR_ADMIN_API_KEY` when unset |
@@ -222,7 +227,7 @@ What is deployed today:
 - Shared Redis queue between API and worker
 - PostgreSQL RLS tenant isolation
 - Hosted tenant key lifecycle with rotate -> deactivate/reactivate -> revoke, `lastUsedAt`, and max-2 active overlap
-- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, invite/password-reset flows with manual or SMTP delivery, TOTP MFA enrollment/verify/disable + recovery codes, hosted OIDC authorization-code + PKCE SSO first slice, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
+- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, invite/password-reset flows with manual or SMTP delivery, TOTP MFA enrollment/verify/disable + recovery codes, hosted OIDC authorization-code + PKCE SSO first slice, hosted WebAuthn/passkeys first slice, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
 - Tenant-aware pipeline throttling with plan defaults, `Retry-After`, and `429` responses. Uses a shared Redis fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current BullMQ Redis backend is available; otherwise falls back to in-memory single-node buckets
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `charge.succeeded|failed|refunded`, and `entitlements.active_entitlement_summary.updated` processing with duplicate-event suppression, checkout/invoice summary persistence, shared invoice line-item persistence, shared charge persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event + invoice line-item + charge history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
@@ -239,4 +244,4 @@ What is not yet implemented:
 - BullMQ Pro queue groups are still not used; OSS/runtime fairness instead comes from shared tenant active-execution caps plus shared weighted dispatch windows
 - No managed production collector rollout, cloud retention/SLO policy tuning, or production alert-delivery integration
 - External KMS-backed tenant key storage or shared multi-node key ledger
-- WebAuthn/passkeys and SAML, plus richer outbound email delivery features such as provider webhooks and delivery analytics
+- SAML, plus richer outbound email delivery features such as provider webhooks and delivery analytics

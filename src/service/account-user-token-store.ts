@@ -8,8 +8,8 @@
  * - Local file-backed store only
  * - Tokens are hashed at rest
  * - Invite and password-reset delivery is handled elsewhere (manual or SMTP)
- * - MFA login challenges are short-lived and API-delivered
- * - No WebAuthn or SAML challenge state yet
+ * - MFA and passkey challenges are short-lived and API-delivered
+ * - No SAML challenge state yet
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -17,7 +17,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, resolve } from 'node:path';
 import type { AccountUserRole } from './account-user-store.js';
 
-export type AccountUserActionTokenPurpose = 'invite' | 'password_reset' | 'mfa_login';
+export type AccountUserActionTokenPurpose =
+  | 'invite'
+  | 'password_reset'
+  | 'mfa_login'
+  | 'passkey_registration'
+  | 'passkey_authentication';
 
 export interface AccountUserActionTokenRecord {
   id: string;
@@ -37,6 +42,7 @@ export interface AccountUserActionTokenRecord {
   attemptCount: number;
   maxAttempts: number | null;
   lastAttemptAt: string | null;
+  context: Record<string, unknown> | null;
 }
 
 interface AccountUserActionTokenStoreFile {
@@ -67,6 +73,15 @@ export interface IssueAccountMfaLoginTokenInput {
   email: string;
   ttlMinutes?: number | null;
   maxAttempts?: number | null;
+}
+
+export interface IssueAccountPasskeyChallengeTokenInput {
+  purpose: 'passkey_registration' | 'passkey_authentication';
+  accountId: string;
+  accountUserId: string;
+  email: string;
+  ttlMinutes?: number | null;
+  context: Record<string, unknown>;
 }
 
 function storePath(): string {
@@ -113,6 +128,7 @@ function normalizeRecord(record: AccountUserActionTokenRecord): AccountUserActio
       ? null
       : Number(record.maxAttempts),
     lastAttemptAt: record.lastAttemptAt ?? null,
+    context: record.context && typeof record.context === 'object' ? { ...record.context } : null,
   };
 }
 
@@ -187,6 +203,7 @@ function buildActionTokenRecord(base: {
   issuedByAccountUserId: string | null;
   expiresAt: Date;
   maxAttempts?: number | null;
+  context?: Record<string, unknown> | null;
 }): { token: string; record: AccountUserActionTokenRecord } {
   const token = `atok_${randomBytes(32).toString('hex')}`;
   const createdAt = new Date().toISOString();
@@ -210,6 +227,7 @@ function buildActionTokenRecord(base: {
       attemptCount: 0,
       maxAttempts: base.maxAttempts ?? null,
       lastAttemptAt: null,
+      context: base.context ? { ...base.context } : null,
     },
   };
 }
@@ -267,6 +285,25 @@ export function buildAccountMfaLoginTokenRecord(input: IssueAccountMfaLoginToken
   });
 }
 
+export function buildAccountPasskeyChallengeTokenRecord(input: IssueAccountPasskeyChallengeTokenInput): {
+  token: string;
+  record: AccountUserActionTokenRecord;
+} {
+  const expiresAt = new Date(Date.now() + ((input.ttlMinutes ?? mfaLoginTtlMinutes()) * 60 * 1000));
+  return buildActionTokenRecord({
+    purpose: input.purpose,
+    accountId: input.accountId,
+    accountUserId: input.accountUserId,
+    email: input.email,
+    displayName: null,
+    role: null,
+    issuedByAccountUserId: input.accountUserId,
+    expiresAt,
+    maxAttempts: 1,
+    context: input.context,
+  });
+}
+
 export function issueAccountInviteToken(input: IssueAccountInviteTokenInput): {
   token: string;
   record: AccountUserActionTokenRecord;
@@ -314,6 +351,25 @@ export function issueAccountMfaLoginToken(input: IssueAccountMfaLoginTokenInput)
     (record) => record.purpose === 'mfa_login' && record.accountUserId === input.accountUserId,
   );
   const issued = buildAccountMfaLoginTokenRecord(input);
+  store.records.push(issued.record);
+  saveStore(store);
+  return { token: issued.token, record: issued.record, path: storePath() };
+}
+
+export function issueAccountPasskeyChallengeToken(input: IssueAccountPasskeyChallengeTokenInput): {
+  token: string;
+  record: AccountUserActionTokenRecord;
+  path: string;
+} {
+  const store = loadStore();
+  pruneExpired(store);
+  revokeMatching(
+    store,
+    (record) =>
+      record.accountUserId === input.accountUserId
+      && record.purpose === input.purpose,
+  );
+  const issued = buildAccountPasskeyChallengeTokenRecord(input);
   store.records.push(issued.record);
   saveStore(store);
   return { token: issued.token, record: issued.record, path: storePath() };

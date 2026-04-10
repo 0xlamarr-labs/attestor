@@ -47,6 +47,10 @@ import { Hono, type Context } from 'hono';
 import { serve } from '@hono/node-server';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import Stripe from 'stripe';
+import type {
+  AuthenticationResponseJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/server';
 import { runFinancialPipeline } from '../financial/pipeline.js';
 import { generateKeyPair } from '../signing/keys.js';
 import { verifyCertificate } from '../signing/certificate.js';
@@ -140,6 +144,19 @@ import {
   hostedOidcSummary,
   linkAccountUserOidcIdentity,
 } from './account-oidc.js';
+import {
+  accountUserPasskeySummary,
+  buildAccountUserPasskeyCredentialRecord,
+  buildHostedPasskeyAuthenticationOptions,
+  buildHostedPasskeyRegistrationOptions,
+  generateHostedPasskeyUserHandle,
+  passkeyCredentialToWebAuthnCredential,
+  verifyHostedPasskeyAuthentication,
+  verifyHostedPasskeyRegistration,
+  type HostedPasskeyAuthenticationChallengeState,
+  type HostedPasskeyAuthenticatorHint,
+  type HostedPasskeyRegistrationChallengeState,
+} from './account-passkeys.js';
 import { type AsyncDeadLetterRecord } from './async-dead-letter-store.js';
 import {
   sessionCookieName,
@@ -162,12 +179,14 @@ import {
   consumePipelineRunState,
   findAccountUserByEmailState,
   findAccountUserByIdState,
+  findAccountUserByPasskeyCredentialIdState,
   findAccountUserActionTokenByTokenState,
   findHostedAccountByIdState,
   findHostedAccountByTenantIdState,
   findTenantRecordByTenantIdState,
   getUsageContextState,
   issueAccountInviteTokenState,
+  issueAccountPasskeyChallengeTokenState,
   issueAccountMfaLoginTokenState,
   issueAccountSessionState,
   isSharedControlPlaneConfigured,
@@ -407,6 +426,7 @@ function currentAccountRole(c: Context): AccountUserRole | null {
 
 function accountUserView(record: AccountUserRecord) {
   const mfa = totpSummary(record.mfa.totp);
+  const passkeys = accountUserPasskeySummary(record);
   const oidc = accountUserOidcSummary(record);
   return {
     id: record.id,
@@ -424,6 +444,12 @@ function accountUserView(record: AccountUserRecord) {
       method: mfa.method,
       enrolledAt: mfa.enrolledAt,
       pendingEnrollment: mfa.pendingEnrollment,
+    },
+    passkeys: {
+      enabled: passkeys.enabled,
+      credentialCount: passkeys.credentialCount,
+      userHandleConfigured: passkeys.userHandleConfigured,
+      lastUsedAt: passkeys.lastUsedAt,
     },
     federation: {
       oidcLinked: oidc.linked,
@@ -455,6 +481,40 @@ function accountUserDetailedOidcView(record: AccountUserRecord, requestOrigin?: 
   };
 }
 
+function accountUserDetailedPasskeyView(record: AccountUserRecord) {
+  const summary = accountUserPasskeySummary(record);
+  return {
+    enabled: summary.enabled,
+    credentialCount: summary.credentialCount,
+    userHandleConfigured: summary.userHandleConfigured,
+    lastUsedAt: summary.lastUsedAt,
+    updatedAt: summary.updatedAt,
+    credentials: record.passkeys.credentials.map((credential) => ({
+      id: credential.id,
+      credentialId: credential.credentialId,
+      transports: credential.transports,
+      aaguid: credential.aaguid,
+      deviceType: credential.deviceType,
+      backedUp: credential.backedUp,
+      createdAt: credential.createdAt,
+      lastUsedAt: credential.lastUsedAt,
+    })),
+  };
+}
+
+function accountPasskeyCredentialView(record: AccountUserRecord['passkeys']['credentials'][number]) {
+  return {
+    id: record.id,
+    credentialId: record.credentialId,
+    transports: record.transports,
+    aaguid: record.aaguid,
+    deviceType: record.deviceType,
+    backedUp: record.backedUp,
+    createdAt: record.createdAt,
+    lastUsedAt: record.lastUsedAt,
+  };
+}
+
 function accountUserActionTokenStatus(record: AccountUserActionTokenRecord): 'pending' | 'consumed' | 'revoked' | 'expired' {
   if (record.consumedAt) return 'consumed';
   if (record.revokedAt) return 'revoked';
@@ -478,6 +538,80 @@ function accountUserActionTokenView(record: AccountUserActionTokenRecord) {
     consumedAt: record.consumedAt,
     revokedAt: record.revokedAt,
   };
+}
+
+function accountUserActionTokenContext(record: AccountUserActionTokenRecord): Record<string, unknown> {
+  return record.context && typeof record.context === 'object' ? record.context : {};
+}
+
+function parsePasskeyRegistrationChallenge(
+  record: AccountUserActionTokenRecord,
+): HostedPasskeyRegistrationChallengeState | null {
+  if (record.purpose !== 'passkey_registration') return null;
+  const context = accountUserActionTokenContext(record);
+  const challenge = typeof context.challenge === 'string' ? context.challenge.trim() : '';
+  const rpId = typeof context.rpId === 'string' ? context.rpId.trim() : '';
+  const origin = typeof context.origin === 'string' ? context.origin.trim() : '';
+  const userHandle = typeof context.userHandle === 'string' ? context.userHandle.trim() : '';
+  if (!record.accountUserId || !challenge || !rpId || !origin || !userHandle) return null;
+  return {
+    version: 1,
+    purpose: 'registration',
+    accountId: record.accountId,
+    accountUserId: record.accountUserId,
+    rpId,
+    origin,
+    challenge,
+    userHandle,
+    issuedAt: record.createdAt,
+    expiresAt: record.expiresAt,
+  };
+}
+
+function parsePasskeyAuthenticationChallenge(
+  record: AccountUserActionTokenRecord,
+): HostedPasskeyAuthenticationChallengeState | null {
+  if (record.purpose !== 'passkey_authentication') return null;
+  const context = accountUserActionTokenContext(record);
+  const challenge = typeof context.challenge === 'string' ? context.challenge.trim() : '';
+  const rpId = typeof context.rpId === 'string' ? context.rpId.trim() : '';
+  const origin = typeof context.origin === 'string' ? context.origin.trim() : '';
+  if (!record.accountUserId || !challenge || !rpId || !origin) return null;
+  return {
+    version: 1,
+    purpose: 'authentication',
+    accountUserId: record.accountUserId,
+    rpId,
+    origin,
+    challenge,
+    issuedAt: record.createdAt,
+    expiresAt: record.expiresAt,
+  };
+}
+
+function normalizePasskeyAuthenticatorHint(value: unknown): HostedPasskeyAuthenticatorHint | null {
+  if (value !== 'securityKey' && value !== 'localDevice' && value !== 'remoteDevice') {
+    return null;
+  }
+  return value;
+}
+
+function asRegistrationResponse(value: unknown): RegistrationResponseJSON | null {
+  if (!value || typeof value !== 'object') return null;
+  const response = value as RegistrationResponseJSON;
+  if (response.type !== 'public-key' || !response.response || typeof response.response !== 'object') {
+    return null;
+  }
+  return response;
+}
+
+function asAuthenticationResponse(value: unknown): AuthenticationResponseJSON | null {
+  if (!value || typeof value !== 'object') return null;
+  const response = value as AuthenticationResponseJSON;
+  if (response.type !== 'public-key' || !response.response || typeof response.response !== 'object') {
+    return null;
+  }
+  return response;
 }
 
 function setSessionCookieForRecord(c: Context, sessionToken: string, expiresAt: string): void {
@@ -1260,6 +1394,139 @@ app.post('/api/v1/auth/login', async (c) => {
   });
 });
 
+app.post('/api/v1/auth/passkeys/options', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  if (!email) {
+    return c.json({ error: 'email is required for hosted passkey login in the current first slice.' }, 400);
+  }
+
+  const user = await findAccountUserByEmailState(email);
+  if (!user || user.status !== 'active') {
+    return c.json({ error: 'Hosted passkey login requires an active account user with enrolled passkeys.' }, 404);
+  }
+  if (user.passkeys.credentials.length === 0) {
+    return c.json({ error: `Account user '${user.email}' does not have passkeys enrolled.` }, 409);
+  }
+
+  const account = await findHostedAccountByIdState(user.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
+  }
+  if (account.status === 'archived') {
+    return c.json({ error: `Hosted account '${account.id}' is archived and cannot accept new sessions.` }, 403);
+  }
+
+  try {
+    const built = await buildHostedPasskeyAuthenticationOptions({
+      requestOrigin: c.req.url,
+      user,
+    });
+    const issued = await issueAccountPasskeyChallengeTokenState({
+      purpose: 'passkey_authentication',
+      accountId: account.id,
+      accountUserId: user.id,
+      email: user.email,
+      context: {
+        challenge: built.challengeState.challenge,
+        rpId: built.challengeState.rpId,
+        origin: built.challengeState.origin,
+      },
+    });
+    return c.json({
+      challengeToken: issued.token,
+      authentication: built.authentication,
+      mode: 'email_lookup',
+      hintedUser: accountUserView(user),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+});
+
+app.post('/api/v1/auth/passkeys/verify', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
+  const response = asAuthenticationResponse(body.response);
+  if (!challengeToken || !response) {
+    return c.json({ error: 'challengeToken and a valid WebAuthn authentication response are required.' }, 400);
+  }
+
+  const challengeRecord = await findAccountUserActionTokenByTokenState(challengeToken);
+  const challenge = challengeRecord ? parsePasskeyAuthenticationChallenge(challengeRecord) : null;
+  if (!challengeRecord || !challenge || !challengeRecord.accountUserId) {
+    return c.json({ error: 'Passkey authentication challenge is invalid or expired.' }, 400);
+  }
+
+  const user = await findAccountUserByIdState(challengeRecord.accountUserId);
+  const account = user ? await findHostedAccountByIdState(user.accountId) : null;
+  if (!user || !account || account.id !== challengeRecord.accountId || user.status !== 'active' || account.status === 'archived') {
+    return c.json({ error: 'Passkey authentication challenge is invalid or expired.' }, 400);
+  }
+
+  const credentialUser = await findAccountUserByPasskeyCredentialIdState(response.id);
+  if (!credentialUser || credentialUser.id !== user.id) {
+    return c.json({ error: 'Passkey credential could not be matched to the challenged account user.' }, 400);
+  }
+
+  const credentialIndex = user.passkeys.credentials.findIndex((entry) => entry.credentialId === response.id);
+  if (credentialIndex < 0) {
+    return c.json({ error: 'Passkey credential could not be matched to the challenged account user.' }, 400);
+  }
+  const storedCredential = user.passkeys.credentials[credentialIndex]!;
+
+  let verification;
+  try {
+    verification = await verifyHostedPasskeyAuthentication({
+      challengeState: challenge,
+      response,
+      credential: passkeyCredentialToWebAuthnCredential(storedCredential),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+  if (!verification.verified) {
+    return c.json({ error: 'Passkey authentication could not be verified.' }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const nextUser = structuredClone(user);
+  const nextCredential = nextUser.passkeys.credentials[credentialIndex]!;
+  nextCredential.counter = verification.authenticationInfo.newCounter;
+  nextCredential.deviceType = verification.authenticationInfo.credentialDeviceType;
+  nextCredential.backedUp = verification.authenticationInfo.credentialBackedUp;
+  nextCredential.lastUsedAt = now;
+  nextUser.passkeys.updatedAt = now;
+  nextUser.updatedAt = now;
+  await saveAccountUserRecordState(nextUser);
+  await consumeAccountUserActionTokenState(challengeRecord.id);
+  await revokeAccountUserActionTokensForUserState(user.id, 'passkey_authentication');
+
+  const loginTouch = await recordAccountUserLoginState(user.id);
+  const issued = await issueAccountSessionState({
+    accountId: account.id,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    upstreamAuth: {
+      provider: 'passkey',
+      credentialId: storedCredential.credentialId,
+    },
+    user: accountUserView(loginTouch.record),
+    account: adminAccountView(account),
+  });
+});
+
 app.post('/api/v1/auth/oidc/login', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim() : '';
@@ -1594,6 +1861,185 @@ app.get('/api/v1/account/oidc', async (c) => {
   }
   return c.json({
     oidc: accountUserDetailedOidcView(user, c.req.url),
+  });
+});
+
+app.get('/api/v1/account/passkeys', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+  return c.json({
+    passkeys: accountUserDetailedPasskeyView(user),
+  });
+});
+
+app.post('/api/v1/account/passkeys/register/options', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const password = typeof body.password === 'string' ? body.password : '';
+  const preferredAuthenticatorType = normalizePasskeyAuthenticatorHint(body.preferredAuthenticatorType);
+  if (!password) {
+    return c.json({ error: 'password is required.' }, 400);
+  }
+  if (!verifyAccountUserPasswordRecord(user.password, password)) {
+    return c.json({ error: 'Current password is invalid.' }, 403);
+  }
+
+  try {
+    const built = await buildHostedPasskeyRegistrationOptions({
+      requestOrigin: c.req.url,
+      user,
+      userHandle: user.passkeys.userHandle || generateHostedPasskeyUserHandle(),
+      preferredAuthenticatorType,
+    });
+    const issued = await issueAccountPasskeyChallengeTokenState({
+      purpose: 'passkey_registration',
+      accountId: access.accountId,
+      accountUserId: user.id,
+      email: user.email,
+      context: {
+        challenge: built.challengeState.challenge,
+        rpId: built.challengeState.rpId,
+        origin: built.challengeState.origin,
+        userHandle: built.challengeState.userHandle,
+      },
+    });
+    return c.json({
+      challengeToken: issued.token,
+      registration: built.registration,
+      rp: {
+        id: built.config.rpId,
+        name: built.config.rpName,
+        origin: built.config.origin,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+});
+
+app.post('/api/v1/account/passkeys/register/verify', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const sessionUser = await findAccountUserByIdState(access.accountUserId);
+  if (!sessionUser || sessionUser.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
+  const response = asRegistrationResponse(body.response);
+  if (!challengeToken || !response) {
+    return c.json({ error: 'challengeToken and a valid WebAuthn registration response are required.' }, 400);
+  }
+
+  const challengeRecord = await findAccountUserActionTokenByTokenState(challengeToken);
+  const challenge = challengeRecord ? parsePasskeyRegistrationChallenge(challengeRecord) : null;
+  if (
+    !challengeRecord
+    || !challenge
+    || challenge.accountId !== access.accountId
+    || challenge.accountUserId !== access.accountUserId
+  ) {
+    return c.json({ error: 'Passkey registration challenge is invalid or expired.' }, 400);
+  }
+
+  let verification;
+  try {
+    verification = await verifyHostedPasskeyRegistration({
+      challengeState: challenge,
+      response,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, 400);
+  }
+  if (!verification.verified || !verification.registrationInfo) {
+    return c.json({ error: 'Passkey registration could not be verified.' }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const nextUser = structuredClone(sessionUser);
+  const nextCredential = buildAccountUserPasskeyCredentialRecord({
+    credential: verification.registrationInfo.credential,
+    transports: response.response.transports ?? [],
+    aaguid: verification.registrationInfo.aaguid,
+    deviceType: verification.registrationInfo.credentialDeviceType,
+    backedUp: verification.registrationInfo.credentialBackedUp,
+    createdAt: now,
+  });
+  const existingIndex = nextUser.passkeys.credentials.findIndex(
+    (entry) => entry.credentialId === nextCredential.credentialId,
+  );
+  if (existingIndex >= 0) {
+    const existing = nextUser.passkeys.credentials[existingIndex]!;
+    nextCredential.id = existing.id;
+    nextCredential.createdAt = existing.createdAt;
+    nextCredential.lastUsedAt = existing.lastUsedAt;
+    nextUser.passkeys.credentials.splice(existingIndex, 1);
+  }
+  nextUser.passkeys.userHandle = challenge.userHandle;
+  nextUser.passkeys.credentials.push(nextCredential);
+  nextUser.passkeys.updatedAt = now;
+  nextUser.updatedAt = now;
+  await saveAccountUserRecordState(nextUser);
+  await consumeAccountUserActionTokenState(challengeRecord.id);
+  await revokeAccountUserActionTokensForUserState(nextUser.id, 'passkey_registration');
+
+  return c.json({
+    registered: true,
+    passkey: accountPasskeyCredentialView(nextCredential),
+    user: accountUserView(nextUser),
+  });
+});
+
+app.post('/api/v1/account/passkeys/:id/delete', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+
+  const passkeyId = c.req.param('id')?.trim() ?? '';
+  const body = await c.req.json().catch(() => ({}));
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!passkeyId || !password) {
+    return c.json({ error: 'passkey id and password are required.' }, 400);
+  }
+  if (!verifyAccountUserPasswordRecord(user.password, password)) {
+    return c.json({ error: 'Current password is invalid.' }, 403);
+  }
+
+  const credentialIndex = user.passkeys.credentials.findIndex((entry) => entry.id === passkeyId);
+  if (credentialIndex < 0) {
+    return c.json({ error: `Passkey '${passkeyId}' was not found for the current account user.` }, 404);
+  }
+
+  const nextUser = structuredClone(user);
+  nextUser.passkeys.credentials.splice(credentialIndex, 1);
+  nextUser.passkeys.updatedAt = new Date().toISOString();
+  nextUser.updatedAt = nextUser.passkeys.updatedAt;
+  await saveAccountUserRecordState(nextUser);
+
+  return c.json({
+    deleted: true,
+    passkeyId,
+    user: accountUserView(nextUser),
   });
 });
 
