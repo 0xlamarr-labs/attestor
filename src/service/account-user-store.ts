@@ -9,8 +9,8 @@
  * - Local file-backed store only
  * - One account membership per email in this first slice
  * - Passwords and recovery codes use built-in scrypt (memory-hard) instead of Argon2id
- * - Invite and password-reset flows exist, but delivery is still manual/operator-driven
- * - TOTP MFA is shipped; WebAuthn and SSO/SAML are not
+ * - Invite and password-reset flows exist, with manual or SMTP delivery handled elsewhere
+ * - TOTP MFA and hosted OIDC SSO first slices are shipped; WebAuthn/passkeys and SAML are not
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -58,8 +58,25 @@ export interface AccountUserTotpState {
   lastVerifiedAt: string | null;
 }
 
+export interface AccountUserOidcIdentityRecord {
+  id: string;
+  issuer: string;
+  subject: string;
+  email: string | null;
+  linkedAt: string;
+  lastLoginAt: string | null;
+}
+
+export interface AccountUserOidcState {
+  identities: AccountUserOidcIdentityRecord[];
+}
+
 export interface AccountUserMfaState {
   totp: AccountUserTotpState;
+}
+
+export interface AccountUserFederationState {
+  oidc: AccountUserOidcState;
 }
 
 export interface AccountUserRecord {
@@ -76,6 +93,7 @@ export interface AccountUserRecord {
   deactivatedAt: string | null;
   lastLoginAt: string | null;
   mfa: AccountUserMfaState;
+  federation: AccountUserFederationState;
 }
 
 interface AccountUserStoreFile {
@@ -140,10 +158,21 @@ export function defaultAccountUserMfaState(): AccountUserMfaState {
   };
 }
 
+export function defaultAccountUserFederationState(): AccountUserFederationState {
+  return {
+    oidc: {
+      identities: [],
+    },
+  };
+}
+
 function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
   const defaults = defaultAccountUserMfaState();
+  const federationDefaults = defaultAccountUserFederationState();
   const rawMfa = (record as Partial<AccountUserRecord>).mfa;
   const rawTotp = rawMfa?.totp;
+  const rawFederation = (record as Partial<AccountUserRecord>).federation;
+  const rawOidc = rawFederation?.oidc;
   return {
     ...record,
     passwordUpdatedAt: record.passwordUpdatedAt ?? record.updatedAt ?? record.createdAt,
@@ -157,6 +186,24 @@ function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
             hash: entry.hash,
             consumedAt: entry.consumedAt ?? null,
           }))
+          : [],
+      },
+    },
+    federation: {
+      oidc: {
+        ...federationDefaults.oidc,
+        ...(rawOidc ?? {}),
+        identities: Array.isArray(rawOidc?.identities)
+          ? rawOidc.identities
+            .map((entry) => ({
+              id: String(entry.id),
+              issuer: String(entry.issuer ?? '').trim(),
+              subject: String(entry.subject ?? '').trim(),
+              email: typeof entry.email === 'string' ? normalizeEmail(entry.email) : null,
+              linkedAt: String(entry.linkedAt),
+              lastLoginAt: entry.lastLoginAt ?? null,
+            }))
+            .filter((entry) => entry.issuer && entry.subject && entry.linkedAt)
           : [],
       },
     },
@@ -276,6 +323,7 @@ export function buildAccountUserRecord(input: CreateAccountUserInput): AccountUs
     deactivatedAt: null,
     lastLoginAt: null,
     mfa: defaultAccountUserMfaState(),
+    federation: defaultAccountUserFederationState(),
   };
 }
 
@@ -315,6 +363,18 @@ export function findAccountUserById(id: string): AccountUserRecord | null {
 export function findAccountUserByEmail(email: string): AccountUserRecord | null {
   const store = loadStore();
   const record = store.records.find((entry) => entry.email === normalizeEmail(email)) ?? null;
+  return record ? normalizeRecord(record) : null;
+}
+
+export function findAccountUserByOidcIdentity(issuer: string, subject: string): AccountUserRecord | null {
+  const normalizedIssuer = issuer.trim().replace(/\/+$/, '');
+  const normalizedSubject = subject.trim();
+  if (!normalizedIssuer || !normalizedSubject) return null;
+  const store = loadStore();
+  const record = store.records.find((entry) =>
+    entry.federation?.oidc?.identities?.some((identity) =>
+      identity.issuer.trim().replace(/\/+$/, '') === normalizedIssuer
+      && identity.subject.trim() === normalizedSubject)) ?? null;
   return record ? normalizeRecord(record) : null;
 }
 

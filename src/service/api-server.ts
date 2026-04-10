@@ -124,6 +124,14 @@ import {
   verifyAndConsumeRecoveryCode,
   verifyTotpCode,
 } from './account-mfa.js';
+import {
+  accountUserOidcSummary,
+  buildHostedOidcAuthorizationRequest,
+  completeHostedOidcAuthorization,
+  hostedOidcAllowsAutomaticLinking,
+  hostedOidcSummary,
+  linkAccountUserOidcIdentity,
+} from './account-oidc.js';
 import { type AsyncDeadLetterRecord } from './async-dead-letter-store.js';
 import {
   sessionCookieName,
@@ -141,6 +149,7 @@ import {
   consumeAccountUserActionTokenState,
   createAccountUserState,
   saveAccountUserRecordState,
+  findAccountUserByOidcIdentityState,
   finalizeProcessedStripeWebhookState,
   consumePipelineRunState,
   findAccountUserByEmailState,
@@ -388,6 +397,7 @@ function currentAccountRole(c: Context): AccountUserRole | null {
 
 function accountUserView(record: AccountUserRecord) {
   const mfa = totpSummary(record.mfa.totp);
+  const oidc = accountUserOidcSummary(record);
   return {
     id: record.id,
     accountId: record.accountId,
@@ -405,11 +415,34 @@ function accountUserView(record: AccountUserRecord) {
       enrolledAt: mfa.enrolledAt,
       pendingEnrollment: mfa.pendingEnrollment,
     },
+    federation: {
+      oidcLinked: oidc.linked,
+      oidcIdentityCount: oidc.identityCount,
+      lastOidcLoginAt: oidc.lastLoginAt,
+    },
   };
 }
 
 function accountUserDetailedMfaView(record: AccountUserRecord) {
   return totpSummary(record.mfa.totp);
+}
+
+function accountUserDetailedOidcView(record: AccountUserRecord, requestOrigin?: string | URL | null) {
+  const summary = hostedOidcSummary(requestOrigin);
+  return {
+    configured: summary.enabled,
+    issuerUrl: summary.issuerUrl,
+    redirectUrl: summary.redirectUrl,
+    scopes: summary.scopes,
+    identities: record.federation.oidc.identities.map((identity) => ({
+      id: identity.id,
+      issuer: identity.issuer,
+      subject: identity.subject,
+      email: identity.email,
+      linkedAt: identity.linkedAt,
+      lastLoginAt: identity.lastLoginAt,
+    })),
+  };
 }
 
 function accountUserActionTokenStatus(record: AccountUserActionTokenRecord): 'pending' | 'consumed' | 'revoked' | 'expired' {
@@ -1201,6 +1234,143 @@ app.post('/api/v1/auth/login', async (c) => {
   });
 });
 
+app.post('/api/v1/auth/oidc/login', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  try {
+    const authorization = await buildHostedOidcAuthorizationRequest({
+      requestOrigin: c.req.url,
+      emailHint: email || null,
+    });
+    return c.json({
+      authorization: {
+        mode: authorization.mode,
+        issuerUrl: authorization.issuerUrl,
+        redirectUrl: authorization.redirectUrl,
+        scopes: authorization.scopes,
+        authorizationUrl: authorization.authorizationUrl,
+        expiresAt: authorization.expiresAt,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('not configured')) {
+      return c.json({ error: message }, 503);
+    }
+    return c.json({ error: message }, 400);
+  }
+});
+
+app.get('/api/v1/auth/oidc/callback', async (c) => {
+  let callback;
+  try {
+    callback = await completeHostedOidcAuthorization(c.req.url);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.includes('not configured') ? 503 : 400;
+    return c.json({ error: message }, status);
+  }
+
+  let user = await findAccountUserByOidcIdentityState(
+    callback.identity.issuer,
+    callback.identity.subject,
+  );
+  if (!user) {
+    if (!hostedOidcAllowsAutomaticLinking(callback.identity) || !callback.identity.email) {
+      return c.json({
+        error: 'OIDC identity could not be matched to an existing hosted account user.',
+        identity: {
+          issuer: callback.identity.issuer,
+          subject: callback.identity.subject,
+          email: callback.identity.email,
+          emailVerified: callback.identity.emailVerified,
+        },
+      }, 403);
+    }
+    user = await findAccountUserByEmailState(callback.identity.email);
+  }
+  if (!user) {
+    return c.json({
+      error: 'OIDC identity could not be matched to an existing hosted account user.',
+      identity: {
+        issuer: callback.identity.issuer,
+        subject: callback.identity.subject,
+        email: callback.identity.email,
+        emailVerified: callback.identity.emailVerified,
+      },
+    }, 403);
+  }
+  if (user.status !== 'active') {
+    return c.json({ error: `Account user '${user.email}' is inactive.` }, 403);
+  }
+
+  const account = await findHostedAccountByIdState(user.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
+  }
+  if (account.status === 'archived') {
+    return c.json({ error: `Hosted account '${account.id}' is archived and cannot accept new sessions.` }, 403);
+  }
+
+  const sync = linkAccountUserOidcIdentity(user, callback.identity);
+  if (sync.changed) {
+    await saveAccountUserRecordState(sync.record);
+    user = sync.record;
+  }
+
+  const userTotp = totpSummary(user.mfa.totp);
+  if (userTotp.enabled) {
+    const issued = await issueAccountMfaLoginTokenState({
+      accountId: account.id,
+      accountUserId: user.id,
+      email: user.email,
+    });
+    return c.json({
+      mfaRequired: true,
+      challengeToken: issued.token,
+      challenge: {
+        id: issued.record.id,
+        method: 'totp',
+        expiresAt: issued.record.expiresAt,
+        maxAttempts: issued.record.maxAttempts,
+        remainingAttempts: issued.record.maxAttempts === null
+          ? null
+          : Math.max(issued.record.maxAttempts - issued.record.attemptCount, 0),
+      },
+      upstreamAuth: {
+        provider: 'oidc',
+        issuer: callback.identity.issuer,
+        subject: callback.identity.subject,
+      },
+      user: accountUserView(user),
+      account: adminAccountView(account),
+    });
+  }
+
+  const issued = await issueAccountSessionState({
+    accountId: account.id,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  const loginTouch = await recordAccountUserLoginState(user.id);
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    upstreamAuth: {
+      provider: 'oidc',
+      issuer: callback.identity.issuer,
+      subject: callback.identity.subject,
+    },
+    user: accountUserView(loginTouch.record),
+    account: adminAccountView(account),
+  });
+});
+
 app.post('/api/v1/auth/mfa/verify', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const challengeToken = typeof body.challengeToken === 'string' ? body.challengeToken.trim() : '';
@@ -1385,6 +1555,19 @@ app.get('/api/v1/account/mfa', async (c) => {
   }
   return c.json({
     mfa: accountUserDetailedMfaView(user),
+  });
+});
+
+app.get('/api/v1/account/oidc', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+  return c.json({
+    oidc: accountUserDetailedOidcView(user, c.req.url),
   });
 });
 

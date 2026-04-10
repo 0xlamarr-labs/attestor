@@ -277,6 +277,12 @@ export interface AccountUserMfaSummaryView {
   pendingEnrollment: boolean;
 }
 
+export interface AccountUserFederationSummaryView {
+  oidcLinked: boolean;
+  oidcIdentityCount: number;
+  lastOidcLoginAt: string | null;
+}
+
 export interface AccountUserRecordView {
   id: string;
   accountId: string;
@@ -289,6 +295,7 @@ export interface AccountUserRecordView {
   deactivatedAt: string | null;
   lastLoginAt: string | null;
   mfa: AccountUserMfaSummaryView;
+  federation: AccountUserFederationSummaryView;
 }
 
 export interface AccountUsersListResponse {
@@ -405,12 +412,23 @@ export interface AuthLoginRequest {
   password: string;
 }
 
+export interface AuthOidcLoginRequest {
+  email?: string;
+}
+
+export interface AuthOidcUpstreamView {
+  provider: 'oidc';
+  issuer: string;
+  subject: string;
+}
+
 export interface AuthLoginResponse {
   session: {
     id: string;
     expiresAt: string;
     source: 'account_session';
   };
+  upstreamAuth?: AuthOidcUpstreamView;
   user: AccountUserRecordView;
   account: AdminAccountRecord;
 }
@@ -425,8 +443,20 @@ export interface AuthLoginMfaChallengeResponse {
     maxAttempts: number | null;
     remainingAttempts: number | null;
   };
+  upstreamAuth?: AuthOidcUpstreamView;
   user: AccountUserRecordView;
   account: AdminAccountRecord;
+}
+
+export interface AuthOidcLoginResponse {
+  authorization: {
+    mode: 'authorization_code_pkce';
+    issuerUrl: string;
+    redirectUrl: string;
+    scopes: string[];
+    authorizationUrl: string;
+    expiresAt: string;
+  };
 }
 
 export interface AuthMfaVerifyRequest {
@@ -494,6 +524,23 @@ export interface AccountMfaSummaryResponse {
     recoveryCodesRemaining: number;
     lastVerifiedAt: string | null;
     updatedAt: string | null;
+  };
+}
+
+export interface AccountOidcSummaryResponse {
+  oidc: {
+    configured: boolean;
+    issuerUrl: string | null;
+    redirectUrl: string | null;
+    scopes: string[];
+    identities: Array<{
+      id: string;
+      issuer: string;
+      subject: string;
+      email: string | null;
+      linkedAt: string;
+      lastLoginAt: string | null;
+    }>;
   };
 }
 
@@ -1140,6 +1187,7 @@ export const API_ROUTES = {
   FILING_EXPORT: '/api/v1/filing/export',
   ACCOUNT_USAGE: '/api/v1/account/usage',
   ACCOUNT_SUMMARY: '/api/v1/account',
+  ACCOUNT_OIDC: '/api/v1/account/oidc',
   ACCOUNT_BILLING_CHECKOUT: '/api/v1/account/billing/checkout',
   ACCOUNT_BILLING_PORTAL: '/api/v1/account/billing/portal',
   ACCOUNT_BILLING_EXPORT: '/api/v1/account/billing/export',
@@ -1164,6 +1212,8 @@ export const API_ROUTES = {
   ADMIN_TENANT_KEY_REACTIVATE: '/api/v1/admin/tenant-keys/:id/reactivate',
   ADMIN_TENANT_KEY_REVOKE: '/api/v1/admin/tenant-keys/:id/revoke',
   ADMIN_USAGE: '/api/v1/admin/usage',
+  AUTH_OIDC_LOGIN: '/api/v1/auth/oidc/login',
+  AUTH_OIDC_CALLBACK: '/api/v1/auth/oidc/callback',
   BILLING_STRIPE_WEBHOOK: '/api/v1/billing/stripe/webhook',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',

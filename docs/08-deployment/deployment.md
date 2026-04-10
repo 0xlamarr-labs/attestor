@@ -102,6 +102,14 @@ docker run \
 | `ATTESTOR_MFA_ISSUER` | No | `Attestor` | Issuer label embedded into generated `otpauth://` TOTP enrollment URLs |
 | `ATTESTOR_MFA_LOGIN_TTL_MINUTES` | No | `10` | Hosted MFA login challenge TTL in minutes |
 | `ATTESTOR_MFA_LOGIN_MAX_ATTEMPTS` | No | `5` | Max invalid attempts before a hosted MFA login challenge is revoked |
+| `ATTESTOR_HOSTED_OIDC_ISSUER_URL` | No | None | Hosted customer OIDC issuer URL enabling the SSO first slice |
+| `ATTESTOR_HOSTED_OIDC_CLIENT_ID` | No | None | Hosted customer OIDC client id |
+| `ATTESTOR_HOSTED_OIDC_CLIENT_SECRET` | No | None | Hosted customer OIDC client secret |
+| `ATTESTOR_HOSTED_OIDC_REDIRECT_URL` | No | None | Hosted customer OIDC callback URL override; defaults from the incoming request origin when omitted |
+| `ATTESTOR_HOSTED_OIDC_SCOPES` | No | `openid email profile` | Hosted customer OIDC scopes |
+| `ATTESTOR_HOSTED_OIDC_STATE_KEY` | No | None | Dedicated secret for sealing stateless hosted OIDC login state; falls back to `ATTESTOR_ADMIN_API_KEY` |
+| `ATTESTOR_HOSTED_OIDC_STATE_TTL_MINUTES` | No | `10` | Hosted customer OIDC login-state TTL in minutes |
+| `ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP` | No | `false` | Localhost/test-only escape hatch allowing non-HTTPS hosted OIDC issuers |
 | `ATTESTOR_RATE_LIMIT_WINDOW_SECONDS` | No | `60` | Tenant pipeline rate-limit window size in seconds |
 | `ATTESTOR_RATE_LIMIT_REDIS_URL` | No | None | Optional explicit Redis URL for shared pipeline-route rate limiting. When unset, the limiter reuses the current Redis async backend when BullMQ is active |
 | `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | No | Plan defaults | Per-plan request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
@@ -205,10 +213,11 @@ The worker **requires** Redis and will exit with code 1 if no Redis is available
 What is deployed today:
 - Single-node API + split worker topology via `docker-compose.yml`
 - Multi-node / HA first slice via `docker-compose.ha.yml` + `ops/nginx/attestor-ha.conf`, with two API nodes behind Nginx, two BullMQ workers, and startup HA guards that reject embedded/local Redis or non-shared hosted control-plane state when `ATTESTOR_HA_MODE=true`
+- Kubernetes / Gateway HA bundle first slice via `ops/kubernetes/ha/`, with Deployments, Services, HPAs, PDBs, Gateway, and HTTPRoute manifests for multi-instance API + worker rollout
 - Shared Redis queue between API and worker
 - PostgreSQL RLS tenant isolation
 - Hosted tenant key lifecycle with rotate -> deactivate/reactivate -> revoke, `lastUsedAt`, and max-2 active overlap
-- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, invite/password-reset flows with manual or SMTP delivery, TOTP MFA enrollment/verify/disable + recovery codes, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
+- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, invite/password-reset flows with manual or SMTP delivery, TOTP MFA enrollment/verify/disable + recovery codes, hosted OIDC authorization-code + PKCE SSO first slice, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
 - Tenant-aware pipeline throttling with plan defaults, `Retry-After`, and `429` responses. Uses a shared Redis fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current BullMQ Redis backend is available; otherwise falls back to in-memory single-node buckets
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `charge.succeeded|failed|refunded`, and `entitlements.active_entitlement_summary.updated` processing with duplicate-event suppression, checkout/invoice summary persistence, shared invoice line-item persistence, shared charge persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event + invoice line-item + charge history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
@@ -220,9 +229,9 @@ What is deployed today:
 - Health + readiness probes
 
 What is not yet implemented:
-- Orchestrator-native autoscaling, rolling deploy coordination, or managed load-balancer integration beyond the current HA first slice
+- Orchestrator-native autoscaling policy tuning, rolling deploy coordination, or managed load-balancer integration beyond the current HA first slice
 - BullMQ Pro queue groups or broader weighted multi-node scheduling/isolation beyond the current shared tenant active-execution caps
 - No managed production collector rollout, alerting stack, or long-retention distributed log/trace backend
 - External KMS-backed tenant key storage or shared multi-node key ledger
 - Stripe-native feature entitlement service or broader shared multi-node control-plane stores beyond the current hosted control-plane first slice
-- WebAuthn/passkeys and SSO/SAML, plus richer outbound email delivery features such as provider webhooks and delivery analytics
+- WebAuthn/passkeys and SAML, plus richer outbound email delivery features such as provider webhooks and delivery analytics

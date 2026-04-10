@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attestor-worker
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: attestor-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: attestor-worker
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: ghcr.io/your-org/attestor-worker:latest
+          imagePullPolicy: IfNotPresent
+          command: ["node", "dist/service/worker.js"]
+          envFrom:
+            - configMapRef:
+                name: attestor-runtime
+          env:
+            - name: ATTESTOR_HA_MODE
+              value: "true"
+            - name: ATTESTOR_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_SERVICE_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: redis-url
+            - name: ATTESTOR_PG_URL
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: runtime-pg-url
+                  optional: true
+            - name: ATTESTOR_ADMIN_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: admin-api-key
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi

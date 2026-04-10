@@ -7,9 +7,9 @@
  * BOUNDARY:
  * - Local file-backed store only
  * - Tokens are hashed at rest
- * - Invite and password-reset delivery is still manual/operator-driven
+ * - Invite and password-reset delivery is handled elsewhere (manual or SMTP)
  * - MFA login challenges are short-lived and API-delivered
- * - No WebAuthn or federated SSO/SAML yet
+ * - No WebAuthn or SAML challenge state yet
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';

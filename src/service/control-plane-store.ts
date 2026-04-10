@@ -36,6 +36,7 @@ import {
   createAccountUser as createAccountUserFile,
   findAccountUserByEmail as findAccountUserByEmailFile,
   findAccountUserById as findAccountUserByIdFile,
+  findAccountUserByOidcIdentity as findAccountUserByOidcIdentityFile,
   listAccountUsersByAccountId as listAccountUsersByAccountIdFile,
   listAllAccountUsers as listAllAccountUsersFile,
   normalizeAccountUserEmail,
@@ -2239,6 +2240,20 @@ export async function findAccountUserByIdState(id: string): Promise<AccountUserR
 export async function findAccountUserByEmailState(email: string): Promise<AccountUserRecord | null> {
   if (!isSharedControlPlaneConfigured()) return findAccountUserByEmailFile(email);
   return findAccountUserByEmailPg(normalizeAccountUserEmail(email));
+}
+
+export async function findAccountUserByOidcIdentityState(
+  issuer: string,
+  subject: string,
+): Promise<AccountUserRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findAccountUserByOidcIdentityFile(issuer, subject);
+  const records = await listAllAccountUsersPg();
+  const normalizedIssuer = issuer.trim().replace(/\/+$/, '');
+  const normalizedSubject = subject.trim();
+  return records.find((record) =>
+    record.federation?.oidc?.identities?.some((identity) =>
+      identity.issuer.trim().replace(/\/+$/, '') === normalizedIssuer
+      && identity.subject.trim() === normalizedSubject)) ?? null;
 }
 
 export async function createAccountUserState(input: CreateAccountUserInput): Promise<{
