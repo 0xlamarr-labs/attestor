@@ -45,7 +45,7 @@ spec:
                     app.kubernetes.io/name: attestor-worker
       containers:
         - name: worker
-          image: ghcr.io/your-org/attestor-worker:latest
+          image: europe-west1-docker.pkg.dev/project-9180cbda-d681-42d8-8ca/attestor/attestor-worker:2112b47-readinessfix1
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/service/worker.js"]
           envFrom:

@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: attestor
 resources:
   - namespace.yaml
+  - api-serviceaccount.yaml
   - configmap.yaml
   - api-service.yaml
   - api-deployment.yaml

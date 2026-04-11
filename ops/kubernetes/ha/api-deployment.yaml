@@ -20,6 +20,7 @@ spec:
       labels:
         app.kubernetes.io/name: attestor-api
     spec:
+      serviceAccountName: attestor-api-runtime
       terminationGracePeriodSeconds: 45
       topologySpreadConstraints:
         - maxSkew: 1
@@ -44,8 +45,23 @@ spec:
                   matchLabels:
                     app.kubernetes.io/name: attestor-api
       containers:
+        - name: cloud-sql-proxy
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.20.0
+          args:
+            - "--structured-logs"
+            - "--port=5432"
+            - "project-9180cbda-d681-42d8-8ca:europe-west1:attestor-pg"
+          securityContext:
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
         - name: api
-          image: ghcr.io/your-org/attestor-api:latest
+          image: europe-west1-docker.pkg.dev/project-9180cbda-d681-42d8-8ca/attestor/attestor-api:2112b47-readinessfix1
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/service/api-server.js"]
           envFrom:

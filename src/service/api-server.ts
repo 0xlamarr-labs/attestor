@@ -370,11 +370,21 @@ app.use('/api/*', async (c, next) => {
   } finally {
     const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
     const tenant = getTenantContextFromHeaders(c.req.raw.headers);
-    const account = await findHostedAccountByTenantIdState(tenant.tenantId);
     const observedTenantId = c.get('obs.tenantId') as string | null | undefined;
     const observedPlanId = c.get('obs.planId') as string | null | undefined;
     const observedAccountId = c.get('obs.accountId') as string | null | undefined;
     const observedAccountStatus = c.get('obs.accountStatus') as string | null | undefined;
+    let account: HostedAccountRecord | null = null;
+
+    if (!observedAccountId && tenant.tenantId && tenant.tenantId !== 'default') {
+      try {
+        account = await findHostedAccountByTenantIdState(tenant.tenantId);
+      } catch {
+        // Observability should never take down request handling if the hosted control-plane
+        // backend is temporarily unreachable.
+      }
+    }
+
     observeRequestComplete({
       route,
       method: c.req.method,

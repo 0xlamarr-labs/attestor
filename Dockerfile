@@ -8,6 +8,7 @@
 
 FROM node:22-alpine AS build
 WORKDIR /app
+ENV REDISMS_DISABLE_POSTINSTALL=true
 COPY package*.json tsconfig.json ./
 RUN npm ci
 COPY src/ src/
