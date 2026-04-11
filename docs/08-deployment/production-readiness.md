@@ -63,6 +63,8 @@ Recommended defaults:
 - observability provider: `grafana-alloy`
 - HA provider: `gke`
 
+The repo-guided GKE bootstrap path is no longer just theoretical: a reserved global IP + `<ip>.sslip.io` hostname + Gateway API + cert-manager Gateway HTTP-01 solver + `attestor-tls` Secret + HTTP-to-HTTPS redirect has now been live-validated end to end. Use your own delegated hostname for the final production domain, but the bootstrap route itself is already proven.
+
 ## Step 2: Bootstrap the Secret Contract
 
 Render the exact secret contract for GKE:
@@ -234,8 +236,8 @@ The repository can now:
 But it still cannot do these things without your real environment:
 
 - create your cloud accounts
-- choose your domains
-- mint your certificates
+- choose your final production domains
+- provide the final TLS material or let cert-manager mint certificates inside your own environment
 - provide your real OTLP / PagerDuty / webhook credentials
 - produce real production traffic on its own
 

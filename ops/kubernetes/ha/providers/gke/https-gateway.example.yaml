@@ -14,3 +14,14 @@ spec:
       allowedRoutes:
         namespaces:
           from: Same
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: attestor.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: attestor-tls
+      allowedRoutes:
+        namespaces:
+          from: Same

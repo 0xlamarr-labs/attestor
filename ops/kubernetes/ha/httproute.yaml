@@ -5,8 +5,7 @@ metadata:
 spec:
   parentRefs:
     - name: attestor
-  hostnames:
-    - attestor.example.com
+      sectionName: http
   rules:
     - matches:
         - path:

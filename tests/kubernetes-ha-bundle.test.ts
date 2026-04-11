@@ -26,7 +26,10 @@ function main(): void {
   const gkeOverlay = read('ops/kubernetes/ha/providers/gke/kustomization.yaml');
   const gkeHealthCheckPolicy = read('ops/kubernetes/ha/providers/gke/healthcheckpolicy.yaml');
   const gkeBackendPolicy = read('ops/kubernetes/ha/providers/gke/gcpbackendpolicy.yaml');
+  const gkeBackendPolicyCloudArmor = read('ops/kubernetes/ha/providers/gke/gcpbackendpolicy.cloudarmor.example.yaml');
   const gkeGatewayPolicy = read('ops/kubernetes/ha/providers/gke/gcpgatewaypolicy.yaml');
+  const gkeHttpsGateway = read('ops/kubernetes/ha/providers/gke/https-gateway.example.yaml');
+  const gkeHttpsRoute = read('ops/kubernetes/ha/providers/gke/https-httproute.example.yaml');
   const awsOverlay = read('ops/kubernetes/ha/providers/aws/kustomization.yaml');
   const awsIngress = read('ops/kubernetes/ha/providers/aws/alb-ingress.yaml');
   const kedaOverlay = read('ops/kubernetes/ha/providers/keda/kustomization.yaml');
@@ -37,6 +40,7 @@ function main(): void {
   const certManagerOverlay = read('ops/kubernetes/ha/providers/cert-manager/kustomization.yaml');
   const certManagerReadme = read('ops/kubernetes/ha/providers/cert-manager/README.md');
   const certManagerCertificate = read('ops/kubernetes/ha/providers/cert-manager/certificate.yaml');
+  const certManagerClusterIssuer = read('ops/kubernetes/ha/providers/cert-manager/clusterissuer.example.yaml');
   const externalSecretsOverlay = read('ops/kubernetes/ha/providers/external-secrets/kustomization.yaml');
   const externalSecretsReadme = read('ops/kubernetes/ha/providers/external-secrets/README.md');
   const externalRuntimeSecret = read('ops/kubernetes/ha/providers/external-secrets/runtime-secrets.yaml');
@@ -61,12 +65,16 @@ function main(): void {
   ok(apiHpa.includes('behavior:') && workerHpa.includes('behavior:'), 'Kubernetes HA bundle: HPAs include scale behaviors');
   ok(apiHpa.includes('memory') && workerHpa.includes('memory'), 'Kubernetes HA bundle: HPAs scale on memory as well as CPU');
   ok(apiPdb.includes('PodDisruptionBudget') && workerPdb.includes('PodDisruptionBudget'), 'Kubernetes HA bundle: PDBs exist for API and worker');
-  ok(gateway.includes('Gateway') && httpRoute.includes('HTTPRoute'), 'Kubernetes HA bundle: Gateway API ingress resources are present');
+  ok(gateway.includes('Gateway') && gateway.includes('gke-l7-global-external-managed') && gateway.includes('NamedAddress'), 'Kubernetes HA bundle: Gateway API bootstrap uses the GKE global external Gateway with a named address');
+  ok(httpRoute.includes('HTTPRoute') && httpRoute.includes('sectionName: http') && !httpRoute.includes('sectionName: https'), 'Kubernetes HA bundle: base HTTPRoute only targets the bootstrap HTTP listener');
   ok(httpRoute.includes('backendRefs:') && httpRoute.includes('attestor-api'), 'Kubernetes HA bundle: HTTPRoute forwards to attestor-api service');
   ok(gkeOverlay.includes('../../'), 'Kubernetes HA bundle: GKE managed LB overlay composes the base bundle');
   ok(gkeHealthCheckPolicy.includes('HealthCheckPolicy') && gkeHealthCheckPolicy.includes('/api/v1/ready'), 'Kubernetes HA bundle: GKE overlay defines managed health check policy');
-  ok(gkeBackendPolicy.includes('GCPBackendPolicy') && gkeBackendPolicy.includes('connectionDraining') && gkeBackendPolicy.includes('securityPolicy'), 'Kubernetes HA bundle: GKE overlay defines backend timeout/draining/security policy');
-  ok(gkeGatewayPolicy.includes('GCPGatewayPolicy') && gkeGatewayPolicy.includes('sslPolicy') && gkeGatewayPolicy.includes('allowGlobalAccess'), 'Kubernetes HA bundle: GKE overlay defines gateway TLS/global access policy');
+  ok(gkeBackendPolicy.includes('GCPBackendPolicy') && gkeBackendPolicy.includes('connectionDraining') && !gkeBackendPolicy.includes('securityPolicy'), 'Kubernetes HA bundle: GKE overlay defines backend timeout/draining defaults without requiring Cloud Armor quota');
+  ok(gkeBackendPolicyCloudArmor.includes('securityPolicy: attestor-api-armor-policy'), 'Kubernetes HA bundle: GKE Cloud Armor example overlays the backend security policy when quota exists');
+  ok(gkeGatewayPolicy.includes('GCPGatewayPolicy') && gkeGatewayPolicy.includes('sslPolicy') && !gkeGatewayPolicy.includes('allowGlobalAccess'), 'Kubernetes HA bundle: GKE overlay defines gateway TLS policy without relying on unsupported global-access fields');
+  ok(gkeHttpsGateway.includes('protocol: HTTPS') && gkeHttpsGateway.includes('attestor-tls') && gkeHttpsGateway.includes('attestor.example.com'), 'Kubernetes HA bundle: GKE HTTPS example finalizes TLS with the attestor-tls Secret and public hostname');
+  ok(gkeHttpsRoute.includes('RequestRedirect') && gkeHttpsRoute.includes('sectionName: http') && gkeHttpsRoute.includes('sectionName: https'), 'Kubernetes HA bundle: GKE HTTPS route example redirects HTTP and serves HTTPS traffic');
   ok(awsOverlay.includes('../../'), 'Kubernetes HA bundle: AWS managed LB overlay composes the base bundle');
   ok(awsIngress.includes('alb.ingress.kubernetes.io/healthcheck-path') && awsIngress.includes('/api/v1/ready'), 'Kubernetes HA bundle: AWS overlay defines ALB health checks');
   ok(awsIngress.includes('alb.ingress.kubernetes.io/target-group-attributes') && awsIngress.includes('least_outstanding_requests'), 'Kubernetes HA bundle: AWS overlay tunes target-group draining and load balancing');
@@ -76,8 +84,9 @@ function main(): void {
   ok(workerScaledObject.includes('type: redis-lists') && workerScaledObject.includes('bull:attestor-pipeline:wait'), 'Kubernetes HA bundle: worker KEDA scaler uses BullMQ waiting-list backlog');
   ok(workerTriggerAuth.includes('TriggerAuthentication') && workerTriggerAuth.includes('redis-address') && workerTriggerAuth.includes('redis-password'), 'Kubernetes HA bundle: worker KEDA scaler authenticates against Redis secrets');
   ok(certManagerOverlay.includes('../../') && certManagerOverlay.includes('certificate.yaml'), 'Kubernetes HA bundle: cert-manager overlay composes certificate resource');
-  ok(certManagerReadme.includes('cert-manager') && certManagerReadme.includes('ClusterIssuer'), 'Kubernetes HA bundle: cert-manager README documents issuer requirements');
+  ok(certManagerReadme.includes('cert-manager') && certManagerReadme.includes('ClusterIssuer') && certManagerReadme.includes('gatewayHTTPRoute.parentRefs'), 'Kubernetes HA bundle: cert-manager README documents Gateway API issuer requirements');
   ok(certManagerCertificate.includes('kind: Certificate') && certManagerCertificate.includes('secretName: attestor-tls'), 'Kubernetes HA bundle: cert-manager overlay issues the Gateway TLS secret');
+  ok(certManagerClusterIssuer.includes('kind: ClusterIssuer') && certManagerClusterIssuer.includes('gatewayHTTPRoute') && certManagerClusterIssuer.includes('name: attestor'), 'Kubernetes HA bundle: cert-manager example ships a Gateway API HTTP-01 ClusterIssuer');
   ok(externalSecretsOverlay.includes('../../') && externalSecretsOverlay.includes('runtime-secrets.yaml'), 'Kubernetes HA bundle: external-secrets overlay composes runtime secret resources');
   ok(externalSecretsReadme.includes('External Secrets Operator') && externalSecretsReadme.includes('ClusterSecretStore') && externalSecretsReadme.includes('render:ha-credentials'), 'Kubernetes HA bundle: external-secrets README documents cluster secret store requirements and renderer flow');
   ok(externalRuntimeSecret.includes('kind: ExternalSecret') && externalRuntimeSecret.includes('attestor-runtime-secrets'), 'Kubernetes HA bundle: external-secrets overlay manages runtime secret material');
@@ -88,7 +97,7 @@ function main(): void {
   ok(promotionPacketScript.includes('ready-for-environment-promotion') && promotionPacketScript.includes('probeHaReleaseInputs') && promotionPacketScript.includes('release-bundle'), 'Kubernetes HA bundle: promotion packet script collapses HA readiness and release handoff into one checkpoint');
   ok(awsProfile.includes('"provider": "aws"') && awsProfile.includes('"availabilityTarget": 0.995'), 'Kubernetes HA bundle: AWS calibration profile ships production SLO defaults');
   ok(gkeProfile.includes('"provider": "gke"') && gkeProfile.includes('"timeoutLatencyMultiplier": 6'), 'Kubernetes HA bundle: GKE calibration profile ships backend timeout tuning defaults');
-  ok(haReadme.includes('render:ha-credentials') && haReadme.includes('render:ha-release-bundle') && haReadme.includes('probe:ha-release-inputs'), 'Kubernetes HA bundle: README documents renderer-driven cloud secret and release-bundle wiring');
+  ok(haReadme.includes('attestor-gateway-ip') && haReadme.includes('https-gateway.example.yaml') && haReadme.includes('https-httproute.example.yaml') && haReadme.includes('sslip.io') && haReadme.includes('render:ha-credentials') && haReadme.includes('render:ha-release-bundle') && haReadme.includes('probe:ha-release-inputs'), 'Kubernetes HA bundle: README documents static-address Gateway bootstrap, hostname-aware HTTPS finalization, and renderer-driven release wiring');
 
   console.log(`\nKubernetes HA bundle tests: ${passed} passed, 0 failed`);
 }

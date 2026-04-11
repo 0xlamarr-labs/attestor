@@ -5,7 +5,6 @@ metadata:
 spec:
   default:
     sslPolicy: attestor-modern-tls
-    allowGlobalAccess: true
   targetRef:
     group: gateway.networking.k8s.io
     kind: Gateway

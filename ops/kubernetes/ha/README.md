@@ -13,9 +13,29 @@ Before applying it, replace:
 
 - `ghcr.io/your-org/attestor-api:latest`
 - `ghcr.io/your-org/attestor-worker:latest`
-- `managed-external`
-- `attestor.example.com`
 - the `attestor-runtime-secrets` Secret contents
+
+The base Gateway now ships as a GKE-ready HTTP bootstrap:
+
+- `gatewayClassName: gke-l7-global-external-managed`
+- static global `NamedAddress` placeholder: `attestor-gateway-ip`
+- HTTP listener on port `80` for immediate public smoke testing
+
+To finalize public HTTPS on GKE, replace:
+
+- `attestor-gateway-ip` with your reserved global static address name
+- `attestor.example.com` inside [https-gateway.example.yaml](/C:/Users/thedi/attestor/ops/kubernetes/ha/providers/gke/https-gateway.example.yaml)
+- `attestor.example.com` inside [https-httproute.example.yaml](/C:/Users/thedi/attestor/ops/kubernetes/ha/providers/gke/https-httproute.example.yaml)
+- the `attestor-tls` Secret contents or its cert-manager / External Secrets source
+
+If you do not have a delegated DNS zone yet, a practical bootstrap path is:
+
+- reserve the GKE global address
+- derive `<ip>.sslip.io` from the provisioned IPv4 address
+- use that hostname in the HTTPS Gateway, HTTPS HTTPRoute, and cert-manager `Certificate`
+- let cert-manager solve the ACME challenge through the same Gateway HTTP listener
+
+This bootstrap route has now been live-validated on GKE: the base Gateway served public HTTP, cert-manager solved ACME through the same listener, `attestor-tls` was issued successfully, the GKE-compatible redirect route used `301`, and the final `https://<ip>.sslip.io/api/v1/ready` path returned `200`.
 
 The bundle now includes:
 
@@ -41,6 +61,22 @@ Managed LB overlays:
 - `kubectl apply -k ops/kubernetes/ha/providers/gke`
 - `kubectl apply -k ops/kubernetes/ha/providers/aws`
 
+GKE public Gateway flow:
+
+- bootstrap public HTTP with the base bundle:
+  - `kubectl apply -k ops/kubernetes/ha`
+- reserve a static global IP:
+  - `gcloud compute addresses create attestor-gateway-ip --global`
+- finalize HTTPS by replacing the base Gateway with:
+  - `ops/kubernetes/ha/providers/gke/https-gateway.example.yaml`
+- add the final hostname-aware routes:
+  - `ops/kubernetes/ha/providers/gke/https-httproute.example.yaml`
+- issue the certificate with cert-manager using:
+  - `ops/kubernetes/ha/providers/cert-manager/clusterissuer.example.yaml`
+  - `ops/kubernetes/ha/providers/cert-manager/certificate.yaml`
+- then apply the GKE policy overlay:
+  - `kubectl apply -k ops/kubernetes/ha/providers/gke`
+
 Workload-aware autoscaling overlay:
 
 - `kubectl apply -k ops/kubernetes/ha/providers/keda`
@@ -51,6 +87,7 @@ Notes:
   - Prometheus request-rate scaling for `attestor-api`
   - Redis waiting-list scaling for `attestor-worker`
 - the GKE overlay now also carries `GCPBackendPolicy` and `GCPGatewayPolicy` placeholders for timeout/draining/Cloud Armor/TLS policy finalization
+- if the project has Cloud Armor quota, you can layer [gcpbackendpolicy.cloudarmor.example.yaml](/C:/Users/thedi/attestor/ops/kubernetes/ha/providers/gke/gcpbackendpolicy.cloudarmor.example.yaml) on top of the base backend policy
 - the AWS overlay now carries target-group and load-balancer attributes for safer draining and fairer request distribution
 - cloud secret/certificate wiring overlays now also exist under:
   - `providers/cert-manager`

@@ -10,6 +10,7 @@ spec:
     logging:
       enabled: true
       sampleRate: 500000
+    securityPolicy: attestor-api-armor-policy
   targetRef:
     group: ""
     kind: Service
