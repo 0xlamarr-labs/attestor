@@ -83,6 +83,13 @@ Promotion-ready release preflight:
 - dry-runs the full `render:observability-release-bundle` pipeline
 - then runs both `probe:observability-receivers` and `probe:alert-routing` so OTLP flush, API auth, and Alertmanager fanout validation are part of the same promotion gate
 
+Promotion packet:
+
+- `npm run render:observability-promotion-packet -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+- renders the release bundle into a stable output directory
+- runs the full observability release preflight
+- summarizes missing managed-backend inputs, promotion readiness, and recommended apply flow in one checkpoint packet
+
 External Secrets lifecycle tuning:
 
 - `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND` (default `ClusterSecretStore`)

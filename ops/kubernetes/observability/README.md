@@ -69,6 +69,7 @@ Before calling the managed backend wiring production-ready, a rollout-near probe
 - `npm run probe:observability-receivers -- --prometheus-url=<url> --alertmanager-url=<url>`
 - `npm run probe:alert-routing`
 - `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
+- `npm run render:observability-promotion-packet -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
 
 That probe:
 
@@ -78,3 +79,4 @@ That probe:
 - checks Alertmanager API auth with an alerts listing call
 - simulates Alertmanager routing fanout for default/critical/warning/security/billing/watchdog alerts from the rendered config
 - validates provider credentials plus External Secrets store/lifecycle inputs and dry-runs the full release-bundle render before probing receivers and route fanout
+- emits a single promotion packet summary that captures readiness state, missing inputs, bundle location, and recommended apply flow
