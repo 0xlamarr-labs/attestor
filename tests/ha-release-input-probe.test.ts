@@ -1,7 +1,10 @@
 import { strict as assert } from 'node:assert';
+import { createServer } from 'node:net';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import EmbeddedPostgres from 'embedded-postgres';
+import { RedisMemoryServer } from 'redis-memory-server';
 import { probeHaReleaseInputs } from '../scripts/probe-ha-release-inputs.ts';
 
 let passed = 0;
@@ -16,6 +19,36 @@ async function main(): Promise<void> {
   const benchmarkPath = resolve(tempDir, 'benchmark.json');
   const certPath = resolve(tempDir, 'tls.crt');
   const keyPath = resolve(tempDir, 'tls.key');
+  const dataDir = mkdtempSync(join(tempDir, 'pg-'));
+
+  async function reservePort(): Promise<number> {
+    return new Promise((resolvePort, reject) => {
+      const server = createServer();
+      server.unref();
+      server.on('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          server.close();
+          reject(new Error('Could not reserve a TCP port.'));
+          return;
+        }
+        const { port } = address;
+        server.close((error) => error ? reject(error) : resolvePort(port));
+      });
+    });
+  }
+
+  const port = await reservePort();
+  const pg = new EmbeddedPostgres({
+    databaseDir: dataDir,
+    user: 'test_attestor',
+    password: 'test_attestor',
+    port,
+    persistent: false,
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
+  });
+  const redis = new RedisMemoryServer();
 
   writeFileSync(
     benchmarkPath,
@@ -51,6 +84,15 @@ async function main(): Promise<void> {
   };
 
   try {
+    await pg.initialise();
+    await pg.start();
+    await pg.createDatabase('control_plane');
+    await pg.createDatabase('billing_ledger');
+    const redisHost = await redis.getHost();
+    const redisPort = await redis.getPort();
+    const redisUrl = `redis://${redisHost}:${redisPort}`;
+    const basePg = `postgres://test_attestor:test_attestor@localhost:${port}`;
+
     const missing = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
     ok(missing.rolloutReadiness.envComplete === false, 'HA release probe: missing envs are reported');
     ok(missing.rolloutReadiness.issues.some((issue) => issue.includes('ATTESTOR_API_IMAGE')), 'HA release probe: missing image requirement is surfaced');
@@ -58,9 +100,9 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_API_IMAGE = 'ghcr.io/example/attestor-api:1.2.3';
     process.env.ATTESTOR_WORKER_IMAGE = 'ghcr.io/example/attestor-worker:1.2.3';
     process.env.ATTESTOR_PUBLIC_HOSTNAME = 'ha.attestor.example.invalid';
-    process.env.REDIS_URL = 'redis://cache.example.invalid:6379/0';
-    process.env.ATTESTOR_CONTROL_PLANE_PG_URL = 'postgres://user:pass@db/control';
-    process.env.ATTESTOR_BILLING_LEDGER_PG_URL = 'postgres://user:pass@db/billing';
+    process.env.REDIS_URL = redisUrl;
+    process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
+    process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
@@ -71,6 +113,7 @@ async function main(): Promise<void> {
     const ready = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
     ok(ready.rolloutReadiness.envComplete === true, 'HA release probe: env completeness passes with required inputs');
     ok(ready.rolloutReadiness.bundleRenderSucceeded === true, 'HA release probe: release bundle render succeeds in preflight');
+    ok(ready.rolloutReadiness.connectivityProbeSucceeded === true, 'HA release probe: runtime connectivity passes in preflight');
     ok(ready.benchmark.p95LatencyMs === 620 && ready.benchmark.requestsPerSecond === 14.85, 'HA release probe: benchmark truth is echoed back');
     ok(ready.provider === 'generic' && ready.tlsMode === 'secret', 'HA release probe: provider and tls mode are captured');
 
@@ -88,14 +131,17 @@ async function main(): Promise<void> {
     const validExternalSecret = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
     ok(validExternalSecret.rolloutReadiness.envComplete === true, 'HA release probe: valid External Secrets lifecycle settings pass');
     ok(validExternalSecret.rolloutReadiness.bundleRenderSucceeded === true, 'HA release probe: valid External Secrets lifecycle settings still render');
+    ok(validExternalSecret.rolloutReadiness.connectivityProbeSucceeded === true, 'HA release probe: valid External Secrets lifecycle settings keep runtime connectivity green');
 
     console.log(`\nHA release input probe tests: ${passed} passed, 0 failed`);
   } finally {
+    try { await redis.stop(); } catch {}
+    try { await pg.stop(); } catch {}
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
     }
-    rmSync(tempDir, { recursive: true, force: true });
+    try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 }
 

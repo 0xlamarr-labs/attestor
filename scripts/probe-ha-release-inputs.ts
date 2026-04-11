@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { probeHaRuntimeConnectivity } from './probe-ha-runtime-connectivity.ts';
 
 type Provider = 'generic' | 'aws' | 'gke';
 
@@ -47,8 +48,10 @@ export interface HaReleaseProbeSummary {
   rolloutReadiness: {
     envComplete: boolean;
     bundleRenderSucceeded: boolean;
+    connectivityProbeSucceeded: boolean;
     issues: string[];
   };
+  connectivity: Awaited<ReturnType<typeof probeHaRuntimeConnectivity>> | null;
 }
 
 export async function probeHaReleaseInputs(options?: {
@@ -110,7 +113,12 @@ export async function probeHaReleaseInputs(options?: {
   }
 
   let bundleRenderSucceeded = false;
+  let connectivity = null as Awaited<ReturnType<typeof probeHaRuntimeConnectivity>> | null;
   if (issues.length === 0) {
+    connectivity = await probeHaRuntimeConnectivity({ provider });
+    if (!connectivity.overall.passed) {
+      issues.push(...connectivity.overall.issues);
+    }
     const outDir = mkdtempSync(resolve(tmpdir(), 'attestor-ha-preflight-'));
     try {
       const run = spawnSync(
@@ -139,8 +147,10 @@ export async function probeHaReleaseInputs(options?: {
     rolloutReadiness: {
       envComplete: issues.length === 0,
       bundleRenderSucceeded,
+      connectivityProbeSucceeded: connectivity?.overall.passed ?? false,
       issues,
     },
+    connectivity,
   };
 }
 

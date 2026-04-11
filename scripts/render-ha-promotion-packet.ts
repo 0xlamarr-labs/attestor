@@ -110,7 +110,7 @@ export async function renderHaPromotionPacket(options?: {
   const missingInputs = detectMissingInputs(provider, tlsMode);
   const issues = [...new Set([...probe.rolloutReadiness.issues, ...missingInputs.map((item) => `${item} is still missing.`)])];
   const environmentInputsComplete = missingInputs.length === 0 && probe.rolloutReadiness.envComplete;
-  const promotionGatePassed = probe.rolloutReadiness.bundleRenderSucceeded;
+  const promotionGatePassed = probe.rolloutReadiness.bundleRenderSucceeded && probe.rolloutReadiness.connectivityProbeSucceeded;
 
   mkdirSync(outputDir, { recursive: true });
   mkdirSync(releaseBundleDir, { recursive: true });

@@ -1,7 +1,10 @@
 import { strict as assert } from 'node:assert';
+import { createServer } from 'node:net';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import EmbeddedPostgres from 'embedded-postgres';
+import { RedisMemoryServer } from 'redis-memory-server';
 import { renderHaPromotionPacket } from '../scripts/render-ha-promotion-packet.ts';
 
 let passed = 0;
@@ -16,6 +19,36 @@ async function main(): Promise<void> {
   const benchmarkPath = resolve(tempDir, 'benchmark.json');
   const certPath = resolve(tempDir, 'tls.crt');
   const keyPath = resolve(tempDir, 'tls.key');
+  const dataDir = mkdtempSync(join(tempDir, 'pg-'));
+
+  async function reservePort(): Promise<number> {
+    return new Promise((resolvePort, reject) => {
+      const server = createServer();
+      server.unref();
+      server.on('error', reject);
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          server.close();
+          reject(new Error('Could not reserve a TCP port.'));
+          return;
+        }
+        const { port } = address;
+        server.close((error) => error ? reject(error) : resolvePort(port));
+      });
+    });
+  }
+
+  const port = await reservePort();
+  const pg = new EmbeddedPostgres({
+    databaseDir: dataDir,
+    user: 'test_attestor',
+    password: 'test_attestor',
+    port,
+    persistent: false,
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
+  });
+  const redis = new RedisMemoryServer();
 
   writeFileSync(
     benchmarkPath,
@@ -47,6 +80,15 @@ async function main(): Promise<void> {
   };
 
   try {
+    await pg.initialise();
+    await pg.start();
+    await pg.createDatabase('control_plane');
+    await pg.createDatabase('billing_ledger');
+    const redisHost = await redis.getHost();
+    const redisPort = await redis.getPort();
+    const redisUrl = `redis://${redisHost}:${redisPort}`;
+    const basePg = `postgres://test_attestor:test_attestor@localhost:${port}`;
+
     const blocked = await renderHaPromotionPacket({
       provider: 'generic',
       benchmarkPath,
@@ -58,9 +100,9 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_API_IMAGE = 'ghcr.io/example/attestor-api:1.2.3';
     process.env.ATTESTOR_WORKER_IMAGE = 'ghcr.io/example/attestor-worker:1.2.3';
     process.env.ATTESTOR_PUBLIC_HOSTNAME = 'ha.attestor.example.invalid';
-    process.env.REDIS_URL = 'redis://cache.example.invalid:6379/0';
-    process.env.ATTESTOR_CONTROL_PLANE_PG_URL = 'postgres://user:pass@db/control';
-    process.env.ATTESTOR_BILLING_LEDGER_PG_URL = 'postgres://user:pass@db/billing';
+    process.env.REDIS_URL = redisUrl;
+    process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
+    process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
@@ -81,7 +123,9 @@ async function main(): Promise<void> {
 
     console.log(`\nHA promotion packet tests: ${passed} passed, 0 failed`);
   } finally {
-    rmSync(tempDir, { recursive: true, force: true });
+    try { await redis.stop(); } catch {}
+    try { await pg.stop(); } catch {}
+    try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

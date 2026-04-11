@@ -2,7 +2,10 @@ import { strict as assert } from 'node:assert';
 import { createServer } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { createServer as createTcpServer } from 'node:net';
+import { join, resolve } from 'node:path';
+import EmbeddedPostgres from 'embedded-postgres';
+import { RedisMemoryServer } from 'redis-memory-server';
 import { renderProductionReadinessPacket } from '../scripts/render-production-readiness-packet.ts';
 
 let passed = 0;
@@ -26,12 +29,40 @@ function listen(server: ReturnType<typeof createServer>): Promise<number> {
   });
 }
 
+function reservePort(): Promise<number> {
+  return new Promise((resolvePort, reject) => {
+    const server = createTcpServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Unable to resolve TCP port.'));
+        return;
+      }
+      server.close((error) => error ? reject(error) : resolvePort(address.port));
+    });
+  });
+}
+
 async function main(): Promise<void> {
   const tempDir = mkdtempSync(resolve(tmpdir(), 'attestor-production-readiness-'));
   const observabilityBenchmarkPath = resolve(tempDir, 'observability-benchmark.json');
   const haBenchmarkPath = resolve(tempDir, 'ha-benchmark.json');
   const certPath = resolve(tempDir, 'tls.crt');
   const keyPath = resolve(tempDir, 'tls.key');
+  const pgDataDir = mkdtempSync(join(tempDir, 'pg-'));
+  const pgPort = await reservePort();
+  const pg = new EmbeddedPostgres({
+    databaseDir: pgDataDir,
+    user: 'test_attestor',
+    password: 'test_attestor',
+    port: pgPort,
+    persistent: false,
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
+  });
+  const redis = new RedisMemoryServer();
 
   writeFileSync(
     observabilityBenchmarkPath,
@@ -100,6 +131,15 @@ async function main(): Promise<void> {
   const alertmanagerPort = await listen(alertmanager);
 
   try {
+    await pg.initialise();
+    await pg.start();
+    await pg.createDatabase('control_plane');
+    await pg.createDatabase('billing_ledger');
+    const redisHost = await redis.getHost();
+    const redisPort = await redis.getPort();
+    const redisUrl = `redis://${redisHost}:${redisPort}`;
+    const basePg = `postgres://test_attestor:test_attestor@localhost:${pgPort}`;
+
     process.env.GRAFANA_CLOUD_OTLP_ENDPOINT = 'https://otlp-gateway-prod-eu-west-2.grafana.net/otlp';
     process.env.GRAFANA_CLOUD_OTLP_USERNAME = '123456';
     process.env.GRAFANA_CLOUD_OTLP_TOKEN = 'grafana-secret-token';
@@ -124,9 +164,9 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_API_IMAGE = 'ghcr.io/example/attestor-api:1.2.3';
     process.env.ATTESTOR_WORKER_IMAGE = 'ghcr.io/example/attestor-worker:1.2.3';
     process.env.ATTESTOR_PUBLIC_HOSTNAME = 'ha.attestor.example.invalid';
-    process.env.REDIS_URL = 'redis://cache.example.invalid:6379/0';
-    process.env.ATTESTOR_CONTROL_PLANE_PG_URL = 'postgres://user:pass@db/control';
-    process.env.ATTESTOR_BILLING_LEDGER_PG_URL = 'postgres://user:pass@db/billing';
+    process.env.REDIS_URL = redisUrl;
+    process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
+    process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
@@ -176,6 +216,8 @@ async function main(): Promise<void> {
     await new Promise<void>((resolveClose) => collector.close(() => resolveClose()));
     await new Promise<void>((resolveClose) => prometheus.close(() => resolveClose()));
     await new Promise<void>((resolveClose) => alertmanager.close(() => resolveClose()));
+    try { await redis.stop(); } catch {}
+    try { await pg.stop(); } catch {}
     rmSync(tempDir, { recursive: true, force: true });
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];

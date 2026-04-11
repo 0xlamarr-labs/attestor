@@ -65,10 +65,12 @@ Notes:
   - `npm run render:ha-release-bundle -- --provider=<aws|gke|generic> --benchmark=.attestor/ha-calibration/latest.json --output-dir=.attestor/ha/release`
 - a rollout-near release preflight is available via:
   - `npm run probe:ha-release-inputs -- --provider=<aws|gke|generic> --benchmark=.attestor/ha-calibration/latest.json`
+- a target-near runtime connectivity gate is available via:
+  - `npm run probe:ha-runtime-connectivity -- --provider=<aws|gke|generic>`
 - a single promotion packet handoff is now available via:
   - `npm run render:ha-promotion-packet -- --provider=<aws|gke|generic> --benchmark=.attestor/ha-calibration/latest.json`
 - a combined production readiness packet is now available via:
-  - `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud> --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-provider=<aws|gke|generic> --ha-benchmark=.attestor/ha-calibration/latest.json`
+  - `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud|grafana-alloy> --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-provider=<aws|gke|generic> --ha-benchmark=.attestor/ha-calibration/latest.json`
 - the recommended managed-secret bootstrap is now available via:
   - `npm run render:secret-manager-bootstrap -- --provider=<aws|gke|all> --output-dir=.attestor/secret-bootstrap`
 
@@ -82,7 +84,8 @@ Credential/certificate wiring notes:
   - AWS ACM / ALB HTTPS patches
   - GKE Gateway policy patches
 - `render:ha-release-bundle` turns the benchmark + credential render outputs into a self-contained apply-ready bundle with final resources, not just patch fragments
-- `probe:ha-release-inputs` validates the minimum shared-state, image, hostname, Redis, control-plane, billing-ledger, and TLS inputs for a real HA promotion, then dry-runs the final release-bundle render before rollout
+- `probe:ha-runtime-connectivity` validates target-near Redis reachability, control-plane/billing-ledger PostgreSQL connectivity, hostname/image sanity, and TLS material shape before promotion
+- `probe:ha-release-inputs` validates the minimum shared-state, image, hostname, Redis, control-plane, billing-ledger, and TLS inputs for a real HA promotion, runs the runtime-connectivity probe, then dry-runs the final release-bundle render before rollout
 - `render:ha-promotion-packet` collapses the benchmark truth, release preflight, missing-input inventory, release-bundle location, and recommended apply flow into one rollout checkpoint
 - `render:production-readiness-packet` fuses the HA and observability promotion packets, then blocks promotion if either benchmark is stale
 - `render:secret-manager-bootstrap` emits provider-ready `ClusterSecretStore` manifests plus the exact remote secret catalog for the HA runtime/TLS and observability secret surfaces
