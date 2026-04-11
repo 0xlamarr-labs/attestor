@@ -61,6 +61,8 @@ Notes:
   - `npm run render:ha-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/kubernetes/ha/profiles/aws-production.json`
 - an ops-ready credential/certificate render step is available via:
   - `npm run render:ha-credentials -- --provider=<generic|aws|gke> --output-dir=.attestor/ha/credentials`
+- a self-contained release bundle render step is available via:
+  - `npm run render:ha-release-bundle -- --provider=<aws|gke|generic> --benchmark=.attestor/ha-calibration/latest.json --output-dir=.attestor/ha/release`
 
 Credential/certificate wiring notes:
 
@@ -71,5 +73,6 @@ Credential/certificate wiring notes:
   - cert-manager `Certificate` manifests
   - AWS ACM / ALB HTTPS patches
   - GKE Gateway policy patches
+- `render:ha-release-bundle` turns the benchmark + credential render outputs into a self-contained apply-ready bundle with final resources, not just patch fragments
 - every secret-like input also supports a `*_FILE` variant for mounted secrets
 - set `ATTESTOR_HA_PRODUCTION_MODE=true` to force the minimum shared-state/runtime inputs needed for a real HA rollout

@@ -42,6 +42,7 @@ function main(): void {
   const externalRuntimeSecret = read('ops/kubernetes/ha/providers/external-secrets/runtime-secrets.yaml');
   const externalTlsSecret = read('ops/kubernetes/ha/providers/external-secrets/tls-secret.yaml');
   const profilesReadme = read('ops/kubernetes/ha/profiles/README.md');
+  const releaseBundleScript = read('scripts/render-ha-release-bundle.ts');
   const awsProfile = read('ops/kubernetes/ha/profiles/aws-production.json');
   const gkeProfile = read('ops/kubernetes/ha/profiles/gke-production.json');
   const haReadme = read('ops/kubernetes/ha/README.md');
@@ -80,9 +81,10 @@ function main(): void {
   ok(externalRuntimeSecret.includes('kind: ExternalSecret') && externalRuntimeSecret.includes('attestor-runtime-secrets'), 'Kubernetes HA bundle: external-secrets overlay manages runtime secret material');
   ok(externalTlsSecret.includes('kubernetes.io/tls') && externalTlsSecret.includes('attestor-tls'), 'Kubernetes HA bundle: external-secrets overlay can project TLS material');
   ok(profilesReadme.includes('render:ha-profile') && profilesReadme.includes('aws-production.json'), 'Kubernetes HA bundle: profiles README documents benchmark-to-profile tuning flow');
+  ok(releaseBundleScript.includes('render-ha-profile.ts') && releaseBundleScript.includes('render-ha-credentials.ts'), 'Kubernetes HA bundle: release bundle renderer composes scaling and credential artifacts');
   ok(awsProfile.includes('"provider": "aws"') && awsProfile.includes('"availabilityTarget": 0.995'), 'Kubernetes HA bundle: AWS calibration profile ships production SLO defaults');
   ok(gkeProfile.includes('"provider": "gke"') && gkeProfile.includes('"timeoutLatencyMultiplier": 6'), 'Kubernetes HA bundle: GKE calibration profile ships backend timeout tuning defaults');
-  ok(haReadme.includes('render:ha-credentials') && haReadme.includes('providers/cert-manager'), 'Kubernetes HA bundle: README documents renderer-driven cloud secret and certificate wiring');
+  ok(haReadme.includes('render:ha-credentials') && haReadme.includes('render:ha-release-bundle'), 'Kubernetes HA bundle: README documents renderer-driven cloud secret and release-bundle wiring');
 
   console.log(`\nKubernetes HA bundle tests: ${passed} passed, 0 failed`);
 }
