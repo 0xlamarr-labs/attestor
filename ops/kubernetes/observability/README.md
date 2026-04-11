@@ -33,19 +33,22 @@ kubectl apply -k ops/kubernetes/observability
 kubectl rollout status deployment/attestor-otel-gateway -n attestor-observability
 ```
 
-Managed backend overlay:
+Managed backend overlays:
 
+- `kubectl apply -k ops/kubernetes/observability/providers/grafana-alloy`
 - `kubectl apply -k ops/kubernetes/observability/providers/grafana-cloud`
 - `kubectl apply -k ops/kubernetes/observability/providers/external-secrets`
 
-This overlay rewires the collector to export traces, metrics, and logs to a
+These overlays rewire the gateway to export traces, metrics, and logs to a
 managed OTLP backend while still keeping the local Prometheus scrape surface for
 gateway health.
 
-The Grafana Cloud overlay now uses Collector `basicauth` with
-endpoint/username/token secrets, and the External Secrets overlay ships
-placeholder `ExternalSecret` resources for both collector and Alertmanager
-routing credentials.
+The Grafana Alloy overlay is the recommended production path and runs the
+Grafana-supported Alloy OTel Engine (`grafana/alloy` + `bin/otelcol`) against
+the same Collector-compatible OTLP pipeline. The Grafana Cloud overlay keeps the
+upstream collector image path with Collector `basicauth`, and the External
+Secrets overlay ships placeholder `ExternalSecret` resources for both collector
+and Alertmanager routing credentials.
 
 Retention/SLO tuning can now be rendered separately from benchmark data via:
 
@@ -53,8 +56,8 @@ Retention/SLO tuning can now be rendered separately from benchmark data via:
 
 And a self-contained release bundle can now be rendered via:
 
-- `npm run render:observability-release-bundle -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --output-dir=.attestor/observability/release`
-- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
+- `npm run render:observability-release-bundle -- --provider=<generic|grafana-cloud|grafana-alloy> --benchmark=.attestor/observability/latest.json --output-dir=.attestor/observability/release`
+- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud|grafana-alloy> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
 
 That release bundle composes:
 
@@ -68,8 +71,8 @@ Before calling the managed backend wiring production-ready, a rollout-near probe
 
 - `npm run probe:observability-receivers -- --prometheus-url=<url> --alertmanager-url=<url>`
 - `npm run probe:alert-routing`
-- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
-- `npm run render:observability-promotion-packet -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
+- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud|grafana-alloy> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
+- `npm run render:observability-promotion-packet -- --provider=<generic|grafana-cloud|grafana-alloy> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
 
 That probe:
 
@@ -80,7 +83,7 @@ That probe:
 - simulates Alertmanager routing fanout for default/critical/warning/security/billing/watchdog alerts from the rendered config
 - validates provider credentials plus External Secrets store/lifecycle inputs and dry-runs the full release-bundle render before probing receivers and route fanout
 - emits a single promotion packet summary that captures readiness state, missing inputs, bundle location, and recommended apply flow
-- `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud> --observability-benchmark=.attestor/observability/latest.json --ha-provider=<generic|aws|gke> --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
+- `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud|grafana-alloy> --observability-benchmark=.attestor/observability/latest.json --ha-provider=<generic|aws|gke> --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
   - emits one combined environment-promotion packet that fuses observability and HA readiness, including benchmark freshness gating
 - `npm run render:secret-manager-bootstrap -- --provider=<aws|gke|all> --output-dir=.attestor/secret-bootstrap`
   - emits AWS IRSA and GKE Workload Identity `ClusterSecretStore` manifests plus the exact remote secret catalog expected by the observability ExternalSecret overlay

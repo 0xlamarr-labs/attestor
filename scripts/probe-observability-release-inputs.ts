@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { probeObservabilityReceivers } from './probe-observability-receivers.ts';
 import { probeAlertRouting } from './probe-alert-routing.ts';
 
-type Provider = 'generic' | 'grafana-cloud';
+type Provider = 'generic' | 'grafana-cloud' | 'grafana-alloy';
 type SecretMode = 'secret' | 'external-secret';
 
 function arg(name: string, fallback?: string): string | undefined {
@@ -67,17 +67,17 @@ export async function probeObservabilityReleaseInputs(options?: {
   prometheusUrl?: string | null;
   alertmanagerUrl?: string | null;
 }): Promise<ObservabilityReleaseProbeSummary> {
-  const provider = (options?.provider ?? arg('provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-cloud')) as Provider;
+  const provider = (options?.provider ?? arg('provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-alloy')) as Provider;
   const benchmarkPath = options?.benchmarkPath ?? arg('benchmark', env('ATTESTOR_OBSERVABILITY_BENCHMARK_PATH')) ?? '';
   const prometheusUrl = options?.prometheusUrl ?? arg('prometheus-url', env('ATTESTOR_OBSERVABILITY_PROMETHEUS_URL') ?? env('PROMETHEUS_BASE_URL')) ?? null;
   const alertmanagerUrl = options?.alertmanagerUrl ?? arg('alertmanager-url', env('ATTESTOR_OBSERVABILITY_ALERTMANAGER_URL') ?? env('ALERTMANAGER_BASE_URL')) ?? null;
   const secretMode = (arg(
     'secret-mode',
-    env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? (provider === 'grafana-cloud' ? 'external-secret' : 'secret'),
+    env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? ((provider === 'grafana-cloud' || provider === 'grafana-alloy') ? 'external-secret' : 'secret'),
   ) as SecretMode);
 
-  if (!['generic', 'grafana-cloud'].includes(provider)) {
-    throw new Error('provider must be one of generic, grafana-cloud');
+  if (!['generic', 'grafana-cloud', 'grafana-alloy'].includes(provider)) {
+    throw new Error('provider must be one of generic, grafana-cloud, grafana-alloy');
   }
   if (!['secret', 'external-secret'].includes(secretMode)) {
     throw new Error('secret-mode must be one of secret, external-secret');
@@ -97,7 +97,7 @@ export async function probeObservabilityReleaseInputs(options?: {
   const grafanaUsername = envOrFile('GRAFANA_CLOUD_OTLP_USERNAME');
   const grafanaToken = envOrFile('GRAFANA_CLOUD_OTLP_TOKEN');
 
-  if (provider === 'grafana-cloud') {
+  if (provider === 'grafana-cloud' || provider === 'grafana-alloy') {
     required('GRAFANA_CLOUD_OTLP_ENDPOINT or GRAFANA_CLOUD_OTLP_ENDPOINT_FILE', grafanaEndpoint, issues);
     required('GRAFANA_CLOUD_OTLP_USERNAME or GRAFANA_CLOUD_OTLP_USERNAME_FILE', grafanaUsername, issues);
     required('GRAFANA_CLOUD_OTLP_TOKEN or GRAFANA_CLOUD_OTLP_TOKEN_FILE', grafanaToken, issues);

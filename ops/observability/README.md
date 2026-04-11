@@ -77,7 +77,7 @@ Route-level alert routing probe:
 
 Promotion-ready release preflight:
 
-- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud|grafana-alloy> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
 - validates the required managed-backend credential inputs for the selected provider
 - validates External Secrets store wiring when `ATTESTOR_OBSERVABILITY_SECRET_MODE=external-secret`
 - dry-runs the full `render:observability-release-bundle` pipeline
@@ -85,11 +85,11 @@ Promotion-ready release preflight:
 
 Promotion packet:
 
-- `npm run render:observability-promotion-packet -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+- `npm run render:observability-promotion-packet -- --provider=<generic|grafana-cloud|grafana-alloy> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
   - renders the release bundle into a stable output directory
   - runs the full observability release preflight
   - summarizes missing managed-backend inputs, promotion readiness, and recommended apply flow in one checkpoint packet
-- `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud> --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-provider=<generic|aws|gke> --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+- `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud|grafana-alloy> --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-provider=<generic|aws|gke> --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
   - reuses the observability and HA promotion packets
   - adds benchmark freshness gating for both benchmark files
   - emits one final readiness packet for environment promotion
@@ -111,7 +111,8 @@ External Secrets lifecycle tuning:
 Managed collector rollout:
 
 - `ops/kubernetes/observability/` now ships a gateway-style Collector Deployment with HPA, PDB, RBAC, `k8sattributes`, and `resourcedetection`
-- `ops/kubernetes/observability/providers/grafana-cloud/` now uses Collector `basicauth` with endpoint/username/token secrets instead of a raw Authorization header
+- `ops/kubernetes/observability/providers/grafana-alloy/` is now the recommended managed production runtime and swaps the gateway to `grafana/alloy` via `bin/otelcol`
+- `ops/kubernetes/observability/providers/grafana-cloud/` remains the upstream-collector compatibility path using Collector `basicauth` with endpoint/username/token secrets instead of a raw Authorization header
 - `ops/kubernetes/observability/providers/external-secrets/` ships `ExternalSecret` templates for the Grafana Cloud collector secret and Alertmanager routing secret
 - `benchmark:observability` is the intended last-mile tuning bridge before calling the shipped SLO/retention defaults production-final
 

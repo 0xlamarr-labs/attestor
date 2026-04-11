@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { probeObservabilityReleaseInputs } from './probe-observability-release-inputs.ts';
 
-type Provider = 'generic' | 'grafana-cloud';
+type Provider = 'generic' | 'grafana-cloud' | 'grafana-alloy';
 type SecretMode = 'secret' | 'external-secret';
 
 function arg(name: string, fallback?: string): string | undefined {
@@ -40,7 +40,7 @@ function detectMissingInputs(provider: Provider, secretMode: SecretMode): string
     if (!env(name) && !env(`${name}_FILE`)) missing.push(name);
   };
 
-  if (provider === 'grafana-cloud') {
+  if (provider === 'grafana-cloud' || provider === 'grafana-alloy') {
     requireOne('GRAFANA_CLOUD_OTLP_ENDPOINT');
     requireOne('GRAFANA_CLOUD_OTLP_USERNAME');
     requireOne('GRAFANA_CLOUD_OTLP_TOKEN');
@@ -121,10 +121,10 @@ export async function renderObservabilityPromotionPacket(options?: {
   alertmanagerUrl?: string | null;
   outputDir?: string;
 }): Promise<ObservabilityPromotionPacket> {
-  const provider = (options?.provider ?? arg('provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-cloud')) as Provider;
+  const provider = (options?.provider ?? arg('provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-alloy')) as Provider;
   const secretMode = (options?.secretMode ?? arg(
     'secret-mode',
-    env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? (provider === 'grafana-cloud' ? 'external-secret' : 'secret'),
+    env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? ((provider === 'grafana-cloud' || provider === 'grafana-alloy') ? 'external-secret' : 'secret'),
   )) as SecretMode;
   const benchmarkPath = resolve(options?.benchmarkPath ?? arg('benchmark', env('ATTESTOR_OBSERVABILITY_BENCHMARK_PATH')) ?? '');
   if (!benchmarkPath) throw new Error('--benchmark or ATTESTOR_OBSERVABILITY_BENCHMARK_PATH is required.');

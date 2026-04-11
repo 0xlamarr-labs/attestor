@@ -154,7 +154,7 @@ async function main(): Promise<void> {
     const now = new Date();
     utimesSync(observabilityBenchmarkPath, now, now);
     const ready = await renderProductionReadinessPacket({
-      observabilityProvider: 'grafana-cloud',
+      observabilityProvider: 'grafana-alloy',
       observabilitySecretMode: 'external-secret',
       observabilityBenchmarkPath,
       prometheusUrl: `http://127.0.0.1:${prometheusPort}`,
@@ -169,6 +169,7 @@ async function main(): Promise<void> {
     ok(ready.readiness.promotionGatePassed === true, 'Production readiness packet: both promotion gates pass');
     ok(ready.artifacts.observabilityPacketDir.endsWith('observability'), 'Production readiness packet: observability artifact path is captured');
     ok(ready.artifacts.haPacketDir.endsWith('ha'), 'Production readiness packet: HA artifact path is captured');
+    ok(ready.observability.provider === 'grafana-alloy', 'Production readiness packet: Grafana Alloy can drive the observability side of the final handoff');
 
     console.log(`\nProduction readiness packet tests: ${passed} passed, 0 failed`);
   } finally {

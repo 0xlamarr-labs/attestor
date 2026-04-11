@@ -16,6 +16,7 @@ function main(): void {
   const benchmarkPath = resolve(tempDir, 'benchmark.json');
   const secretOut = resolve(tempDir, 'grafana-cloud-secret');
   const externalOut = resolve(tempDir, 'grafana-cloud-external');
+  const alloyOut = resolve(tempDir, 'grafana-alloy-external');
 
   writeFileSync(
     benchmarkPath,
@@ -114,6 +115,42 @@ function main(): void {
     ok(externalAlertSecret.includes('name: corp-secrets') && externalAlertSecret.includes('namespace: obs-prod') && externalAlertSecret.includes('refreshInterval: 15m') && externalAlertSecret.includes('deletionPolicy: Retain'), 'Observability release bundle: Alertmanager ExternalSecret rewires secret store, namespace, and lifecycle policy');
     ok(externalNamespace.includes('name: obs-prod'), 'Observability release bundle: namespace resource is rewritten');
     ok(externalSummary.externalSecretPolicy.refreshInterval === '15m' && externalSummary.externalSecretPolicy.deletionPolicy === 'Retain', 'Observability release bundle: summary captures external secret lifecycle policy');
+
+    const alloyRun = spawnSync(
+      process.execPath,
+      [
+        resolve('node_modules/tsx/dist/cli.mjs'),
+        'scripts/render-observability-release-bundle.ts',
+        '--provider=grafana-alloy',
+        `--benchmark=${benchmarkPath}`,
+        '--profile=ops/observability/profiles/regulated-production.json',
+        `--output-dir=${alloyOut}`,
+      ],
+      {
+        cwd: resolve('.'),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GRAFANA_CLOUD_OTLP_ENDPOINT: 'https://otlp-gateway-prod-eu-west-2.grafana.net/otlp',
+          GRAFANA_CLOUD_OTLP_USERNAME: '123456',
+          GRAFANA_CLOUD_OTLP_TOKEN: 'grafana-secret-token',
+          ALERTMANAGER_DEFAULT_WEBHOOK_URL: 'https://alerts.example.invalid/default',
+          ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY: 'pd-secret',
+          ALERTMANAGER_WARNING_WEBHOOK_URL: 'https://alerts.example.invalid/warning',
+          ALERTMANAGER_PRODUCTION_MODE: 'true',
+          ATTESTOR_OBSERVABILITY_SECRET_MODE: 'external-secret',
+          ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE: 'corp-secrets',
+        },
+      },
+    );
+
+    ok(alloyRun.status === 0, `Observability release bundle: Grafana Alloy render exits successfully\nstdout:\n${alloyRun.stdout}\nstderr:\n${alloyRun.stderr}`);
+    const alloyDeployment = readFileSync(resolve(alloyOut, 'deployment.yaml'), 'utf8');
+    const alloyConfigmap = readFileSync(resolve(alloyOut, 'configmap.yaml'), 'utf8');
+    const alloySummary = JSON.parse(readFileSync(resolve(alloyOut, 'summary.json'), 'utf8')) as any;
+    ok(alloyDeployment.includes('grafana/alloy:latest') && alloyDeployment.includes('bin/otelcol'), 'Observability release bundle: Grafana Alloy provider swaps the runtime image and command');
+    ok(alloyConfigmap.includes('otlphttp/grafana_cloud') && alloyConfigmap.includes('basicauth/grafana_cloud'), 'Observability release bundle: Grafana Alloy provider reuses the managed OTLP basicauth pipeline');
+    ok(alloySummary.provider === 'grafana-alloy' && alloySummary.runtimeEngine === 'grafana-alloy-otel', 'Observability release bundle: summary captures the Grafana Alloy runtime engine');
 
     console.log(`\nObservability release bundle render tests: ${passed} passed, 0 failed`);
   } finally {

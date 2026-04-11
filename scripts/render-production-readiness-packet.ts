@@ -10,7 +10,7 @@ import {
   type HaPromotionPacket,
 } from './render-ha-promotion-packet.ts';
 
-type ObservabilityProvider = 'generic' | 'grafana-cloud';
+type ObservabilityProvider = 'generic' | 'grafana-cloud' | 'grafana-alloy';
 type HaProvider = 'generic' | 'aws' | 'gke';
 type SecretMode = 'secret' | 'external-secret';
 
@@ -94,11 +94,11 @@ export async function renderProductionReadinessPacket(options?: {
   haBenchmarkMaxAgeHours?: number;
 }): Promise<ProductionReadinessPacket> {
   const observabilityProvider = (options?.observabilityProvider
-    ?? arg('observability-provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-cloud')) as ObservabilityProvider;
+    ?? arg('observability-provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-alloy')) as ObservabilityProvider;
   const observabilitySecretMode = (options?.observabilitySecretMode
     ?? arg(
       'observability-secret-mode',
-      env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? (observabilityProvider === 'grafana-cloud' ? 'external-secret' : 'secret'),
+      env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? ((observabilityProvider === 'grafana-cloud' || observabilityProvider === 'grafana-alloy') ? 'external-secret' : 'secret'),
     )) as SecretMode;
   const observabilityBenchmarkPath = resolve(
     options?.observabilityBenchmarkPath

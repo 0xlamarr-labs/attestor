@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attestor-otel-gateway
+  namespace: attestor-observability
+spec:
+  template:
+    spec:
+      containers:
+        - name: otel-collector
+          image: grafana/alloy:latest
+          command:
+            - bin/otelcol
+          env:
+            - name: GRAFANA_CLOUD_OTLP_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-otel-gateway-grafana-cloud
+                  key: grafana-cloud-otlp-endpoint
+            - name: GRAFANA_CLOUD_OTLP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-otel-gateway-grafana-cloud
+                  key: grafana-cloud-otlp-username
+            - name: GRAFANA_CLOUD_OTLP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-otel-gateway-grafana-cloud
+                  key: grafana-cloud-otlp-token
+            - name: TEMPO_OTLP_ENDPOINT
+              $patch: delete
+            - name: LOKI_OTLP_ENDPOINT
+              $patch: delete

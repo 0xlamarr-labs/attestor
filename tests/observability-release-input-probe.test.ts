@@ -143,6 +143,15 @@ async function main(): Promise<void> {
     ok(collectorRequests.includes('/v1/logs') && collectorRequests.includes('/v1/traces') && collectorRequests.includes('/v1/metrics'), 'Observability release probe: OTLP collectors are exercised');
     ok(ready.benchmark.p95LatencyMs === 410 && ready.provider === 'grafana-cloud' && ready.secretMode === 'external-secret', 'Observability release probe: benchmark, provider, and secret mode are captured');
 
+    const alloyReady = await probeObservabilityReleaseInputs({
+      provider: 'grafana-alloy',
+      benchmarkPath,
+      prometheusUrl: `http://127.0.0.1:${prometheusPort}`,
+      alertmanagerUrl: `http://127.0.0.1:${alertmanagerPort}`,
+    });
+    ok(alloyReady.releaseReadiness.bundleRenderSucceeded === true && alloyReady.provider === 'grafana-alloy', 'Observability release probe: Grafana Alloy provider is supported');
+    ok(alloyReady.releaseReadiness.receiverProbeSucceeded === true && alloyReady.releaseReadiness.alertRoutingSucceeded === true, 'Observability release probe: Grafana Alloy provider passes the same preflight chain');
+
     console.log(`\nObservability release input probe tests: ${passed} passed, 0 failed`);
   } finally {
     await new Promise<void>((resolveClose) => collector.close(() => resolveClose()));

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-type Provider = 'generic' | 'grafana-cloud';
+type Provider = 'generic' | 'grafana-cloud' | 'grafana-alloy';
 type SecretMode = 'secret' | 'external-secret';
 
 function arg(name: string, fallback?: string): string | undefined {
@@ -76,9 +76,9 @@ function runTsx(script: string, args: string[], envVars: NodeJS.ProcessEnv): voi
 }
 
 function main(): void {
-  const provider = (arg('provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-cloud') as Provider);
-  if (!['generic', 'grafana-cloud'].includes(provider)) {
-    throw new Error('provider must be one of generic, grafana-cloud');
+  const provider = (arg('provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-alloy') as Provider);
+  if (!['generic', 'grafana-cloud', 'grafana-alloy'].includes(provider)) {
+    throw new Error('provider must be one of generic, grafana-cloud, grafana-alloy');
   }
 
   const benchmarkPath = required(arg('benchmark', env('ATTESTOR_OBSERVABILITY_BENCHMARK_PATH')), '--benchmark');
@@ -88,13 +88,14 @@ function main(): void {
   )!;
   const outputDir = resolve(arg('output-dir', `.attestor/observability/release/${provider}`)!);
   const namespace = env('ATTESTOR_OBSERVABILITY_NAMESPACE') ?? 'attestor-observability';
-  const collectorImage = env('ATTESTOR_OBSERVABILITY_COLLECTOR_IMAGE') ?? 'otel/opentelemetry-collector-contrib:latest';
+  const collectorImage = env('ATTESTOR_OBSERVABILITY_COLLECTOR_IMAGE')
+    ?? (provider === 'grafana-alloy' ? 'grafana/alloy:latest' : 'otel/opentelemetry-collector-contrib:latest');
   const imagePullPolicy = env('ATTESTOR_OBSERVABILITY_COLLECTOR_IMAGE_PULL_POLICY') ?? 'IfNotPresent';
   const tempoEndpoint = env('ATTESTOR_OBSERVABILITY_TEMPO_OTLP_ENDPOINT') ?? 'tempo.monitoring.svc.cluster.local:4317';
   const lokiEndpoint = env('ATTESTOR_OBSERVABILITY_LOKI_OTLP_ENDPOINT') ?? 'http://loki.monitoring.svc.cluster.local:3100/otlp';
   const secretMode = (arg(
     'secret-mode',
-    env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? (provider === 'grafana-cloud' ? 'external-secret' : 'secret'),
+    env('ATTESTOR_OBSERVABILITY_SECRET_MODE') ?? ((provider === 'grafana-cloud' || provider === 'grafana-alloy') ? 'external-secret' : 'secret'),
   ) as SecretMode);
   if (!['secret', 'external-secret'].includes(secretMode)) {
     throw new Error('secret-mode must be one of secret, external-secret');
@@ -132,8 +133,8 @@ function main(): void {
       alertmanager: { configuredKeys: string[] };
     };
 
-    if (provider === 'grafana-cloud' && !credentialSummary.grafanaCloud.configured) {
-      throw new Error('Grafana Cloud provider requires GRAFANA_CLOUD_OTLP_* credentials.');
+    if ((provider === 'grafana-cloud' || provider === 'grafana-alloy') && !credentialSummary.grafanaCloud.configured) {
+      throw new Error('Grafana Cloud providers require GRAFANA_CLOUD_OTLP_* credentials.');
     }
 
     mkdirSync(outputDir, { recursive: true });
@@ -142,8 +143,8 @@ function main(): void {
     let serviceAccount = read('ops/kubernetes/observability/serviceaccount.yaml');
     let clusterRole = read('ops/kubernetes/observability/clusterrole.yaml');
     let clusterRoleBinding = read('ops/kubernetes/observability/clusterrolebinding.yaml');
-    let configmap = provider === 'grafana-cloud'
-      ? read('ops/kubernetes/observability/providers/grafana-cloud/patch-configmap.yaml')
+    let configmap = (provider === 'grafana-cloud' || provider === 'grafana-alloy')
+      ? read(`ops/kubernetes/observability/providers/${provider}/patch-configmap.yaml`)
       : read('ops/kubernetes/observability/configmap.yaml');
     let deployment = read('ops/kubernetes/observability/deployment.yaml');
     let service = read('ops/kubernetes/observability/service.yaml');
@@ -196,6 +197,13 @@ function main(): void {
         /          env:\n(?:            - name: TEMPO_OTLP_ENDPOINT[\s\S]*?)          ports:/,
         `${secretEnvBlock}\n          ports:`,
       );
+      if (provider === 'grafana-alloy') {
+        deployment = replaceFirst(
+          deployment,
+          /        - name: otel-collector\r?\n          image: .*?\r?\n/,
+          `        - name: otel-collector\n          image: ${collectorImage}\n          command:\n            - bin/otelcol\n`,
+        );
+      }
     }
 
     write(resolve(outputDir, 'namespace.yaml'), namespaceYaml);
@@ -220,7 +228,7 @@ function main(): void {
       'pdb.yaml',
     ];
 
-    if (provider === 'grafana-cloud') {
+    if (provider === 'grafana-cloud' || provider === 'grafana-alloy') {
       if (secretMode === 'external-secret') {
         let external = read('ops/kubernetes/observability/providers/external-secrets/grafana-cloud-external-secret.yaml');
         external = replaceNamespace(external, namespace);
@@ -289,6 +297,7 @@ ${resources.map((resource) => `  - ${resource}`).join('\n')}
 
     const summary = {
       provider,
+      runtimeEngine: provider === 'grafana-alloy' ? 'grafana-alloy-otel' : 'upstream-otelcol',
       namespace,
       secretMode,
       collectorImage,
@@ -317,6 +326,7 @@ Generated from:
 - benchmark: ${benchmarkPath}
 - profile: ${profilePath}
 - provider: ${provider}
+- runtime engine: ${provider === 'grafana-alloy' ? 'Grafana Alloy OTel Engine' : 'upstream OpenTelemetry Collector'}
 - secret mode: ${secretMode}
 
 This bundle includes:

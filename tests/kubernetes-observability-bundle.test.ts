@@ -28,6 +28,11 @@ function main(): void {
   const grafanaCloudSecretTemplate = read('ops/kubernetes/observability/providers/grafana-cloud/secret-template.yaml');
   const grafanaCloudDeploymentPatch = read('ops/kubernetes/observability/providers/grafana-cloud/patch-deployment.yaml');
   const grafanaCloudConfigPatch = read('ops/kubernetes/observability/providers/grafana-cloud/patch-configmap.yaml');
+  const grafanaAlloyKustomization = read('ops/kubernetes/observability/providers/grafana-alloy/kustomization.yaml');
+  const grafanaAlloyReadme = read('ops/kubernetes/observability/providers/grafana-alloy/README.md');
+  const grafanaAlloySecretTemplate = read('ops/kubernetes/observability/providers/grafana-alloy/secret-template.yaml');
+  const grafanaAlloyDeploymentPatch = read('ops/kubernetes/observability/providers/grafana-alloy/patch-deployment.yaml');
+  const grafanaAlloyConfigPatch = read('ops/kubernetes/observability/providers/grafana-alloy/patch-configmap.yaml');
   const externalSecretsReadme = read('ops/kubernetes/observability/providers/external-secrets/README.md');
   const externalSecretsKustomization = read('ops/kubernetes/observability/providers/external-secrets/kustomization.yaml');
   const externalGrafanaSecret = read('ops/kubernetes/observability/providers/external-secrets/grafana-cloud-external-secret.yaml');
@@ -52,6 +57,11 @@ function main(): void {
   ok(grafanaCloudSecretTemplate.includes('grafana-cloud-otlp-endpoint') && grafanaCloudSecretTemplate.includes('grafana-cloud-otlp-username') && grafanaCloudSecretTemplate.includes('grafana-cloud-otlp-token'), 'Kubernetes observability bundle: Grafana Cloud overlay ships endpoint/username/token secret placeholders');
   ok(grafanaCloudDeploymentPatch.includes('GRAFANA_CLOUD_OTLP_ENDPOINT') && grafanaCloudDeploymentPatch.includes('GRAFANA_CLOUD_OTLP_USERNAME') && grafanaCloudDeploymentPatch.includes('GRAFANA_CLOUD_OTLP_TOKEN'), 'Kubernetes observability bundle: Grafana Cloud overlay injects managed OTLP endpoint/username/token env');
   ok(grafanaCloudConfigPatch.includes('basicauth/grafana_cloud') && grafanaCloudConfigPatch.includes('authenticator: basicauth/grafana_cloud'), 'Kubernetes observability bundle: Grafana Cloud overlay routes all signals through managed OTLP basicauth');
+  ok(grafanaAlloyKustomization.includes('../../') && grafanaAlloyKustomization.includes('patch-deployment.yaml'), 'Kubernetes observability bundle: Grafana Alloy overlay composes and patches the base bundle');
+  ok(grafanaAlloyReadme.includes('Grafana-supported') && grafanaAlloyReadme.includes('bin/otelcol'), 'Kubernetes observability bundle: Grafana Alloy overlay documents the supported OTel Engine runtime');
+  ok(grafanaAlloySecretTemplate.includes('grafana-cloud-otlp-endpoint') && grafanaAlloySecretTemplate.includes('grafana-cloud-otlp-token'), 'Kubernetes observability bundle: Grafana Alloy overlay reuses the managed OTLP secret contract');
+  ok(grafanaAlloyDeploymentPatch.includes('grafana/alloy:latest') && grafanaAlloyDeploymentPatch.includes('bin/otelcol'), 'Kubernetes observability bundle: Grafana Alloy overlay swaps the runtime image and command');
+  ok(grafanaAlloyConfigPatch.includes('basicauth/grafana_cloud') && grafanaAlloyConfigPatch.includes('otlphttp/grafana_cloud'), 'Kubernetes observability bundle: Grafana Alloy overlay keeps the managed OTLP pipeline');
   ok(externalSecretsReadme.includes('ExternalSecret') && externalSecretsReadme.includes('attestor-alertmanager-routing'), 'Kubernetes observability bundle: external-secrets README documents collector and alertmanager secret sync');
   ok(externalSecretsKustomization.includes('grafana-cloud-external-secret.yaml') && externalSecretsKustomization.includes('alertmanager-routing-external-secret.yaml'), 'Kubernetes observability bundle: external-secrets overlay includes both secret resources');
   ok(externalGrafanaSecret.includes('grafana-cloud-otlp-token') && externalGrafanaSecret.includes('ClusterSecretStore') && externalGrafanaSecret.includes('refreshInterval: 1h') && externalGrafanaSecret.includes('creationPolicy: Owner'), 'Kubernetes observability bundle: external-secrets overlay syncs Grafana Cloud credentials with explicit lifecycle defaults');

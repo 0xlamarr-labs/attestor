@@ -136,6 +136,17 @@ async function main(): Promise<void> {
     ok(readFileSync(resolve(tempDir, 'ready', 'README.md'), 'utf8').includes('Recommended apply flow'), 'Observability promotion packet: rollout README is written');
     ok(readFileSync(resolve(tempDir, 'ready', 'summary.json'), 'utf8').includes('ready-for-environment-promotion'), 'Observability promotion packet: summary captures the final readiness state');
 
+    const alloyReady = await renderObservabilityPromotionPacket({
+      provider: 'grafana-alloy',
+      secretMode: 'external-secret',
+      benchmarkPath,
+      prometheusUrl: `http://127.0.0.1:${prometheusPort}`,
+      alertmanagerUrl: `http://127.0.0.1:${alertmanagerPort}`,
+      outputDir: resolve(tempDir, 'alloy-ready'),
+    });
+    ok(alloyReady.readiness.state === 'ready-for-environment-promotion', 'Observability promotion packet: Grafana Alloy can reach ready state');
+    ok(alloyReady.probe.provider === 'grafana-alloy', 'Observability promotion packet: Grafana Alloy provider propagates into the probe summary');
+
     console.log(`\nObservability promotion packet tests: ${passed} passed, 0 failed`);
   } finally {
     await new Promise<void>((resolveClose) => collector.close(() => resolveClose()));
