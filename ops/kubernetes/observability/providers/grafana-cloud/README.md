@@ -12,13 +12,12 @@ It assumes:
 Required secret keys:
 
 - `grafana-cloud-otlp-endpoint`
-- `grafana-cloud-otlp-auth-header`
+- `grafana-cloud-otlp-username`
+- `grafana-cloud-otlp-token`
 
-The OTLP auth header should be the full HTTP header value, for example:
-
-```text
-Basic <base64(username:token)>
-```
+This overlay now uses the Collector `basicauth` authenticator pattern instead of
+injecting a raw `Authorization` header string. That keeps the wiring closer to
+the official OpenTelemetry auth model and makes secret rotation cleaner.
 
 Apply it with:
 

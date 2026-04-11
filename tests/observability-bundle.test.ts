@@ -28,6 +28,7 @@ function main(): void {
   const loki = read('ops/observability/loki/loki.yml');
   const bundleReadme = read('ops/observability/README.md');
   const alertRenderScript = read('scripts/render-alertmanager-config.mjs');
+  const credentialsRenderScript = read('scripts/render-observability-credentials.ts');
   const profilesReadme = read('ops/observability/profiles/README.md');
   const regulatedProfile = read('ops/observability/profiles/regulated-production.json');
   const leanProfile = read('ops/observability/profiles/lean-production.json');
@@ -76,6 +77,8 @@ function main(): void {
   ok(loki.includes('retention_period') && loki.includes('compactor:'), 'Observability bundle: Loki config sets retention with compactor enabled');
   ok(alertRenderScript.includes('ALERTMANAGER_CRITICAL_WEBHOOK_URL') && alertRenderScript.includes('ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY') && alertRenderScript.includes('ALERTMANAGER_WARNING_SLACK_WEBHOOK_URL'), 'Observability bundle: Alertmanager render script supports webhook, PagerDuty, and Slack routing');
   ok(alertRenderScript.includes('ALERTMANAGER_SECURITY_WEBHOOK_URL') && alertRenderScript.includes('ALERTMANAGER_BILLING_WEBHOOK_URL'), 'Observability bundle: Alertmanager render script supports team escalation routes');
+  ok(alertRenderScript.includes('_FILE') && alertRenderScript.includes('ALERTMANAGER_PRODUCTION_MODE'), 'Observability bundle: Alertmanager render script supports secret-file inputs and production validation');
+  ok(credentialsRenderScript.includes('GRAFANA_CLOUD_OTLP_ENDPOINT') && credentialsRenderScript.includes('attestor-alertmanager-routing'), 'Observability bundle: observability credential renderer emits managed collector and Alertmanager secret bundles');
   ok(profilesReadme.includes('render:observability-profile') && profilesReadme.includes('regulated-production.json'), 'Observability bundle: profile README documents render flow');
   ok(regulatedProfile.includes('"prometheusDays": 30') && regulatedProfile.includes('"availabilityTarget": 0.995'), 'Observability bundle: regulated profile ships longer-retention defaults');
   ok(leanProfile.includes('"prometheusDays": 15') && leanProfile.includes('"tempoHours": 336'), 'Observability bundle: lean profile ships cost-aware retention defaults');

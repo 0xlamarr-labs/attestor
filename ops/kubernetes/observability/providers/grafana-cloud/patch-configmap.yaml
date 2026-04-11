@@ -8,6 +8,10 @@ data:
     extensions:
       health_check:
         endpoint: 0.0.0.0:13133
+      basicauth/grafana_cloud:
+        client_auth:
+          username: ${GRAFANA_CLOUD_OTLP_USERNAME}
+          password: ${GRAFANA_CLOUD_OTLP_TOKEN}
     receivers:
       otlp:
         protocols:
@@ -39,14 +43,14 @@ data:
     exporters:
       otlphttp/grafana_cloud:
         endpoint: ${GRAFANA_CLOUD_OTLP_ENDPOINT}
-        headers:
-          Authorization: ${GRAFANA_CLOUD_OTLP_AUTH_HEADER}
+        auth:
+          authenticator: basicauth/grafana_cloud
       prometheus:
         endpoint: 0.0.0.0:8889
         resource_to_telemetry_conversion:
           enabled: true
     service:
-      extensions: [health_check]
+      extensions: [health_check, basicauth/grafana_cloud]
       pipelines:
         traces:
           receivers: [otlp]

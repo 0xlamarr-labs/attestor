@@ -36,10 +36,16 @@ kubectl rollout status deployment/attestor-otel-gateway -n attestor-observabilit
 Managed backend overlay:
 
 - `kubectl apply -k ops/kubernetes/observability/providers/grafana-cloud`
+- `kubectl apply -k ops/kubernetes/observability/providers/external-secrets`
 
 This overlay rewires the collector to export traces, metrics, and logs to a
 managed OTLP backend while still keeping the local Prometheus scrape surface for
 gateway health.
+
+The Grafana Cloud overlay now uses Collector `basicauth` with
+endpoint/username/token secrets, and the External Secrets overlay ships
+placeholder `ExternalSecret` resources for both collector and Alertmanager
+routing credentials.
 
 Retention/SLO tuning can now be rendered separately from benchmark data via:
 

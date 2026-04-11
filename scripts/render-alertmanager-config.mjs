@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 function yamlString(value) {
@@ -10,27 +10,74 @@ function env(name) {
   return value && value.trim() ? value.trim() : null;
 }
 
+function envOrFile(name) {
+  const direct = env(name);
+  if (direct) return direct;
+  const filePath = env(`${name}_FILE`);
+  if (!filePath) return null;
+  const raw = readFileSync(resolve(filePath), 'utf8');
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
+}
+
 function pushWebhookConfig(lines, url, sendResolved = true) {
   lines.push('      - send_resolved: ' + String(sendResolved));
   lines.push('        url: ' + yamlString(url));
 }
 
+function requirePair(leftName, leftValue, rightName, rightValue) {
+  if ((leftValue && !rightValue) || (!leftValue && rightValue)) {
+    throw new Error(`${leftName} and ${rightName} must be set together.`);
+  }
+}
+
+function requireAtLeastOne(name, values) {
+  if (!values.some(Boolean)) {
+    throw new Error(`${name} requires at least one configured delivery target.`);
+  }
+}
+
 function buildConfig() {
-  const defaultWebhook = env('ALERTMANAGER_DEFAULT_WEBHOOK_URL');
-  const criticalWebhook = env('ALERTMANAGER_CRITICAL_WEBHOOK_URL');
-  const warningWebhook = env('ALERTMANAGER_WARNING_WEBHOOK_URL');
-  const defaultSlackWebhook = env('ALERTMANAGER_DEFAULT_SLACK_WEBHOOK_URL');
-  const defaultSlackChannel = env('ALERTMANAGER_DEFAULT_SLACK_CHANNEL');
-  const warningSlackWebhook = env('ALERTMANAGER_WARNING_SLACK_WEBHOOK_URL');
-  const warningSlackChannel = env('ALERTMANAGER_WARNING_SLACK_CHANNEL');
-  const criticalPagerDutyKey = env('ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY');
-  const securityWebhook = env('ALERTMANAGER_SECURITY_WEBHOOK_URL');
-  const billingWebhook = env('ALERTMANAGER_BILLING_WEBHOOK_URL');
-  const emailTo = env('ALERTMANAGER_EMAIL_TO');
-  const emailFrom = env('ALERTMANAGER_EMAIL_FROM');
-  const smarthost = env('ALERTMANAGER_SMARTHOST');
-  const smtpAuthUsername = env('ALERTMANAGER_SMTP_AUTH_USERNAME');
-  const smtpAuthPassword = env('ALERTMANAGER_SMTP_AUTH_PASSWORD');
+  const defaultWebhook = envOrFile('ALERTMANAGER_DEFAULT_WEBHOOK_URL');
+  const criticalWebhook = envOrFile('ALERTMANAGER_CRITICAL_WEBHOOK_URL');
+  const warningWebhook = envOrFile('ALERTMANAGER_WARNING_WEBHOOK_URL');
+  const defaultSlackWebhook = envOrFile('ALERTMANAGER_DEFAULT_SLACK_WEBHOOK_URL');
+  const defaultSlackChannel = envOrFile('ALERTMANAGER_DEFAULT_SLACK_CHANNEL');
+  const warningSlackWebhook = envOrFile('ALERTMANAGER_WARNING_SLACK_WEBHOOK_URL');
+  const warningSlackChannel = envOrFile('ALERTMANAGER_WARNING_SLACK_CHANNEL');
+  const criticalPagerDutyKey = envOrFile('ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY');
+  const securityWebhook = envOrFile('ALERTMANAGER_SECURITY_WEBHOOK_URL');
+  const billingWebhook = envOrFile('ALERTMANAGER_BILLING_WEBHOOK_URL');
+  const emailTo = envOrFile('ALERTMANAGER_EMAIL_TO');
+  const emailFrom = envOrFile('ALERTMANAGER_EMAIL_FROM');
+  const smarthost = envOrFile('ALERTMANAGER_SMARTHOST');
+  const smtpAuthUsername = envOrFile('ALERTMANAGER_SMTP_AUTH_USERNAME');
+  const smtpAuthPassword = envOrFile('ALERTMANAGER_SMTP_AUTH_PASSWORD');
+  const productionMode = env('ALERTMANAGER_PRODUCTION_MODE') === 'true';
+
+  requirePair('ALERTMANAGER_DEFAULT_SLACK_WEBHOOK_URL', defaultSlackWebhook, 'ALERTMANAGER_DEFAULT_SLACK_CHANNEL', defaultSlackChannel);
+  requirePair('ALERTMANAGER_WARNING_SLACK_WEBHOOK_URL', warningSlackWebhook, 'ALERTMANAGER_WARNING_SLACK_CHANNEL', warningSlackChannel);
+  requirePair('ALERTMANAGER_SMTP_AUTH_USERNAME', smtpAuthUsername, 'ALERTMANAGER_SMTP_AUTH_PASSWORD', smtpAuthPassword);
+  if (emailTo || emailFrom || smtpAuthUsername || smtpAuthPassword) {
+    if (!smarthost) {
+      throw new Error('ALERTMANAGER_SMARTHOST is required when email delivery is configured.');
+    }
+    if (!emailTo) {
+      throw new Error('ALERTMANAGER_EMAIL_TO is required when email delivery is configured.');
+    }
+  }
+  if (productionMode) {
+    requireAtLeastOne('ALERTMANAGER_PRODUCTION_MODE', [
+      defaultWebhook,
+      defaultSlackWebhook,
+      emailTo,
+    ]);
+    requireAtLeastOne('critical alert routing', [
+      criticalWebhook,
+      criticalPagerDutyKey,
+      emailTo,
+    ]);
+  }
 
   const lines = [
     'global:',

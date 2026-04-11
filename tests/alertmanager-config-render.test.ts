@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -14,6 +14,8 @@ function ok(condition: unknown, message: string): void {
 function main(): void {
   const tempDir = mkdtempSync(resolve(tmpdir(), 'attestor-alertmanager-'));
   const outputPath = resolve(tempDir, 'alertmanager.yml');
+  const pdKeyPath = resolve(tempDir, 'pagerduty.key');
+  writeFileSync(pdKeyPath, 'pagerduty-key-file\n', 'utf8');
   const run = spawnSync(
     process.execPath,
     ['scripts/render-alertmanager-config.mjs', outputPath],
@@ -29,7 +31,7 @@ function main(): void {
         ALERTMANAGER_DEFAULT_SLACK_CHANNEL: '#ops-default',
         ALERTMANAGER_WARNING_SLACK_WEBHOOK_URL: 'https://slack.example.invalid/warning',
         ALERTMANAGER_WARNING_SLACK_CHANNEL: '#ops-warning',
-        ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY: 'pagerduty-key',
+        ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY_FILE: pdKeyPath,
         ALERTMANAGER_SECURITY_WEBHOOK_URL: 'https://alerts.example.invalid/security',
         ALERTMANAGER_BILLING_WEBHOOK_URL: 'https://alerts.example.invalid/billing',
         ALERTMANAGER_EMAIL_TO: 'ops@example.invalid',
@@ -37,6 +39,21 @@ function main(): void {
         ALERTMANAGER_SMARTHOST: 'smtp.example.invalid:587',
         ALERTMANAGER_SMTP_AUTH_USERNAME: 'mailer',
         ALERTMANAGER_SMTP_AUTH_PASSWORD: 'secret',
+        ALERTMANAGER_PRODUCTION_MODE: 'true',
+      },
+    },
+  );
+
+  const invalidRun = spawnSync(
+    process.execPath,
+    ['scripts/render-alertmanager-config.mjs', resolve(tempDir, 'invalid.yml')],
+    {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ALERTMANAGER_DEFAULT_SLACK_WEBHOOK_URL: 'https://slack.example.invalid/default',
+        ALERTMANAGER_PRODUCTION_MODE: 'true',
       },
     },
   );
@@ -49,13 +66,14 @@ function main(): void {
     ok(rendered.includes('url: \'https://alerts.example.invalid/warning\''), 'Alertmanager render: warning webhook receiver is rendered');
     ok(rendered.includes('api_url: \'https://slack.example.invalid/default\'') && rendered.includes('channel: \'#ops-default\''), 'Alertmanager render: default Slack receiver is rendered');
     ok(rendered.includes('api_url: \'https://slack.example.invalid/warning\'') && rendered.includes('channel: \'#ops-warning\''), 'Alertmanager render: warning Slack receiver is rendered');
-    ok(rendered.includes('routing_key: \'pagerduty-key\''), 'Alertmanager render: critical PagerDuty receiver is rendered');
+    ok(rendered.includes('routing_key: \'pagerduty-key-file\''), 'Alertmanager render: critical PagerDuty receiver is rendered from *_FILE secret');
     ok(rendered.includes('team=\"security\"') && rendered.includes('receiver: security') && rendered.includes('url: \'https://alerts.example.invalid/security\''), 'Alertmanager render: security escalation route is rendered');
     ok(rendered.includes('team=\"billing\"') && rendered.includes('receiver: billing') && rendered.includes('url: \'https://alerts.example.invalid/billing\''), 'Alertmanager render: billing escalation route is rendered');
     ok(rendered.includes('smtp_smarthost: \'smtp.example.invalid:587\''), 'Alertmanager render: SMTP smarthost is rendered');
     ok(rendered.includes('to: \'ops@example.invalid\''), 'Alertmanager render: email receiver is rendered');
     ok(rendered.includes('receiver: watchdog'), 'Alertmanager render: Watchdog route is present');
     ok(rendered.includes('inhibit_rules:'), 'Alertmanager render: inhibition rules are rendered');
+    ok(invalidRun.status !== 0, 'Alertmanager render: invalid production config fails fast');
 
     console.log(`\nAlertmanager config render tests: ${passed} passed, 0 failed`);
   } finally {

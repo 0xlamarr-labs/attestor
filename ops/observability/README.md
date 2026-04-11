@@ -8,7 +8,7 @@ This bundle ships a local, persisted observability stack for Attestor:
 - `grafana` for dashboards
 - `tempo` for trace storage
 - `loki` for structured log storage
-- `alertmanager-config-renderer` for severity-based webhook/email routing from environment variables
+- `alertmanager-config-renderer` for severity-based webhook/email routing from environment variables or mounted secret files
 
 Start it with:
 
@@ -43,6 +43,16 @@ Optional Alertmanager delivery wiring comes from:
 - `ALERTMANAGER_SMARTHOST`
 - `ALERTMANAGER_SMTP_AUTH_USERNAME`
 - `ALERTMANAGER_SMTP_AUTH_PASSWORD`
+- every secret-like value also supports a `*_FILE` variant for mounted Docker/Kubernetes secrets
+- `ALERTMANAGER_PRODUCTION_MODE=true` enables fail-fast validation so incomplete production routing is rejected instead of silently rendering a partial config
+
+Credential bundle rendering:
+
+- `npm run render:observability-credentials`
+- emits a redacted summary plus:
+  - local `.env` material for the Docker bundle
+  - a Grafana Cloud collector Secret manifest
+  - an Alertmanager routing Secret manifest
 
 Profile-driven SLO / retention tuning:
 
@@ -52,6 +62,8 @@ Profile-driven SLO / retention tuning:
 Managed collector rollout:
 
 - `ops/kubernetes/observability/` now ships a gateway-style Collector Deployment with HPA, PDB, RBAC, `k8sattributes`, and `resourcedetection`
+- `ops/kubernetes/observability/providers/grafana-cloud/` now uses Collector `basicauth` with endpoint/username/token secrets instead of a raw Authorization header
+- `ops/kubernetes/observability/providers/external-secrets/` ships `ExternalSecret` templates for the Grafana Cloud collector secret and Alertmanager routing secret
 
 Boundary:
 

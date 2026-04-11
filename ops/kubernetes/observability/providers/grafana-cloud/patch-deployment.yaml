@@ -14,11 +14,16 @@ spec:
                 secretKeyRef:
                   name: attestor-otel-gateway-grafana-cloud
                   key: grafana-cloud-otlp-endpoint
-            - name: GRAFANA_CLOUD_OTLP_AUTH_HEADER
+            - name: GRAFANA_CLOUD_OTLP_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: attestor-otel-gateway-grafana-cloud
-                  key: grafana-cloud-otlp-auth-header
+                  key: grafana-cloud-otlp-username
+            - name: GRAFANA_CLOUD_OTLP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-otel-gateway-grafana-cloud
+                  key: grafana-cloud-otlp-token
             - name: TEMPO_OTLP_ENDPOINT
               $patch: delete
             - name: LOKI_OTLP_ENDPOINT
