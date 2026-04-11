@@ -86,9 +86,13 @@ Promotion-ready release preflight:
 Promotion packet:
 
 - `npm run render:observability-promotion-packet -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
-- renders the release bundle into a stable output directory
-- runs the full observability release preflight
-- summarizes missing managed-backend inputs, promotion readiness, and recommended apply flow in one checkpoint packet
+  - renders the release bundle into a stable output directory
+  - runs the full observability release preflight
+  - summarizes missing managed-backend inputs, promotion readiness, and recommended apply flow in one checkpoint packet
+- `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud> --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-provider=<generic|aws|gke> --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+  - reuses the observability and HA promotion packets
+  - adds benchmark freshness gating for both benchmark files
+  - emits one final readiness packet for environment promotion
 
 External Secrets lifecycle tuning:
 

@@ -80,3 +80,5 @@ That probe:
 - simulates Alertmanager routing fanout for default/critical/warning/security/billing/watchdog alerts from the rendered config
 - validates provider credentials plus External Secrets store/lifecycle inputs and dry-runs the full release-bundle render before probing receivers and route fanout
 - emits a single promotion packet summary that captures readiness state, missing inputs, bundle location, and recommended apply flow
+- `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud> --observability-benchmark=.attestor/observability/latest.json --ha-provider=<generic|aws|gke> --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
+  - emits one combined environment-promotion packet that fuses observability and HA readiness, including benchmark freshness gating

@@ -44,6 +44,7 @@ function main(): void {
   const profilesReadme = read('ops/kubernetes/ha/profiles/README.md');
   const releaseBundleScript = read('scripts/render-ha-release-bundle.ts');
   const releaseProbeScript = read('scripts/probe-ha-release-inputs.ts');
+  const promotionPacketScript = read('scripts/render-ha-promotion-packet.ts');
   const awsProfile = read('ops/kubernetes/ha/profiles/aws-production.json');
   const gkeProfile = read('ops/kubernetes/ha/profiles/gke-production.json');
   const haReadme = read('ops/kubernetes/ha/README.md');
@@ -84,6 +85,7 @@ function main(): void {
   ok(profilesReadme.includes('render:ha-profile') && profilesReadme.includes('aws-production.json'), 'Kubernetes HA bundle: profiles README documents benchmark-to-profile tuning flow');
   ok(releaseBundleScript.includes('render-ha-profile.ts') && releaseBundleScript.includes('render-ha-credentials.ts'), 'Kubernetes HA bundle: release bundle renderer composes scaling and credential artifacts');
   ok(releaseProbeScript.includes('render-ha-release-bundle.ts') && releaseProbeScript.includes('ATTESTOR_CONTROL_PLANE_PG_URL') && releaseProbeScript.includes('ATTESTOR_BILLING_LEDGER_PG_URL'), 'Kubernetes HA bundle: release input probe validates shared-state envs and final bundle render');
+  ok(promotionPacketScript.includes('ready-for-environment-promotion') && promotionPacketScript.includes('probeHaReleaseInputs') && promotionPacketScript.includes('release-bundle'), 'Kubernetes HA bundle: promotion packet script collapses HA readiness and release handoff into one checkpoint');
   ok(awsProfile.includes('"provider": "aws"') && awsProfile.includes('"availabilityTarget": 0.995'), 'Kubernetes HA bundle: AWS calibration profile ships production SLO defaults');
   ok(gkeProfile.includes('"provider": "gke"') && gkeProfile.includes('"timeoutLatencyMultiplier": 6'), 'Kubernetes HA bundle: GKE calibration profile ships backend timeout tuning defaults');
   ok(haReadme.includes('render:ha-credentials') && haReadme.includes('render:ha-release-bundle') && haReadme.includes('probe:ha-release-inputs'), 'Kubernetes HA bundle: README documents renderer-driven cloud secret and release-bundle wiring');
