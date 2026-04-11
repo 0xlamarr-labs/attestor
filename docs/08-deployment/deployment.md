@@ -1,26 +1,23 @@
 # Deployment
 
+For the end-to-end rollout path, including the recommended GKE/Google Secret Manager/External Secrets production route, see [Production readiness guide](production-readiness.md).
+
 Attestor runs as two separate processes sharing Redis and PostgreSQL:
 
-- **API server** — HTTP endpoints for pipeline execution, verification, filing
-- **Pipeline worker** — BullMQ consumer that processes async governed pipeline jobs
+- **API server** - HTTP endpoints for pipeline execution, verification, filing
+- **Pipeline worker** - BullMQ consumer that processes async governed pipeline jobs
 
 Both processes are built from the same container image with different `CMD` arguments.
 
 ## Service Topology
 
-```
-                    ┌──────────────┐
-  HTTP :3700   ──>  │   API Server │──┐
-                    └──────────────┘  │
-                                      ├── Redis (BullMQ queue)
-                    ┌──────────────┐  │
-                    │    Worker    │──┘
-                    └──────────────┘
-                           │
-                    ┌──────────────┐
-                    │  PostgreSQL  │  (optional — RLS tenant isolation)
-                    └──────────────┘
+```mermaid
+flowchart LR
+  Client["HTTP :3700"] --> API["API Server"]
+  API <--> Redis["Redis / BullMQ"]
+  Worker["Worker"] <--> Redis
+  API <--> PG["PostgreSQL"]
+  Worker <--> PG
 ```
 
 ## Local Development

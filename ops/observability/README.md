@@ -100,6 +100,7 @@ Managed cloud secret bootstrap:
   - emits AWS IRSA and GKE Workload Identity `ClusterSecretStore` manifests
   - emits the exact remote secret catalog expected by the shipped observability + HA ExternalSecret overlays
   - emits a seed payload contract so the real values can be loaded into the cloud secret manager instead of git
+  - keeps path-style remote keys on AWS and normalizes them into Google Secret Manager-safe ids on GKE while preserving the logical path in the generated catalog
 
 External Secrets lifecycle tuning:
 

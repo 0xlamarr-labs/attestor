@@ -59,8 +59,9 @@ function main(): void {
     ok(inlineSummary.tls.inlineSecretConfigured === true, 'HA credentials render: summary reports inline TLS secret wiring');
     ok(inlineTlsSecret.includes('-----BEGIN CERTIFICATE-----') && inlineTlsSecret.includes('tls.key:'), 'HA credentials render: inline TLS manifest contains cert and key');
     ok(inlineGatewayPatch.includes('hostname: attestor.example.invalid') && inlineGatewayPatch.includes('certificateRefs:'), 'HA credentials render: Gateway patch rewires hostname and TLS secret');
-    ok(inlineExternalSecret.includes('prod/attestor/control-plane-pg-url') && inlineExternalSecret.includes('platform-secrets'), 'HA credentials render: runtime ExternalSecret uses configured store and prefix');
+    ok(inlineExternalSecret.includes('prod-attestor-control-plane-pg-url') && inlineExternalSecret.includes('platform-secrets'), 'HA credentials render: GKE runtime ExternalSecret normalizes remote keys for Google Secret Manager');
     ok(inlineGkePatch.includes('sslPolicy: attestor-modern-tls'), 'HA credentials render: GKE patch carries configured SSL policy');
+    ok(inlineSummary.runtimeSecrets.remoteSecretProvider === 'gke', 'HA credentials render: summary captures GKE remote secret provider');
 
     const aws = spawnSync(
       process.execPath,
@@ -118,7 +119,7 @@ function main(): void {
     ok(externalSecretSummary.runtimeSecrets.externalSecret.storeKind === 'SecretStore', 'HA credentials render: summary records custom External Secrets store kind');
     ok(externalSecretSummary.runtimeSecrets.externalSecret.refreshInterval === '30m', 'HA credentials render: summary records custom External Secrets refresh interval');
     ok(runtimeExternalSecret.includes('refreshInterval: 30m') && runtimeExternalSecret.includes('kind: SecretStore') && runtimeExternalSecret.includes('creationPolicy: Merge') && runtimeExternalSecret.includes('deletionPolicy: Retain'), 'HA credentials render: runtime ExternalSecret carries lifecycle policy overrides');
-    ok(tlsExternalSecret.includes('kubernetes.io/tls') && tlsExternalSecret.includes('attestor/tls-crt'), 'HA credentials render: TLS ExternalSecret projects kubernetes.io/tls material');
+    ok(tlsExternalSecret.includes('kubernetes.io/tls') && tlsExternalSecret.includes('attestor/tls-crt'), 'HA credentials render: generic TLS ExternalSecret keeps path-style remote secret keys');
     ok(tlsExternalSecret.includes('refreshInterval: 30m') && tlsExternalSecret.includes('creationPolicy: Merge') && tlsExternalSecret.includes('deletionPolicy: Retain'), 'HA credentials render: TLS ExternalSecret carries lifecycle policy overrides');
     ok(readme.includes('do not commit'), 'HA credentials render: README warns about secret material');
 

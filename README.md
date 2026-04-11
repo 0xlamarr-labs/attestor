@@ -1,78 +1,111 @@
 # Attestor
 
-**Governance and proof engine for AI-assisted high-stakes workflows.**
+**Acceptance and proof infrastructure for AI-assisted work.**
 
-AI output becomes economically useful before it becomes operationally admissible. Attestor closes that gap. It governs the boundary between proposal and acceptance with typed contracts, deterministic controls, reviewer authority, and portable proof.
+Most AI systems can produce something useful before they can produce something admissible. That is the real gap Attestor is built to close.
 
-The repository's deepest implementation is financial: bank-grade internal reporting, treasury, risk, reconciliation, and regulatory analytics. The engine pattern is broader than finance. The current codebase is not.
+Attestor sits between proposal and consequence. It does not try to be the model. It turns model-assisted output into something that can be reviewed, signed, verified, monitored, and operated with much higher confidence.
 
-## The Acceptance Problem
+The deepest shipped implementation today is financial: internal reporting, treasury, risk, reconciliation, and filing-oriented evidence. The architecture reaches much further than finance. The current repository is still finance-first by design.
 
-Raw AI output is hard to admit into consequence-bearing workflows for four recurring reasons:
+> [!IMPORTANT]
+> Attestor does not try to prove that AI is universally trustworthy. It gives teams a disciplined way to decide when AI-assisted work can be accepted, and when it must still be blocked, reviewed, or bounded more tightly.
 
-- Generation and acceptance collapse into one act.
-- Authority is implicit instead of explicit.
-- Evidence is scattered or absent.
-- The system implies stronger proof than it actually produced.
+## At a Glance
 
-Attestor addresses those failures with governed acceptance:
+| If you need to... | Attestor gives you... |
+|---|---|
+| move AI-assisted work closer to production without blind trust | typed contracts, bounded execution, deterministic evidence, reviewer authority |
+| prove later why something was accepted | signed certificates, verification kits, audit trail, schema/data-state attestation |
+| run it as an actual product surface | hosted auth, billing, observability, HA, DR, promotion packets |
+| start in one domain but keep the architecture reusable | finance-first depth, healthcare slice, connector + filing adapter model |
 
-- Typed contracts bound what is allowed before execution.
-- Deterministic controls produce evidence independent of generation.
-- Review policy and authority artifacts prevent self-approval.
-- Signed certificates and verification kits make acceptance portable.
+## Quick Navigation
 
-## Where This Engine Applies
+- [Why this exists](#why-this-exists)
+- [What ships in this repository](#what-ships-in-this-repository)
+- [Recommended production path](#recommended-production-path)
+- [Quick start](#quick-start)
+- [Production readiness guide](docs/08-deployment/production-readiness.md)
+- [Project status](#project-status)
 
-The pattern matters wherever AI output is useful but cannot be accepted raw:
+## Why This Exists
 
-- Financial analytics and reporting
-- Risk and control operations
-- Healthcare analytics and quality review
-- Insurance and claims support
-- Industrial and supply-chain operations
-- Legal and compliance review
-- Public-sector and government decision support
+The deepest AI bottleneck is no longer generation. It is acceptance.
 
-Those categories describe architectural fit, not shipped breadth. The repository currently ships finance as the reference implementation and a smaller healthcare pack as a second domain slice.
+In serious workflows, the key questions are not only "can the model say something helpful?" but also:
+
+- can this be accepted safely?
+- who is allowed to endorse it?
+- what evidence exists outside the model itself?
+- what could a reviewer, operator, or auditor verify later?
+
+Attestor answers those questions with governed acceptance:
+
+- typed contracts bound what is allowed before execution
+- deterministic controls produce evidence independent of generation
+- authority is explicit instead of implied
+- proof becomes portable instead of trapped inside one runtime
+
+## Where It Applies
+
+The pattern matters anywhere AI can assist, but raw output still cannot cross the line into production, audit, or consequence on its own:
+
+- financial analytics and reporting
+- risk and control operations
+- healthcare analytics and quality review
+- insurance and claims support
+- supply-chain and industrial operations
+- legal, compliance, and public-sector review workflows
+
+That is architectural scope, not shipped depth. The current repository is strongest in finance, with a smaller healthcare slice and broader control-plane/runtime work already present.
 
 ## Why Finance Is First
 
-Finance is the hardest proving ground: silent errors are expensive, auditability is mandatory, reviewer authority matters, and control failures are legible. If the engine works there, the architecture has passed a demanding test.
+Finance is where weak acceptance models break fastest. Silent errors are expensive, controls must be legible, auditability is mandatory, and reviewer authority matters. If the architecture survives here, it has earned the right to expand elsewhere.
 
-Finance is the proving ground. Not the ceiling.
+Finance is the proving ground, not the ceiling.
 
 ## Proof Maturity Today
 
-Attestor does not blur proof maturity across tracks.
+Attestor keeps maturity claims separated by track.
 
-**Single-query governed proof**
+**Single-query proof**
 
-- Ed25519-signed certificates
-- 6-dimensional verification kits
-- Run-bound reviewer endorsements
-- Real PostgreSQL-backed proof path
-- Independent verification CLI
+- signed certificates
+- verification kits
+- run-bound reviewer endorsements
+- real PostgreSQL-backed proof path
+- independent verification CLI
 
-**Multi-query governed proof**
+**Multi-query proof**
 
-- Multi-query pipeline with aggregate governance
-- Signed run-level multi-query certificates
-- Multi-query verification kits
-- Run-bound multi-query reviewer endorsements
-- Differential evidence for multi-run comparison
-- Portable output pack, dossier, and manifest
+- aggregate governance across multiple units
+- signed multi-query certificates
+- multi-query verification kits
+- differential evidence and portable output packs
 
-**Real PostgreSQL proof**
+**Runtime proof**
 
-- Real bounded execution
-- Predictive guardrail preflight
-- Reproducible demo bootstrap
-- Self-contained proof script
-- Schema/data-state attestation capture in the Postgres prove path
-- Reviewer-verifiable proof artifacts
+- bounded execution
+- predictive guardrail preflight
+- reproducible PostgreSQL bootstrap
+- schema and data-state attestation in the Postgres proof path
 
 ## What Ships in This Repository
+
+Attestor is already more than a verifier demo or lab prototype.
+
+| Layer | What is already shipped |
+|---|---|
+| Engine core | typed contracts, governance, guardrails, bounded execution, PKI-backed proof, reviewer authority, verification kits, multi-query proof |
+| Product surface | bounded API + worker topology, hosted auth/RBAC, billing, tenant/runtime policy, observability, HA, DR, secret-manager bootstrap, promotion packets |
+| Domain depth | finance as the deepest slice, healthcare as a second slice, PostgreSQL + Snowflake connectors, filing adapters |
+
+That is the real jump: not only generating work with AI, but making AI-assisted work acceptable inside systems that still need evidence, authority, and operational discipline.
+
+<details>
+<summary>Detailed shipped modules</summary>
 
 **Engine core**
 
@@ -102,13 +135,26 @@ Attestor does not blur proof maturity across tracks.
 - Filing adapter registry with XBRL US-GAAP 2024 and xBRL-CSV EBA DPM 2.0 adapters
 - Bounded HTTP API server with sync and async first-slice routes
 - OIDC reviewer identity verification on the API path, plus OS keychain-backed session management (`@napi-rs/keyring` native keychain with encrypted-file fallback) + device flow in the CLI proof path
-- BullMQ/Redis async orchestration with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis), in-process fallback when all Redis tiers unavailable
+- BullMQ/Redis async orchestration with 3-tier auto-resolution (`REDIS_URL` -> localhost:6379 -> embedded Redis), in-process fallback when all Redis tiers unavailable
+
+</details>
 
 ## What Attestor Is
 
 Attestor is the acceptance layer for AI-assisted high-stakes workflows.
 
 It does not generate the answer. It governs whether the answer may be accepted, how that acceptance is evidenced, who may endorse it, and what a third party can verify afterward.
+
+The recognition to have here is simple: most of the missing infrastructure in AI is not more intelligence. It is better acceptance.
+
+## What Changes in Practice
+
+| Without an acceptance layer | With Attestor |
+|---|---|
+| AI output remains advisory, hard to endorse, and hard to audit | AI-assisted output can move through bounded review and evidence-bearing acceptance |
+| trust lives in people, screenshots, and implicit judgment | trust is decomposed into explicit authority, policy, evidence, and verification |
+| production rollout becomes a collection of one-off controls | product and ops surfaces become repeatable: auth, billing, observability, HA, DR |
+| each new domain reinvents the same governance questions | the acceptance model can travel, even when the domain logic changes |
 
 ## What Attestor Is Not
 
@@ -122,18 +168,50 @@ It does not generate the answer. It governs whether the answer may be accepted, 
 
 ## How a Governed Run Works
 
-```text
-proposal
-  -> typed contract
-  -> governance and guardrails
-  -> bounded execution
-  -> deterministic evidence
-  -> scoring and review
-  -> authority closure
-  -> portable proof
+```mermaid
+flowchart LR
+  A["Proposal"] --> B["Typed Contract"]
+  B --> C["Governance and Guardrails"]
+  C --> D["Bounded Execution"]
+  D --> E["Deterministic Evidence"]
+  E --> F["Scoring and Review"]
+  F --> G["Authority Closure"]
+  G --> H["Portable Proof"]
 ```
 
 Every run yields a governed decision and evidence-bearing artifacts. Mature proof paths additionally yield signed certificates and verification kits.
+
+## Recommended Production Path
+
+> [!TIP]
+> The strongest shipped production path today is **GKE + Workload Identity + Google Secret Manager + External Secrets + Gateway API/cert-manager + Grafana Alloy/Grafana Cloud + shared PostgreSQL + shared Redis**. AWS remains supported, but this is the cleanest repo-guided route right now.
+
+Why this path is recommended:
+
+- workload identity keeps secret access tied to workload identity instead of static credentials
+- Google Secret Manager plus External Secrets matches the repo's rendered secret-bootstrap and GKE-safe remote-secret naming path
+- Grafana Alloy / Grafana Cloud is the current recommended managed observability runtime in the shipped overlays
+- the production packet chain already understands this route end to end
+
+```mermaid
+sequenceDiagram
+  participant Ops as "Operator"
+  participant GSM as "Google Secret Manager"
+  participant Bench as "Benchmark scripts"
+  participant Render as "Render + Probe chain"
+  participant Cluster as "GKE / Gateway API"
+  participant Obs as "Grafana Alloy / Grafana Cloud"
+
+  Ops->>GSM: Seed runtime + observability secrets
+  Ops->>Bench: Run HA and observability benchmarks
+  Ops->>Render: Render bundles and promotion packets
+  Render-->>Ops: ready-for-environment-promotion or blocked
+  Ops->>Cluster: Apply HA and observability bundles
+  Cluster->>Obs: Export traces, logs, metrics
+  Cluster-->>Ops: Health, readiness, alert routing, worker probes
+```
+
+For the step-by-step rollout path, see [Production readiness guide](docs/08-deployment/production-readiness.md).
 
 ## Quick Start
 
@@ -204,15 +282,27 @@ Notes:
 
 ## Bounded Service Layer
 
+The repository ships a split API/worker service topology with a bounded public surface:
+
+| Surface | What it covers |
+|---|---|
+| Governed execution | sync + async pipeline runs, verification, filing export |
+| Hosted product plane | customer auth, RBAC, billing, account/features/usage views |
+| Operator surface | plans, audit, queue, tenant keys, metrics, telemetry |
+| Promotion surface | observability and HA render/probe/packet workflows |
+
+<details>
+<summary>Full API inventory and runtime detail</summary>
+
 The repository ships a split API/worker service topology:
 
-- **API server** (`npm run serve`) — HTTP endpoints, synchronous pipeline, verification, filing
-- **Pipeline worker** (`npm run worker`) — standalone BullMQ consumer for async jobs
+- **API server** (`npm run serve`) - HTTP endpoints, synchronous pipeline, verification, filing
+- **Pipeline worker** (`npm run worker`) - standalone BullMQ consumer for async jobs
 
 API endpoints:
 
-- `GET /api/v1/health` — detailed system state (PKI, RLS, async backend)
-- `GET /api/v1/ready` — orchestrator readiness probe (200 when ready, 503 when not)
+- `GET /api/v1/health` - detailed system state (PKI, RLS, async backend)
+- `GET /api/v1/ready` - orchestrator readiness probe (200 when ready, 503 when not)
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
 - `POST /api/v1/auth/login`
@@ -298,7 +388,7 @@ This is a bounded service layer, not a distributed control plane.
 
 Current service capabilities:
 - Split API/worker deployment via `docker-compose.yml` (separate `api` and `worker` services sharing Redis)
-- 3-tier Redis auto-resolution: `REDIS_URL` → localhost:6379 → embedded `redis-memory-server` → in-process fallback
+- 3-tier Redis auto-resolution: `REDIS_URL` -> localhost:6379 -> embedded `redis-memory-server` -> in-process fallback
 - Readiness probe (`/api/v1/ready`) checking async backend, PKI, domains, and Redis state
 - SIGTERM graceful shutdown in both API server and worker (connection drain before exit)
 - Plan-aware tenant rate limiting on pipeline routes with `429` + `Retry-After` and per-plan runtime defaults
@@ -319,6 +409,8 @@ Current service boundaries:
 - No persistent long-term job result store and no BullMQ Pro queue groups; OSS/runtime fairness currently comes from shared tenant active-execution caps plus shared weighted dispatch windows rather than native grouped queues
 - No fully managed hosted observability service; production rollout still needs actual backend credentials and live environment validation, but the benchmark/profile/credential/release-bundle pipeline is now shipped
 
+</details>
+
 ## Reviewer Authority
 
 Reviewer authority is cryptographic, not cosmetic.
@@ -332,7 +424,7 @@ Identity truth today:
 
 - Operator-asserted reviewer identity is supported everywhere.
 - OIDC-verified reviewer identity is supported on the API path.
-- CLI prove path supports OIDC device flow with keychain-backed session management (OS keychain via `@napi-rs/keyring` when available, encrypted-file fallback otherwise; cached → refresh → interactive fallback).
+- CLI prove path supports OIDC device flow with keychain-backed session management (OS keychain via `@napi-rs/keyring` when available, encrypted-file fallback otherwise; cached -> refresh -> interactive fallback).
 - Token lifecycle: OS keychain or encrypted local store (AES-256-GCM) with expiry checking and refresh-token support.
 - Full enterprise IAM/session management is not shipped (TOTP MFA + SMTP invite/reset delivery + SendGrid- and Mailgun-signed delivery analytics + hosted OIDC SSO + hosted SAML SSO + WebAuthn/passkeys first slices are now present, but broader federation polish still remains a boundary item).
 
@@ -360,6 +452,11 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 
 ## Current Capability Maturity
 
+If you want the full shipped-vs-first-slice inventory, expand below.
+
+<details>
+<summary>Expand detailed capability maturity</summary>
+
 **Shipped product paths** (integrated, tested, reachable through CLI/API):
 - Keyless-first signing in API (Sigstore pattern, per-request ephemeral keys + CA-issued certs)
 - PKI chain verification as **mandatory** across CLI and API. CLI: exit code 2 without chain (`--allow-legacy-verify` escape). API: 422 rejection without chain (`ATTESTOR_ALLOW_LEGACY_API=true` escape). `VerificationKit` now self-contains `trustChain` + `caPublicKeyPem`.
@@ -368,8 +465,8 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 - Healthcare CLI: governed E2E scenarios + clause evaluators + CMS top-3 eCQM measures (CMS165/CMS122/CMS130) + FHIR MeasureReport (R4 schema-validated) + QRDA III generation with 5-tier local/runtime validation all passing zero errors (structural self-validation + CMS IG XPath + real CMS 2026 Schematron + Cypress-equivalent Layers 2-6), plus live VSAC Layer 7 expansion (11/11 curated targets) and real ONC Cypress zero-error validation on the demo service
 - PostgreSQL proof path now ships verifier-facing schema attestation through the API/CLI full prove path, including structure fingerprints, bounded table-content hashing, txid snapshot capture, and historical attestation comparison via local history persistence
 - Snowflake schema attestation captured in connector execute path and surfaced through `ConnectorExecutionResult.schemaAttestation`
-- Redis async backend with 3-tier auto-resolution (`REDIS_URL` → localhost:6379 → embedded Redis → in-process fallback). BullMQ active when any Redis tier resolves.
-- Split API/worker deployment (single-node first slice): `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown. Not horizontal multi-node — see Capability modules.
+- Redis async backend with 3-tier auto-resolution (`REDIS_URL` -> localhost:6379 -> embedded Redis -> in-process fallback). BullMQ active when any Redis tier resolves.
+- Split API/worker deployment (single-node first slice): `npm run serve` (API) + `npm run worker` (BullMQ pipeline worker), `docker-compose.yml` with separate api and worker services, `/api/v1/ready` readiness probe, SIGTERM graceful shutdown. Not horizontal multi-node - see Capability modules.
 
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, `POST /api/v1/filing/export` now issues a real XBRL Report Package container by default, and signed pipeline responses now surface the default issued filing package for the built-in US-GAAP path
@@ -390,17 +487,19 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 - Customer-facing Stripe entrypoints: `POST /api/v1/account/billing/checkout` creates a Stripe Checkout subscription session for a selected hosted plan using env-mapped Stripe prices and a required `Idempotency-Key`, `POST /api/v1/account/billing/portal` opens the Stripe Billing Portal for the current hosted account, and `GET /api/v1/account/billing/export` returns customer-visible billing export in JSON or CSV. In runtime, `customer.subscription.*`, `checkout.session.completed`, invoice webhooks, charge webhooks, and entitlement-summary webhooks sync Stripe billing truth back into Attestor hosted account and tenant state, while billing export now includes invoice line items, charge records, and entitlement feature summaries whenever detailed Stripe live data or the shared billing ledger / entitlement read model is available.
 - Observability slice: request spans, service metrics, and structured request logs can now export to an external OTLP collector over HTTP/protobuf using standard `OTEL_*` env vars, while `GET /api/v1/admin/telemetry` exposes the current exporter status/config summary plus email-delivery status and the hosted secret-envelope / tenant-key-recovery posture. `GET /api/v1/metrics` now exposes the Prometheus scrape surface behind a dedicated `ATTESTOR_METRICS_API_KEY` (falling back to the admin key when unset). `docker-compose.observability.yml`, `ops/otel/collector-config.yaml`, and `ops/observability/` ship a bundled persisted Collector + Prometheus + Alertmanager + Grafana + Tempo + Loki operator stack with rendered severity routing, Slack/PagerDuty/team escalation support, secret/file-backed receiver inputs, retention defaults, multi-window SLO alerting, and Tempo-derived span/service-graph metrics, while `ops/kubernetes/observability/` adds a gateway-style managed collector rollout with HPA/PDB/RBAC plus a Grafana Alloy OTLP overlay as the recommended production runtime, a Grafana Cloud/upstream-collector compatibility overlay using Collector `basicauth`, and an External Secrets sync overlay for managed collector + Alertmanager credentials. `npm run benchmark:observability` now captures live Prometheus/Alertmanager snapshots into benchmark JSON, `npm run render:observability-profile` renders profile-based retention envs and benchmark-aware SLO rule packs, `npm run render:observability-credentials` materializes redacted summary + env/Secret bundles for receiver credentials, `npm run render:observability-release-bundle` produces the apply-ready managed rollout bundle, `npm run probe:alert-routing` verifies the rendered Alertmanager routing tree against representative default/critical/warning/security/billing/watchdog scenarios, `npm run probe:observability-release-inputs` validates provider credential inputs plus External Secrets lifecycle/store settings before dry-running the release bundle and probing both receiver auth and route-level fanout, `npm run render:observability-promotion-packet` emits a single observability promotion packet with release readiness, missing inputs, bundle location, and recommended apply flow, `npm run render:production-readiness-packet` fuses the observability and HA promotion packets into one final rollout checkpoint with benchmark freshness gating, and `npm run render:secret-manager-bootstrap` now emits AWS IRSA and GKE Workload Identity ready ClusterSecretStore manifests plus the exact remote secret catalog and seed payload contract for the managed-secret path. Boundary: still needs real environment credentials plus live-traffic validation on the target environment before calling it production-final.
 - Multi-node / HA slice: `ATTESTOR_HA_MODE=true` turns on a startup guard that rejects embedded/local Redis and non-shared hosted control-plane state, `GET /api/v1/health` + `GET /api/v1/ready` expose `instanceId` and `highAvailability` truth, all API responses include `x-attestor-instance-id` for load-balancer debugging, and workers expose `/health` + `/ready` on `ATTESTOR_WORKER_HEALTH_PORT` for orchestrator probes. `docker-compose.ha.yml` plus `ops/nginx/attestor-ha.conf` provide a two-API/two-worker round-robin reference topology behind Nginx, while `ops/kubernetes/ha/` now ships a deeper Kubernetes/Gateway API bundle with tuned rolling updates, topology spread, worker health probes, GKE `HealthCheckPolicy` + `GCPBackendPolicy` + `GCPGatewayPolicy`, AWS ALB target-group/load-balancer tuning, optional KEDA workload autoscaling, cloud secret/certificate wiring overlays for External Secrets Operator and cert-manager, a repeatable `npm run benchmark:ha` calibration harness, profile-driven `aws-production` / `gke-production` render packs via `npm run render:ha-profile`, an ops-ready `npm run render:ha-credentials` bundle that materializes runtime Secret/ExternalSecret manifests plus cert-manager, GKE, and AWS ACM TLS wiring from env or `*_FILE` inputs, explicit External Secrets lifecycle tuning (`store kind`, `refresh interval`, `creation policy`, `deletion policy`), a self-contained `npm run render:ha-release-bundle` step that turns those benchmark + credential inputs into an apply-ready provider bundle, `npm run probe:ha-runtime-connectivity` as the target-near Redis/PG/TLS connectivity gate, `npm run probe:ha-release-inputs` as a rollout-near preflight that validates the required shared-state/runtime/TLS inputs, runs the runtime connectivity probe, and dry-runs the final release render before promotion, `npm run render:ha-promotion-packet` as a single HA release checkpoint, and `npm run render:production-readiness-packet` as the final combined observability + HA promotion handoff. Boundary: still needs production-traffic calibration data and real cloud credential material before calling it production-final.
-- PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional — no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
+- PKI: mandatory across CLI and API public surfaces. `verifyCertificate()` low-level primitive remains flat Ed25519 (intentional - no PKI awareness at function level). Legacy escape via env var, not silent acceptance.
 - Async: BullMQ with split worker process, plan-aware job priority, bounded retry/backoff, exact paginated tenant-aware per-tenant pending-job caps on async submit, shared Redis-backed tenant active-execution leases at worker runtime, and shared Redis-backed weighted dispatch windows that enforce plan-level fairer start cadence across workers without requiring BullMQ Pro groups. Admin queue/DLQ introspection (`GET /api/v1/admin/queue`, `GET /api/v1/admin/queue/dlq`) and manual failed-job retry (`POST /api/v1/admin/queue/jobs/:id/retry`) stay wired in. Terminal async failures now persist into a file-backed DLQ store by default and move onto the shared PostgreSQL control-plane when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured, so operator DLQ truth survives worker restarts and participates in control-plane snapshot/restore. Pipeline-route rate limiting now supports a shared Redis-backed fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current Redis async backend is available; otherwise it falls back to in-memory single-node buckets. Worker-side tenant execution isolation reuses Redis by default or an explicit `ATTESTOR_ASYNC_ACTIVE_REDIS_URL` when set, and worker-side weighted dispatch can reuse Redis or an explicit `ATTESTOR_ASYNC_DISPATCH_REDIS_URL`. In-process fallback remains explicit when Redis unavailable.
 - Request-level tenant isolation: middleware active on all tenant routes, enforced when `ATTESTOR_TENANT_KEYS` or the current hosted tenant key store is configured; optional plan/quota metadata and rate-limit context now propagate into API responses. Admin routes are separately protected by `ATTESTOR_ADMIN_API_KEY`.
 - OIDC session: keychain-session wired into CLI prove, `@napi-rs/keyring` installed (OS keychain on Windows/macOS/Linux, encrypted-file fallback when native unavailable). Not enterprise central session management.
-- Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL → localhost:6379 → embedded Redis → in_process fallback. Embedded is dev/CI only.
+- Redis async: 3-tier auto-resolution wired into API startup, `redis-memory-server` installed. Tiers: REDIS_URL -> localhost:6379 -> embedded Redis -> in_process fallback. Embedded is dev/CI only.
 - DB-level RLS: auto-activation called on startup when ATTESTOR_PG_URL set, health endpoint shows live activation status
 - QRDA III: CMS-compatible XML generation with 5-tier runtime validation all passing zero errors: structural self-validation (16 checks) + CMS IG XPath assertions (29 rules via SaxonJS) + real CMS 2026 Schematron (vendored .sch via `cda-schematron-validator`) + Cypress-equivalent validators (Layers 2-6: Measure ID, Performance Rate recalculation, Population Logic, Program, Measure Period). Live closure is now proven for the current CMS165/CMS122/CMS130 demo slice: VSAC Layer 7 expands all 11 curated targets via the official VSAC FHIR API, and ONC Cypress accepts the generated QRDA III with zero execution errors.
 - FHIR MeasureReport: schema-validated at runtime in healthcare CLI via `@solarahealth/fhir-r4` (Zod). Structural JSON Schema validation only, not terminology bindings or FHIRPath conformance.
 
 **Capability modules** (code exists, not yet fully productized):
 - Multi-node / HA slice (current: startup guard + Nginx reference topology + Kubernetes/Gateway bundle + managed LB policy overlays + optional KEDA workload autoscaling + secret/certificate overlays + benchmark harness + profile-driven tuning renderer exist, but production-traffic calibration data and real cloud credential material still remain)
+
+</details>
 
 ## Output Artifacts
 
@@ -427,11 +526,23 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | [Signing and verification](docs/06-signing/signing-verification.md) | Certificates, kits, reviewer endorsements |
 | [PostgreSQL and connectors](docs/07-connectors/postgres-connectors.md) | PostgreSQL proof path and connector safety |
 | [Deployment](docs/08-deployment/deployment.md) | Service topology, container usage, health/readiness |
+| [Production readiness guide](docs/08-deployment/production-readiness.md) | Recommended GKE-first rollout path, secrets, probes, and promotion flow |
 | [Backup, restore, and DR](docs/08-deployment/backup-restore-dr.md) | Logical control-plane snapshot plus PITR/WAL and Redis recovery bundle |
 
 ## Environment Variables
 
 Secret-bearing render/probe scripts also honor `*_FILE` siblings for the same variable where implemented, so production deployments can mount secrets instead of exporting plaintext env values.
+
+The full reference table stays below, but the fastest way to think about the surface is:
+
+- core proof/runtime: model, PostgreSQL, signing
+- hosted identity and control-plane: sessions, OIDC, SAML, MFA, passkeys, email
+- async/runtime policy: Redis, rate limiting, queue fairness, DLQ
+- HA and secrets: images, hostname, TLS, External Secrets, cloud bootstrap
+- observability and billing: OTLP, Alertmanager, Stripe
+
+<details>
+<summary>Full environment reference</summary>
 
 | Variable | Purpose |
 |---|---|
@@ -554,7 +665,7 @@ Secret-bearing render/probe scripts also honor `*_FILE` siblings for the same va
 | `ATTESTOR_INSTANCE_ID` | Optional stable instance label used in `x-attestor-instance-id`, `/health`, `/ready`, and HA startup diagnostics |
 | `ATTESTOR_WORKER_HEALTH_PORT` | Optional worker probe port exposing `/health` and `/ready` for orchestrator liveness/readiness checks (default `9808`) |
 | `ATTESTOR_HA_SECRET_STORE` | Optional External Secrets store name used by the HA credential/release renderers when runtime or TLS secret mode uses External Secrets |
-| `ATTESTOR_HA_SECRET_PREFIX` | Optional remote secret prefix used by the HA credential renderer for runtime and TLS materials (default `attestor`) |
+| `ATTESTOR_HA_SECRET_PREFIX` | Optional remote secret prefix used by the HA credential renderer for runtime and TLS materials (default `attestor`); GKE render paths normalize slash-separated logical names into Google Secret Manager-safe ids |
 | `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND` | Optional External Secrets store kind override for HA runtime/TLS secret sync (default `ClusterSecretStore`) |
 | `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL` | Optional External Secrets refresh interval for HA runtime/TLS secret sync (default `1h`) |
 | `ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY` | Optional External Secrets creation policy for HA managed secret targets (default `Owner`) |
@@ -573,7 +684,7 @@ Secret-bearing render/probe scripts also honor `*_FILE` siblings for the same va
 | `ATTESTOR_AWS_ALB_SSL_POLICY` | Optional AWS ALB SSL policy override for rendered ingress bundles |
 | `ATTESTOR_AWS_ALB_WAFV2_ACL_ARN` | Optional AWS WAFv2 ACL ARN bound into rendered ALB ingress annotations |
 | `ATTESTOR_AWS_ALB_GROUP_NAME` | Optional ALB group name for multi-ingress coordination |
-| `ATTESTOR_GCP_SECRET_PROJECT_ID` | Google Secret Manager project id used by `render:secret-manager-bootstrap` |
+| `ATTESTOR_GCP_SECRET_PROJECT_ID` | Google Secret Manager project id used by `render:secret-manager-bootstrap`; when set, observability secret rendering can infer the GKE/GSM-safe remote secret naming path |
 | `ATTESTOR_GCP_WI_CLUSTER_PROJECT_ID` | GKE Workload Identity cluster project id used by secret bootstrap |
 | `ATTESTOR_GCP_WI_CLUSTER_LOCATION` | GKE cluster location used by secret bootstrap |
 | `ATTESTOR_GCP_WI_CLUSTER_NAME` | GKE cluster name used by secret bootstrap |
@@ -673,14 +784,22 @@ Secret-bearing render/probe scripts also honor `*_FILE` siblings for the same va
 | `ATTESTOR_VSAC_MANIFEST_URL` | Optional VSAC manifest URL for `$expand` requests (default `http://cts.nlm.nih.gov/fhir/Library/latest-active`) |
 | `VSAC_FHIR_BASE_URL` | Optional override for the VSAC FHIR base URL (default `https://cts.nlm.nih.gov/fhir`) |
 | `ATTESTOR_SECRET_BOOTSTRAP_PROVIDER` | Default provider for `render:secret-manager-bootstrap`: `aws`, `gke`, or `all` |
+| `ATTESTOR_OBSERVABILITY_REMOTE_SECRET_PROVIDER` | Optional explicit remote secret backend hint for observability ExternalSecret rendering (`generic`, `aws`, or `gke`); defaults to provider inference |
+
+</details>
 
 ## Project Status
+
+<details open>
+<summary>Current shipped status</summary>
 
 | Field | Value |
 |---|---|
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1916 tests across 43 suites: 557 unit + 596 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 56 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 40 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 18 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 production readiness packet + 11 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1921 tests across 42 suites: 461 financial + 96 signing + 596 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 56 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 40 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |
+
+</details>

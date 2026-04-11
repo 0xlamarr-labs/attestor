@@ -89,6 +89,7 @@ Credential/certificate wiring notes:
 - `render:ha-promotion-packet` collapses the benchmark truth, release preflight, missing-input inventory, release-bundle location, and recommended apply flow into one rollout checkpoint
 - `render:production-readiness-packet` fuses the HA and observability promotion packets, then blocks promotion if either benchmark is stale
 - `render:secret-manager-bootstrap` emits provider-ready `ClusterSecretStore` manifests plus the exact remote secret catalog for the HA runtime/TLS and observability secret surfaces
+- on GKE, the rendered remote secret ids are normalized into Google Secret Manager-safe names while keeping the original logical path in the bootstrap catalog
 - HA External Secrets lifecycle can be tuned without hand-editing YAML via:
   - `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND`
   - `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL`

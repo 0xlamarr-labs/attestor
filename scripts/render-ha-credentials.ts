@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { remoteSecretKey } from './remote-secret-keys.ts';
 
 type NullableString = string | null;
 type TlsMode = 'secret' | 'external-secret' | 'cert-manager' | 'aws-acm';
@@ -126,6 +127,7 @@ function main(): void {
   const gatewayClassName = envOrFile('ATTESTOR_GATEWAY_CLASS_NAME') ?? 'managed-external';
   const secretStoreName = envOrFile('ATTESTOR_HA_SECRET_STORE') ?? 'platform-secrets';
   const secretPrefix = envOrFile('ATTESTOR_HA_SECRET_PREFIX') ?? 'attestor';
+  const remoteSecretProvider = provider === 'gke' ? 'gke' : provider === 'aws' ? 'aws' : 'generic';
   const externalSecretStoreKind = validateStoreKind(
     envOrFile('ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND') ?? 'ClusterSecretStore',
   );
@@ -234,7 +236,7 @@ function main(): void {
   for (const mapping of runtimeSecretMappings) {
     runtimeExternalSecretLines.push(`    - secretKey: ${mapping.secretKey}`);
     runtimeExternalSecretLines.push('      remoteRef:');
-    runtimeExternalSecretLines.push(`        key: ${secretPrefix}/${mapping.remoteSuffix}`);
+    runtimeExternalSecretLines.push(`        key: ${remoteSecretKey(remoteSecretProvider, `${secretPrefix}/${mapping.remoteSuffix}`)}`);
   }
 
   const gatewayPatchLines = [
@@ -305,10 +307,10 @@ function main(): void {
   tlsExternalSecretLines.push('  data:');
   tlsExternalSecretLines.push('    - secretKey: tls.crt');
   tlsExternalSecretLines.push('      remoteRef:');
-  tlsExternalSecretLines.push(`        key: ${secretPrefix}/tls-crt`);
+  tlsExternalSecretLines.push(`        key: ${remoteSecretKey(remoteSecretProvider, `${secretPrefix}/tls-crt`)}`);
   tlsExternalSecretLines.push('    - secretKey: tls.key');
   tlsExternalSecretLines.push('      remoteRef:');
-  tlsExternalSecretLines.push(`        key: ${secretPrefix}/tls-key`);
+  tlsExternalSecretLines.push(`        key: ${remoteSecretKey(remoteSecretProvider, `${secretPrefix}/tls-key`)}`);
 
   const awsAlbPatchLines = [
     'apiVersion: networking.k8s.io/v1',
@@ -370,8 +372,9 @@ function main(): void {
         storeKind: externalSecretStoreKind,
         refreshInterval: externalSecretRefreshInterval,
         creationPolicy: externalSecretCreationPolicy,
-        deletionPolicy: externalSecretDeletionPolicy,
-      },
+      deletionPolicy: externalSecretDeletionPolicy,
+    },
+      remoteSecretProvider,
     },
   };
 

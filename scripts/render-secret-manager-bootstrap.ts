@@ -1,11 +1,13 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { remoteSecretKey } from './remote-secret-keys.ts';
 
 type Provider = 'aws' | 'gke' | 'all';
 type ConcreteProvider = 'aws' | 'gke';
 
 interface SecretCatalogEntry {
-  name: string;
+  logicalName: string;
+  remoteName: string;
   type: 'string' | 'json';
   required: boolean;
   consumer: 'observability' | 'ha';
@@ -34,10 +36,11 @@ function providerList(provider: Provider): ConcreteProvider[] {
   return provider === 'all' ? ['aws', 'gke'] : [provider];
 }
 
-function buildCatalog(prefix: string): SecretCatalogEntry[] {
+function buildCatalog(prefix: string, provider: ConcreteProvider): SecretCatalogEntry[] {
   return [
     {
-      name: 'observability/grafana-cloud',
+      logicalName: 'observability/grafana-cloud',
+      remoteName: remoteSecretKey(provider, 'observability/grafana-cloud'),
       type: 'json',
       required: true,
       consumer: 'observability',
@@ -45,7 +48,8 @@ function buildCatalog(prefix: string): SecretCatalogEntry[] {
       notes: 'Managed OTLP exporter credentials for Grafana Cloud.',
     },
     {
-      name: 'observability/alertmanager',
+      logicalName: 'observability/alertmanager',
+      remoteName: remoteSecretKey(provider, 'observability/alertmanager'),
       type: 'json',
       required: true,
       consumer: 'observability',
@@ -69,47 +73,53 @@ function buildCatalog(prefix: string): SecretCatalogEntry[] {
       ],
       notes: 'Alertmanager routing and escalation bundle.',
     },
-    { name: `${prefix}/redis-url`, type: 'string', required: true, consumer: 'ha', env: 'REDIS_URL' },
-    { name: `${prefix}/redis-address`, type: 'string', required: false, consumer: 'ha', env: 'REDIS_ADDRESS' },
-    { name: `${prefix}/redis-password`, type: 'string', required: false, consumer: 'ha', env: 'REDIS_PASSWORD' },
-    { name: `${prefix}/redis-username`, type: 'string', required: false, consumer: 'ha', env: 'REDIS_USERNAME' },
+    { logicalName: `${prefix}/redis-url`, remoteName: remoteSecretKey(provider, `${prefix}/redis-url`), type: 'string', required: true, consumer: 'ha', env: 'REDIS_URL' },
+    { logicalName: `${prefix}/redis-address`, remoteName: remoteSecretKey(provider, `${prefix}/redis-address`), type: 'string', required: false, consumer: 'ha', env: 'REDIS_ADDRESS' },
+    { logicalName: `${prefix}/redis-password`, remoteName: remoteSecretKey(provider, `${prefix}/redis-password`), type: 'string', required: false, consumer: 'ha', env: 'REDIS_PASSWORD' },
+    { logicalName: `${prefix}/redis-username`, remoteName: remoteSecretKey(provider, `${prefix}/redis-username`), type: 'string', required: false, consumer: 'ha', env: 'REDIS_USERNAME' },
     {
-      name: `${prefix}/control-plane-pg-url`,
+      logicalName: `${prefix}/control-plane-pg-url`,
+      remoteName: remoteSecretKey(provider, `${prefix}/control-plane-pg-url`),
       type: 'string',
       required: true,
       consumer: 'ha',
       env: 'ATTESTOR_CONTROL_PLANE_PG_URL',
     },
     {
-      name: `${prefix}/billing-ledger-pg-url`,
+      logicalName: `${prefix}/billing-ledger-pg-url`,
+      remoteName: remoteSecretKey(provider, `${prefix}/billing-ledger-pg-url`),
       type: 'string',
       required: true,
       consumer: 'ha',
       env: 'ATTESTOR_BILLING_LEDGER_PG_URL',
     },
     {
-      name: `${prefix}/runtime-pg-url`,
+      logicalName: `${prefix}/runtime-pg-url`,
+      remoteName: remoteSecretKey(provider, `${prefix}/runtime-pg-url`),
       type: 'string',
       required: false,
       consumer: 'ha',
       env: 'ATTESTOR_PG_URL',
     },
     {
-      name: `${prefix}/admin-api-key`,
+      logicalName: `${prefix}/admin-api-key`,
+      remoteName: remoteSecretKey(provider, `${prefix}/admin-api-key`),
       type: 'string',
       required: true,
       consumer: 'ha',
       env: 'ATTESTOR_ADMIN_API_KEY',
     },
     {
-      name: `${prefix}/metrics-api-key`,
+      logicalName: `${prefix}/metrics-api-key`,
+      remoteName: remoteSecretKey(provider, `${prefix}/metrics-api-key`),
       type: 'string',
       required: false,
       consumer: 'ha',
       env: 'ATTESTOR_METRICS_API_KEY',
     },
     {
-      name: `${prefix}/tls-crt`,
+      logicalName: `${prefix}/tls-crt`,
+      remoteName: remoteSecretKey(provider, `${prefix}/tls-crt`),
       type: 'string',
       required: false,
       consumer: 'ha',
@@ -117,7 +127,8 @@ function buildCatalog(prefix: string): SecretCatalogEntry[] {
       notes: 'Required when ATTESTOR_TLS_MODE=secret or external-secret.',
     },
     {
-      name: `${prefix}/tls-key`,
+      logicalName: `${prefix}/tls-key`,
+      remoteName: remoteSecretKey(provider, `${prefix}/tls-key`),
       type: 'string',
       required: false,
       consumer: 'ha',
@@ -182,9 +193,9 @@ function renderSeed(catalog: SecretCatalogEntry[]): string {
   const seed: Record<string, string | Record<string, string>> = {};
   for (const entry of catalog) {
     if (entry.type === 'json') {
-      seed[entry.name] = Object.fromEntries((entry.properties ?? []).map((property) => [property, `REPLACE_ME_${property.toUpperCase()}`]));
+      seed[entry.remoteName] = Object.fromEntries((entry.properties ?? []).map((property) => [property, `REPLACE_ME_${property.toUpperCase()}`]));
     } else {
-      seed[entry.name] = entry.env ? `REPLACE_ME_FOR_${entry.env}` : 'REPLACE_ME';
+      seed[entry.remoteName] = entry.env ? `REPLACE_ME_FOR_${entry.env}` : 'REPLACE_ME';
     }
   }
   return `${JSON.stringify(seed, null, 2)}\n`;
@@ -232,7 +243,7 @@ export function renderSecretManagerBootstrap(options?: {
   for (const concreteProvider of providerList(provider)) {
     const providerDir = resolve(outputDir, concreteProvider);
     mkdirSync(providerDir, { recursive: true });
-    const catalog = buildCatalog(secretPrefix);
+    const catalog = buildCatalog(secretPrefix, concreteProvider);
 
     const readme = `# Attestor ${concreteProvider.toUpperCase()} secret-manager bootstrap
 
@@ -259,6 +270,11 @@ Next steps:
    - \`npm run render:observability-credentials\`
    - \`npm run render:ha-credentials\`
    - \`npm run render:production-readiness-packet\`
+
+Notes:
+
+- AWS keeps path-style remote keys.
+- GKE normalizes remote secret ids to Google Secret Manager-safe names and keeps the original logical path in \`catalog.json\`.
 `;
 
     const observabilityStore = concreteProvider === 'aws'

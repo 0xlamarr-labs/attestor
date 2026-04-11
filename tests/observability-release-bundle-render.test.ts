@@ -100,6 +100,7 @@ function main(): void {
           ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_CREATION_POLICY: 'Owner',
           ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_DELETION_POLICY: 'Retain',
           ATTESTOR_OBSERVABILITY_NAMESPACE: 'obs-prod',
+          ATTESTOR_OBSERVABILITY_REMOTE_SECRET_PROVIDER: 'gke',
         },
       },
     );
@@ -111,10 +112,10 @@ function main(): void {
     const externalNamespace = readFileSync(resolve(externalOut, 'namespace.yaml'), 'utf8');
     const externalSummary = JSON.parse(readFileSync(resolve(externalOut, 'summary.json'), 'utf8')) as any;
     ok(externalKustomization.includes('grafana-cloud.external-secret.yaml') && externalKustomization.includes('alertmanager-routing.external-secret.yaml'), 'Observability release bundle: external-secret mode includes ExternalSecret resources');
-    ok(externalGrafanaSecret.includes('name: corp-secrets') && externalGrafanaSecret.includes('namespace: obs-prod') && externalGrafanaSecret.includes('refreshInterval: 15m') && externalGrafanaSecret.includes('deletionPolicy: Retain'), 'Observability release bundle: Grafana Cloud ExternalSecret rewires secret store, namespace, and lifecycle policy');
-    ok(externalAlertSecret.includes('name: corp-secrets') && externalAlertSecret.includes('namespace: obs-prod') && externalAlertSecret.includes('refreshInterval: 15m') && externalAlertSecret.includes('deletionPolicy: Retain'), 'Observability release bundle: Alertmanager ExternalSecret rewires secret store, namespace, and lifecycle policy');
+    ok(externalGrafanaSecret.includes('name: corp-secrets') && externalGrafanaSecret.includes('namespace: obs-prod') && externalGrafanaSecret.includes('refreshInterval: 15m') && externalGrafanaSecret.includes('deletionPolicy: Retain') && externalGrafanaSecret.includes('key: observability-grafana-cloud'), 'Observability release bundle: Grafana Cloud ExternalSecret rewires store, lifecycle, and GKE-safe remote key naming');
+    ok(externalAlertSecret.includes('name: corp-secrets') && externalAlertSecret.includes('namespace: obs-prod') && externalAlertSecret.includes('refreshInterval: 15m') && externalAlertSecret.includes('deletionPolicy: Retain') && externalAlertSecret.includes('key: observability-alertmanager'), 'Observability release bundle: Alertmanager ExternalSecret rewires store, lifecycle, and GKE-safe remote key naming');
     ok(externalNamespace.includes('name: obs-prod'), 'Observability release bundle: namespace resource is rewritten');
-    ok(externalSummary.externalSecretPolicy.refreshInterval === '15m' && externalSummary.externalSecretPolicy.deletionPolicy === 'Retain', 'Observability release bundle: summary captures external secret lifecycle policy');
+    ok(externalSummary.externalSecretPolicy.refreshInterval === '15m' && externalSummary.externalSecretPolicy.deletionPolicy === 'Retain' && externalSummary.externalSecretPolicy.remoteSecretProvider === 'gke', 'Observability release bundle: summary captures lifecycle policy and remote secret provider');
 
     const alloyRun = spawnSync(
       process.execPath,

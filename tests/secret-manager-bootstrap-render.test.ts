@@ -47,13 +47,15 @@ function main(): void {
     ok(gkeStore.includes('gcpsm:'), 'Secret manager bootstrap: GKE store uses Google Secret Manager');
     ok(gkeStore.includes('clusterProjectID: regulated-cluster'), 'Secret manager bootstrap: GKE WI cluster project is rendered');
 
-    const catalog = readFileSync(resolve(tempDir, 'aws', 'catalog.json'), 'utf8');
-    ok(catalog.includes('observability/grafana-cloud'), 'Secret manager bootstrap: observability catalog is emitted');
-    ok(catalog.includes('corp/attestor/control-plane-pg-url'), 'Secret manager bootstrap: HA runtime catalog uses the configured prefix');
+    const catalog = readFileSync(resolve(tempDir, 'gke', 'catalog.json'), 'utf8');
+    ok(catalog.includes('"logicalName": "observability/grafana-cloud"'), 'Secret manager bootstrap: observability logical catalog entry is emitted');
+    ok(catalog.includes('"logicalName": "corp/attestor/control-plane-pg-url"'), 'Secret manager bootstrap: HA runtime logical path uses the configured prefix');
+    ok(catalog.includes('"remoteName": "corp-attestor-control-plane-pg-url"'), 'Secret manager bootstrap: GKE catalog normalizes remote secret ids for Google Secret Manager');
 
     const seed = readFileSync(resolve(tempDir, 'gke', 'seed.json'), 'utf8');
     ok(seed.includes('REPLACE_ME_OTLP_ENDPOINT'), 'Secret manager bootstrap: structured seed contains Grafana placeholder data');
     ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_ADMIN_API_KEY'), 'Secret manager bootstrap: runtime seed contains admin API key placeholder');
+    ok(seed.includes('"corp-attestor-admin-api-key"'), 'Secret manager bootstrap: GKE seed uses normalized remote secret ids');
 
     const readme = readFileSync(resolve(tempDir, 'aws', 'README.md'), 'utf8');
     ok(readme.includes('External Secrets Operator'), 'Secret manager bootstrap: README explains the managed-secret path');

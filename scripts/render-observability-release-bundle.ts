@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { inferObservabilityRemoteSecretProvider, remoteSecretKey } from './remote-secret-keys.ts';
 
 type Provider = 'generic' | 'grafana-cloud' | 'grafana-alloy';
 type SecretMode = 'secret' | 'external-secret';
@@ -101,6 +102,7 @@ function main(): void {
     throw new Error('secret-mode must be one of secret, external-secret');
   }
   const externalSecretStore = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE');
+  const remoteSecretProvider = inferObservabilityRemoteSecretProvider();
   const externalSecretStoreKind = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND') ?? 'ClusterSecretStore';
   const externalSecretRefreshInterval = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_REFRESH_INTERVAL') ?? '1h';
   const externalSecretCreationPolicy = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_CREATION_POLICY') ?? 'Owner';
@@ -235,6 +237,11 @@ function main(): void {
         external = replaceFirst(external, /refreshInterval:\s*\S+/, `refreshInterval: ${externalSecretRefreshInterval}`);
         external = replaceFirst(external, /kind:\s*ClusterSecretStore/, `kind: ${externalSecretStoreKind}`);
         external = replaceFirst(external, /creationPolicy:\s*\S+/, `creationPolicy: ${externalSecretCreationPolicy}`);
+        external = replaceAll(
+          external,
+          /key:\s*observability\/grafana-cloud/g,
+          `key: ${remoteSecretKey(remoteSecretProvider, 'observability/grafana-cloud')}`,
+        );
         if (externalSecretStore) {
           external = replaceFirst(external, /name:\s*REPLACE_WITH_CLUSTER_SECRET_STORE/, `name: ${externalSecretStore}`);
         }
@@ -260,6 +267,11 @@ function main(): void {
         alertExternal = replaceFirst(alertExternal, /refreshInterval:\s*\S+/, `refreshInterval: ${externalSecretRefreshInterval}`);
         alertExternal = replaceFirst(alertExternal, /kind:\s*ClusterSecretStore/, `kind: ${externalSecretStoreKind}`);
         alertExternal = replaceFirst(alertExternal, /creationPolicy:\s*\S+/, `creationPolicy: ${externalSecretCreationPolicy}`);
+        alertExternal = replaceAll(
+          alertExternal,
+          /key:\s*observability\/alertmanager/g,
+          `key: ${remoteSecretKey(remoteSecretProvider, 'observability/alertmanager')}`,
+        );
         if (externalSecretStore) {
           alertExternal = replaceFirst(alertExternal, /name:\s*REPLACE_WITH_CLUSTER_SECRET_STORE/, `name: ${externalSecretStore}`);
         }
@@ -307,6 +319,7 @@ ${resources.map((resource) => `  - ${resource}`).join('\n')}
       externalSecretPolicy:
         secretMode === 'external-secret'
           ? {
+            remoteSecretProvider,
             storeKind: externalSecretStoreKind,
             refreshInterval: externalSecretRefreshInterval,
             creationPolicy: externalSecretCreationPolicy,
