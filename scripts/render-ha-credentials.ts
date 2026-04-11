@@ -72,6 +72,35 @@ function bool(value: NullableString): boolean {
   return value === 'true';
 }
 
+function validateRefreshInterval(value: string): string {
+  if (!/^[1-9]\d*[smhd]$/.test(value)) {
+    throw new Error('ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL must look like 30m, 1h, or 7d.');
+  }
+  return value;
+}
+
+function validateStoreKind(value: string): 'ClusterSecretStore' | 'SecretStore' {
+  if (value !== 'ClusterSecretStore' && value !== 'SecretStore') {
+    throw new Error('ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND must be ClusterSecretStore or SecretStore.');
+  }
+  return value;
+}
+
+function validateCreationPolicy(value: string): 'Owner' | 'Orphan' | 'Merge' | 'None' {
+  if (value !== 'Owner' && value !== 'Orphan' && value !== 'Merge' && value !== 'None') {
+    throw new Error('ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY must be one of Owner, Orphan, Merge, or None.');
+  }
+  return value;
+}
+
+function validateDeletionPolicy(value: NullableString): 'Retain' | 'Merge' | 'Delete' | null {
+  if (!value) return null;
+  if (value !== 'Retain' && value !== 'Merge' && value !== 'Delete') {
+    throw new Error('ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY must be one of Retain, Merge, or Delete when set.');
+  }
+  return value;
+}
+
 function requireAll(pairs: Array<[string, NullableString]>): void {
   for (const [name, value] of pairs) {
     if (!value) throw new Error(`${name} must be set.`);
@@ -97,6 +126,18 @@ function main(): void {
   const gatewayClassName = envOrFile('ATTESTOR_GATEWAY_CLASS_NAME') ?? 'managed-external';
   const secretStoreName = envOrFile('ATTESTOR_HA_SECRET_STORE') ?? 'platform-secrets';
   const secretPrefix = envOrFile('ATTESTOR_HA_SECRET_PREFIX') ?? 'attestor';
+  const externalSecretStoreKind = validateStoreKind(
+    envOrFile('ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND') ?? 'ClusterSecretStore',
+  );
+  const externalSecretRefreshInterval = validateRefreshInterval(
+    envOrFile('ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL') ?? '1h',
+  );
+  const externalSecretCreationPolicy = validateCreationPolicy(
+    envOrFile('ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY') ?? 'Owner',
+  );
+  const externalSecretDeletionPolicy = validateDeletionPolicy(
+    envOrFile('ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY'),
+  );
   const tlsSecretName = envOrFile('ATTESTOR_TLS_SECRET_NAME') ?? 'attestor-tls';
   const clusterIssuer = envOrFile('ATTESTOR_TLS_CLUSTER_ISSUER');
   const tlsCertPem = envOrFile('ATTESTOR_TLS_CERT_PEM');
@@ -139,7 +180,11 @@ function main(): void {
     `ATTESTOR_TLS_SECRET_NAME=${tlsSecretName}`,
     `ATTESTOR_HA_SECRET_STORE=${secretStoreName}`,
     `ATTESTOR_HA_SECRET_PREFIX=${secretPrefix}`,
+    `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND=${externalSecretStoreKind}`,
+    `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL=${externalSecretRefreshInterval}`,
+    `ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY=${externalSecretCreationPolicy}`,
   ];
+  if (externalSecretDeletionPolicy) localEnvLines.push(`ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY=${externalSecretDeletionPolicy}`);
 
   if (clusterIssuer) localEnvLines.push(`ATTESTOR_TLS_CLUSTER_ISSUER=${clusterIssuer}`);
   if (dnsNames.length > 0) localEnvLines.push(`ATTESTOR_TLS_DNS_NAMES=${dnsNames.join(',')}`);
@@ -174,15 +219,18 @@ function main(): void {
     'metadata:',
     '  name: attestor-runtime-secrets',
     'spec:',
-    '  refreshInterval: 1h',
+    `  refreshInterval: ${externalSecretRefreshInterval}`,
     '  secretStoreRef:',
-    '    kind: ClusterSecretStore',
+    `    kind: ${externalSecretStoreKind}`,
     `    name: ${secretStoreName}`,
     '  target:',
     '    name: attestor-runtime-secrets',
-    '    creationPolicy: Owner',
-    '  data:',
+    `    creationPolicy: ${externalSecretCreationPolicy}`,
   ];
+  if (externalSecretDeletionPolicy) {
+    runtimeExternalSecretLines.push(`    deletionPolicy: ${externalSecretDeletionPolicy}`);
+  }
+  runtimeExternalSecretLines.push('  data:');
   for (const mapping of runtimeSecretMappings) {
     runtimeExternalSecretLines.push(`    - secretKey: ${mapping.secretKey}`);
     runtimeExternalSecretLines.push('      remoteRef:');
@@ -241,23 +289,26 @@ function main(): void {
     'metadata:',
     `  name: ${tlsSecretName}`,
     'spec:',
-    '  refreshInterval: 1h',
+    `  refreshInterval: ${externalSecretRefreshInterval}`,
     '  secretStoreRef:',
-    '    kind: ClusterSecretStore',
+    `    kind: ${externalSecretStoreKind}`,
     `    name: ${secretStoreName}`,
     '  target:',
     `    name: ${tlsSecretName}`,
-    '    creationPolicy: Owner',
+    `    creationPolicy: ${externalSecretCreationPolicy}`,
     '    template:',
     '      type: kubernetes.io/tls',
-    '  data:',
-    '    - secretKey: tls.crt',
-    '      remoteRef:',
-    `        key: ${secretPrefix}/tls-crt`,
-    '    - secretKey: tls.key',
-    '      remoteRef:',
-    `        key: ${secretPrefix}/tls-key`,
   ];
+  if (externalSecretDeletionPolicy) {
+    tlsExternalSecretLines.push(`    deletionPolicy: ${externalSecretDeletionPolicy}`);
+  }
+  tlsExternalSecretLines.push('  data:');
+  tlsExternalSecretLines.push('    - secretKey: tls.crt');
+  tlsExternalSecretLines.push('      remoteRef:');
+  tlsExternalSecretLines.push(`        key: ${secretPrefix}/tls-crt`);
+  tlsExternalSecretLines.push('    - secretKey: tls.key');
+  tlsExternalSecretLines.push('      remoteRef:');
+  tlsExternalSecretLines.push(`        key: ${secretPrefix}/tls-key`);
 
   const awsAlbPatchLines = [
     'apiVersion: networking.k8s.io/v1',
@@ -314,6 +365,13 @@ function main(): void {
     },
     runtimeSecrets: {
       configured: runtimeSecretMappings.filter((mapping) => Boolean(runtimeValues[mapping.secretKey])).map((mapping) => mapping.envName),
+      externalSecret: {
+        storeName: secretStoreName,
+        storeKind: externalSecretStoreKind,
+        refreshInterval: externalSecretRefreshInterval,
+        creationPolicy: externalSecretCreationPolicy,
+        deletionPolicy: externalSecretDeletionPolicy,
+      },
     },
   };
 

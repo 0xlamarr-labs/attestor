@@ -43,7 +43,11 @@ async function main(): Promise<void> {
     ATTESTOR_TLS_CERT_PEM_FILE: process.env.ATTESTOR_TLS_CERT_PEM_FILE,
     ATTESTOR_TLS_KEY_PEM_FILE: process.env.ATTESTOR_TLS_KEY_PEM_FILE,
     ATTESTOR_HA_RUNTIME_SECRET_MODE: process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE,
-    ATTESTOR_HA_EXTERNAL_SECRET_STORE: process.env.ATTESTOR_HA_EXTERNAL_SECRET_STORE,
+    ATTESTOR_HA_SECRET_STORE: process.env.ATTESTOR_HA_SECRET_STORE,
+    ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND: process.env.ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND,
+    ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL: process.env.ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL,
+    ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY: process.env.ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY,
+    ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY: process.env.ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY,
   };
 
   try {
@@ -62,13 +66,28 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
     process.env.ATTESTOR_TLS_KEY_PEM_FILE = keyPath;
     delete process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE;
-    delete process.env.ATTESTOR_HA_EXTERNAL_SECRET_STORE;
+    delete process.env.ATTESTOR_HA_SECRET_STORE;
 
     const ready = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
     ok(ready.rolloutReadiness.envComplete === true, 'HA release probe: env completeness passes with required inputs');
     ok(ready.rolloutReadiness.bundleRenderSucceeded === true, 'HA release probe: release bundle render succeeds in preflight');
     ok(ready.benchmark.p95LatencyMs === 620 && ready.benchmark.requestsPerSecond === 14.85, 'HA release probe: benchmark truth is echoed back');
     ok(ready.provider === 'generic' && ready.tlsMode === 'secret', 'HA release probe: provider and tls mode are captured');
+
+    process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE = 'external-secret';
+    process.env.ATTESTOR_HA_SECRET_STORE = 'platform-secrets';
+    process.env.ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND = 'BadStoreKind';
+    const invalidExternalSecret = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(invalidExternalSecret.rolloutReadiness.envComplete === false, 'HA release probe: invalid External Secrets store kind is rejected');
+    ok(invalidExternalSecret.rolloutReadiness.issues.some((issue) => issue.includes('STORE_KIND')), 'HA release probe: invalid store kind issue is surfaced');
+
+    process.env.ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND = 'SecretStore';
+    process.env.ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL = '30m';
+    process.env.ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY = 'Merge';
+    process.env.ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY = 'Retain';
+    const validExternalSecret = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(validExternalSecret.rolloutReadiness.envComplete === true, 'HA release probe: valid External Secrets lifecycle settings pass');
+    ok(validExternalSecret.rolloutReadiness.bundleRenderSucceeded === true, 'HA release probe: valid External Secrets lifecycle settings still render');
 
     console.log(`\nHA release input probe tests: ${passed} passed, 0 failed`);
   } finally {

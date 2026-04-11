@@ -77,5 +77,10 @@ Credential/certificate wiring notes:
   - GKE Gateway policy patches
 - `render:ha-release-bundle` turns the benchmark + credential render outputs into a self-contained apply-ready bundle with final resources, not just patch fragments
 - `probe:ha-release-inputs` validates the minimum shared-state, image, hostname, Redis, control-plane, billing-ledger, and TLS inputs for a real HA promotion, then dry-runs the final release-bundle render before rollout
+- HA External Secrets lifecycle can be tuned without hand-editing YAML via:
+  - `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND`
+  - `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL`
+  - `ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY`
+  - `ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY`
 - every secret-like input also supports a `*_FILE` variant for mounted secrets
 - set `ATTESTOR_HA_PRODUCTION_MODE=true` to force the minimum shared-state/runtime inputs needed for a real HA rollout

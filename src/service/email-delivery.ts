@@ -5,7 +5,7 @@
  * - Defaults to manual/API-token delivery unless ATTESTOR_EMAIL_DELIVERY_MODE=smtp
  * - Supports SMTP URL or host/port/user/pass configuration via Nodemailer
  * - Invite/reset links are optional; when unset the email still includes the opaque token
- * - No outbound-provider-specific webhooks, templates, or analytics yet
+ * - Delivery analytics project SendGrid- and Mailgun-signed provider webhooks onto the shared ledger
  * - No WebAuthn/passkey or SSO/SAML delivery surface here
  */
 
@@ -16,9 +16,12 @@ import {
   buildHostedEmailDeliveryId,
 } from './email-delivery-event-store.js';
 import {
+  buildMailgunVariablesHeader,
+  getMailgunWebhookStatus,
+} from './mailgun-email-webhook.js';
+import {
   buildSendGridSmtpApiHeader,
   getSendGridWebhookStatus,
-  resolveHostedEmailProvider,
 } from './sendgrid-email-webhook.js';
 import {
   controlPlaneStoreMode,
@@ -51,6 +54,11 @@ export interface HostedEmailDeliveryStatus {
     sendGridWebhook: {
       configured: boolean;
       publicKeyConfigured: boolean;
+      maxAgeSeconds: number;
+    };
+    mailgunWebhook: {
+      configured: boolean;
+      signingKeyConfigured: boolean;
       maxAgeSeconds: number;
     };
   };
@@ -131,6 +139,18 @@ function parsePositiveInteger(value: string | undefined): number | null {
 
 function normalizeMode(value: string | undefined): HostedEmailDeliveryMode {
   return value?.trim().toLowerCase() === 'smtp' ? 'smtp' : 'manual';
+}
+
+function resolveHostedEmailProvider(mode: HostedEmailDeliveryMode): HostedEmailDeliveryProvider {
+  if (mode === 'manual') return 'manual';
+  switch (process.env.ATTESTOR_EMAIL_PROVIDER?.trim().toLowerCase()) {
+    case 'sendgrid_smtp':
+      return 'sendgrid_smtp';
+    case 'mailgun_smtp':
+      return 'mailgun_smtp';
+    default:
+      return 'smtp';
+  }
 }
 
 function resolveTransportConfig(): EmailTransportConfig {
@@ -315,6 +335,14 @@ async function sendHostedEmail(input: {
         purpose: input.purpose,
       })),
     };
+  } else if (provider === 'mailgun_smtp') {
+    headers['X-Mailgun-Variables'] = {
+      prepared: true,
+      value: JSON.stringify(buildMailgunVariablesHeader({
+        deliveryId,
+        purpose: input.purpose,
+      })),
+    };
   }
   try {
     const info = await transporter.sendMail({
@@ -355,7 +383,13 @@ async function sendHostedEmail(input: {
               ? headers['X-SMTPAPI']
               : headers['X-SMTPAPI']?.value ?? null,
           }
-          : {},
+          : provider === 'mailgun_smtp'
+            ? {
+              'X-Mailgun-Variables': typeof headers['X-Mailgun-Variables'] === 'string'
+                ? headers['X-Mailgun-Variables']
+                : headers['X-Mailgun-Variables']?.value ?? null,
+            }
+            : {},
       },
     });
     return summary;
@@ -420,6 +454,7 @@ export function getHostedEmailDeliveryStatus(): HostedEmailDeliveryStatus {
     analytics: {
       storeMode: controlPlaneStoreMode() === 'postgres' ? 'shared_postgres' : 'file',
       sendGridWebhook: getSendGridWebhookStatus(),
+      mailgunWebhook: getMailgunWebhookStatus(),
     },
   };
 }

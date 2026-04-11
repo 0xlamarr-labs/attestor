@@ -13,7 +13,7 @@ import { dirname, resolve } from 'node:path';
 import { hashJsonValue } from './json-stable.js';
 import type { HostedEmailDeliveryPurpose } from './email-delivery.js';
 
-export type HostedEmailDeliveryProvider = 'manual' | 'smtp' | 'sendgrid_smtp';
+export type HostedEmailDeliveryProvider = 'manual' | 'smtp' | 'sendgrid_smtp' | 'mailgun_smtp';
 export type HostedEmailDeliveryChannel = 'api_response' | 'smtp';
 export type HostedEmailDeliveryStatus =
   | 'manual_delivered'
@@ -170,6 +170,7 @@ function normalizeProvider(value: string | null | undefined): HostedEmailDeliver
     case 'manual':
     case 'smtp':
     case 'sendgrid_smtp':
+    case 'mailgun_smtp':
       return value;
     default:
       return 'smtp';
@@ -343,9 +344,11 @@ export function summarizeHostedEmailDeliveryEvents(
       switch (event.eventType) {
         case 'dispatch.accepted':
           summary.sentAt = summary.sentAt ?? event.occurredAt;
-          summary.status = event.statusHint;
           if (event.statusHint === 'manual_delivered') {
+            summary.status = summary.status === 'unknown' ? 'manual_delivered' : summary.status;
             summary.deliveredAt = summary.deliveredAt ?? event.occurredAt;
+          } else if (summary.status === 'unknown') {
+            summary.status = event.statusHint;
           }
           break;
         case 'sendgrid.processed':
@@ -389,6 +392,44 @@ export function summarizeHostedEmailDeliveryEvents(
           summary.firstOpenedAt = summary.firstOpenedAt ?? event.occurredAt;
           break;
         case 'sendgrid.click':
+          summary.clicked = true;
+          summary.lastClickedAt = event.occurredAt;
+          break;
+        case 'mailgun.accepted':
+          if (summary.status === 'smtp_sent' || summary.status === 'unknown') {
+            summary.status = 'processed';
+          }
+          break;
+        case 'mailgun.delivered':
+          summary.status = 'delivered';
+          summary.deliveredAt = summary.deliveredAt ?? event.occurredAt;
+          break;
+        case 'mailgun.failed':
+          if (event.statusHint === 'deferred' && summary.status !== 'delivered') {
+            summary.status = 'deferred';
+            summary.deferredAt = event.occurredAt;
+          } else {
+            summary.status = event.statusHint === 'bounced' ? 'bounced' : 'failed';
+            summary.failedAt = summary.failedAt ?? event.occurredAt;
+            summary.failureReason = findFailureReason(event.metadata) ?? summary.failureReason;
+          }
+          break;
+        case 'mailgun.complained':
+          if (summary.status !== 'bounced' && summary.status !== 'dropped') {
+            summary.status = 'failed';
+          }
+          summary.spamReported = true;
+          summary.failedAt = summary.failedAt ?? event.occurredAt;
+          summary.failureReason = findFailureReason(event.metadata) ?? summary.failureReason;
+          break;
+        case 'mailgun.unsubscribed':
+          summary.unsubscribed = true;
+          break;
+        case 'mailgun.opened':
+          summary.opened = true;
+          summary.firstOpenedAt = summary.firstOpenedAt ?? event.occurredAt;
+          break;
+        case 'mailgun.clicked':
           summary.clicked = true;
           summary.lastClickedAt = event.occurredAt;
           break;

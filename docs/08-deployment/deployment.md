@@ -93,7 +93,7 @@ docker run \
 | `ATTESTOR_SESSION_IDLE_TIMEOUT_MINUTES` | No | `30` | Hosted customer session idle timeout in minutes |
 | `ATTESTOR_SESSION_COOKIE_SECURE` | No | `false` | Mark hosted customer session cookies as `Secure` |
 | `ATTESTOR_EMAIL_DELIVERY_MODE` | No | `manual` | Hosted invite/reset delivery mode: `manual` or `smtp` |
-| `ATTESTOR_EMAIL_PROVIDER` | No | `smtp` | Optional hosted SMTP provider hint; set `sendgrid_smtp` to add SendGrid SMTP unique-arg headers and enable signed webhook analytics |
+| `ATTESTOR_EMAIL_PROVIDER` | No | `smtp` | Optional hosted SMTP provider hint; `sendgrid_smtp` adds SendGrid SMTP unique args, `mailgun_smtp` adds Mailgun variables, and both enable signed provider webhook analytics |
 | `ATTESTOR_EMAIL_FROM` | No | None | Sender address used for hosted SMTP invite/reset delivery |
 | `ATTESTOR_EMAIL_REPLY_TO` | No | None | Optional reply-to address for hosted SMTP invite/reset delivery |
 | `ATTESTOR_SMTP_URL` | No | None | Optional SMTP connection URL for hosted invite/reset delivery |
@@ -106,6 +106,8 @@ docker run \
 | `ATTESTOR_EMAIL_DELIVERY_EVENTS_PATH` | No | `.attestor/email-delivery-events.json` | File-backed hosted email-delivery event ledger used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY` | No | None | SendGrid Event Webhook public key enabling signed delivery analytics at `POST /api/v1/email/sendgrid/webhook` |
 | `ATTESTOR_SENDGRID_EVENT_WEBHOOK_MAX_AGE_SECONDS` | No | `300` | Max webhook timestamp age in seconds for SendGrid signature verification |
+| `ATTESTOR_MAILGUN_WEBHOOK_SIGNING_KEY` | No | None | Mailgun webhook signing key enabling signed delivery analytics at `POST /api/v1/email/mailgun/webhook` |
+| `ATTESTOR_MAILGUN_WEBHOOK_MAX_AGE_SECONDS` | No | `300` | Max webhook timestamp age in seconds for Mailgun signature verification |
 | `ATTESTOR_ACCOUNT_INVITE_BASE_URL` | No | None | Optional hosted invite URL base; Attestor appends `?token=...` |
 | `ATTESTOR_PASSWORD_RESET_BASE_URL` | No | None | Optional hosted password-reset URL base; Attestor appends `?token=...` |
 | `ATTESTOR_WEBAUTHN_RP_ID` | No | Request hostname | Optional RP ID override for hosted WebAuthn/passkey ceremonies |
@@ -170,6 +172,12 @@ docker run \
 | `ATTESTOR_BILLING_LEDGER_PG_URL` | No | None | Shared PostgreSQL-backed Stripe billing event ledger used by `/api/v1/admin/billing/events`, checkout/invoice lifecycle history, and cross-node webhook dedupe |
 | `ATTESTOR_HA_MODE` | No | `false` | Set to `true` to require HA-safe startup: external `REDIS_URL`, BullMQ mode, and shared `ATTESTOR_CONTROL_PLANE_PG_URL` |
 | `ATTESTOR_INSTANCE_ID` | No | Hostname | Optional stable instance label surfaced in `x-attestor-instance-id`, `/health`, `/ready`, and HA diagnostics |
+| `ATTESTOR_HA_SECRET_STORE` | No | `platform-secrets` | External Secrets store name used by the HA credential/release renderers when runtime or TLS secret mode uses External Secrets |
+| `ATTESTOR_HA_SECRET_PREFIX` | No | `attestor` | Remote secret prefix used by the HA credential renderer for runtime and TLS materials |
+| `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND` | No | `ClusterSecretStore` | External Secrets store kind override for HA runtime/TLS secret sync |
+| `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL` | No | `1h` | External Secrets refresh interval for HA runtime/TLS secret sync |
+| `ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY` | No | `Owner` | External Secrets creation policy for HA managed secret targets |
+| `ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY` | No | None | Optional External Secrets deletion policy for HA managed secret targets |
 | `ATTESTOR_OBSERVABILITY_LOG_PATH` | No | None | Optional JSONL path for structured API request logs with trace correlation and tenant/account context |
 | `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE` | No | None | External Secrets store name used by the observability release renderer/preflight when `ATTESTOR_OBSERVABILITY_SECRET_MODE=external-secret` |
 | `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND` | No | `ClusterSecretStore` | External Secrets store kind override for observability managed-backend rollout |
@@ -261,7 +269,7 @@ What is deployed today:
 - PostgreSQL RLS tenant isolation
 - Hosted tenant key lifecycle with rotate -> deactivate/reactivate -> revoke, `lastUsedAt`, and max-2 active overlap
 - Hosted tenant key break-glass recovery first slice: when the shared PostgreSQL control-plane is active and `ATTESTOR_SECRET_ENVELOPE_PROVIDER=vault_transit`, hosted tenant API keys are sealed through Vault Transit at issuance/rotation time and can be recovered via audited admin/CLI flows only when `ATTESTOR_TENANT_KEY_RECOVERY_ENABLED=true`
-- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, invite/password-reset flows with manual or SMTP delivery, SendGrid-signed delivery analytics at `GET /api/v1/account/email/deliveries`, `GET /api/v1/admin/email/deliveries`, and `POST /api/v1/email/sendgrid/webhook`, TOTP MFA enrollment/verify/disable + recovery codes, hosted OIDC authorization-code + PKCE SSO first slice, hosted SAML SP-initiated Redirect/POST SSO first slice with signed-response verification + replay protection, hosted WebAuthn/passkeys first slice, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
+- Hosted customer auth/RBAC first slice with bootstrap admin, opaque account sessions, password change, invite/password-reset flows with manual or SMTP delivery, SendGrid- and Mailgun-signed delivery analytics at `GET /api/v1/account/email/deliveries`, `GET /api/v1/admin/email/deliveries`, `POST /api/v1/email/sendgrid/webhook`, and `POST /api/v1/email/mailgun/webhook`, TOTP MFA enrollment/verify/disable + recovery codes, hosted OIDC authorization-code + PKCE SSO first slice, hosted SAML SP-initiated Redirect/POST SSO first slice with signed-response verification + replay protection, hosted WebAuthn/passkeys first slice, idle session timeout, and `account_admin` / `billing_admin` / `read_only` role boundaries on account-facing routes
 - Tenant-aware pipeline throttling with plan defaults, `Retry-After`, and `429` responses. Uses a shared Redis fixed-window first slice when `ATTESTOR_RATE_LIMIT_REDIS_URL` is set or the current BullMQ Redis backend is available; otherwise falls back to in-memory single-node buckets
 - Hosted account lifecycle (`active` / `suspended` / `archived`) enforced before tenant API use
 - Stripe webhook reconciliation first slice: signature-verified `customer.subscription.*`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `charge.succeeded|failed|refunded`, and `entitlements.active_entitlement_summary.updated` processing with duplicate-event suppression, checkout/invoice summary persistence, shared invoice line-item persistence, shared charge persistence, hosted billing entitlement projection, account suspend/reactivate sync, and hosted billing export truth. Duplicate suppression moves onto an advisory-lock-backed shared control-plane claim/finalize path when `ATTESTOR_CONTROL_PLANE_PG_URL` is set, and billing event + invoice line-item + charge history moves onto the shared PostgreSQL billing ledger when `ATTESTOR_BILLING_LEDGER_PG_URL` is set
@@ -278,4 +286,4 @@ What is not yet implemented:
 - Final production-traffic calibration beyond the shipped benchmark renderer, calibration profiles, and provider overlays
 - BullMQ Pro queue groups are still not used; OSS/runtime fairness instead comes from shared tenant active-execution caps plus shared weighted dispatch windows
 - Still needs actual environment-specific receiver credentials plus live-traffic validation on the target environment, but the calibration/renderer pipeline is shipped end-to-end
-- Multi-provider outbound email analytics beyond the shipped SendGrid-signed first slice, plus any environment-specific federation polish beyond the shipped hosted OIDC/SAML/WebAuthn first slices
+- Multi-provider outbound email analytics beyond the shipped SendGrid + Mailgun signed first slice, plus any environment-specific federation polish beyond the shipped hosted OIDC/SAML/WebAuthn first slices

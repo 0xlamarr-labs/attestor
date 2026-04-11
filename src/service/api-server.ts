@@ -292,6 +292,12 @@ import {
   shutdownHostedEmailDelivery,
 } from './email-delivery.js';
 import {
+  getMailgunWebhookStatus,
+  mailgunEventTypeToStatusHint,
+  parseMailgunWebhookEvent,
+  verifySignedMailgunWebhook,
+} from './mailgun-email-webhook.js';
+import {
   getSendGridWebhookStatus,
   parseSendGridWebhookEvents,
   sendGridEventTypeToStatusHint,
@@ -3237,6 +3243,80 @@ app.post('/api/v1/email/sendgrid/webhook', async (c) => {
     received: true,
     provider: 'sendgrid_smtp',
     eventCount: events.length,
+    applied,
+    duplicate,
+    ignored,
+    conflict,
+  });
+});
+
+app.post('/api/v1/email/mailgun/webhook', async (c) => {
+  const webhookStatus = getMailgunWebhookStatus();
+  if (!webhookStatus.configured) {
+    return c.json({
+      error: 'Mailgun event webhook disabled. Set ATTESTOR_MAILGUN_WEBHOOK_SIGNING_KEY to enable delivery analytics.',
+    }, 503);
+  }
+
+  const rawPayload = await c.req.text();
+  let parsed;
+  try {
+    parsed = parseMailgunWebhookEvent(rawPayload);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+
+  if (!verifySignedMailgunWebhook(parsed.signature)) {
+    return c.json({ error: 'Mailgun webhook signature verification failed.' }, 400);
+  }
+
+  const event = parsed.event;
+  let applied = 0;
+  let duplicate = 0;
+  let ignored = 0;
+  let conflict = 0;
+
+  if (!event.deliveryId || !event.email) {
+    ignored += 1;
+  } else {
+    const existing = await listHostedEmailDeliveriesState({
+      deliveryId: event.deliveryId,
+      limit: 1,
+    });
+    const delivery = existing.records[0] ?? null;
+    const result = await recordHostedEmailProviderEventState({
+      deliveryId: event.deliveryId,
+      accountId: delivery?.accountId ?? null,
+      accountUserId: delivery?.accountUserId ?? null,
+      purpose: event.purpose ?? delivery?.purpose ?? null,
+      provider: 'mailgun_smtp',
+      channel: 'smtp',
+      recipient: event.email,
+      messageId: delivery?.messageId ?? null,
+      providerMessageId: event.messageId ?? delivery?.providerMessageId ?? null,
+      providerEventId: event.eventId,
+      eventType: `mailgun.${event.event}`,
+      statusHint: mailgunEventTypeToStatusHint(event.event, event.severity),
+      actionUrl: delivery?.actionUrl ?? null,
+      tokenReturned: delivery?.tokenReturned ?? false,
+      occurredAt: event.timestamp
+        ? new Date(event.timestamp * 1000).toISOString()
+        : new Date().toISOString(),
+      metadata: {
+        ...event.raw,
+        severity: event.severity ?? null,
+      },
+      rawPayload: event.raw,
+    });
+    if (result.kind === 'recorded') applied += 1;
+    else if (result.kind === 'duplicate') duplicate += 1;
+    else conflict += 1;
+  }
+
+  return c.json({
+    received: true,
+    provider: 'mailgun_smtp',
+    eventCount: 1,
     applied,
     duplicate,
     ignored,

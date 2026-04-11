@@ -102,13 +102,24 @@ function main(): void {
           ...process.env,
           ATTESTOR_PUBLIC_HOSTNAME: 'edge.attestor.example.invalid',
           ATTESTOR_TLS_MODE: 'external-secret',
+          ATTESTOR_HA_SECRET_STORE: 'regional-secrets',
+          ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND: 'SecretStore',
+          ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL: '30m',
+          ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY: 'Merge',
+          ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY: 'Retain',
         },
       },
     );
     ok(externalSecret.status === 0, 'HA credentials render: external-secret TLS render exits successfully');
+    const externalSecretSummary = JSON.parse(readFileSync(resolve(secretOutputDir, 'summary.json'), 'utf8')) as any;
+    const runtimeExternalSecret = readFileSync(resolve(secretOutputDir, 'runtime-secrets.external-secret.yaml'), 'utf8');
     const tlsExternalSecret = readFileSync(resolve(secretOutputDir, 'tls.external-secret.yaml'), 'utf8');
     const readme = readFileSync(resolve(secretOutputDir, 'README.md'), 'utf8');
+    ok(externalSecretSummary.runtimeSecrets.externalSecret.storeKind === 'SecretStore', 'HA credentials render: summary records custom External Secrets store kind');
+    ok(externalSecretSummary.runtimeSecrets.externalSecret.refreshInterval === '30m', 'HA credentials render: summary records custom External Secrets refresh interval');
+    ok(runtimeExternalSecret.includes('refreshInterval: 30m') && runtimeExternalSecret.includes('kind: SecretStore') && runtimeExternalSecret.includes('creationPolicy: Merge') && runtimeExternalSecret.includes('deletionPolicy: Retain'), 'HA credentials render: runtime ExternalSecret carries lifecycle policy overrides');
     ok(tlsExternalSecret.includes('kubernetes.io/tls') && tlsExternalSecret.includes('attestor/tls-crt'), 'HA credentials render: TLS ExternalSecret projects kubernetes.io/tls material');
+    ok(tlsExternalSecret.includes('refreshInterval: 30m') && tlsExternalSecret.includes('creationPolicy: Merge') && tlsExternalSecret.includes('deletionPolicy: Retain'), 'HA credentials render: TLS ExternalSecret carries lifecycle policy overrides');
     ok(readme.includes('do not commit'), 'HA credentials render: README warns about secret material');
 
     console.log(`\nHA credentials render tests: ${passed} passed, 0 failed`);

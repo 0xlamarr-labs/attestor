@@ -4,7 +4,7 @@
 
 import { createPublicKey, verify as verifySignature } from 'node:crypto';
 import type { HostedEmailDeliveryPurpose } from './email-delivery.js';
-import type { HostedEmailDeliveryProvider, HostedEmailDeliveryStatus } from './email-delivery-event-store.js';
+import type { HostedEmailDeliveryStatus } from './email-delivery-event-store.js';
 
 export interface SendGridWebhookStatus {
   configured: boolean;
@@ -21,12 +21,6 @@ export interface SendGridWebhookEventRecord {
   deliveryId: string | null;
   purpose: HostedEmailDeliveryPurpose | null;
   raw: Record<string, unknown>;
-}
-
-export function resolveHostedEmailProvider(mode: 'manual' | 'smtp'): HostedEmailDeliveryProvider {
-  if (mode === 'manual') return 'manual';
-  const configured = process.env.ATTESTOR_EMAIL_PROVIDER?.trim().toLowerCase();
-  return configured === 'sendgrid_smtp' ? 'sendgrid_smtp' : 'smtp';
 }
 
 export function buildSendGridSmtpApiHeader(input: {

@@ -455,7 +455,7 @@ export interface AccountInviteUserResponse {
   delivery: {
     deliveryId: string;
     mode: 'manual' | 'smtp';
-    provider: 'manual' | 'smtp' | 'sendgrid_smtp';
+    provider: 'manual' | 'smtp' | 'sendgrid_smtp' | 'mailgun_smtp';
     channel: 'api_response' | 'smtp';
     delivered: boolean;
     recipient: string;
@@ -495,7 +495,7 @@ export interface AccountIssuePasswordResetResponse {
   delivery: {
     deliveryId: string;
     mode: 'manual' | 'smtp';
-    provider: 'manual' | 'smtp' | 'sendgrid_smtp';
+    provider: 'manual' | 'smtp' | 'sendgrid_smtp' | 'mailgun_smtp';
     channel: 'api_response' | 'smtp';
     delivered: boolean;
     recipient: string;
@@ -824,7 +824,7 @@ export interface EmailDeliveryRecordView {
   accountId: string | null;
   accountUserId: string | null;
   purpose: 'invite' | 'password_reset' | null;
-  provider: 'manual' | 'smtp' | 'sendgrid_smtp';
+  provider: 'manual' | 'smtp' | 'sendgrid_smtp' | 'mailgun_smtp';
   channel: 'api_response' | 'smtp';
   recipient: string;
   messageId: string | null;
@@ -875,6 +875,16 @@ export interface AdminEmailDeliveriesResponse {
 export interface SendGridWebhookResponse {
   received: true;
   provider: 'sendgrid_smtp';
+  eventCount: number;
+  applied: number;
+  duplicate: number;
+  ignored: number;
+  conflict: number;
+}
+
+export interface MailgunWebhookResponse {
+  received: true;
+  provider: 'mailgun_smtp';
   eventCount: number;
   applied: number;
   duplicate: number;
@@ -1536,6 +1546,7 @@ export const API_ROUTES = {
   AUTH_SAML_LOGIN: '/api/v1/auth/saml/login',
   AUTH_SAML_ACS: '/api/v1/auth/saml/acs',
   BILLING_STRIPE_WEBHOOK: '/api/v1/billing/stripe/webhook',
+  EMAIL_MAILGUN_WEBHOOK: '/api/v1/email/mailgun/webhook',
   EMAIL_SENDGRID_WEBHOOK: '/api/v1/email/sendgrid/webhook',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',

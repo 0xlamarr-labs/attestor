@@ -28,3 +28,10 @@ npm run render:ha-credentials -- --provider=gke --output-dir=.attestor/ha/creden
 That bundle can emit environment-specific `runtime-secrets.external-secret.yaml`
 and `tls.external-secret.yaml` manifests with the right secret-store name, prefix,
 and hostname/TLS wiring before you copy the final values into this overlay.
+
+The renderer also supports lifecycle tuning without hand-editing the manifests:
+
+- `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND`
+- `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL`
+- `ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY`
+- `ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY`
