@@ -44,6 +44,7 @@ function main(): void {
   const profilesReadme = read('ops/kubernetes/ha/profiles/README.md');
   const awsProfile = read('ops/kubernetes/ha/profiles/aws-production.json');
   const gkeProfile = read('ops/kubernetes/ha/profiles/gke-production.json');
+  const haReadme = read('ops/kubernetes/ha/README.md');
 
   ok(kustomization.includes('api-deployment.yaml') && kustomization.includes('gateway.yaml'), 'Kubernetes HA bundle: kustomization includes deployment and gateway resources');
   ok(apiDeployment.includes('ATTESTOR_HA_MODE') && apiDeployment.includes('ATTESTOR_CONTROL_PLANE_PG_URL'), 'Kubernetes HA bundle: API deployment enables HA mode and shared control-plane');
@@ -75,12 +76,13 @@ function main(): void {
   ok(certManagerReadme.includes('cert-manager') && certManagerReadme.includes('ClusterIssuer'), 'Kubernetes HA bundle: cert-manager README documents issuer requirements');
   ok(certManagerCertificate.includes('kind: Certificate') && certManagerCertificate.includes('secretName: attestor-tls'), 'Kubernetes HA bundle: cert-manager overlay issues the Gateway TLS secret');
   ok(externalSecretsOverlay.includes('../../') && externalSecretsOverlay.includes('runtime-secrets.yaml'), 'Kubernetes HA bundle: external-secrets overlay composes runtime secret resources');
-  ok(externalSecretsReadme.includes('External Secrets Operator') && externalSecretsReadme.includes('ClusterSecretStore'), 'Kubernetes HA bundle: external-secrets README documents cluster secret store requirements');
+  ok(externalSecretsReadme.includes('External Secrets Operator') && externalSecretsReadme.includes('ClusterSecretStore') && externalSecretsReadme.includes('render:ha-credentials'), 'Kubernetes HA bundle: external-secrets README documents cluster secret store requirements and renderer flow');
   ok(externalRuntimeSecret.includes('kind: ExternalSecret') && externalRuntimeSecret.includes('attestor-runtime-secrets'), 'Kubernetes HA bundle: external-secrets overlay manages runtime secret material');
   ok(externalTlsSecret.includes('kubernetes.io/tls') && externalTlsSecret.includes('attestor-tls'), 'Kubernetes HA bundle: external-secrets overlay can project TLS material');
   ok(profilesReadme.includes('render:ha-profile') && profilesReadme.includes('aws-production.json'), 'Kubernetes HA bundle: profiles README documents benchmark-to-profile tuning flow');
   ok(awsProfile.includes('"provider": "aws"') && awsProfile.includes('"availabilityTarget": 0.995'), 'Kubernetes HA bundle: AWS calibration profile ships production SLO defaults');
   ok(gkeProfile.includes('"provider": "gke"') && gkeProfile.includes('"timeoutLatencyMultiplier": 6'), 'Kubernetes HA bundle: GKE calibration profile ships backend timeout tuning defaults');
+  ok(haReadme.includes('render:ha-credentials') && haReadme.includes('providers/cert-manager'), 'Kubernetes HA bundle: README documents renderer-driven cloud secret and certificate wiring');
 
   console.log(`\nKubernetes HA bundle tests: ${passed} passed, 0 failed`);
 }

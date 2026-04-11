@@ -59,3 +59,17 @@ Notes:
   - `npm run benchmark:ha -- --url=http://127.0.0.1:3700/api/v1/health --duration=20 --concurrency=16 --replicas=2`
 - a repeatable tuning render step is available via:
   - `npm run render:ha-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/kubernetes/ha/profiles/aws-production.json`
+- an ops-ready credential/certificate render step is available via:
+  - `npm run render:ha-credentials -- --provider=<generic|aws|gke> --output-dir=.attestor/ha/credentials`
+
+Credential/certificate wiring notes:
+
+- `render:ha-credentials` materializes:
+  - inline runtime Secret manifests
+  - ExternalSecret manifests for runtime and TLS material
+  - Gateway hostname/TLS patches
+  - cert-manager `Certificate` manifests
+  - AWS ACM / ALB HTTPS patches
+  - GKE Gateway policy patches
+- every secret-like input also supports a `*_FILE` variant for mounted secrets
+- set `ATTESTOR_HA_PRODUCTION_MODE=true` to force the minimum shared-state/runtime inputs needed for a real HA rollout

@@ -18,3 +18,13 @@ Apply it with:
 ```powershell
 kubectl apply -k ops/kubernetes/ha/providers/external-secrets
 ```
+
+Renderer-assisted flow:
+
+```powershell
+npm run render:ha-credentials -- --provider=gke --output-dir=.attestor/ha/credentials
+```
+
+That bundle can emit environment-specific `runtime-secrets.external-secret.yaml`
+and `tls.external-secret.yaml` manifests with the right secret-store name, prefix,
+and hostname/TLS wiring before you copy the final values into this overlay.

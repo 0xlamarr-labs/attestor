@@ -18,3 +18,13 @@ Apply it with:
 ```powershell
 kubectl apply -k ops/kubernetes/ha/providers/cert-manager
 ```
+
+Renderer-assisted flow:
+
+```powershell
+npm run render:ha-credentials -- --provider=gke --output-dir=.attestor/ha/credentials
+```
+
+When `ATTESTOR_TLS_MODE=cert-manager`, the renderer emits a ready-to-edit
+`cert-manager.certificate.yaml` manifest with the chosen hostname, secret name,
+and `ClusterIssuer`.
