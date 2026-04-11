@@ -56,6 +56,8 @@ Credential bundle rendering:
 
 Profile-driven SLO / retention tuning:
 
+- `npm run benchmark:observability -- --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+- captures real Prometheus request-rate / availability / p95-latency data plus optional Alertmanager alert counts into `benchmark.json`
 - `npm run render:observability-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/observability/profiles/regulated-production.json`
 - shipped profiles live under `ops/observability/profiles/`
 
@@ -64,6 +66,7 @@ Managed collector rollout:
 - `ops/kubernetes/observability/` now ships a gateway-style Collector Deployment with HPA, PDB, RBAC, `k8sattributes`, and `resourcedetection`
 - `ops/kubernetes/observability/providers/grafana-cloud/` now uses Collector `basicauth` with endpoint/username/token secrets instead of a raw Authorization header
 - `ops/kubernetes/observability/providers/external-secrets/` ships `ExternalSecret` templates for the Grafana Cloud collector secret and Alertmanager routing secret
+- `benchmark:observability` is the intended last-mile tuning bridge before calling the shipped SLO/retention defaults production-final
 
 Boundary:
 

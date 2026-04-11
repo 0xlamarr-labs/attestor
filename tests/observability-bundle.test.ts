@@ -29,6 +29,7 @@ function main(): void {
   const bundleReadme = read('ops/observability/README.md');
   const alertRenderScript = read('scripts/render-alertmanager-config.mjs');
   const credentialsRenderScript = read('scripts/render-observability-credentials.ts');
+  const benchmarkScript = read('scripts/benchmark-observability.ts');
   const profilesReadme = read('ops/observability/profiles/README.md');
   const regulatedProfile = read('ops/observability/profiles/regulated-production.json');
   const leanProfile = read('ops/observability/profiles/lean-production.json');
@@ -79,6 +80,7 @@ function main(): void {
   ok(alertRenderScript.includes('ALERTMANAGER_SECURITY_WEBHOOK_URL') && alertRenderScript.includes('ALERTMANAGER_BILLING_WEBHOOK_URL'), 'Observability bundle: Alertmanager render script supports team escalation routes');
   ok(alertRenderScript.includes('_FILE') && alertRenderScript.includes('ALERTMANAGER_PRODUCTION_MODE'), 'Observability bundle: Alertmanager render script supports secret-file inputs and production validation');
   ok(credentialsRenderScript.includes('GRAFANA_CLOUD_OTLP_ENDPOINT') && credentialsRenderScript.includes('attestor-alertmanager-routing'), 'Observability bundle: observability credential renderer emits managed collector and Alertmanager secret bundles');
+  ok(benchmarkScript.includes('/api/v1/query') && benchmarkScript.includes('/api/v2/alerts'), 'Observability bundle: benchmark script queries Prometheus and Alertmanager APIs');
   ok(profilesReadme.includes('render:observability-profile') && profilesReadme.includes('regulated-production.json'), 'Observability bundle: profile README documents render flow');
   ok(regulatedProfile.includes('"prometheusDays": 30') && regulatedProfile.includes('"availabilityTarget": 0.995'), 'Observability bundle: regulated profile ships longer-retention defaults');
   ok(leanProfile.includes('"prometheusDays": 15') && leanProfile.includes('"tempoHours": 336'), 'Observability bundle: lean profile ships cost-aware retention defaults');
