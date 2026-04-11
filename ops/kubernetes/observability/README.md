@@ -50,3 +50,16 @@ routing credentials.
 Retention/SLO tuning can now be rendered separately from benchmark data via:
 
 - `npm run render:observability-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/observability/profiles/regulated-production.json`
+- `npm run render:observability-profile -- --input=.attestor/observability/latest.json --profile=ops/observability/profiles/regulated-production.json`
+
+And a self-contained release bundle can now be rendered via:
+
+- `npm run render:observability-release-bundle -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --output-dir=.attestor/observability/release`
+
+That release bundle composes:
+
+- the base Kubernetes collector gateway resources
+- the managed-backend provider overlay
+- rendered secret or `ExternalSecret` resources
+- rendered Alertmanager routing config
+- rendered SLO/rule/retention artifacts from the selected benchmark profile
