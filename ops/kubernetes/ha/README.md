@@ -69,6 +69,8 @@ Notes:
   - `npm run render:ha-promotion-packet -- --provider=<aws|gke|generic> --benchmark=.attestor/ha-calibration/latest.json`
 - a combined production readiness packet is now available via:
   - `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud> --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-provider=<aws|gke|generic> --ha-benchmark=.attestor/ha-calibration/latest.json`
+- the recommended managed-secret bootstrap is now available via:
+  - `npm run render:secret-manager-bootstrap -- --provider=<aws|gke|all> --output-dir=.attestor/secret-bootstrap`
 
 Credential/certificate wiring notes:
 
@@ -83,6 +85,7 @@ Credential/certificate wiring notes:
 - `probe:ha-release-inputs` validates the minimum shared-state, image, hostname, Redis, control-plane, billing-ledger, and TLS inputs for a real HA promotion, then dry-runs the final release-bundle render before rollout
 - `render:ha-promotion-packet` collapses the benchmark truth, release preflight, missing-input inventory, release-bundle location, and recommended apply flow into one rollout checkpoint
 - `render:production-readiness-packet` fuses the HA and observability promotion packets, then blocks promotion if either benchmark is stale
+- `render:secret-manager-bootstrap` emits provider-ready `ClusterSecretStore` manifests plus the exact remote secret catalog for the HA runtime/TLS and observability secret surfaces
 - HA External Secrets lifecycle can be tuned without hand-editing YAML via:
   - `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND`
   - `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL`

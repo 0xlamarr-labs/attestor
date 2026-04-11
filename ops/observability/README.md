@@ -94,6 +94,13 @@ Promotion packet:
   - adds benchmark freshness gating for both benchmark files
   - emits one final readiness packet for environment promotion
 
+Managed cloud secret bootstrap:
+
+- `npm run render:secret-manager-bootstrap -- --provider=<aws|gke|all> --output-dir=.attestor/secret-bootstrap`
+  - emits AWS IRSA and GKE Workload Identity `ClusterSecretStore` manifests
+  - emits the exact remote secret catalog expected by the shipped observability + HA ExternalSecret overlays
+  - emits a seed payload contract so the real values can be loaded into the cloud secret manager instead of git
+
 External Secrets lifecycle tuning:
 
 - `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND` (default `ClusterSecretStore`)

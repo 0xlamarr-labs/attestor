@@ -22,3 +22,12 @@ Boundary:
 
 - this overlay assumes External Secrets Operator is already installed
 - it ships placeholder remote key names, not real provider credentials
+
+Recommended bootstrap:
+
+```powershell
+npm run render:secret-manager-bootstrap -- --provider=<aws|gke|all> --output-dir=.attestor/secret-bootstrap
+```
+
+That bundle emits provider-ready `ClusterSecretStore` manifests plus the exact
+remote secret names and JSON property contract expected by these templates.

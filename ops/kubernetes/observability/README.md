@@ -82,3 +82,5 @@ That probe:
 - emits a single promotion packet summary that captures readiness state, missing inputs, bundle location, and recommended apply flow
 - `npm run render:production-readiness-packet -- --observability-provider=<generic|grafana-cloud> --observability-benchmark=.attestor/observability/latest.json --ha-provider=<generic|aws|gke> --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
   - emits one combined environment-promotion packet that fuses observability and HA readiness, including benchmark freshness gating
+- `npm run render:secret-manager-bootstrap -- --provider=<aws|gke|all> --output-dir=.attestor/secret-bootstrap`
+  - emits AWS IRSA and GKE Workload Identity `ClusterSecretStore` manifests plus the exact remote secret catalog expected by the observability ExternalSecret overlay

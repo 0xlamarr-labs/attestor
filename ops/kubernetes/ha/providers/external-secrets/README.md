@@ -35,3 +35,12 @@ The renderer also supports lifecycle tuning without hand-editing the manifests:
 - `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL`
 - `ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY`
 - `ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY`
+
+Recommended bootstrap:
+
+```powershell
+npm run render:secret-manager-bootstrap -- --provider=<aws|gke|all> --output-dir=.attestor/secret-bootstrap
+```
+
+That bundle emits provider-ready `ClusterSecretStore` manifests plus the exact
+remote secret names expected by this HA overlay.
