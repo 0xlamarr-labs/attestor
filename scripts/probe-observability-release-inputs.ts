@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { probeObservabilityReceivers } from './probe-observability-receivers.ts';
+import { probeAlertRouting } from './probe-alert-routing.ts';
 
 type Provider = 'generic' | 'grafana-cloud';
 type SecretMode = 'secret' | 'external-secret';
@@ -46,12 +47,17 @@ export interface ObservabilityReleaseProbeSummary {
     envComplete: boolean;
     bundleRenderSucceeded: boolean;
     receiverProbeSucceeded: boolean;
+    alertRoutingSucceeded: boolean;
     issues: string[];
   };
   receiverProbe: {
     telemetryFlushSucceeded: boolean;
     prometheusOk: boolean | null;
     alertmanagerOk: boolean | null;
+  } | null;
+  alertRouting: {
+    routingValid: boolean;
+    deliveryCoverageValid: boolean;
   } | null;
 }
 
@@ -103,7 +109,9 @@ export async function probeObservabilityReleaseInputs(options?: {
 
   let bundleRenderSucceeded = false;
   let receiverProbeSucceeded = false;
+  let alertRoutingSucceeded = false;
   let receiverProbe: ObservabilityReleaseProbeSummary['receiverProbe'] = null;
+  let alertRouting: ObservabilityReleaseProbeSummary['alertRouting'] = null;
 
   if (issues.length === 0) {
     const outDir = mkdtempSync(resolve(tmpdir(), 'attestor-observability-preflight-'));
@@ -141,6 +149,19 @@ export async function probeObservabilityReleaseInputs(options?: {
         if (!receiverProbeSucceeded) {
           issues.push('probe-observability-receivers did not fully pass for the current OTLP/Prometheus/Alertmanager configuration.');
         }
+        const alertRoutingSummary = await probeAlertRouting({
+          outputDir: resolve(outDir, 'alert-routing'),
+        });
+        alertRouting = {
+          routingValid: alertRoutingSummary.releaseReadiness.routingValid,
+          deliveryCoverageValid: alertRoutingSummary.releaseReadiness.deliveryCoverageValid,
+        };
+        alertRoutingSucceeded = alertRoutingSummary.releaseReadiness.routingValid && alertRoutingSummary.releaseReadiness.deliveryCoverageValid;
+        if (!alertRoutingSucceeded) {
+          issues.push(
+            `probe-alert-routing reported issues: ${alertRoutingSummary.releaseReadiness.issues.join(' | ')}`,
+          );
+        }
       }
     } finally {
       rmSync(outDir, { recursive: true, force: true });
@@ -160,9 +181,11 @@ export async function probeObservabilityReleaseInputs(options?: {
       envComplete: issues.length === 0,
       bundleRenderSucceeded,
       receiverProbeSucceeded,
+      alertRoutingSucceeded,
       issues,
     },
     receiverProbe,
+    alertRouting,
   };
 }
 

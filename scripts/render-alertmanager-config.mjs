@@ -77,6 +77,11 @@ function buildConfig() {
       criticalPagerDutyKey,
       emailTo,
     ]);
+    requireAtLeastOne('warning alert routing', [
+      warningWebhook,
+      warningSlackWebhook,
+      emailTo,
+    ]);
   }
 
   const lines = [

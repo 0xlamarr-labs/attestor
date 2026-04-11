@@ -68,13 +68,20 @@ Rollout-near receiver probe:
 - forces a telemetry flush
 - verifies Prometheus and Alertmanager API auth against the configured endpoints
 
+Route-level alert routing probe:
+
+- `npm run probe:alert-routing`
+- renders the current Alertmanager config from env / `*_FILE` inputs
+- simulates representative `default`, `critical`, `warning`, `security`, `billing`, and `Watchdog` alert fanout
+- fails if required fallback/severity routes resolve to receivers without delivery targets
+
 Promotion-ready release preflight:
 
 - `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
 - validates the required managed-backend credential inputs for the selected provider
 - validates External Secrets store wiring when `ATTESTOR_OBSERVABILITY_SECRET_MODE=external-secret`
 - dry-runs the full `render:observability-release-bundle` pipeline
-- then runs `probe:observability-receivers` so OTLP flush + Prometheus/Alertmanager auth are part of the same promotion gate
+- then runs both `probe:observability-receivers` and `probe:alert-routing` so OTLP flush, API auth, and Alertmanager fanout validation are part of the same promotion gate
 
 External Secrets lifecycle tuning:
 

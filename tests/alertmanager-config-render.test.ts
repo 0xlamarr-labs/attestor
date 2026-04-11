@@ -58,6 +58,21 @@ function main(): void {
     },
   );
 
+  const missingWarningRun = spawnSync(
+    process.execPath,
+    ['scripts/render-alertmanager-config.mjs', resolve(tempDir, 'missing-warning.yml')],
+    {
+      cwd: resolve('.'),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        ALERTMANAGER_DEFAULT_WEBHOOK_URL: 'https://alerts.example.invalid/default',
+        ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY: 'pagerduty-key',
+        ALERTMANAGER_PRODUCTION_MODE: 'true',
+      },
+    },
+  );
+
   try {
     ok(run.status === 0, 'Alertmanager render: script exits successfully');
     const rendered = readFileSync(outputPath, 'utf8');
@@ -74,6 +89,7 @@ function main(): void {
     ok(rendered.includes('receiver: watchdog'), 'Alertmanager render: Watchdog route is present');
     ok(rendered.includes('inhibit_rules:'), 'Alertmanager render: inhibition rules are rendered');
     ok(invalidRun.status !== 0, 'Alertmanager render: invalid production config fails fast');
+    ok(missingWarningRun.status !== 0, 'Alertmanager render: production config without warning delivery fails fast');
 
     console.log(`\nAlertmanager config render tests: ${passed} passed, 0 failed`);
   } finally {

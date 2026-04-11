@@ -46,6 +46,7 @@ async function main(): Promise<void> {
     GRAFANA_CLOUD_OTLP_TOKEN: process.env.GRAFANA_CLOUD_OTLP_TOKEN,
     ALERTMANAGER_DEFAULT_WEBHOOK_URL: process.env.ALERTMANAGER_DEFAULT_WEBHOOK_URL,
     ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY: process.env.ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY,
+    ALERTMANAGER_WARNING_WEBHOOK_URL: process.env.ALERTMANAGER_WARNING_WEBHOOK_URL,
     ALERTMANAGER_PRODUCTION_MODE: process.env.ALERTMANAGER_PRODUCTION_MODE,
     ATTESTOR_OBSERVABILITY_SECRET_MODE: process.env.ATTESTOR_OBSERVABILITY_SECRET_MODE,
     ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE: process.env.ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE,
@@ -94,6 +95,7 @@ async function main(): Promise<void> {
     delete process.env.GRAFANA_CLOUD_OTLP_TOKEN;
     delete process.env.ALERTMANAGER_DEFAULT_WEBHOOK_URL;
     delete process.env.ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY;
+    delete process.env.ALERTMANAGER_WARNING_WEBHOOK_URL;
     delete process.env.ALERTMANAGER_PRODUCTION_MODE;
     delete process.env.ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE;
 
@@ -106,6 +108,7 @@ async function main(): Promise<void> {
     process.env.GRAFANA_CLOUD_OTLP_TOKEN = 'grafana-secret-token';
     process.env.ALERTMANAGER_DEFAULT_WEBHOOK_URL = 'https://alerts.example.invalid/default';
     process.env.ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY = 'pd-secret';
+    process.env.ALERTMANAGER_WARNING_WEBHOOK_URL = 'https://alerts.example.invalid/warning';
     process.env.ALERTMANAGER_PRODUCTION_MODE = 'true';
     process.env.ATTESTOR_OBSERVABILITY_SECRET_MODE = 'external-secret';
     process.env.ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE = 'corp-secrets';
@@ -134,7 +137,9 @@ async function main(): Promise<void> {
     ok(ready.releaseReadiness.envComplete === true, 'Observability release probe: env completeness passes with required inputs');
     ok(ready.releaseReadiness.bundleRenderSucceeded === true, 'Observability release probe: release bundle render succeeds');
     ok(ready.releaseReadiness.receiverProbeSucceeded === true, 'Observability release probe: receiver probe succeeds');
+    ok(ready.releaseReadiness.alertRoutingSucceeded === true, 'Observability release probe: alert routing probe succeeds');
     ok(ready.receiverProbe?.telemetryFlushSucceeded === true && ready.receiverProbe?.prometheusOk === true && ready.receiverProbe?.alertmanagerOk === true, 'Observability release probe: receiver truth is preserved');
+    ok(ready.alertRouting?.routingValid === true && ready.alertRouting?.deliveryCoverageValid === true, 'Observability release probe: alert routing truth is preserved');
     ok(collectorRequests.includes('/v1/logs') && collectorRequests.includes('/v1/traces') && collectorRequests.includes('/v1/metrics'), 'Observability release probe: OTLP collectors are exercised');
     ok(ready.benchmark.p95LatencyMs === 410 && ready.provider === 'grafana-cloud' && ready.secretMode === 'external-secret', 'Observability release probe: benchmark, provider, and secret mode are captured');
 
