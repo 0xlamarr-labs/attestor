@@ -32,6 +32,7 @@ function main(): void {
   const benchmarkScript = read('scripts/benchmark-observability.ts');
   const releaseBundleScript = read('scripts/render-observability-release-bundle.ts');
   const receiverProbeScript = read('scripts/probe-observability-receivers.ts');
+  const releaseInputProbeScript = read('scripts/probe-observability-release-inputs.ts');
   const profilesReadme = read('ops/observability/profiles/README.md');
   const regulatedProfile = read('ops/observability/profiles/regulated-production.json');
   const leanProfile = read('ops/observability/profiles/lean-production.json');
@@ -85,6 +86,7 @@ function main(): void {
   ok(benchmarkScript.includes('/api/v1/query') && benchmarkScript.includes('/api/v2/alerts'), 'Observability bundle: benchmark script queries Prometheus and Alertmanager APIs');
   ok(releaseBundleScript.includes('render-observability-profile.ts') && releaseBundleScript.includes('render-observability-credentials.ts') && releaseBundleScript.includes('render-alertmanager-config.mjs'), 'Observability bundle: release bundle renderer composes profile, credentials, and alert routing renders');
   ok(receiverProbeScript.includes('forceFlushTelemetry') && receiverProbeScript.includes('/api/v1/query?query=vector(1)') && receiverProbeScript.includes('/api/v2/alerts'), 'Observability bundle: receiver probe exercises OTLP flush plus Prometheus and Alertmanager auth probes');
+  ok(releaseInputProbeScript.includes('render-observability-release-bundle.ts') && releaseInputProbeScript.includes('probeObservabilityReceivers') && releaseInputProbeScript.includes('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE'), 'Observability bundle: release input probe validates production credential inputs, release render, and receiver probe chain');
   ok(profilesReadme.includes('render:observability-profile') && profilesReadme.includes('regulated-production.json'), 'Observability bundle: profile README documents render flow');
   ok(regulatedProfile.includes('"prometheusDays": 30') && regulatedProfile.includes('"availabilityTarget": 0.995'), 'Observability bundle: regulated profile ships longer-retention defaults');
   ok(leanProfile.includes('"prometheusDays": 15') && leanProfile.includes('"tempoHours": 336'), 'Observability bundle: lean profile ships cost-aware retention defaults');

@@ -49,12 +49,12 @@ routing credentials.
 
 Retention/SLO tuning can now be rendered separately from benchmark data via:
 
-- `npm run render:observability-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/observability/profiles/regulated-production.json`
 - `npm run render:observability-profile -- --input=.attestor/observability/latest.json --profile=ops/observability/profiles/regulated-production.json`
 
 And a self-contained release bundle can now be rendered via:
 
 - `npm run render:observability-release-bundle -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --output-dir=.attestor/observability/release`
+- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
 
 That release bundle composes:
 
@@ -67,6 +67,7 @@ That release bundle composes:
 Before calling the managed backend wiring production-ready, a rollout-near probe is also available:
 
 - `npm run probe:observability-receivers -- --prometheus-url=<url> --alertmanager-url=<url>`
+- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/latest.json --prometheus-url=<url> --alertmanager-url=<url>`
 
 That probe:
 
@@ -74,3 +75,4 @@ That probe:
 - forces a telemetry flush
 - checks Prometheus API auth with a lightweight instant query
 - checks Alertmanager API auth with an alerts listing call
+- validates provider credentials plus External Secrets store/lifecycle inputs and dry-runs the full release-bundle render before probing receivers

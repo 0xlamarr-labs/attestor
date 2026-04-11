@@ -68,6 +68,21 @@ Rollout-near receiver probe:
 - forces a telemetry flush
 - verifies Prometheus and Alertmanager API auth against the configured endpoints
 
+Promotion-ready release preflight:
+
+- `npm run probe:observability-release-inputs -- --provider=<generic|grafana-cloud> --benchmark=.attestor/observability/calibration/latest/benchmark.json --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+- validates the required managed-backend credential inputs for the selected provider
+- validates External Secrets store wiring when `ATTESTOR_OBSERVABILITY_SECRET_MODE=external-secret`
+- dry-runs the full `render:observability-release-bundle` pipeline
+- then runs `probe:observability-receivers` so OTLP flush + Prometheus/Alertmanager auth are part of the same promotion gate
+
+External Secrets lifecycle tuning:
+
+- `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND` (default `ClusterSecretStore`)
+- `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_REFRESH_INTERVAL` (default `1h`)
+- `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_CREATION_POLICY` (default `Owner`)
+- `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_DELETION_POLICY` (optional)
+
 Managed collector rollout:
 
 - `ops/kubernetes/observability/` now ships a gateway-style Collector Deployment with HPA, PDB, RBAC, `k8sattributes`, and `resourcedetection`

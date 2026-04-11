@@ -46,6 +46,13 @@ function replaceNamespace(contents: string, namespace: string): string {
   return replaceAll(contents, /^(\s*namespace:\s*).*$/gm, `$1${namespace}`);
 }
 
+function replaceFirst(contents: string, pattern: RegExp, replacement: string): string {
+  if (!pattern.test(contents)) {
+    throw new Error(`Expected replacement did not match: ${pattern}`);
+  }
+  return contents.replace(pattern, replacement);
+}
+
 function runNode(script: string, args: string[], envVars: NodeJS.ProcessEnv): void {
   const run = spawnSync(process.execPath, [resolve(script), ...args], {
     cwd: resolve('.'),
@@ -93,6 +100,10 @@ function main(): void {
     throw new Error('secret-mode must be one of secret, external-secret');
   }
   const externalSecretStore = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE');
+  const externalSecretStoreKind = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND') ?? 'ClusterSecretStore';
+  const externalSecretRefreshInterval = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_REFRESH_INTERVAL') ?? '1h';
+  const externalSecretCreationPolicy = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_CREATION_POLICY') ?? 'Owner';
+  const externalSecretDeletionPolicy = env('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_DELETION_POLICY');
 
   const tempRoot = mkdtempSync(resolve(tmpdir(), 'attestor-observability-release-'));
   const profileOut = resolve(tempRoot, 'profile');
@@ -213,8 +224,16 @@ function main(): void {
       if (secretMode === 'external-secret') {
         let external = read('ops/kubernetes/observability/providers/external-secrets/grafana-cloud-external-secret.yaml');
         external = replaceNamespace(external, namespace);
+        external = replaceFirst(external, /refreshInterval:\s*\S+/, `refreshInterval: ${externalSecretRefreshInterval}`);
+        external = replaceFirst(external, /kind:\s*ClusterSecretStore/, `kind: ${externalSecretStoreKind}`);
+        external = replaceFirst(external, /creationPolicy:\s*\S+/, `creationPolicy: ${externalSecretCreationPolicy}`);
         if (externalSecretStore) {
-          external = replaceYamlScalar(external, 'name', `    name: ${externalSecretStore}`);
+          external = replaceFirst(external, /name:\s*REPLACE_WITH_CLUSTER_SECRET_STORE/, `name: ${externalSecretStore}`);
+        }
+        if (externalSecretDeletionPolicy) {
+          external = external.includes('deletionPolicy:')
+            ? replaceFirst(external, /deletionPolicy:\s*\S+/, `deletionPolicy: ${externalSecretDeletionPolicy}`)
+            : external.replace(/creationPolicy:\s*\S+/, `creationPolicy: ${externalSecretCreationPolicy}\n    deletionPolicy: ${externalSecretDeletionPolicy}`);
         }
         write(resolve(outputDir, 'grafana-cloud.external-secret.yaml'), external);
         resources.push('grafana-cloud.external-secret.yaml');
@@ -230,8 +249,16 @@ function main(): void {
       if (secretMode === 'external-secret') {
         let alertExternal = read('ops/kubernetes/observability/providers/external-secrets/alertmanager-routing-external-secret.yaml');
         alertExternal = replaceNamespace(alertExternal, namespace);
+        alertExternal = replaceFirst(alertExternal, /refreshInterval:\s*\S+/, `refreshInterval: ${externalSecretRefreshInterval}`);
+        alertExternal = replaceFirst(alertExternal, /kind:\s*ClusterSecretStore/, `kind: ${externalSecretStoreKind}`);
+        alertExternal = replaceFirst(alertExternal, /creationPolicy:\s*\S+/, `creationPolicy: ${externalSecretCreationPolicy}`);
         if (externalSecretStore) {
-          alertExternal = replaceYamlScalar(alertExternal, 'name', `    name: ${externalSecretStore}`);
+          alertExternal = replaceFirst(alertExternal, /name:\s*REPLACE_WITH_CLUSTER_SECRET_STORE/, `name: ${externalSecretStore}`);
+        }
+        if (externalSecretDeletionPolicy) {
+          alertExternal = alertExternal.includes('deletionPolicy:')
+            ? replaceFirst(alertExternal, /deletionPolicy:\s*\S+/, `deletionPolicy: ${externalSecretDeletionPolicy}`)
+            : alertExternal.replace(/creationPolicy:\s*\S+/, `creationPolicy: ${externalSecretCreationPolicy}\n    deletionPolicy: ${externalSecretDeletionPolicy}`);
         }
         write(resolve(outputDir, 'alertmanager-routing.external-secret.yaml'), alertExternal);
         resources.push('alertmanager-routing.external-secret.yaml');
@@ -268,6 +295,15 @@ ${resources.map((resource) => `  - ${resource}`).join('\n')}
       profile: profileSummary.profile.name,
       grafanaCloudConfigured: credentialSummary.grafanaCloud.configured,
       alertmanagerConfigured: credentialSummary.alertmanager.configuredKeys.length > 0,
+      externalSecretPolicy:
+        secretMode === 'external-secret'
+          ? {
+            storeKind: externalSecretStoreKind,
+            refreshInterval: externalSecretRefreshInterval,
+            creationPolicy: externalSecretCreationPolicy,
+            deletionPolicy: externalSecretDeletionPolicy ?? null,
+          }
+          : null,
       resources,
       retention: profileSummary.retention,
     };

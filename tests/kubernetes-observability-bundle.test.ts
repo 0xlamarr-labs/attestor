@@ -33,6 +33,7 @@ function main(): void {
   const externalGrafanaSecret = read('ops/kubernetes/observability/providers/external-secrets/grafana-cloud-external-secret.yaml');
   const externalAlertSecret = read('ops/kubernetes/observability/providers/external-secrets/alertmanager-routing-external-secret.yaml');
   const releaseBundleScript = read('scripts/render-observability-release-bundle.ts');
+  const releaseInputProbeScript = read('scripts/probe-observability-release-inputs.ts');
 
   ok(kustomization.includes('configmap.yaml') && kustomization.includes('deployment.yaml'), 'Kubernetes observability bundle: kustomization includes core resources');
   ok(readme.includes('gateway deployment pattern') && readme.includes('kubectl apply -k ops/kubernetes/observability'), 'Kubernetes observability bundle: README documents gateway rollout');
@@ -53,9 +54,10 @@ function main(): void {
   ok(grafanaCloudConfigPatch.includes('basicauth/grafana_cloud') && grafanaCloudConfigPatch.includes('authenticator: basicauth/grafana_cloud'), 'Kubernetes observability bundle: Grafana Cloud overlay routes all signals through managed OTLP basicauth');
   ok(externalSecretsReadme.includes('ExternalSecret') && externalSecretsReadme.includes('attestor-alertmanager-routing'), 'Kubernetes observability bundle: external-secrets README documents collector and alertmanager secret sync');
   ok(externalSecretsKustomization.includes('grafana-cloud-external-secret.yaml') && externalSecretsKustomization.includes('alertmanager-routing-external-secret.yaml'), 'Kubernetes observability bundle: external-secrets overlay includes both secret resources');
-  ok(externalGrafanaSecret.includes('grafana-cloud-otlp-token') && externalGrafanaSecret.includes('ClusterSecretStore'), 'Kubernetes observability bundle: external-secrets overlay syncs Grafana Cloud credentials');
-  ok(externalAlertSecret.includes('ALERTMANAGER_DEFAULT_WEBHOOK_URL') && externalAlertSecret.includes('ALERTMANAGER_PRODUCTION_MODE'), 'Kubernetes observability bundle: external-secrets overlay syncs Alertmanager routing credentials');
+  ok(externalGrafanaSecret.includes('grafana-cloud-otlp-token') && externalGrafanaSecret.includes('ClusterSecretStore') && externalGrafanaSecret.includes('refreshInterval: 1h') && externalGrafanaSecret.includes('creationPolicy: Owner'), 'Kubernetes observability bundle: external-secrets overlay syncs Grafana Cloud credentials with explicit lifecycle defaults');
+  ok(externalAlertSecret.includes('ALERTMANAGER_DEFAULT_WEBHOOK_URL') && externalAlertSecret.includes('ALERTMANAGER_PRODUCTION_MODE') && externalAlertSecret.includes('refreshInterval: 1h') && externalAlertSecret.includes('creationPolicy: Owner'), 'Kubernetes observability bundle: external-secrets overlay syncs Alertmanager routing credentials with explicit lifecycle defaults');
   ok(releaseBundleScript.includes('grafana-cloud.external-secret.yaml') && releaseBundleScript.includes('alertmanager.generated.yml'), 'Kubernetes observability bundle: release bundle renderer emits gateway resources plus rendered alert routing artifacts');
+  ok(releaseInputProbeScript.includes('render-observability-release-bundle.ts') && releaseInputProbeScript.includes('probeObservabilityReceivers') && releaseInputProbeScript.includes('ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE'), 'Kubernetes observability bundle: release input probe validates managed secret wiring and final rollout chain');
 
   console.log(`\nKubernetes observability bundle tests: ${passed} passed, 0 failed`);
 }

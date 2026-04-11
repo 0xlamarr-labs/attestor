@@ -92,6 +92,10 @@ function main(): void {
           ALERTMANAGER_PRODUCTION_MODE: 'true',
           ATTESTOR_OBSERVABILITY_SECRET_MODE: 'external-secret',
           ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE: 'corp-secrets',
+          ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND: 'ClusterSecretStore',
+          ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_REFRESH_INTERVAL: '15m',
+          ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_CREATION_POLICY: 'Owner',
+          ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_DELETION_POLICY: 'Retain',
           ATTESTOR_OBSERVABILITY_NAMESPACE: 'obs-prod',
         },
       },
@@ -102,10 +106,12 @@ function main(): void {
     const externalGrafanaSecret = readFileSync(resolve(externalOut, 'grafana-cloud.external-secret.yaml'), 'utf8');
     const externalAlertSecret = readFileSync(resolve(externalOut, 'alertmanager-routing.external-secret.yaml'), 'utf8');
     const externalNamespace = readFileSync(resolve(externalOut, 'namespace.yaml'), 'utf8');
+    const externalSummary = JSON.parse(readFileSync(resolve(externalOut, 'summary.json'), 'utf8')) as any;
     ok(externalKustomization.includes('grafana-cloud.external-secret.yaml') && externalKustomization.includes('alertmanager-routing.external-secret.yaml'), 'Observability release bundle: external-secret mode includes ExternalSecret resources');
-    ok(externalGrafanaSecret.includes('name: corp-secrets') && externalGrafanaSecret.includes('namespace: obs-prod'), 'Observability release bundle: Grafana Cloud ExternalSecret rewires secret store and namespace');
-    ok(externalAlertSecret.includes('name: corp-secrets') && externalAlertSecret.includes('namespace: obs-prod'), 'Observability release bundle: Alertmanager ExternalSecret rewires secret store and namespace');
+    ok(externalGrafanaSecret.includes('name: corp-secrets') && externalGrafanaSecret.includes('namespace: obs-prod') && externalGrafanaSecret.includes('refreshInterval: 15m') && externalGrafanaSecret.includes('deletionPolicy: Retain'), 'Observability release bundle: Grafana Cloud ExternalSecret rewires secret store, namespace, and lifecycle policy');
+    ok(externalAlertSecret.includes('name: corp-secrets') && externalAlertSecret.includes('namespace: obs-prod') && externalAlertSecret.includes('refreshInterval: 15m') && externalAlertSecret.includes('deletionPolicy: Retain'), 'Observability release bundle: Alertmanager ExternalSecret rewires secret store, namespace, and lifecycle policy');
     ok(externalNamespace.includes('name: obs-prod'), 'Observability release bundle: namespace resource is rewritten');
+    ok(externalSummary.externalSecretPolicy.refreshInterval === '15m' && externalSummary.externalSecretPolicy.deletionPolicy === 'Retain', 'Observability release bundle: summary captures external secret lifecycle policy');
 
     console.log(`\nObservability release bundle render tests: ${passed} passed, 0 failed`);
   } finally {
