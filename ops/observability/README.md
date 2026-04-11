@@ -58,8 +58,15 @@ Profile-driven SLO / retention tuning:
 
 - `npm run benchmark:observability -- --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
 - captures real Prometheus request-rate / availability / p95-latency data plus optional Alertmanager alert counts into `benchmark.json`
-- `npm run render:observability-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/observability/profiles/regulated-production.json`
+- `npm run render:observability-profile -- --input=.attestor/observability/calibration/latest/benchmark.json --profile=ops/observability/profiles/regulated-production.json`
 - shipped profiles live under `ops/observability/profiles/`
+
+Rollout-near receiver probe:
+
+- `npm run probe:observability-receivers -- --prometheus-url=http://127.0.0.1:9090 --alertmanager-url=http://127.0.0.1:9093`
+- emits real OTLP trace/log/metric traffic through the configured exporter env
+- forces a telemetry flush
+- verifies Prometheus and Alertmanager API auth against the configured endpoints
 
 Managed collector rollout:
 

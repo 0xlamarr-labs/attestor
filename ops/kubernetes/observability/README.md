@@ -63,3 +63,14 @@ That release bundle composes:
 - rendered secret or `ExternalSecret` resources
 - rendered Alertmanager routing config
 - rendered SLO/rule/retention artifacts from the selected benchmark profile
+
+Before calling the managed backend wiring production-ready, a rollout-near probe is also available:
+
+- `npm run probe:observability-receivers -- --prometheus-url=<url> --alertmanager-url=<url>`
+
+That probe:
+
+- emits real OTLP trace/log/metric traffic through the configured exporter env
+- forces a telemetry flush
+- checks Prometheus API auth with a lightweight instant query
+- checks Alertmanager API auth with an alerts listing call
