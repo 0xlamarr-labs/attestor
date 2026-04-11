@@ -10,7 +10,7 @@
  * - One account membership per email in this first slice
  * - Passwords and recovery codes use built-in scrypt (memory-hard) instead of Argon2id
  * - Invite and password-reset flows exist, with manual or SMTP delivery handled elsewhere
- * - TOTP MFA, hosted OIDC SSO, and WebAuthn/passkeys first slices are shipped; SAML is not
+ * - TOTP MFA, hosted OIDC SSO, hosted SAML SSO, and WebAuthn/passkeys first slices are shipped
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -71,6 +71,20 @@ export interface AccountUserOidcState {
   identities: AccountUserOidcIdentityRecord[];
 }
 
+export interface AccountUserSamlIdentityRecord {
+  id: string;
+  issuer: string;
+  subject: string;
+  email: string | null;
+  nameIdFormat: string | null;
+  linkedAt: string;
+  lastLoginAt: string | null;
+}
+
+export interface AccountUserSamlState {
+  identities: AccountUserSamlIdentityRecord[];
+}
+
 export type AccountUserPasskeyTransport =
   | 'ble'
   | 'cable'
@@ -107,6 +121,7 @@ export interface AccountUserMfaState {
 
 export interface AccountUserFederationState {
   oidc: AccountUserOidcState;
+  saml: AccountUserSamlState;
 }
 
 export interface AccountUserRecord {
@@ -227,6 +242,9 @@ export function defaultAccountUserFederationState(): AccountUserFederationState 
     oidc: {
       identities: [],
     },
+    saml: {
+      identities: [],
+    },
   };
 }
 
@@ -239,6 +257,7 @@ function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
   const rawPasskeys = (record as Partial<AccountUserRecord>).passkeys;
   const rawFederation = (record as Partial<AccountUserRecord>).federation;
   const rawOidc = rawFederation?.oidc;
+  const rawSaml = rawFederation?.saml;
   return {
     ...record,
     passwordUpdatedAt: record.passwordUpdatedAt ?? record.updatedAt ?? record.createdAt,
@@ -294,6 +313,25 @@ function normalizeRecord(record: AccountUserRecord): AccountUserRecord {
               issuer: String(entry.issuer ?? '').trim(),
               subject: String(entry.subject ?? '').trim(),
               email: typeof entry.email === 'string' ? normalizeEmail(entry.email) : null,
+              linkedAt: String(entry.linkedAt),
+              lastLoginAt: entry.lastLoginAt ?? null,
+            }))
+            .filter((entry) => entry.issuer && entry.subject && entry.linkedAt)
+          : [],
+      },
+      saml: {
+        ...federationDefaults.saml,
+        ...(rawSaml ?? {}),
+        identities: Array.isArray(rawSaml?.identities)
+          ? rawSaml.identities
+            .map((entry) => ({
+              id: String(entry.id),
+              issuer: String(entry.issuer ?? '').trim(),
+              subject: String(entry.subject ?? '').trim(),
+              email: typeof entry.email === 'string' ? normalizeEmail(entry.email) : null,
+              nameIdFormat: typeof entry.nameIdFormat === 'string' && entry.nameIdFormat.trim()
+                ? entry.nameIdFormat.trim()
+                : null,
               linkedAt: String(entry.linkedAt),
               lastLoginAt: entry.lastLoginAt ?? null,
             }))
@@ -477,6 +515,18 @@ export function findAccountUserByOidcIdentity(issuer: string, subject: string): 
   const store = loadStore();
   const record = store.records.find((entry) =>
     entry.federation?.oidc?.identities?.some((identity) =>
+      identity.issuer.trim().replace(/\/+$/, '') === normalizedIssuer
+      && identity.subject.trim() === normalizedSubject)) ?? null;
+  return record ? normalizeRecord(record) : null;
+}
+
+export function findAccountUserBySamlIdentity(issuer: string, subject: string): AccountUserRecord | null {
+  const normalizedIssuer = issuer.trim().replace(/\/+$/, '');
+  const normalizedSubject = subject.trim();
+  if (!normalizedIssuer || !normalizedSubject) return null;
+  const store = loadStore();
+  const record = store.records.find((entry) =>
+    entry.federation?.saml?.identities?.some((identity) =>
       identity.issuer.trim().replace(/\/+$/, '') === normalizedIssuer
       && identity.subject.trim() === normalizedSubject)) ?? null;
   return record ? normalizeRecord(record) : null;

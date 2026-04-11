@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: attestor-otel-gateway
+  namespace: attestor-observability
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: attestor-otel-gateway

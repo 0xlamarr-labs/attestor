@@ -317,6 +317,7 @@ export interface AccountFeatureRecord {
     | 'billing.reconciliation'
     | 'async.pipeline'
     | 'iam.oidc_sso'
+    | 'iam.saml_sso'
     | 'healthcare.validation';
   displayName: string;
   description: string;
@@ -363,6 +364,9 @@ export interface AccountUserFederationSummaryView {
   oidcLinked: boolean;
   oidcIdentityCount: number;
   lastOidcLoginAt: string | null;
+  samlLinked: boolean;
+  samlIdentityCount: number;
+  lastSamlLoginAt: string | null;
 }
 
 export interface AccountUserPasskeySummaryView {
@@ -449,7 +453,9 @@ export interface AccountInviteUserResponse {
   invite: AccountUserActionTokenRecordView;
   inviteToken?: string | null;
   delivery: {
+    deliveryId: string;
     mode: 'manual' | 'smtp';
+    provider: 'manual' | 'smtp' | 'sendgrid_smtp';
     channel: 'api_response' | 'smtp';
     delivered: boolean;
     recipient: string;
@@ -487,7 +493,9 @@ export interface AccountIssuePasswordResetResponse {
   reset: AccountUserActionTokenRecordView;
   resetToken?: string | null;
   delivery: {
+    deliveryId: string;
     mode: 'manual' | 'smtp';
+    provider: 'manual' | 'smtp' | 'sendgrid_smtp';
     channel: 'api_response' | 'smtp';
     delivered: boolean;
     recipient: string;
@@ -506,10 +514,21 @@ export interface AuthOidcLoginRequest {
   email?: string;
 }
 
+export interface AuthSamlLoginRequest {
+  email?: string;
+}
+
 export interface AuthOidcUpstreamView {
   provider: 'oidc';
   issuer: string;
   subject: string;
+}
+
+export interface AuthSamlUpstreamView {
+  provider: 'saml';
+  issuer: string;
+  subject: string;
+  nameId: string;
 }
 
 export interface AuthPasskeyUpstreamView {
@@ -517,7 +536,7 @@ export interface AuthPasskeyUpstreamView {
   credentialId: string;
 }
 
-export type AuthUpstreamAuthView = AuthOidcUpstreamView | AuthPasskeyUpstreamView;
+export type AuthUpstreamAuthView = AuthOidcUpstreamView | AuthSamlUpstreamView | AuthPasskeyUpstreamView;
 
 export interface AuthLoginResponse {
   session: {
@@ -552,6 +571,18 @@ export interface AuthOidcLoginResponse {
     redirectUrl: string;
     scopes: string[];
     authorizationUrl: string;
+    expiresAt: string;
+  };
+}
+
+export interface AuthSamlLoginResponse {
+  authorization: {
+    mode: 'sp_initiated_redirect';
+    entityId: string;
+    metadataUrl: string;
+    acsUrl: string;
+    authorizationUrl: string;
+    requestId: string;
     expiresAt: string;
   };
 }
@@ -715,6 +746,25 @@ export interface AccountOidcSummaryResponse {
   };
 }
 
+export interface AccountSamlSummaryResponse {
+  saml: {
+    configured: boolean;
+    entityId: string | null;
+    metadataUrl: string | null;
+    acsUrl: string | null;
+    authnRequestsSigned: boolean;
+    identities: Array<{
+      id: string;
+      issuer: string;
+      subject: string;
+      email: string | null;
+      nameIdFormat: string | null;
+      linkedAt: string;
+      lastLoginAt: string | null;
+    }>;
+  };
+}
+
 export interface AccountMfaTotpEnrollRequest {
   password: string;
 }
@@ -767,6 +817,69 @@ export interface AccountMfaDisableResponse {
 
 export interface AccountBillingCheckoutRequest {
   planId: 'starter' | 'pro' | 'enterprise';
+}
+
+export interface EmailDeliveryRecordView {
+  deliveryId: string;
+  accountId: string | null;
+  accountUserId: string | null;
+  purpose: 'invite' | 'password_reset' | null;
+  provider: 'manual' | 'smtp' | 'sendgrid_smtp';
+  channel: 'api_response' | 'smtp';
+  recipient: string;
+  messageId: string | null;
+  providerMessageId: string | null;
+  actionUrl: string | null;
+  tokenReturned: boolean;
+  status: 'manual_delivered' | 'smtp_sent' | 'processed' | 'delivered' | 'deferred' | 'bounced' | 'dropped' | 'failed' | 'unknown';
+  latestEventType: string | null;
+  latestEventAt: string | null;
+  sentAt: string | null;
+  deliveredAt: string | null;
+  deferredAt: string | null;
+  failedAt: string | null;
+  firstOpenedAt: string | null;
+  lastClickedAt: string | null;
+  opened: boolean;
+  clicked: boolean;
+  unsubscribed: boolean;
+  spamReported: boolean;
+  failureReason: string | null;
+  eventCount: number;
+}
+
+export interface AccountEmailDeliveriesResponse {
+  accountId: string;
+  records: EmailDeliveryRecordView[];
+  summary: {
+    purposeFilter: 'invite' | 'password_reset' | null;
+    statusFilter: EmailDeliveryRecordView['status'] | null;
+    providerFilter: EmailDeliveryRecordView['provider'] | null;
+    recipientFilter: string | null;
+    recordCount: number;
+  };
+}
+
+export interface AdminEmailDeliveriesResponse {
+  records: EmailDeliveryRecordView[];
+  summary: {
+    accountFilter: string | null;
+    purposeFilter: 'invite' | 'password_reset' | null;
+    statusFilter: EmailDeliveryRecordView['status'] | null;
+    providerFilter: EmailDeliveryRecordView['provider'] | null;
+    recipientFilter: string | null;
+    recordCount: number;
+  };
+}
+
+export interface SendGridWebhookResponse {
+  received: true;
+  provider: 'sendgrid_smtp';
+  eventCount: number;
+  applied: number;
+  duplicate: number;
+  ignored: number;
+  conflict: number;
 }
 
 export interface AccountBillingCheckoutResponse {
@@ -1381,7 +1494,9 @@ export const API_ROUTES = {
   ACCOUNT_USAGE: '/api/v1/account/usage',
   ACCOUNT_SUMMARY: '/api/v1/account',
   ACCOUNT_FEATURES: '/api/v1/account/features',
+  ACCOUNT_EMAIL_DELIVERIES: '/api/v1/account/email/deliveries',
   ACCOUNT_OIDC: '/api/v1/account/oidc',
+  ACCOUNT_SAML: '/api/v1/account/saml',
   ACCOUNT_PASSKEYS: '/api/v1/account/passkeys',
   ACCOUNT_PASSKEYS_REGISTER_OPTIONS: '/api/v1/account/passkeys/register/options',
   ACCOUNT_PASSKEYS_REGISTER_VERIFY: '/api/v1/account/passkeys/register/verify',
@@ -1391,6 +1506,7 @@ export const API_ROUTES = {
   ACCOUNT_BILLING_EXPORT: '/api/v1/account/billing/export',
   ACCOUNT_BILLING_RECONCILIATION: '/api/v1/account/billing/reconciliation',
   ADMIN_ACCOUNTS: '/api/v1/admin/accounts',
+  ADMIN_EMAIL_DELIVERIES: '/api/v1/admin/email/deliveries',
   ADMIN_ACCOUNT_FEATURES: '/api/v1/admin/accounts/:id/features',
   ADMIN_ACCOUNT_BILLING_EXPORT: '/api/v1/admin/accounts/:id/billing/export',
   ADMIN_ACCOUNT_BILLING_RECONCILIATION: '/api/v1/admin/accounts/:id/billing/reconciliation',
@@ -1416,7 +1532,11 @@ export const API_ROUTES = {
   AUTH_PASSKEY_VERIFY: '/api/v1/auth/passkeys/verify',
   AUTH_OIDC_LOGIN: '/api/v1/auth/oidc/login',
   AUTH_OIDC_CALLBACK: '/api/v1/auth/oidc/callback',
+  AUTH_SAML_METADATA: '/api/v1/auth/saml/metadata',
+  AUTH_SAML_LOGIN: '/api/v1/auth/saml/login',
+  AUTH_SAML_ACS: '/api/v1/auth/saml/acs',
   BILLING_STRIPE_WEBHOOK: '/api/v1/billing/stripe/webhook',
+  EMAIL_SENDGRID_WEBHOOK: '/api/v1/email/sendgrid/webhook',
   HEALTH: '/api/v1/health',
   DOMAINS: '/api/v1/domains',
   CONNECTORS: '/api/v1/connectors',

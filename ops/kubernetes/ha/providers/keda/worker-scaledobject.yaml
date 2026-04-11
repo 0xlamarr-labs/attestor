@@ -1,0 +1,44 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: attestor-worker
+spec:
+  scaleTargetRef:
+    name: attestor-worker
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 16
+  fallback:
+    failureThreshold: 3
+    replicas: 4
+  advanced:
+    restoreToOriginalReplicaCount: true
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          selectPolicy: Max
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 60
+            - type: Pods
+              value: 6
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          selectPolicy: Min
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
+  triggers:
+    - type: redis-lists
+      metadata:
+        listName: bull:attestor-pipeline:wait
+        listLength: "20"
+        activationListLength: "1"
+        enableTLS: "false"
+      authenticationRef:
+        name: attestor-worker-redis

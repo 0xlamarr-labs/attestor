@@ -1,0 +1,22 @@
+{
+  "name": "lean-production",
+  "description": "Cost-aware production defaults with shorter retention and the same SLO math.",
+  "slo": {
+    "availabilityTarget": 0.995,
+    "latencyP95Ms": 500,
+    "latencySuccessTarget": 0.95
+  },
+  "alerts": {
+    "fastBurnRate": 10,
+    "slowBurnRate": 2,
+    "criticalForMinutes": 5,
+    "warningForMinutes": 30,
+    "repeatIntervalMinutes": 240
+  },
+  "retention": {
+    "prometheusDays": 15,
+    "prometheusSizeGb": 4,
+    "lokiHours": 336,
+    "tempoHours": 336
+  }
+}

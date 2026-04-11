@@ -166,6 +166,7 @@ export function tenantMiddleware() {
     if (
       c.req.path.startsWith('/api/v1/admin/') ||
       c.req.path === '/api/v1/billing/stripe/webhook' ||
+      c.req.path === '/api/v1/email/sendgrid/webhook' ||
       c.req.path === '/api/v1/health' ||
       c.req.path === '/api/v1/ready' ||
       c.req.path === '/api/v1/domains' ||

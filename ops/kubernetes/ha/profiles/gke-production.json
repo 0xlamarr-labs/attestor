@@ -1,0 +1,42 @@
+{
+  "name": "gke-production",
+  "provider": "gke",
+  "description": "Gateway/GCLB production profile for managed GKE rollouts with KEDA-backed autoscaling.",
+  "slo": {
+    "p95LatencyMs": 700,
+    "availabilityTarget": 0.995
+  },
+  "api": {
+    "thresholdMultiplier": 1,
+    "minThreshold": 8,
+    "maxThreshold": 180,
+    "activationRatio": 0.2,
+    "minActivationThreshold": 2,
+    "pollingIntervalSeconds": 15,
+    "cooldownPeriodSeconds": 180,
+    "minReplicaCount": 2,
+    "maxReplicaCount": 14,
+    "fallbackReplicas": 4
+  },
+  "worker": {
+    "thresholdMultiplier": 1,
+    "minThreshold": 10,
+    "maxThreshold": 320,
+    "activationRatio": 0.15,
+    "minActivationThreshold": 1,
+    "pollingIntervalSeconds": 10,
+    "cooldownPeriodSeconds": 180,
+    "minReplicaCount": 2,
+    "maxReplicaCount": 18,
+    "fallbackReplicas": 4
+  },
+  "gke": {
+    "timeoutMinSeconds": 30,
+    "timeoutMaxSeconds": 180,
+    "timeoutLatencyMultiplier": 6,
+    "drainingMinSeconds": 60,
+    "drainingMaxSeconds": 300,
+    "drainingLatencyMultiplier": 12,
+    "loggingSampleRate": 1000000
+  }
+}

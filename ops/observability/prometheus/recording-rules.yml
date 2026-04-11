@@ -1,0 +1,80 @@
+groups:
+  - name: attestor-slo-recording
+    rules:
+      - record: attestor:slo_api_requests:rate5m
+        expr: sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[5m]))
+
+      - record: attestor:slo_api_error_ratio:5m
+        expr: |
+          sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)",status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[5m])), 0.001)
+
+      - record: attestor:slo_api_error_ratio:1h
+        expr: |
+          sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)",status_code=~"5.."}[1h]))
+          /
+          clamp_min(sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[1h])), 0.001)
+
+      - record: attestor:slo_api_error_ratio:6h
+        expr: |
+          sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)",status_code=~"5.."}[6h]))
+          /
+          clamp_min(sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[6h])), 0.001)
+
+      - record: attestor:slo_api_error_ratio:24h
+        expr: |
+          sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)",status_code=~"5.."}[24h]))
+          /
+          clamp_min(sum(rate(attestor_http_requests_total{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[24h])), 0.001)
+
+      - record: attestor:slo_api_availability_burn_rate:5m
+        expr: attestor:slo_api_error_ratio:5m / 0.005
+
+      - record: attestor:slo_api_availability_burn_rate:1h
+        expr: attestor:slo_api_error_ratio:1h / 0.005
+
+      - record: attestor:slo_api_availability_burn_rate:6h
+        expr: attestor:slo_api_error_ratio:6h / 0.005
+
+      - record: attestor:slo_api_availability_burn_rate:24h
+        expr: attestor:slo_api_error_ratio:24h / 0.005
+
+      - record: attestor:slo_api_latency_good_ratio:5m
+        expr: |
+          sum(rate(attestor_http_request_duration_seconds_bucket{route!~"/api/v1/(metrics|admin/metrics|health|ready)",le="0.5"}[5m]))
+          /
+          clamp_min(sum(rate(attestor_http_request_duration_seconds_count{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[5m])), 0.001)
+
+      - record: attestor:slo_api_latency_good_ratio:1h
+        expr: |
+          sum(rate(attestor_http_request_duration_seconds_bucket{route!~"/api/v1/(metrics|admin/metrics|health|ready)",le="0.5"}[1h]))
+          /
+          clamp_min(sum(rate(attestor_http_request_duration_seconds_count{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[1h])), 0.001)
+
+      - record: attestor:slo_api_latency_good_ratio:6h
+        expr: |
+          sum(rate(attestor_http_request_duration_seconds_bucket{route!~"/api/v1/(metrics|admin/metrics|health|ready)",le="0.5"}[6h]))
+          /
+          clamp_min(sum(rate(attestor_http_request_duration_seconds_count{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[6h])), 0.001)
+
+      - record: attestor:slo_api_latency_good_ratio:24h
+        expr: |
+          sum(rate(attestor_http_request_duration_seconds_bucket{route!~"/api/v1/(metrics|admin/metrics|health|ready)",le="0.5"}[24h]))
+          /
+          clamp_min(sum(rate(attestor_http_request_duration_seconds_count{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[24h])), 0.001)
+
+      - record: attestor:slo_api_latency_burn_rate:5m
+        expr: (1 - attestor:slo_api_latency_good_ratio:5m) / 0.05
+
+      - record: attestor:slo_api_latency_burn_rate:1h
+        expr: (1 - attestor:slo_api_latency_good_ratio:1h) / 0.05
+
+      - record: attestor:slo_api_latency_burn_rate:6h
+        expr: (1 - attestor:slo_api_latency_good_ratio:6h) / 0.05
+
+      - record: attestor:slo_api_latency_burn_rate:24h
+        expr: (1 - attestor:slo_api_latency_good_ratio:24h) / 0.05
+
+      - record: attestor:slo_api_latency_p95:5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(attestor_http_request_duration_seconds_bucket{route!~"/api/v1/(metrics|admin/metrics|health|ready)"}[5m])))

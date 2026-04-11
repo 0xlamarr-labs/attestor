@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: attestor-otel-gateway-config
+  namespace: attestor-observability
+data:
+  collector-config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+        spike_limit_mib: 128
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.node.name
+            - k8s.deployment.name
+      resourcedetection:
+        detectors: [env, system]
+        timeout: 2s
+        override: false
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+    exporters:
+      otlphttp/grafana_cloud:
+        endpoint: ${GRAFANA_CLOUD_OTLP_ENDPOINT}
+        headers:
+          Authorization: ${GRAFANA_CLOUD_OTLP_AUTH_HEADER}
+      prometheus:
+        endpoint: 0.0.0.0:8889
+        resource_to_telemetry_conversion:
+          enabled: true
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp/grafana_cloud]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp/grafana_cloud, prometheus]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlphttp/grafana_cloud]

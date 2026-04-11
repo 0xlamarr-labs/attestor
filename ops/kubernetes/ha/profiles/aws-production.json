@@ -1,0 +1,48 @@
+{
+  "name": "aws-production",
+  "provider": "aws",
+  "description": "Public ALB production profile for steady hosted API traffic with KEDA-backed autoscaling.",
+  "slo": {
+    "p95LatencyMs": 750,
+    "availabilityTarget": 0.995
+  },
+  "api": {
+    "thresholdMultiplier": 1,
+    "minThreshold": 8,
+    "maxThreshold": 200,
+    "activationRatio": 0.2,
+    "minActivationThreshold": 2,
+    "pollingIntervalSeconds": 15,
+    "cooldownPeriodSeconds": 180,
+    "minReplicaCount": 2,
+    "maxReplicaCount": 16,
+    "fallbackReplicas": 4
+  },
+  "worker": {
+    "thresholdMultiplier": 1,
+    "minThreshold": 10,
+    "maxThreshold": 400,
+    "activationRatio": 0.15,
+    "minActivationThreshold": 1,
+    "pollingIntervalSeconds": 10,
+    "cooldownPeriodSeconds": 180,
+    "minReplicaCount": 2,
+    "maxReplicaCount": 20,
+    "fallbackReplicas": 4
+  },
+  "aws": {
+    "healthcheckIntervalSeconds": 15,
+    "healthcheckTimeoutSeconds": 5,
+    "healthyThresholdCount": 2,
+    "unhealthyThresholdCount": 3,
+    "idleTimeoutMinSeconds": 60,
+    "idleTimeoutMaxSeconds": 300,
+    "idleTimeoutLatencyMultiplier": 8,
+    "deregistrationDelayMinSeconds": 30,
+    "deregistrationDelayMaxSeconds": 180,
+    "deregistrationDelayLatencyMultiplier": 12,
+    "slowStartMinSeconds": 30,
+    "slowStartMaxSeconds": 180,
+    "slowStartLatencyMultiplier": 10
+  }
+}

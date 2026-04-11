@@ -4,6 +4,7 @@ global:
 
 rule_files:
   - /etc/prometheus/alerts.yml
+  - /etc/prometheus/recording-rules.yml
 
 alerting:
   alertmanagers:
@@ -25,3 +26,18 @@ scrape_configs:
     static_configs:
       - targets:
           - otel-collector:8889
+
+  - job_name: alertmanager
+    static_configs:
+      - targets:
+          - alertmanager:9093
+
+  - job_name: loki
+    static_configs:
+      - targets:
+          - loki:3100
+
+  - job_name: tempo
+    static_configs:
+      - targets:
+          - tempo:3200

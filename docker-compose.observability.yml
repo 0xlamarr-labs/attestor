@@ -34,10 +34,14 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${ATTESTOR_OBSERVABILITY_PROMETHEUS_RETENTION_TIME:-15d}
+      - --storage.tsdb.retention.size=${ATTESTOR_OBSERVABILITY_PROMETHEUS_RETENTION_SIZE:-4GB}
       - --web.enable-lifecycle
+      - --web.enable-remote-write-receiver
     volumes:
       - ./ops/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./ops/observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./ops/observability/prometheus/recording-rules.yml:/etc/prometheus/recording-rules.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
@@ -46,16 +50,37 @@ services:
       - otel-collector
       - alertmanager
 
+  alertmanager-config-renderer:
+    image: node:22-alpine
+    working_dir: /workspace
+    command: ["node", "scripts/render-alertmanager-config.mjs", "/generated/alertmanager.yml"]
+    restart: "no"
+    environment:
+      ALERTMANAGER_DEFAULT_WEBHOOK_URL: ${ALERTMANAGER_DEFAULT_WEBHOOK_URL:-}
+      ALERTMANAGER_CRITICAL_WEBHOOK_URL: ${ALERTMANAGER_CRITICAL_WEBHOOK_URL:-}
+      ALERTMANAGER_WARNING_WEBHOOK_URL: ${ALERTMANAGER_WARNING_WEBHOOK_URL:-}
+      ALERTMANAGER_EMAIL_TO: ${ALERTMANAGER_EMAIL_TO:-}
+      ALERTMANAGER_EMAIL_FROM: ${ALERTMANAGER_EMAIL_FROM:-}
+      ALERTMANAGER_SMARTHOST: ${ALERTMANAGER_SMARTHOST:-}
+      ALERTMANAGER_SMTP_AUTH_USERNAME: ${ALERTMANAGER_SMTP_AUTH_USERNAME:-}
+      ALERTMANAGER_SMTP_AUTH_PASSWORD: ${ALERTMANAGER_SMTP_AUTH_PASSWORD:-}
+    volumes:
+      - .:/workspace:ro
+      - alertmanager-config:/generated
+
   alertmanager:
     image: prom/alertmanager:latest
     command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-      - --storage.path=/alertmanager
+      - sh
+      - -c
+      - until [ -f /etc/alertmanager/generated/alertmanager.yml ]; do sleep 0.2; done; exec /bin/alertmanager --config.file=/etc/alertmanager/generated/alertmanager.yml --storage.path=/alertmanager
     volumes:
-      - ./ops/observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-config:/etc/alertmanager/generated:ro
       - alertmanager-data:/alertmanager
     ports:
       - "9093:9093"
+    depends_on:
+      - alertmanager-config-renderer
 
   loki:
     image: grafana/loki:latest
@@ -68,7 +93,10 @@ services:
 
   tempo:
     image: grafana/tempo:latest
-    command: ["-config.file=/etc/tempo/tempo.yml"]
+    command: ["-config.file=/etc/tempo/tempo.yml", "-config.expand-env=true"]
+    environment:
+      ATTESTOR_OBSERVABILITY_TEMPO_RETENTION_PERIOD: ${ATTESTOR_OBSERVABILITY_TEMPO_RETENTION_PERIOD:-336h}
+      ATTESTOR_OBSERVABILITY_TEMPO_METRICS_REMOTE_WRITE_URL: ${ATTESTOR_OBSERVABILITY_TEMPO_METRICS_REMOTE_WRITE_URL:-http://prometheus:9090/api/v1/write}
     volumes:
       - ./ops/observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
       - tempo-data:/var/tempo
@@ -95,6 +123,7 @@ services:
 
 volumes:
   prometheus-data:
+  alertmanager-config:
   alertmanager-data:
   loki-data:
   tempo-data:

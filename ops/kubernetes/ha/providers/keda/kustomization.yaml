@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../
+  - api-scaledobject.yaml
+  - worker-scaledobject.yaml
+  - worker-triggerauthentication.yaml
+patches:
+  - path: patch-remove-api-hpa.yaml
+  - path: patch-remove-worker-hpa.yaml

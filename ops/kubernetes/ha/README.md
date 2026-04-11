@@ -25,6 +25,8 @@ The bundle now includes:
 - API startup/readiness/liveness probes
 - worker `/health` + `/ready` probe surface on `ATTESTOR_WORKER_HEALTH_PORT`
 - provider-specific managed LB overlays under `providers/gke` and `providers/aws`
+- optional KEDA overlay under `providers/keda` for workload-aware API and worker scaling
+- calibration profiles under `profiles/` plus a render step that turns benchmark output into environment-specific KEDA and managed LB patch packs
 
 Typical apply flow:
 
@@ -38,3 +40,22 @@ Managed LB overlays:
 
 - `kubectl apply -k ops/kubernetes/ha/providers/gke`
 - `kubectl apply -k ops/kubernetes/ha/providers/aws`
+
+Workload-aware autoscaling overlay:
+
+- `kubectl apply -k ops/kubernetes/ha/providers/keda`
+
+Notes:
+
+- the KEDA overlay replaces the base HPAs with:
+  - Prometheus request-rate scaling for `attestor-api`
+  - Redis waiting-list scaling for `attestor-worker`
+- the GKE overlay now also carries `GCPBackendPolicy` and `GCPGatewayPolicy` placeholders for timeout/draining/Cloud Armor/TLS policy finalization
+- the AWS overlay now carries target-group and load-balancer attributes for safer draining and fairer request distribution
+- cloud secret/certificate wiring overlays now also exist under:
+  - `providers/cert-manager`
+  - `providers/external-secrets`
+- a repeatable local calibration harness is available via:
+  - `npm run benchmark:ha -- --url=http://127.0.0.1:3700/api/v1/health --duration=20 --concurrency=16 --replicas=2`
+- a repeatable tuning render step is available via:
+  - `npm run render:ha-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/kubernetes/ha/profiles/aws-production.json`

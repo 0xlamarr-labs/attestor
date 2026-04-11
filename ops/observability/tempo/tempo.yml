@@ -15,7 +15,27 @@ ingester:
 
 compactor:
   compaction:
-    block_retention: 168h
+    block_retention: ${ATTESTOR_OBSERVABILITY_TEMPO_RETENTION_PERIOD}
+
+metrics_generator:
+  registry:
+    collection_interval: 15s
+    stale_duration: 15m
+    external_labels:
+      source: tempo
+      stack: attestor
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: ${ATTESTOR_OBSERVABILITY_TEMPO_METRICS_REMOTE_WRITE_URL}
+        send_exemplars: true
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors:
+        - service-graphs
+        - span-metrics
 
 storage:
   trace:

@@ -19,6 +19,7 @@ import { resetBillingEventLedgerForTests } from '../src/service/billing-event-le
 import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
 import { resetObservabilityForTests } from '../src/service/observability.js';
 import { resetHostedEmailDeliveryForTests, shutdownHostedEmailDelivery } from '../src/service/email-delivery.js';
+import { resetHostedEmailDeliveryEventStoreForTests } from '../src/service/email-delivery-event-store.js';
 
 let passed = 0;
 
@@ -189,6 +190,7 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = join(workspace, '.attestor', 'async-dlq.json');
     process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(workspace, '.attestor', 'stripe-webhooks.json');
     process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(workspace, '.attestor', 'billing-entitlements.json');
+    process.env.ATTESTOR_EMAIL_DELIVERY_EVENTS_PATH = join(workspace, '.attestor', 'email-delivery-events.json');
     process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(workspace, '.attestor', 'observability.jsonl');
     process.env.ATTESTOR_SESSION_COOKIE_SECURE = 'false';
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
@@ -201,6 +203,7 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_monthly';
     process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_monthly';
     process.env.ATTESTOR_EMAIL_DELIVERY_MODE = 'smtp';
+    process.env.ATTESTOR_EMAIL_PROVIDER = 'smtp';
     process.env.ATTESTOR_EMAIL_FROM = 'Attestor <noreply@attestor.dev>';
     process.env.ATTESTOR_SMTP_HOST = '127.0.0.1';
     process.env.ATTESTOR_SMTP_PORT = String(smtpPort);
@@ -223,6 +226,7 @@ async function main(): Promise<void> {
     await resetBillingEventLedgerForTests();
     resetObservabilityForTests();
     resetHostedEmailDeliveryForTests();
+    resetHostedEmailDeliveryEventStoreForTests();
 
     const base = `http://127.0.0.1:${apiPort}`;
     serverHandle = startServer(apiPort);
@@ -299,6 +303,7 @@ async function main(): Promise<void> {
     ok(inviteRes.status === 201, 'Email Delivery: invite status 201');
     const inviteBody = await inviteRes.json() as any;
     ok(inviteBody.delivery.mode === 'smtp', 'Email Delivery: invite response reports smtp mode');
+    ok(typeof inviteBody.delivery.deliveryId === 'string' && inviteBody.delivery.deliveryId.startsWith('edlv_'), 'Email Delivery: invite response includes delivery id');
     ok(inviteBody.delivery.tokenReturned === false, 'Email Delivery: invite response no longer returns raw token');
     ok(!('inviteToken' in inviteBody), 'Email Delivery: inviteToken omitted in smtp mode');
     ok(String(inviteBody.delivery.actionUrl).startsWith('https://attestor.dev/invite?token='), 'Email Delivery: invite action URL returned');
@@ -335,6 +340,7 @@ async function main(): Promise<void> {
     ok(resetIssueRes.status === 201, 'Email Delivery: password reset issue status 201');
     const resetIssueBody = await resetIssueRes.json() as any;
     ok(resetIssueBody.delivery.mode === 'smtp', 'Email Delivery: reset response reports smtp mode');
+    ok(typeof resetIssueBody.delivery.deliveryId === 'string' && resetIssueBody.delivery.deliveryId.startsWith('edlv_'), 'Email Delivery: reset response includes delivery id');
     ok(resetIssueBody.delivery.tokenReturned === false, 'Email Delivery: reset response omits raw token');
     ok(!('resetToken' in resetIssueBody), 'Email Delivery: resetToken omitted in smtp mode');
     ok(String(resetIssueBody.delivery.actionUrl).startsWith('https://attestor.dev/reset?token='), 'Email Delivery: reset action URL returned');
@@ -389,6 +395,7 @@ async function main(): Promise<void> {
       else process.env[key] = value;
     }
     resetHostedEmailDeliveryForTests();
+    resetHostedEmailDeliveryEventStoreForTests();
     rmSync(workspace, { recursive: true, force: true });
   }
 }

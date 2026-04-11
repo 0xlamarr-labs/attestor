@@ -1,0 +1,22 @@
+{
+  "name": "regulated-production",
+  "description": "Longer retention and stricter alerting defaults for regulated production workloads.",
+  "slo": {
+    "availabilityTarget": 0.995,
+    "latencyP95Ms": 500,
+    "latencySuccessTarget": 0.95
+  },
+  "alerts": {
+    "fastBurnRate": 10,
+    "slowBurnRate": 2,
+    "criticalForMinutes": 5,
+    "warningForMinutes": 30,
+    "repeatIntervalMinutes": 240
+  },
+  "retention": {
+    "prometheusDays": 30,
+    "prometheusSizeGb": 10,
+    "lokiHours": 720,
+    "tempoHours": 720
+  }
+}

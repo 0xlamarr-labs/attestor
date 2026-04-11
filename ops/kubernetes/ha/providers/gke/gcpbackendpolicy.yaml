@@ -1,0 +1,17 @@
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: attestor-api
+spec:
+  default:
+    timeoutSec: 40
+    connectionDraining:
+      drainingTimeoutSec: 60
+    logging:
+      enabled: true
+      sampleRate: 500000
+    securityPolicy: attestor-api-armor-policy
+  targetRef:
+    group: ""
+    kind: Service
+    name: attestor-api

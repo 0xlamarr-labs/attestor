@@ -11,12 +11,26 @@
 
 import nodemailer, { type TransportOptions, type Transporter } from 'nodemailer';
 import type { AccountUserRole } from './account-user-store.js';
+import type { HostedEmailDeliveryProvider } from './email-delivery-event-store.js';
+import {
+  buildHostedEmailDeliveryId,
+} from './email-delivery-event-store.js';
+import {
+  buildSendGridSmtpApiHeader,
+  getSendGridWebhookStatus,
+  resolveHostedEmailProvider,
+} from './sendgrid-email-webhook.js';
+import {
+  controlPlaneStoreMode,
+  recordHostedEmailDispatchEventState,
+} from './control-plane-store.js';
 
 export type HostedEmailDeliveryMode = 'manual' | 'smtp';
 export type HostedEmailDeliveryPurpose = 'invite' | 'password_reset';
 
 export interface HostedEmailDeliveryStatus {
   mode: HostedEmailDeliveryMode;
+  provider: HostedEmailDeliveryProvider;
   configured: boolean;
   from: string | null;
   replyTo: string | null;
@@ -32,10 +46,20 @@ export interface HostedEmailDeliveryStatus {
     inviteBaseUrl: string | null;
     passwordResetBaseUrl: string | null;
   };
+  analytics: {
+    storeMode: 'file' | 'shared_postgres';
+    sendGridWebhook: {
+      configured: boolean;
+      publicKeyConfigured: boolean;
+      maxAgeSeconds: number;
+    };
+  };
 }
 
 export interface HostedEmailDeliverySummary {
+  deliveryId: string;
   mode: HostedEmailDeliveryMode;
+  provider: HostedEmailDeliveryProvider;
   channel: 'api_response' | 'smtp';
   delivered: boolean;
   recipient: string;
@@ -45,6 +69,8 @@ export interface HostedEmailDeliverySummary {
 }
 
 export interface DeliverHostedInviteInput {
+  accountId: string;
+  accountUserId: string | null;
   recipientEmail: string;
   displayName: string;
   role: AccountUserRole;
@@ -53,6 +79,8 @@ export interface DeliverHostedInviteInput {
 }
 
 export interface DeliverHostedPasswordResetInput {
+  accountId: string;
+  accountUserId: string | null;
   recipientEmail: string;
   displayName: string | null;
   accountName: string;
@@ -229,6 +257,8 @@ function getTransporter(config: EmailTransportConfig): Transporter {
 
 async function sendHostedEmail(input: {
   purpose: HostedEmailDeliveryPurpose;
+  accountId: string;
+  accountUserId: string | null;
   to: string;
   subject: string;
   text: string;
@@ -236,21 +266,56 @@ async function sendHostedEmail(input: {
   baseUrl: string | null;
 }): Promise<HostedEmailDeliverySummary> {
   const config = resolveTransportConfig();
+  const provider = resolveHostedEmailProvider(config.mode);
+  const deliveryId = buildHostedEmailDeliveryId();
+  const actionUrl = buildActionUrl(input.baseUrl, input.token);
   if (config.mode !== 'smtp') {
-    return {
+    const summary: HostedEmailDeliverySummary = {
+      deliveryId,
       mode: 'manual',
+      provider,
       channel: 'api_response',
       delivered: true,
       recipient: input.to,
       messageId: null,
-      actionUrl: buildActionUrl(input.baseUrl, input.token),
+      actionUrl,
       tokenReturned: true,
     };
+    await recordHostedEmailDispatchEventState({
+      deliveryId,
+      accountId: input.accountId,
+      accountUserId: input.accountUserId,
+      purpose: input.purpose,
+      provider,
+      channel: summary.channel,
+      recipient: summary.recipient,
+      messageId: summary.messageId,
+      actionUrl: summary.actionUrl,
+      tokenReturned: summary.tokenReturned,
+      metadata: {
+        subject: input.subject,
+      },
+    });
+    return summary;
   }
 
   const required = requireSmtpConfig(config);
   const transporter = getTransporter(required);
-  const actionUrl = buildActionUrl(input.baseUrl, input.token);
+  const headers: Record<string, string | { prepared: true; value: string }> = {
+    'X-Attestor-Delivery-Id': {
+      prepared: true,
+      value: deliveryId,
+    },
+  };
+  if (provider === 'sendgrid_smtp') {
+    headers['X-SMTPAPI'] = {
+      prepared: true,
+      value: JSON.stringify(buildSendGridSmtpApiHeader({
+        deliveryId,
+        purpose: input.purpose,
+      })),
+    };
+  }
   try {
     const info = await transporter.sendMail({
       from: required.from!,
@@ -258,9 +323,12 @@ async function sendHostedEmail(input: {
       to: input.to,
       subject: input.subject,
       text: input.text,
+      headers,
     });
-    return {
+    const summary: HostedEmailDeliverySummary = {
+      deliveryId,
       mode: 'smtp',
+      provider,
       channel: 'smtp',
       delivered: true,
       recipient: input.to,
@@ -268,6 +336,29 @@ async function sendHostedEmail(input: {
       actionUrl,
       tokenReturned: false,
     };
+    await recordHostedEmailDispatchEventState({
+      deliveryId,
+      accountId: input.accountId,
+      accountUserId: input.accountUserId,
+      purpose: input.purpose,
+      provider,
+      channel: summary.channel,
+      recipient: summary.recipient,
+      messageId: summary.messageId,
+      actionUrl: summary.actionUrl,
+      tokenReturned: summary.tokenReturned,
+      metadata: {
+        subject: input.subject,
+        providerHeaders: provider === 'sendgrid_smtp'
+          ? {
+            'X-SMTPAPI': typeof headers['X-SMTPAPI'] === 'string'
+              ? headers['X-SMTPAPI']
+              : headers['X-SMTPAPI']?.value ?? null,
+          }
+          : {},
+      },
+    });
+    return summary;
   } catch (error) {
     throw new HostedEmailDeliveryError('SEND', `SMTP delivery failed for ${input.purpose}.`, error);
   }
@@ -278,6 +369,8 @@ export async function deliverHostedInviteEmail(input: DeliverHostedInviteInput):
   const actionUrl = buildActionUrl(config.inviteBaseUrl, input.token);
   return sendHostedEmail({
     purpose: 'invite',
+    accountId: input.accountId,
+    accountUserId: input.accountUserId,
     to: input.recipientEmail,
     subject: `You're invited to ${input.accountName} on Attestor`,
     text: buildInviteText(input, actionUrl),
@@ -293,6 +386,8 @@ export async function deliverHostedPasswordResetEmail(
   const actionUrl = buildActionUrl(config.passwordResetBaseUrl, input.token);
   return sendHostedEmail({
     purpose: 'password_reset',
+    accountId: input.accountId,
+    accountUserId: input.accountUserId,
     to: input.recipientEmail,
     subject: `Reset your ${input.accountName} Attestor password`,
     text: buildResetText(input, actionUrl),
@@ -303,9 +398,11 @@ export async function deliverHostedPasswordResetEmail(
 
 export function getHostedEmailDeliveryStatus(): HostedEmailDeliveryStatus {
   const config = resolveTransportConfig();
+  const mode = config.mode;
   return {
-    mode: config.mode,
-    configured: config.mode === 'manual' ? true : Boolean(config.from && config.smtpConfigured),
+    mode,
+    provider: resolveHostedEmailProvider(mode),
+    configured: mode === 'manual' ? true : Boolean(config.from && config.smtpConfigured),
     from: config.from,
     replyTo: config.replyTo,
     smtp: {
@@ -319,6 +416,10 @@ export function getHostedEmailDeliveryStatus(): HostedEmailDeliveryStatus {
     links: {
       inviteBaseUrl: config.inviteBaseUrl,
       passwordResetBaseUrl: config.passwordResetBaseUrl,
+    },
+    analytics: {
+      storeMode: controlPlaneStoreMode() === 'postgres' ? 'shared_postgres' : 'file',
+      sendGridWebhook: getSendGridWebhookStatus(),
     },
   };
 }

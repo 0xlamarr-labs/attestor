@@ -1,0 +1,15 @@
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: attestor-worker-redis
+spec:
+  secretTargetRef:
+    - parameter: address
+      name: attestor-runtime-secrets
+      key: redis-address
+    - parameter: password
+      name: attestor-runtime-secrets
+      key: redis-password
+    - parameter: username
+      name: attestor-runtime-secrets
+      key: redis-username

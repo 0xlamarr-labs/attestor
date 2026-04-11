@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: attestor-otel-gateway
+  namespace: attestor-observability
+spec:
+  selector:
+    app: attestor-otel-gateway
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+    - name: metrics
+      port: 8889
+      targetPort: metrics

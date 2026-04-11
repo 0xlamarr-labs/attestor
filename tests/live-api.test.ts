@@ -30,6 +30,7 @@ import { readAsyncDeadLetterStoreSnapshot, resetAsyncDeadLetterStoreForTests } f
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
 import { resetBillingEventLedgerForTests } from '../src/service/billing-event-ledger.js';
 import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
+import { resetHostedEmailDeliveryEventStoreForTests } from '../src/service/email-delivery-event-store.js';
 import { resetObservabilityForTests } from '../src/service/observability.js';
 import { generateCurrentTotpCode } from '../src/service/account-mfa.js';
 import {
@@ -120,11 +121,12 @@ async function run() {
   process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-async-dlq.json');
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-stripe-webhooks.json');
   process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = join(process.cwd(), '.attestor', 'live-api-billing-entitlements.json');
+  process.env.ATTESTOR_EMAIL_DELIVERY_EVENTS_PATH = join(process.cwd(), '.attestor', 'live-api-email-delivery-events.json');
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(process.cwd(), '.attestor', 'live-api-observability.jsonl');
   process.env.ATTESTOR_SESSION_COOKIE_SECURE = 'false';
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-secret';
   process.env.ATTESTOR_METRICS_API_KEY = 'metrics-secret';
-  process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
+process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
   process.env.ATTESTOR_RATE_LIMIT_STARTER_REQUESTS = '3';
   process.env.ATTESTOR_RATE_LIMIT_PRO_REQUESTS = '20';
   process.env.ATTESTOR_ASYNC_PENDING_STARTER_JOBS = '1';
@@ -149,6 +151,7 @@ async function run() {
   resetAsyncDeadLetterStoreForTests();
   resetStripeWebhookStoreForTests();
   resetHostedBillingEntitlementStoreForTests();
+  resetHostedEmailDeliveryEventStoreForTests();
   await resetBillingEventLedgerForTests();
   resetObservabilityForTests();
 
@@ -811,7 +814,7 @@ async function run() {
       ok(plansRes.status === 200, 'Admin Plans: list status 200');
       const plansBody = await plansRes.json() as any;
       ok(plansBody.defaults.hostedProvisioningPlanId === 'starter', 'Admin Plans: hosted default = starter');
-      ok(plansBody.defaults.rateLimitWindowSeconds === 2, 'Admin Plans: rate-limit window override exposed');
+      ok(plansBody.defaults.rateLimitWindowSeconds === 5, 'Admin Plans: rate-limit window override exposed');
       ok(plansBody.defaults.asyncExecutionShared === true, 'Admin Plans: async execution backend reported as shared');
       ok(plansBody.defaults.asyncWeightedDispatchShared === true, 'Admin Plans: async weighted dispatch backend reported as shared');
       const starterPlan = plansBody.plans.find((entry: any) => entry.id === 'starter');
@@ -2552,7 +2555,7 @@ async function run() {
       });
       ok(limitedAsync.status === 429, 'Rate Limit: async route shares tenant window');
 
-      await new Promise((resolve) => setTimeout(resolve, 2200));
+      await new Promise((resolve) => setTimeout(resolve, 5200));
 
       const afterReset = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
@@ -2682,6 +2685,7 @@ async function run() {
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
     resetHostedBillingEntitlementStoreForTests();
+    resetHostedEmailDeliveryEventStoreForTests();
     await resetBillingEventLedgerForTests();
     resetObservabilityForTests();
     serverHandle.close();

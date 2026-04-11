@@ -9,6 +9,7 @@ export type HostedFeatureKey =
   | 'billing.reconciliation'
   | 'async.pipeline'
   | 'iam.oidc_sso'
+  | 'iam.saml_sso'
   | 'healthcare.validation';
 
 export interface HostedFeatureDefinition {
@@ -106,6 +107,15 @@ const FEATURE_CATALOG: HostedFeatureDefinition[] = [
     description: 'Use hosted OIDC authorization-code + PKCE customer sign-in.',
     category: 'identity',
     planIds: ['pro', 'enterprise'],
+    stripeManaged: false,
+    stripeLookupKeysByPlan: {},
+  },
+  {
+    key: 'iam.saml_sso',
+    displayName: 'Hosted SAML SSO',
+    description: 'Use hosted SP-initiated SAML customer sign-in with signed ACS verification.',
+    category: 'identity',
+    planIds: ['enterprise'],
     stripeManaged: false,
     stripeLookupKeysByPlan: {},
   },

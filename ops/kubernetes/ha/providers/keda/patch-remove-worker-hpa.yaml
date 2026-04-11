@@ -1,0 +1,5 @@
+$patch: delete
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: attestor-worker

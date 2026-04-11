@@ -37,6 +37,7 @@ import {
   findAccountUserByEmail as findAccountUserByEmailFile,
   findAccountUserById as findAccountUserByIdFile,
   findAccountUserByOidcIdentity as findAccountUserByOidcIdentityFile,
+  findAccountUserBySamlIdentity as findAccountUserBySamlIdentityFile,
   findAccountUserByPasskeyCredentialId as findAccountUserByPasskeyCredentialIdFile,
   listAccountUsersByAccountId as listAccountUsersByAccountIdFile,
   listAllAccountUsers as listAllAccountUsersFile,
@@ -89,6 +90,10 @@ import {
   type IssueAccountInviteTokenInput,
   type IssuePasswordResetTokenInput,
 } from './account-user-token-store.js';
+import {
+  listHostedSamlReplays as listHostedSamlReplaysFile,
+  recordHostedSamlReplay as recordHostedSamlReplayFile,
+} from './account-saml-replay-store.js';
 import {
   exportHostedBillingEntitlementStoreSnapshot as exportHostedBillingEntitlementStoreSnapshotFile,
   findHostedBillingEntitlementByAccountId as findHostedBillingEntitlementByAccountIdFile,
@@ -155,6 +160,25 @@ import {
   type StripeWebhookRecord,
 } from './stripe-webhook-store.js';
 import {
+  buildHostedEmailDispatchEventRecord,
+  buildHostedEmailProviderEventRecord,
+  exportHostedEmailDeliveryEventStoreSnapshot as exportHostedEmailDeliveryEventStoreSnapshotFile,
+  filterHostedEmailDeliverySummaries,
+  listHostedEmailDeliveries as listHostedEmailDeliveriesFile,
+  normalizeStatus as normalizeHostedEmailDeliveryStatus,
+  recordHostedEmailDispatchEvent as recordHostedEmailDispatchEventFile,
+  recordHostedEmailProviderEvent as recordHostedEmailProviderEventFile,
+  restoreHostedEmailDeliveryEventStoreSnapshot as restoreHostedEmailDeliveryEventStoreSnapshotFile,
+  summarizeHostedEmailDeliveryEvents,
+  type HostedEmailDeliveryEventRecord,
+  type HostedEmailDeliveryProvider,
+  type HostedEmailDeliveryEventStoreSnapshot,
+  type HostedEmailDeliverySummaryRecord,
+  type ListHostedEmailDeliveryFilters,
+  type RecordHostedEmailDispatchEventInput,
+  type RecordHostedEmailProviderEventInput,
+} from './email-delivery-event-store.js';
+import {
   assertTenantKeyRecoveryEnabled,
   recoverSecretEnvelope,
   sealSecretEnvelope,
@@ -170,6 +194,7 @@ import {
 } from './async-dead-letter-store.js';
 import { hashJsonValue } from './json-stable.js';
 import { DEFAULT_HOSTED_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
+import type { HostedSamlReplayRecord } from './account-saml.js';
 
 type PgQueryResultRow = Record<string, unknown>;
 type PgClient = {
@@ -255,6 +280,8 @@ export interface AsyncDeadLetterStoreSnapshot {
   recordCount: number;
   records: AsyncDeadLetterRecord[];
 }
+
+export interface EmailDeliveryEventStoreSnapshot extends HostedEmailDeliveryEventStoreSnapshot {}
 
 let poolPromise: Promise<PgPool> | null = null;
 let initPromise: Promise<void> | null = null;
@@ -441,6 +468,19 @@ async function ensureSchema(): Promise<void> {
           ADD CONSTRAINT account_user_action_tokens_purpose_check
           CHECK (purpose IN ('invite', 'password_reset', 'mfa_login', 'passkey_registration', 'passkey_authentication'));
 
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.account_saml_replays (
+          request_id TEXT PRIMARY KEY,
+          response_id TEXT NULL,
+          issuer TEXT NOT NULL,
+          subject TEXT NOT NULL,
+          consumed_at TIMESTAMPTZ NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS account_saml_replays_expiry_idx
+          ON attestor_control_plane.account_saml_replays (expires_at ASC);
+
         CREATE TABLE IF NOT EXISTS attestor_control_plane.billing_entitlements (
           account_id TEXT PRIMARY KEY REFERENCES attestor_control_plane.hosted_accounts(account_id) ON DELETE CASCADE,
           tenant_id TEXT NOT NULL,
@@ -541,6 +581,39 @@ async function ensureSchema(): Promise<void> {
           ADD CONSTRAINT stripe_webhook_dedupe_outcome_check
           CHECK (outcome IN ('pending', 'applied', 'ignored'));
 
+        CREATE TABLE IF NOT EXISTS attestor_control_plane.email_delivery_events (
+          email_event_id TEXT PRIMARY KEY,
+          delivery_id TEXT NOT NULL,
+          account_id TEXT NULL,
+          account_user_id TEXT NULL,
+          purpose TEXT NULL,
+          provider TEXT NOT NULL,
+          channel TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          message_id TEXT NULL,
+          provider_message_id TEXT NULL,
+          provider_event_id TEXT NULL,
+          event_type TEXT NOT NULL,
+          status_hint TEXT NOT NULL,
+          occurred_at TIMESTAMPTZ NOT NULL,
+          recorded_at TIMESTAMPTZ NOT NULL,
+          payload_hash TEXT NOT NULL,
+          record_json JSONB NOT NULL
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS email_delivery_events_provider_event_uidx
+          ON attestor_control_plane.email_delivery_events (provider, provider_event_id)
+          WHERE provider_event_id IS NOT NULL;
+
+        CREATE INDEX IF NOT EXISTS email_delivery_events_delivery_idx
+          ON attestor_control_plane.email_delivery_events (delivery_id, occurred_at DESC, email_event_id DESC);
+
+        CREATE INDEX IF NOT EXISTS email_delivery_events_account_idx
+          ON attestor_control_plane.email_delivery_events (account_id, recorded_at DESC, email_event_id DESC);
+
+        CREATE INDEX IF NOT EXISTS email_delivery_events_account_user_idx
+          ON attestor_control_plane.email_delivery_events (account_user_id, recorded_at DESC, email_event_id DESC);
+
         CREATE TABLE IF NOT EXISTS attestor_control_plane.async_dead_letter_jobs (
           job_id TEXT PRIMARY KEY,
           backend_mode TEXT NOT NULL CHECK (backend_mode IN ('bullmq', 'in_process')),
@@ -578,6 +651,11 @@ function hashApiKey(apiKey: string): string {
 
 function previewApiKey(apiKey: string): string {
   return `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}`;
+}
+
+function compareIso(left: string, right: string): number {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
 }
 
 function currentPeriod(): string {
@@ -719,11 +797,33 @@ function coerceAccountUserActionTokenRecord(value: unknown): AccountUserActionTo
   return value as AccountUserActionTokenRecord;
 }
 
+function coerceHostedSamlReplayRecord(value: unknown): HostedSamlReplayRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid hosted SAML replay record in shared control-plane store.');
+  }
+  const record = value as HostedSamlReplayRecord;
+  return {
+    requestId: String(record.requestId ?? '').trim(),
+    responseId: typeof record.responseId === 'string' && record.responseId.trim() ? record.responseId.trim() : null,
+    issuer: String(record.issuer ?? '').trim(),
+    subject: String(record.subject ?? '').trim(),
+    consumedAt: String(record.consumedAt ?? ''),
+    expiresAt: String(record.expiresAt ?? ''),
+  };
+}
+
 function coerceAsyncDeadLetterRecord(value: unknown): AsyncDeadLetterRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('Invalid async dead-letter record in shared control-plane store.');
   }
   return normalizeAsyncDeadLetterRecord(value as AsyncDeadLetterRecord);
+}
+
+function coerceHostedEmailDeliveryEventRecord(value: unknown): HostedEmailDeliveryEventRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid hosted email delivery event record in shared control-plane store.');
+  }
+  return value as HostedEmailDeliveryEventRecord;
 }
 
 function rowToHostedAccount(row: PgQueryResultRow): HostedAccountRecord {
@@ -757,6 +857,10 @@ function rowToAccountSession(row: PgQueryResultRow): AccountSessionRecord {
 
 function rowToAccountUserActionToken(row: PgQueryResultRow): AccountUserActionTokenRecord {
   return coerceAccountUserActionTokenRecord(row.record_json);
+}
+
+function rowToHostedSamlReplay(row: PgQueryResultRow): HostedSamlReplayRecord {
+  return coerceHostedSamlReplayRecord(row.record_json);
 }
 
 function touchRecord(record: HostedAccountRecord): void {
@@ -944,6 +1048,10 @@ function rowToAdminIdempotencyRecord(row: PgQueryResultRow): AdminIdempotencyRec
 
 function rowToStripeWebhookRecord(row: PgQueryResultRow): StripeWebhookRecord {
   return row.record_json as StripeWebhookRecord;
+}
+
+function rowToHostedEmailDeliveryEventRecord(row: PgQueryResultRow): HostedEmailDeliveryEventRecord {
+  return coerceHostedEmailDeliveryEventRecord(row.record_json);
 }
 
 function rowToAsyncDeadLetterRecord(row: PgQueryResultRow): AsyncDeadLetterRecord {
@@ -1541,6 +1649,72 @@ async function findAccountUserActionTokenByTokenPg(token: string): Promise<Accou
     return null;
   }
   return record;
+}
+
+async function listHostedSamlReplaysPg(): Promise<HostedSamlReplayRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  await pool.query(
+    `DELETE FROM attestor_control_plane.account_saml_replays
+      WHERE expires_at <= $1::timestamptz`,
+    [new Date().toISOString()],
+  );
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_saml_replays
+      ORDER BY consumed_at DESC, request_id ASC`,
+  );
+  return result.rows.map(rowToHostedSamlReplay);
+}
+
+async function recordHostedSamlReplayPg(
+  record: HostedSamlReplayRecord,
+): Promise<{ duplicate: boolean; record: HostedSamlReplayRecord; existing: HostedSamlReplayRecord | null }> {
+  await ensureSchema();
+  const pool = await getPool();
+  const normalized = coerceHostedSamlReplayRecord(record);
+  await pool.query(
+    `DELETE FROM attestor_control_plane.account_saml_replays
+      WHERE expires_at <= $1::timestamptz`,
+    [new Date().toISOString()],
+  );
+  const insert = await pool.query(
+    `INSERT INTO attestor_control_plane.account_saml_replays (
+      request_id, response_id, issuer, subject, consumed_at, expires_at, record_json
+    ) VALUES (
+      $1, $2, $3, $4, $5::timestamptz, $6::timestamptz, $7::jsonb
+    )
+    ON CONFLICT (request_id) DO NOTHING
+    RETURNING record_json`,
+    [
+      normalized.requestId,
+      normalized.responseId,
+      normalized.issuer,
+      normalized.subject,
+      normalized.consumedAt,
+      normalized.expiresAt,
+      JSON.stringify(normalized),
+    ],
+  );
+  if (insert.rows[0]) {
+    return {
+      duplicate: false,
+      record: normalized,
+      existing: null,
+    };
+  }
+  const existing = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.account_saml_replays
+      WHERE request_id = $1
+      LIMIT 1`,
+    [normalized.requestId],
+  );
+  return {
+    duplicate: true,
+    record: normalized,
+    existing: existing.rows[0] ? rowToHostedSamlReplay(existing.rows[0]) : null,
+  };
 }
 
 export async function listHostedAccountsState(): Promise<{
@@ -2334,6 +2508,20 @@ export async function findAccountUserByOidcIdentityState(
       && identity.subject.trim() === normalizedSubject)) ?? null;
 }
 
+export async function findAccountUserBySamlIdentityState(
+  issuer: string,
+  subject: string,
+): Promise<AccountUserRecord | null> {
+  if (!isSharedControlPlaneConfigured()) return findAccountUserBySamlIdentityFile(issuer, subject);
+  const records = await listAllAccountUsersPg();
+  const normalizedIssuer = issuer.trim().replace(/\/+$/, '');
+  const normalizedSubject = subject.trim();
+  return records.find((record) =>
+    record.federation?.saml?.identities?.some((identity) =>
+      identity.issuer.trim().replace(/\/+$/, '') === normalizedIssuer
+      && identity.subject.trim() === normalizedSubject)) ?? null;
+}
+
 export async function findAccountUserByPasskeyCredentialIdState(
   credentialId: string,
 ): Promise<AccountUserRecord | null> {
@@ -2573,6 +2761,45 @@ export async function findAccountUserActionTokenByTokenState(
 ): Promise<AccountUserActionTokenRecord | null> {
   if (!isSharedControlPlaneConfigured()) return findAccountUserActionTokenByTokenFile(token);
   return findAccountUserActionTokenByTokenPg(token);
+}
+
+export async function recordHostedSamlReplayState(
+  record: HostedSamlReplayRecord,
+): Promise<{
+  duplicate: boolean;
+  record: HostedSamlReplayRecord;
+  existing: HostedSamlReplayRecord | null;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) {
+    const result = recordHostedSamlReplayFile(record);
+    return {
+      ...result,
+      path: result.path,
+    };
+  }
+  const result = await recordHostedSamlReplayPg(record);
+  return {
+    ...result,
+    path: controlPlaneStoreSource(),
+  };
+}
+
+export async function listHostedSamlReplaysState(): Promise<{
+  records: HostedSamlReplayRecord[];
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) {
+    const result = listHostedSamlReplaysFile();
+    return {
+      records: result.records,
+      path: result.path,
+    };
+  }
+  return {
+    records: await listHostedSamlReplaysPg(),
+    path: controlPlaneStoreSource(),
+  };
 }
 
 export async function issueAccountInviteTokenState(
@@ -3303,6 +3530,166 @@ async function removeAsyncDeadLetterRecordPg(
   return { removed: true, record };
 }
 
+async function listHostedEmailDeliveryEventRecordsPg(filters?: {
+  deliveryId?: string | null;
+  accountId?: string | null;
+  accountUserId?: string | null;
+  provider?: HostedEmailDeliveryProvider | null;
+  rawLimit?: number | null;
+}): Promise<HostedEmailDeliveryEventRecord[]> {
+  await ensureSchema();
+  const pool = await getPool();
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (filters?.deliveryId) {
+    params.push(filters.deliveryId);
+    clauses.push(`delivery_id = $${params.length}`);
+  }
+  if (filters?.accountId) {
+    params.push(filters.accountId);
+    clauses.push(`account_id = $${params.length}`);
+  }
+  if (filters?.accountUserId) {
+    params.push(filters.accountUserId);
+    clauses.push(`account_user_id = $${params.length}`);
+  }
+  if (filters?.provider) {
+    params.push(filters.provider);
+    clauses.push(`provider = $${params.length}`);
+  }
+  const rawLimit = Math.max(100, Math.min(5000, filters?.rawLimit ?? 2000));
+  params.push(rawLimit);
+  const result = await pool.query(
+    `SELECT record_json
+       FROM attestor_control_plane.email_delivery_events
+      ${clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : ''}
+      ORDER BY occurred_at DESC, email_event_id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+  return result.rows.map(rowToHostedEmailDeliveryEventRecord);
+}
+
+async function insertHostedEmailDeliveryEventPg(
+  record: HostedEmailDeliveryEventRecord,
+  executor?: PgPool | PgClient,
+): Promise<void> {
+  await ensureSchema();
+  const target = executor ?? await getPool();
+  await target.query(
+    `INSERT INTO attestor_control_plane.email_delivery_events (
+      email_event_id, delivery_id, account_id, account_user_id, purpose, provider, channel,
+      recipient, message_id, provider_message_id, provider_event_id, event_type, status_hint,
+      occurred_at, recorded_at, payload_hash, record_json
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7,
+      $8, $9, $10, $11, $12, $13,
+      $14::timestamptz, $15::timestamptz, $16, $17::jsonb
+    )`,
+    [
+      record.id,
+      record.deliveryId,
+      record.accountId,
+      record.accountUserId,
+      record.purpose,
+      record.provider,
+      record.channel,
+      record.recipient,
+      record.messageId,
+      record.providerMessageId,
+      record.providerEventId,
+      record.eventType,
+      normalizeHostedEmailDeliveryStatus(record.statusHint),
+      record.occurredAt,
+      record.recordedAt,
+      record.payloadHash,
+      JSON.stringify(record),
+    ],
+  );
+}
+
+export async function recordHostedEmailDispatchEventState(
+  input: RecordHostedEmailDispatchEventInput,
+): Promise<{ record: HostedEmailDeliveryEventRecord; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) return recordHostedEmailDispatchEventFile(input);
+  const fileRecord = buildHostedEmailDispatchEventRecord(input);
+  const record = {
+    ...fileRecord,
+    id: `email_evt_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+  };
+  await insertHostedEmailDeliveryEventPg(record);
+  return { record, path: controlPlaneStoreSource() };
+}
+
+export async function recordHostedEmailProviderEventState(
+  input: RecordHostedEmailProviderEventInput,
+): Promise<{
+  kind: 'recorded' | 'duplicate' | 'conflict';
+  record: HostedEmailDeliveryEventRecord;
+  path: string | null;
+}> {
+  if (!isSharedControlPlaneConfigured()) {
+    const result = recordHostedEmailProviderEventFile(input);
+    return { ...result, path: result.path };
+  }
+  const builtRecord = buildHostedEmailProviderEventRecord(input);
+  if (!input.providerEventId) {
+    const record = {
+      ...builtRecord,
+      id: `email_evt_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    };
+    await insertHostedEmailDeliveryEventPg(record);
+    return { kind: 'recorded', record, path: controlPlaneStoreSource() };
+  }
+
+  return withPgTransaction(async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock($1::bigint)', [
+      advisoryLockKey(`attestor_control_plane:email_delivery:${input.provider}:${input.providerEventId}`),
+    ]);
+    const existingResult = await client.query(
+      `SELECT record_json
+         FROM attestor_control_plane.email_delivery_events
+        WHERE provider = $1
+          AND provider_event_id = $2
+        LIMIT 1`,
+      [input.provider, input.providerEventId],
+    );
+    const existing = existingResult.rows[0] ? rowToHostedEmailDeliveryEventRecord(existingResult.rows[0]) : null;
+    if (existing) {
+      if (existing.payloadHash !== builtRecord.payloadHash) {
+        return { kind: 'conflict', record: existing, path: controlPlaneStoreSource() } as const;
+      }
+      return { kind: 'duplicate', record: existing, path: controlPlaneStoreSource() } as const;
+    }
+    const record = {
+      ...builtRecord,
+      id: `email_evt_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    };
+    await insertHostedEmailDeliveryEventPg(record, client);
+    return { kind: 'recorded', record, path: controlPlaneStoreSource() } as const;
+  });
+}
+
+export async function listHostedEmailDeliveriesState(
+  filters?: ListHostedEmailDeliveryFilters,
+): Promise<{ records: HostedEmailDeliverySummaryRecord[]; path: string | null }> {
+  if (!isSharedControlPlaneConfigured()) {
+    const result = listHostedEmailDeliveriesFile(filters);
+    return { records: result.records, path: result.path };
+  }
+  const raw = await listHostedEmailDeliveryEventRecordsPg({
+    deliveryId: filters?.deliveryId ?? null,
+    accountId: filters?.accountId ?? null,
+    accountUserId: filters?.accountUserId ?? null,
+    provider: filters?.provider ?? null,
+    rawLimit: Math.max(500, Math.min(5000, (filters?.limit ?? 100) * 20)),
+  });
+  return {
+    records: filterHostedEmailDeliverySummaries(summarizeHostedEmailDeliveryEvents(raw), filters),
+    path: controlPlaneStoreSource(),
+  };
+}
+
 export async function listAsyncDeadLetterRecordsState(filters?: {
   tenantId?: string | null;
   backendMode?: AsyncDeadLetterBackendMode | null;
@@ -3690,6 +4077,43 @@ export async function restoreAccountUserActionTokenStoreSnapshot(
   return { recordCount: snapshot.records.length };
 }
 
+export async function exportHostedEmailDeliveryEventStoreSnapshot(): Promise<EmailDeliveryEventStoreSnapshot> {
+  if (!isSharedControlPlaneConfigured()) {
+    return exportHostedEmailDeliveryEventStoreSnapshotFile();
+  }
+  const records = await listHostedEmailDeliveryEventRecordsPg({ rawLimit: 5000 });
+  const chronological = [...records].sort((left, right) => {
+    const byOccurred = compareIso(left.occurredAt, right.occurredAt);
+    if (byOccurred !== 0) return byOccurred;
+    return left.id > right.id ? 1 : -1;
+  });
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    recordCount: chronological.length,
+    records: chronological,
+  };
+}
+
+export async function restoreHostedEmailDeliveryEventStoreSnapshot(
+  snapshot: EmailDeliveryEventStoreSnapshot,
+  options?: { replaceExisting?: boolean },
+): Promise<{ recordCount: number }> {
+  if (!isSharedControlPlaneConfigured()) {
+    const restored = restoreHostedEmailDeliveryEventStoreSnapshotFile(snapshot);
+    return { recordCount: restored.recordCount };
+  }
+  await ensureSchema();
+  const pool = await getPool();
+  if (options?.replaceExisting) {
+    await pool.query('TRUNCATE TABLE attestor_control_plane.email_delivery_events');
+  }
+  for (const record of snapshot.records) {
+    await insertHostedEmailDeliveryEventPg(coerceHostedEmailDeliveryEventRecord(record));
+  }
+  return { recordCount: snapshot.records.length };
+}
+
 export async function exportHostedAccountStoreSnapshot(): Promise<HostedAccountStoreSnapshot> {
   const records = isSharedControlPlaneConfigured()
     ? await listHostedAccountsPg()
@@ -3838,10 +4262,12 @@ export async function resetSharedControlPlaneStoreForTests(): Promise<void> {
   const pool = await getPool();
   await pool.query(`
     DROP TABLE IF EXISTS attestor_control_plane.async_dead_letter_jobs;
+    DROP TABLE IF EXISTS attestor_control_plane.email_delivery_events;
     DROP TABLE IF EXISTS attestor_control_plane.stripe_webhook_dedupe;
     DROP TABLE IF EXISTS attestor_control_plane.admin_idempotency;
     DROP TABLE IF EXISTS attestor_control_plane.admin_audit_log;
     DROP TABLE IF EXISTS attestor_control_plane.billing_entitlements;
+    DROP TABLE IF EXISTS attestor_control_plane.account_saml_replays;
     DROP TABLE IF EXISTS attestor_control_plane.account_user_action_tokens;
     DROP TABLE IF EXISTS attestor_control_plane.account_sessions;
     DROP TABLE IF EXISTS attestor_control_plane.account_users;

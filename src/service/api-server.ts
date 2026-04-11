@@ -13,6 +13,7 @@
  * - GET  /api/v1/account             — current hosted account summary for tenant-authenticated callers
  * - GET  /api/v1/account/entitlement — current hosted billing entitlement truth
  * - GET  /api/v1/account/features    — current hosted feature entitlement truth
+ * - GET  /api/v1/account/email/deliveries — hosted invite/reset delivery analytics
  * - GET  /api/v1/account/usage       — current hosted usage/rate-limit summary
  * - POST /api/v1/account/billing/checkout — create Stripe Checkout subscription session
  * - POST /api/v1/account/billing/portal — create Stripe Billing Portal session
@@ -26,6 +27,7 @@
  * - POST /api/v1/admin/accounts/:id/suspend|reactivate|archive — hosted account lifecycle
  * - GET  /api/v1/admin/plans         — hosted plan catalog + defaults
  * - GET  /api/v1/admin/billing/entitlements — hosted billing entitlement read model
+ * - GET  /api/v1/admin/email/deliveries — hosted operator email delivery analytics
  * - GET  /api/v1/admin/audit         — tamper-evident hosted admin ledger
  * - GET  /api/v1/admin/telemetry     — OTLP exporter status / config summary
  * - GET  /api/v1/metrics             — Prometheus scrape endpoint with dedicated metrics token or admin fallback
@@ -38,6 +40,7 @@
  * - POST /api/v1/admin/tenant-keys/:id/reactivate — rollback support during cutover
  * - GET  /api/v1/admin/usage         — hosted operator usage reporting
  * - POST /api/v1/billing/stripe/webhook — Stripe billing state reconciliation
+ * - POST /api/v1/email/sendgrid/webhook — signed SendGrid delivery analytics ingest
  *
  * This is a real server. It binds to a port and accepts real HTTP requests.
  * Integration tests hit it over the network.
@@ -145,6 +148,15 @@ import {
   linkAccountUserOidcIdentity,
 } from './account-oidc.js';
 import {
+  accountUserSamlSummary,
+  buildHostedSamlAuthorizationRequest,
+  completeHostedSamlAuthorization,
+  getHostedSamlMetadata,
+  hostedSamlAllowsAutomaticLinking,
+  linkAccountUserSamlIdentity,
+  loadHostedSamlSummary,
+} from './account-saml.js';
+import {
   accountUserPasskeySummary,
   buildAccountUserPasskeyCredentialRecord,
   buildHostedPasskeyAuthenticationOptions,
@@ -175,6 +187,7 @@ import {
   createAccountUserState,
   saveAccountUserRecordState,
   findAccountUserByOidcIdentityState,
+  findAccountUserBySamlIdentityState,
   finalizeProcessedStripeWebhookState,
   consumePipelineRunState,
   findAccountUserByEmailState,
@@ -195,10 +208,12 @@ import {
   listAsyncDeadLetterRecordsState,
   listAccountUsersByAccountIdState,
   listAccountUserActionTokensByAccountIdState,
+  listHostedEmailDeliveriesState,
   listHostedAccountsState,
   listTenantKeyRecordsState,
   provisionHostedAccountState,
   queryUsageLedgerState,
+  recordHostedSamlReplayState,
   recoverTenantApiKeyState,
   recordAccountUserLoginState,
   revokeAccountUserActionTokenState,
@@ -212,6 +227,7 @@ import {
   listAdminAuditRecordsState,
   lookupAdminIdempotencyState,
   recordAdminIdempotencyState,
+  recordHostedEmailProviderEventState,
   lookupProcessedStripeWebhookState,
   releaseProcessedStripeWebhookClaimState,
   recordProcessedStripeWebhookState,
@@ -275,6 +291,12 @@ import {
   HostedEmailDeliveryError,
   shutdownHostedEmailDelivery,
 } from './email-delivery.js';
+import {
+  getSendGridWebhookStatus,
+  parseSendGridWebhookEvents,
+  sendGridEventTypeToStatusHint,
+  verifySignedSendGridWebhook,
+} from './sendgrid-email-webhook.js';
 import { getSecretEnvelopeStatus, SecretEnvelopeError } from './secret-envelope.js';
 import {
   StripeBillingError,
@@ -430,6 +452,7 @@ function accountUserView(record: AccountUserRecord) {
   const mfa = totpSummary(record.mfa.totp);
   const passkeys = accountUserPasskeySummary(record);
   const oidc = accountUserOidcSummary(record);
+  const saml = accountUserSamlSummary(record);
   return {
     id: record.id,
     accountId: record.accountId,
@@ -457,6 +480,9 @@ function accountUserView(record: AccountUserRecord) {
       oidcLinked: oidc.linked,
       oidcIdentityCount: oidc.identityCount,
       lastOidcLoginAt: oidc.lastLoginAt,
+      samlLinked: saml.linked,
+      samlIdentityCount: saml.identityCount,
+      lastSamlLoginAt: saml.lastLoginAt,
     },
   };
 }
@@ -477,6 +503,26 @@ function accountUserDetailedOidcView(record: AccountUserRecord, requestOrigin?: 
       issuer: identity.issuer,
       subject: identity.subject,
       email: identity.email,
+      linkedAt: identity.linkedAt,
+      lastLoginAt: identity.lastLoginAt,
+    })),
+  };
+}
+
+function accountUserDetailedSamlView(record: AccountUserRecord, requestOrigin?: string | URL | null) {
+  const summary = loadHostedSamlSummary(requestOrigin);
+  return {
+    configured: summary.enabled,
+    entityId: summary.entityId,
+    metadataUrl: summary.metadataUrl,
+    acsUrl: summary.acsUrl,
+    authnRequestsSigned: summary.authnRequestsSigned,
+    identities: record.federation.saml.identities.map((identity) => ({
+      id: identity.id,
+      issuer: identity.issuer,
+      subject: identity.subject,
+      email: identity.email,
+      nameIdFormat: identity.nameIdFormat,
       linkedAt: identity.linkedAt,
       lastLoginAt: identity.lastLoginAt,
     })),
@@ -1626,6 +1672,172 @@ app.post('/api/v1/auth/passkeys/verify', async (c) => {
   });
 });
 
+app.get('/api/v1/auth/saml/metadata', (c) => {
+  try {
+    const metadata = getHostedSamlMetadata(c.req.url);
+    c.header('content-type', 'application/samlmetadata+xml; charset=utf-8');
+    return c.body(metadata);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.includes('not configured') ? 503 : 400;
+    return c.json({ error: message }, status);
+  }
+});
+
+app.post('/api/v1/auth/saml/login', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  try {
+    const authorization = buildHostedSamlAuthorizationRequest({
+      requestOrigin: c.req.url,
+      emailHint: email || null,
+    });
+    return c.json({ authorization });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.includes('not configured') ? 503 : 400;
+    return c.json({ error: message }, status);
+  }
+});
+
+app.post('/api/v1/auth/saml/acs', async (c) => {
+  const body = await c.req.parseBody();
+  const samlResponse = typeof body.SAMLResponse === 'string' ? body.SAMLResponse.trim() : '';
+  const relayState = typeof body.RelayState === 'string' ? body.RelayState.trim() : '';
+  if (!samlResponse || !relayState) {
+    return c.json({ error: 'SAMLResponse and RelayState are required.' }, 400);
+  }
+
+  let callback;
+  try {
+    callback = await completeHostedSamlAuthorization({
+      requestOrigin: c.req.url,
+      samlResponse,
+      relayState,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.includes('not configured') ? 503 : 400;
+    return c.json({ error: message }, status);
+  }
+
+  const replay = await recordHostedSamlReplayState({
+    requestId: callback.relayState.requestId,
+    responseId: callback.responseId,
+    issuer: callback.identity.issuer,
+    subject: callback.identity.subject,
+    consumedAt: new Date().toISOString(),
+    expiresAt: callback.relayState.expiresAt,
+  });
+  if (replay.duplicate) {
+    return c.json({
+      error: 'SAML response has already been consumed.',
+      requestId: callback.relayState.requestId,
+    }, 409);
+  }
+
+  let user = await findAccountUserBySamlIdentityState(
+    callback.identity.issuer,
+    callback.identity.subject,
+  );
+  if (!user) {
+    if (!hostedSamlAllowsAutomaticLinking(callback.identity) || !callback.identity.email) {
+      return c.json({
+        error: 'SAML identity could not be matched to an existing hosted account user.',
+        identity: {
+          issuer: callback.identity.issuer,
+          subject: callback.identity.subject,
+          email: callback.identity.email,
+          nameId: callback.identity.nameId,
+        },
+      }, 403);
+    }
+    user = await findAccountUserByEmailState(callback.identity.email);
+  }
+  if (!user) {
+    return c.json({
+      error: 'SAML identity could not be matched to an existing hosted account user.',
+      identity: {
+        issuer: callback.identity.issuer,
+        subject: callback.identity.subject,
+        email: callback.identity.email,
+        nameId: callback.identity.nameId,
+      },
+    }, 403);
+  }
+  if (user.status !== 'active') {
+    return c.json({ error: `Account user '${user.email}' is inactive.` }, 403);
+  }
+
+  const account = await findHostedAccountByIdState(user.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
+  }
+  if (account.status === 'archived') {
+    return c.json({ error: `Hosted account '${account.id}' is archived and cannot accept new sessions.` }, 403);
+  }
+
+  const sync = linkAccountUserSamlIdentity(user, callback.identity);
+  if (sync.changed) {
+    await saveAccountUserRecordState(sync.record);
+    user = sync.record;
+  }
+
+  const userTotp = totpSummary(user.mfa.totp);
+  if (userTotp.enabled) {
+    const issued = await issueAccountMfaLoginTokenState({
+      accountId: account.id,
+      accountUserId: user.id,
+      email: user.email,
+    });
+    return c.json({
+      mfaRequired: true,
+      challengeToken: issued.token,
+      challenge: {
+        id: issued.record.id,
+        method: 'totp',
+        expiresAt: issued.record.expiresAt,
+        maxAttempts: issued.record.maxAttempts,
+        remainingAttempts: issued.record.maxAttempts === null
+          ? null
+          : Math.max(issued.record.maxAttempts - issued.record.attemptCount, 0),
+      },
+      upstreamAuth: {
+        provider: 'saml',
+        issuer: callback.identity.issuer,
+        subject: callback.identity.subject,
+        nameId: callback.identity.nameId,
+      },
+      user: accountUserView(user),
+      account: adminAccountView(account),
+    });
+  }
+
+  const issued = await issueAccountSessionState({
+    accountId: account.id,
+    accountUserId: user.id,
+    role: user.role,
+  });
+  const loginTouch = await recordAccountUserLoginState(user.id);
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    upstreamAuth: {
+      provider: 'saml',
+      issuer: callback.identity.issuer,
+      subject: callback.identity.subject,
+      nameId: callback.identity.nameId,
+    },
+    user: accountUserView(loginTouch.record),
+    account: adminAccountView(account),
+  });
+});
+
 app.post('/api/v1/auth/oidc/login', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim() : '';
@@ -1960,6 +2172,19 @@ app.get('/api/v1/account/oidc', async (c) => {
   }
   return c.json({
     oidc: accountUserDetailedOidcView(user, c.req.url),
+  });
+});
+
+app.get('/api/v1/account/saml', async (c) => {
+  const unauthorized = requireAccountSession(c);
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const user = await findAccountUserByIdState(access.accountUserId);
+  if (!user || user.accountId !== access.accountId) {
+    return c.json({ error: 'Current account session could not be resolved.' }, 404);
+  }
+  return c.json({
+    saml: accountUserDetailedSamlView(user, c.req.url),
   });
 });
 
@@ -2521,6 +2746,8 @@ app.post('/api/v1/account/users/invites', async (c) => {
   let delivery;
   try {
     delivery = await deliverHostedInviteEmail({
+      accountId: access.accountId,
+      accountUserId: null,
       recipientEmail: email,
       displayName,
       role,
@@ -2691,6 +2918,8 @@ app.post('/api/v1/account/users/:id/password-reset', async (c) => {
   let delivery;
   try {
     delivery = await deliverHostedPasswordResetEmail({
+      accountId: access.accountId,
+      accountUserId: user.id,
       recipientEmail: user.email,
       displayName: user.displayName,
       accountName: account.accountName,
@@ -2737,6 +2966,39 @@ app.post('/api/v1/auth/password/reset', async (c) => {
   });
   return c.json({
     reset: true,
+  });
+});
+
+app.get('/api/v1/account/email/deliveries', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin', 'billing_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const purpose = c.req.query('purpose')?.trim();
+  const status = c.req.query('status')?.trim();
+  const provider = c.req.query('provider')?.trim();
+  const recipient = c.req.query('recipient')?.trim();
+  const limitRaw = c.req.query('limit')?.trim();
+  const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+  const deliveries = await listHostedEmailDeliveriesState({
+    accountId: access.accountId,
+    purpose: purpose === 'invite' || purpose === 'password_reset' ? purpose : null,
+    status: status ? status as any : null,
+    provider: provider ? provider as any : null,
+    recipient: recipient || null,
+    limit: Number.isFinite(limit) ? limit : undefined,
+  });
+  return c.json({
+    accountId: access.accountId,
+    records: deliveries.records,
+    summary: {
+      purposeFilter: purpose ?? null,
+      statusFilter: status ?? null,
+      providerFilter: provider ?? null,
+      recipientFilter: recipient ?? null,
+      recordCount: deliveries.records.length,
+    },
   });
 });
 
@@ -2899,6 +3161,86 @@ app.get('/api/v1/account/billing/reconciliation', async (c) => {
     stripeSubscriptionId: current.account.billing.stripeSubscriptionId,
     entitlement: billingEntitlementView(entitlement),
     reconciliation,
+  });
+});
+
+app.post('/api/v1/email/sendgrid/webhook', async (c) => {
+  const webhookStatus = getSendGridWebhookStatus();
+  if (!webhookStatus.configured) {
+    return c.json({
+      error: 'SendGrid event webhook disabled. Set ATTESTOR_SENDGRID_EVENT_WEBHOOK_PUBLIC_KEY to enable delivery analytics.',
+    }, 503);
+  }
+
+  const signature = c.req.header('x-twilio-email-event-webhook-signature')?.trim() ?? '';
+  const timestamp = c.req.header('x-twilio-email-event-webhook-timestamp')?.trim() ?? '';
+  if (!signature || !timestamp) {
+    return c.json({
+      error: 'Signed SendGrid webhook requires X-Twilio-Email-Event-Webhook-Signature and X-Twilio-Email-Event-Webhook-Timestamp.',
+    }, 400);
+  }
+
+  const rawPayload = await c.req.text();
+  if (!verifySignedSendGridWebhook({ rawPayload, signature, timestamp })) {
+    return c.json({ error: 'SendGrid webhook signature verification failed.' }, 400);
+  }
+
+  let events;
+  try {
+    events = parseSendGridWebhookEvents(rawPayload);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+
+  let applied = 0;
+  let duplicate = 0;
+  let ignored = 0;
+  let conflict = 0;
+
+  for (const event of events) {
+    if (!event.deliveryId || !event.email) {
+      ignored += 1;
+      continue;
+    }
+    const existing = await listHostedEmailDeliveriesState({
+      deliveryId: event.deliveryId,
+      limit: 1,
+    });
+    const delivery = existing.records[0] ?? null;
+    const result = await recordHostedEmailProviderEventState({
+      deliveryId: event.deliveryId,
+      accountId: delivery?.accountId ?? null,
+      accountUserId: delivery?.accountUserId ?? null,
+      purpose: event.purpose ?? delivery?.purpose ?? null,
+      provider: 'sendgrid_smtp',
+      channel: 'smtp',
+      recipient: event.email,
+      messageId: delivery?.messageId ?? null,
+      providerMessageId: event.sgMessageId ?? delivery?.providerMessageId ?? null,
+      providerEventId: event.sgEventId,
+      eventType: `sendgrid.${event.event}`,
+      statusHint: sendGridEventTypeToStatusHint(event.event),
+      actionUrl: delivery?.actionUrl ?? null,
+      tokenReturned: delivery?.tokenReturned ?? false,
+      occurredAt: event.timestamp
+        ? new Date(event.timestamp * 1000).toISOString()
+        : new Date().toISOString(),
+      metadata: event.raw,
+      rawPayload: event.raw,
+    });
+    if (result.kind === 'recorded') applied += 1;
+    else if (result.kind === 'duplicate') duplicate += 1;
+    else conflict += 1;
+  }
+
+  return c.json({
+    received: true,
+    provider: 'sendgrid_smtp',
+    eventCount: events.length,
+    applied,
+    duplicate,
+    ignored,
+    conflict,
   });
 });
 
@@ -4338,6 +4680,37 @@ app.get('/api/v1/admin/telemetry', (c) => {
     telemetry: getTelemetryStatus(),
     emailDelivery: getHostedEmailDeliveryStatus(),
     secretEnvelope: getSecretEnvelopeStatus(),
+  });
+});
+
+app.get('/api/v1/admin/email/deliveries', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+  const purpose = c.req.query('purpose')?.trim();
+  const status = c.req.query('status')?.trim();
+  const provider = c.req.query('provider')?.trim();
+  const recipient = c.req.query('recipient')?.trim();
+  const accountId = c.req.query('accountId')?.trim();
+  const limitRaw = c.req.query('limit')?.trim();
+  const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+  const deliveries = await listHostedEmailDeliveriesState({
+    accountId: accountId || null,
+    purpose: purpose === 'invite' || purpose === 'password_reset' ? purpose : null,
+    status: status ? status as any : null,
+    provider: provider ? provider as any : null,
+    recipient: recipient || null,
+    limit: Number.isFinite(limit) ? limit : undefined,
+  });
+  return c.json({
+    records: deliveries.records,
+    summary: {
+      accountFilter: accountId ?? null,
+      purposeFilter: purpose ?? null,
+      statusFilter: status ?? null,
+      providerFilter: provider ?? null,
+      recipientFilter: recipient ?? null,
+      recordCount: deliveries.records.length,
+    },
   });
 });
 

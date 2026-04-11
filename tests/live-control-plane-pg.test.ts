@@ -15,6 +15,7 @@ import { generateCurrentTotpCode } from '../src/service/account-mfa.js';
 import { resetAdminAuditLogForTests } from '../src/service/admin-audit-log.js';
 import { resetAdminIdempotencyStoreForTests } from '../src/service/admin-idempotency-store.js';
 import { resetHostedBillingEntitlementStoreForTests } from '../src/service/billing-entitlement-store.js';
+import { resetHostedEmailDeliveryEventStoreForTests } from '../src/service/email-delivery-event-store.js';
 import { resetObservabilityForTests } from '../src/service/observability.js';
 import { resetTenantRateLimiterForTests } from '../src/service/rate-limit.js';
 import { resetStripeWebhookStoreForTests } from '../src/service/stripe-webhook-store.js';
@@ -122,6 +123,7 @@ async function run(): Promise<void> {
   process.env.ATTESTOR_ASYNC_DLQ_STORE_PATH = asyncDlqPath;
   process.env.ATTESTOR_STRIPE_WEBHOOK_STORE_PATH = stripeWebhookPath;
   process.env.ATTESTOR_BILLING_ENTITLEMENT_STORE_PATH = billingEntitlementPath;
+  process.env.ATTESTOR_EMAIL_DELIVERY_EVENTS_PATH = join(tempRoot, 'email-delivery-events.json');
   process.env.ATTESTOR_OBSERVABILITY_LOG_PATH = join(tempRoot, 'observability.jsonl');
   process.env.ATTESTOR_ADMIN_API_KEY = 'admin-shared-control-plane';
   process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '2';
@@ -153,6 +155,7 @@ async function run(): Promise<void> {
   resetAdminIdempotencyStoreForTests();
   resetStripeWebhookStoreForTests();
   resetHostedBillingEntitlementStoreForTests();
+  resetHostedEmailDeliveryEventStoreForTests();
   resetObservabilityForTests();
   await resetBillingEventLedgerForTests();
 
@@ -1034,6 +1037,7 @@ async function run(): Promise<void> {
     resetAdminIdempotencyStoreForTests();
     resetStripeWebhookStoreForTests();
     resetHostedBillingEntitlementStoreForTests();
+    resetHostedEmailDeliveryEventStoreForTests();
     resetObservabilityForTests();
     await resetBillingEventLedgerForTests();
     try { await pg.stop(); } catch {}
