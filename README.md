@@ -179,6 +179,12 @@ npm run verify
 # Expanded verification surface
 npm run verify:full
 
+# Managed secret bootstrap contract for AWS/GKE External Secrets
+npm run render:secret-manager-bootstrap
+
+# Final observability + HA readiness handoff packet
+npm run render:production-readiness-packet -- --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-benchmark=.attestor/ha-calibration/latest.json
+
 # Additional live / integration suites
 npx tsx tests/live-api.test.ts
 npx tsx tests/live-postgres.test.ts
@@ -210,15 +216,42 @@ API endpoints:
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
 - `POST /api/v1/auth/login`
+- `POST /api/v1/auth/passkeys/options`
+- `POST /api/v1/auth/passkeys/verify`
+- `GET /api/v1/auth/saml/metadata`
+- `POST /api/v1/auth/saml/login`
+- `POST /api/v1/auth/saml/acs`
+- `POST /api/v1/auth/oidc/login`
+- `GET /api/v1/auth/oidc/callback`
+- `POST /api/v1/auth/mfa/verify`
+- `POST /api/v1/auth/password/change`
 - `POST /api/v1/auth/logout`
+- `POST /api/v1/auth/password/reset`
 - `GET /api/v1/auth/me`
+- `GET /api/v1/account/mfa`
+- `GET /api/v1/account/oidc`
+- `GET /api/v1/account/saml`
+- `GET /api/v1/account/passkeys`
+- `POST /api/v1/account/passkeys/register/options`
+- `POST /api/v1/account/passkeys/register/verify`
+- `POST /api/v1/account/passkeys/:id/delete`
+- `POST /api/v1/account/mfa/totp/enroll`
+- `POST /api/v1/account/mfa/totp/confirm`
+- `POST /api/v1/account/mfa/disable`
 - `GET /api/v1/account`
+- `GET /api/v1/account/entitlement`
+- `GET /api/v1/account/features`
 - `GET /api/v1/account/usage`
 - `POST /api/v1/account/users/bootstrap`
 - `GET /api/v1/account/users`
 - `POST /api/v1/account/users`
+- `GET /api/v1/account/users/invites`
+- `POST /api/v1/account/users/invites`
+- `POST /api/v1/account/users/invites/:id/revoke`
+- `POST /api/v1/account/users/invites/accept`
 - `POST /api/v1/account/users/:id/deactivate`
 - `POST /api/v1/account/users/:id/reactivate`
+- `POST /api/v1/account/users/:id/password-reset`
 - `POST /api/v1/account/billing/checkout` (`Idempotency-Key` required)
 - `POST /api/v1/account/billing/portal`
 - `GET /api/v1/account/billing/export` (`format=json|csv`)
@@ -226,6 +259,7 @@ API endpoints:
 - `GET /api/v1/admin/accounts`
 - `POST /api/v1/admin/accounts`
 - `GET /api/v1/admin/accounts/:id/billing/export` (`format=json|csv`)
+- `GET /api/v1/admin/accounts/:id/features`
 - `GET /api/v1/admin/accounts/:id/billing/reconciliation`
 - `POST /api/v1/admin/accounts/:id/billing/stripe`
 - `POST /api/v1/admin/accounts/:id/suspend`
@@ -237,18 +271,22 @@ API endpoints:
 - `GET /api/v1/admin/queue/dlq`
 - `POST /api/v1/admin/queue/jobs/:id/retry`
 - `GET /api/v1/admin/billing/events`
+- `GET /api/v1/admin/billing/entitlements`
 - `GET /api/v1/metrics`
 - `GET /api/v1/admin/metrics`
+- `GET /api/v1/admin/telemetry`
 - `GET /api/v1/admin/tenant-keys`
 - `POST /api/v1/admin/tenant-keys`
 - `POST /api/v1/admin/tenant-keys/:id/rotate`
 - `POST /api/v1/admin/tenant-keys/:id/deactivate`
 - `POST /api/v1/admin/tenant-keys/:id/reactivate`
+- `POST /api/v1/admin/tenant-keys/:id/recover`
 - `POST /api/v1/admin/tenant-keys/:id/revoke`
 - `GET /api/v1/admin/usage`
 - `GET /api/v1/account/email/deliveries`
 - `GET /api/v1/admin/email/deliveries`
 - `POST /api/v1/email/sendgrid/webhook`
+- `POST /api/v1/email/mailgun/webhook`
 - `POST /api/v1/billing/stripe/webhook`
 - `POST /api/v1/pipeline/run`
 - `POST /api/v1/pipeline/run-async`
@@ -271,7 +309,7 @@ Current service capabilities:
 - Observability tuning first slice: `npm run benchmark:observability -- --prometheus-url=<url> [--alertmanager-url=<url>]` captures live request-rate / availability / p95-latency / active-alert snapshots into a benchmark JSON, `npm run render:observability-profile -- --input=<benchmark.json> --profile=ops/observability/profiles/<regulated-production|lean-production>.json` renders retention envs plus benchmark-aware SLO recording/alert packs, `npm run render:observability-credentials` materializes local env + Kubernetes Secret bundles for Grafana Cloud collector credentials and Alertmanager routing credentials, `npm run render:observability-release-bundle` composes those benchmark/profile/credential outputs into a self-contained release bundle for the Kubernetes gateway rollout, `npm run probe:observability-receivers` performs a rollout-near OTLP flush plus Prometheus/Alertmanager auth probe against the currently configured endpoints, `npm run probe:alert-routing` now simulates default/critical/warning/security/billing/watchdog receiver fanout from the rendered Alertmanager config, `npm run probe:observability-release-inputs` validates provider credentials plus External Secrets store/lifecycle inputs, dry-runs the release bundle render, then runs both the receiver probe and the route-level alert-routing probe as a single promotion gate, and `npm run render:observability-promotion-packet` now emits a single release checkpoint with missing-input inventory, release-bundle location, promotion state, and recommended apply flow
 - Request-level tenant isolation via `ATTESTOR_TENANT_KEYS` or the current hosted tenant-key store, plus overlap-capped key rotation (`rotate` -> `deactivate/reactivate` -> `revoke`), plan-aware tenant rate limiting on pipeline routes, and admin account/tenant provisioning behind `ATTESTOR_ADMIN_API_KEY`, with database-level RLS auto-activated when `ATTESTOR_PG_URL` set
 - PKI-backed signing with certificate-to-leaf chain verification
-- XBRL filing export auto-summary in signed pipeline responses
+- XBRL filing export with default issued report-package output surfaced in signed pipeline responses
 - OIDC reviewer identity verification on the API path
 - Connector routing (e.g., `connector: 'snowflake'` in pipeline/run)
 
@@ -393,6 +431,8 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 
 ## Environment Variables
 
+Secret-bearing render/probe scripts also honor `*_FILE` siblings for the same variable where implemented, so production deployments can mount secrets instead of exporting plaintext env values.
+
 | Variable | Purpose |
 |---|---|
 | `OPENAI_API_KEY` | Live model proof |
@@ -471,6 +511,11 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | `ATTESTOR_HOSTED_SAML_SP_PRIVATE_KEY_PATH` | Optional filesystem path to the hosted SAML SP private key PEM |
 | `ATTESTOR_HOSTED_SAML_SP_CERT` | Optional inline PEM certificate used when hosted SAML AuthnRequest signing is enabled |
 | `ATTESTOR_HOSTED_SAML_SP_CERT_PATH` | Optional filesystem path to the hosted SAML SP certificate PEM |
+| `ATTESTOR_WEBAUTHN_ORIGIN` | Optional explicit WebAuthn origin for hosted passkeys; otherwise derived from request origin |
+| `ATTESTOR_WEBAUTHN_RP_ID` | Optional relying-party ID override for hosted passkeys |
+| `ATTESTOR_WEBAUTHN_RP_NAME` | Optional relying-party display name for hosted passkeys (default `Attestor`) |
+| `ATTESTOR_WEBAUTHN_STATE_TTL_MINUTES` | Optional hosted passkey challenge TTL in minutes (default `10`) |
+| `ATTESTOR_WEBAUTHN_REQUIRE_USER_VERIFICATION` | Set `true` to require WebAuthn user verification instead of the compatibility-first default |
 | `ATTESTOR_RATE_LIMIT_WINDOW_SECONDS` | Optional tenant pipeline rate-limit window size in seconds (default `60`) |
 | `ATTESTOR_RATE_LIMIT_REDIS_URL` | Optional explicit Redis URL for shared pipeline-route rate limiting. When unset, the limiter reuses the current Redis async backend when BullMQ is active. |
 | `ATTESTOR_RATE_LIMIT_<PLAN>_REQUESTS` | Optional per-plan pipeline request ceiling for the current window (`COMMUNITY`, `STARTER`, `PRO`, `ENTERPRISE`) |
@@ -492,13 +537,48 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | `ATTESTOR_ASYNC_TENANT_SCAN_LIMIT` | Optional BullMQ page size used by exact per-tenant async pending-job inspection (default `200`) |
 | `ATTESTOR_ASYNC_DLQ_STORE_PATH` | Optional path for the file-backed persistent async DLQ store used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_HA_MODE` | Set to `true` to require HA-safe startup: external `REDIS_URL`, BullMQ mode, and shared `ATTESTOR_CONTROL_PLANE_PG_URL` |
+| `ATTESTOR_HA_PROVIDER` | HA renderer/provider target: `generic`, `aws`, or `gke` |
+| `ATTESTOR_HA_PRODUCTION_MODE` | Set `true` to enforce stricter HA render/probe requirements before production promotion |
+| `ATTESTOR_PUBLIC_HOSTNAME` | Public hostname used by HA and observability release bundles |
+| `ATTESTOR_GATEWAY_CLASS_NAME` | Gateway API class name used by HA release renders (default `managed-external`) |
+| `ATTESTOR_K8S_NAMESPACE` | Kubernetes namespace used by HA release bundle rendering (default `attestor`) |
+| `ATTESTOR_API_IMAGE` | API container image reference baked into the HA release bundle |
+| `ATTESTOR_WORKER_IMAGE` | Worker container image reference baked into the HA release bundle |
+| `ATTESTOR_IMAGE_PULL_POLICY` | Kubernetes image pull policy override for HA/observability rendered deployments |
+| `ATTESTOR_HA_USE_KEDA` | Set `true`/`false` to choose KEDA vs HPA in rendered HA bundles |
+| `ATTESTOR_HA_RUNTIME_SECRET_MODE` | HA runtime secret material mode for release renders: `secret` or `external-secret` |
+| `ATTESTOR_HA_BENCHMARK_PATH` | Default benchmark JSON path used by `render:ha-release-bundle` / `render:ha-promotion-packet` |
+| `ATTESTOR_HA_PROFILE_PATH` | Default HA profile path used by `render:ha-profile` / `render:ha-release-bundle` |
+| `ATTESTOR_HA_OTEL_ENDPOINT` | Optional OTLP endpoint injected into rendered HA configmaps |
 | `ATTESTOR_INSTANCE_ID` | Optional stable instance label used in `x-attestor-instance-id`, `/health`, `/ready`, and HA startup diagnostics |
+| `ATTESTOR_WORKER_HEALTH_PORT` | Optional worker probe port exposing `/health` and `/ready` for orchestrator liveness/readiness checks (default `9808`) |
 | `ATTESTOR_HA_SECRET_STORE` | Optional External Secrets store name used by the HA credential/release renderers when runtime or TLS secret mode uses External Secrets |
 | `ATTESTOR_HA_SECRET_PREFIX` | Optional remote secret prefix used by the HA credential renderer for runtime and TLS materials (default `attestor`) |
 | `ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND` | Optional External Secrets store kind override for HA runtime/TLS secret sync (default `ClusterSecretStore`) |
 | `ATTESTOR_HA_EXTERNAL_SECRET_REFRESH_INTERVAL` | Optional External Secrets refresh interval for HA runtime/TLS secret sync (default `1h`) |
 | `ATTESTOR_HA_EXTERNAL_SECRET_CREATION_POLICY` | Optional External Secrets creation policy for HA managed secret targets (default `Owner`) |
 | `ATTESTOR_HA_EXTERNAL_SECRET_DELETION_POLICY` | Optional External Secrets deletion policy for HA managed secret targets |
+| `ATTESTOR_TLS_MODE` | HA TLS material mode: `secret`, `external-secret`, `cert-manager`, or `aws-acm` |
+| `ATTESTOR_TLS_SECRET_NAME` | TLS Secret name used in rendered Gateway/certificate material (default `attestor-tls`) |
+| `ATTESTOR_TLS_CLUSTER_ISSUER` | cert-manager `ClusterIssuer` name used when `ATTESTOR_TLS_MODE=cert-manager` |
+| `ATTESTOR_TLS_DNS_NAMES` | Optional comma-separated DNS names for rendered HA certificates; defaults to `ATTESTOR_PUBLIC_HOSTNAME` |
+| `ATTESTOR_TLS_CERT_PEM` | Inline PEM certificate used when `ATTESTOR_TLS_MODE=secret` |
+| `ATTESTOR_TLS_KEY_PEM` | Inline PEM key used when `ATTESTOR_TLS_MODE=secret` |
+| `ATTESTOR_AWS_REGION` | AWS region used by `render:secret-manager-bootstrap` for Secrets Manager stores |
+| `ATTESTOR_AWS_EXTERNAL_SECRETS_ROLE_ARN` | Optional IAM role ARN used by AWS External Secrets / IRSA bootstrap |
+| `ATTESTOR_AWS_EXTERNAL_SECRETS_NAMESPACE` | Namespace of the External Secrets service account for AWS IRSA bootstrap |
+| `ATTESTOR_AWS_EXTERNAL_SECRETS_SERVICE_ACCOUNT` | Service account name used by AWS IRSA bootstrap |
+| `ATTESTOR_AWS_ALB_CERTIFICATE_ARNS` | ACM certificate ARN list used when `ATTESTOR_TLS_MODE=aws-acm` |
+| `ATTESTOR_AWS_ALB_SSL_POLICY` | Optional AWS ALB SSL policy override for rendered ingress bundles |
+| `ATTESTOR_AWS_ALB_WAFV2_ACL_ARN` | Optional AWS WAFv2 ACL ARN bound into rendered ALB ingress annotations |
+| `ATTESTOR_AWS_ALB_GROUP_NAME` | Optional ALB group name for multi-ingress coordination |
+| `ATTESTOR_GCP_SECRET_PROJECT_ID` | Google Secret Manager project id used by `render:secret-manager-bootstrap` |
+| `ATTESTOR_GCP_WI_CLUSTER_PROJECT_ID` | GKE Workload Identity cluster project id used by secret bootstrap |
+| `ATTESTOR_GCP_WI_CLUSTER_LOCATION` | GKE cluster location used by secret bootstrap |
+| `ATTESTOR_GCP_WI_CLUSTER_NAME` | GKE cluster name used by secret bootstrap |
+| `ATTESTOR_GCP_EXTERNAL_SECRETS_NAMESPACE` | Namespace of the External Secrets service account for GKE bootstrap |
+| `ATTESTOR_GCP_EXTERNAL_SECRETS_SERVICE_ACCOUNT` | Service account name used by GKE External Secrets bootstrap |
+| `ATTESTOR_GKE_SSL_POLICY` | Optional GKE SSL policy name injected into rendered Gateway policy |
 | `ATTESTOR_ADMIN_API_KEY` | Admin API key for hosted operator endpoints: accounts, plan catalog, audit, billing events, tenant key lifecycle management, and usage reporting |
 | `ATTESTOR_METRICS_API_KEY` | Optional dedicated scrape token for `GET /api/v1/metrics`; falls back to `ATTESTOR_ADMIN_API_KEY` when unset |
 | `ATTESTOR_CONTROL_PLANE_PG_URL` | Optional PostgreSQL connection URL for the shared hosted control-plane first slice (accounts, account users, account sessions, account user action tokens, hosted email-delivery events, tenant keys, usage, billing entitlements, async DLQ, admin audit, admin idempotency replay, Stripe webhook dedupe) |
@@ -507,6 +587,16 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | `ATTESTOR_ADMIN_IDEMPOTENCY_TTL_HOURS` | Optional retention window for encrypted admin replay payloads (default `24`) |
 | `ATTESTOR_BILLING_LEDGER_PG_URL` | Optional PostgreSQL connection URL for the shared Stripe billing event ledger used by `/api/v1/admin/billing/events` and cross-node webhook dedupe |
 | `ATTESTOR_OBSERVABILITY_LOG_PATH` | Optional JSONL path for structured API request logs with trace correlation and tenant/account context |
+| `ATTESTOR_OBSERVABILITY_PROVIDER` | Managed observability release target: `generic` or `grafana-cloud` |
+| `ATTESTOR_OBSERVABILITY_SECRET_MODE` | Secret delivery mode for observability release bundles: `secret` or `external-secret` |
+| `ATTESTOR_OBSERVABILITY_NAMESPACE` | Kubernetes namespace used by observability release rendering (default `attestor-observability`) |
+| `ATTESTOR_OBSERVABILITY_COLLECTOR_IMAGE` | Collector image override for rendered observability gateway deployments |
+| `ATTESTOR_OBSERVABILITY_COLLECTOR_IMAGE_PULL_POLICY` | Image pull policy override for observability collector deployments |
+| `ATTESTOR_OBSERVABILITY_TEMPO_OTLP_ENDPOINT` | Tempo OTLP endpoint override for generic observability releases |
+| `ATTESTOR_OBSERVABILITY_LOKI_OTLP_ENDPOINT` | Loki OTLP endpoint override for generic observability releases |
+| `ATTESTOR_OBSERVABILITY_BENCHMARK_PATH` | Default benchmark JSON path used by observability release/probe scripts |
+| `ATTESTOR_OBSERVABILITY_PROFILE_PATH` | Default profile path used by `render:observability-profile` / release bundle rendering |
+| `ATTESTOR_OBSERVABILITY_BENCHMARK_WINDOW` | Optional benchmark lookback window override used by observability benchmarking |
 | `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE` | Optional External Secrets store name used by `render:observability-release-bundle` / `probe:observability-release-inputs` when `ATTESTOR_OBSERVABILITY_SECRET_MODE=external-secret` |
 | `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_STORE_KIND` | Optional External Secrets store kind override for observability managed-backend rollout (default `ClusterSecretStore`) |
 | `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_REFRESH_INTERVAL` | Optional External Secrets refresh interval for observability credential sync (default `1h`) |
@@ -514,6 +604,26 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | `ATTESTOR_OBSERVABILITY_EXTERNAL_SECRET_DELETION_POLICY` | Optional External Secrets target deletion policy for observability credential sync |
 | `ATTESTOR_OBSERVABILITY_PROMETHEUS_URL` | Optional Prometheus base URL used by `probe:observability-receivers` / `probe:observability-release-inputs` when CLI args are omitted |
 | `ATTESTOR_OBSERVABILITY_ALERTMANAGER_URL` | Optional Alertmanager base URL used by `probe:observability-receivers` / `probe:observability-release-inputs` when CLI args are omitted |
+| `ALERTMANAGER_BASE_URL` | Fallback Alertmanager base URL used by observability probes when the Attestor-specific override is unset |
+| `ALERTMANAGER_DEFAULT_WEBHOOK_URL` | Default Alertmanager receiver webhook used by rendered routing/probes |
+| `ALERTMANAGER_CRITICAL_WEBHOOK_URL` | Critical-severity Alertmanager webhook receiver |
+| `ALERTMANAGER_WARNING_WEBHOOK_URL` | Warning-severity Alertmanager webhook receiver |
+| `ALERTMANAGER_DEFAULT_SLACK_WEBHOOK_URL` | Slack webhook for default alert fanout |
+| `ALERTMANAGER_DEFAULT_SLACK_CHANNEL` | Slack channel for default alert fanout |
+| `ALERTMANAGER_WARNING_SLACK_WEBHOOK_URL` | Slack webhook for warning fanout |
+| `ALERTMANAGER_WARNING_SLACK_CHANNEL` | Slack channel for warning fanout |
+| `ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY` | PagerDuty routing key for critical alert escalation |
+| `ALERTMANAGER_SECURITY_WEBHOOK_URL` | Security team webhook destination for rendered alert routing |
+| `ALERTMANAGER_BILLING_WEBHOOK_URL` | Billing team webhook destination for rendered alert routing |
+| `ALERTMANAGER_EMAIL_TO` | Alertmanager email receiver target |
+| `ALERTMANAGER_EMAIL_FROM` | Alertmanager email sender address |
+| `ALERTMANAGER_SMARTHOST` | Alertmanager SMTP smarthost |
+| `ALERTMANAGER_SMTP_AUTH_USERNAME` | Alertmanager SMTP auth username |
+| `ALERTMANAGER_SMTP_AUTH_PASSWORD` | Alertmanager SMTP auth password |
+| `ALERTMANAGER_PRODUCTION_MODE` | Set `true` to require non-silent warning/critical alert routing in production renders |
+| `GRAFANA_CLOUD_OTLP_ENDPOINT` | Grafana Cloud OTLP endpoint used by managed observability releases |
+| `GRAFANA_CLOUD_OTLP_USERNAME` | Grafana Cloud OTLP basic-auth username |
+| `GRAFANA_CLOUD_OTLP_TOKEN` | Grafana Cloud OTLP token / password |
 | `OTEL_LOGS_EXPORTER` | Set to `otlp` to enable OTLP structured log export (default remains disabled unless an OTLP endpoint/exporter is configured) |
 | `OTEL_TRACES_EXPORTER` | Set to `otlp` to enable OTLP trace export (default remains disabled unless an OTLP endpoint/exporter is configured) |
 | `OTEL_METRICS_EXPORTER` | Set to `otlp` to enable OTLP metrics export (default remains disabled unless an OTLP endpoint/exporter is configured) |
@@ -549,6 +659,9 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | `ATTESTOR_STRIPE_WEBHOOK_STORE_PATH` | Optional path for the file-backed processed-event ledger used when `ATTESTOR_CONTROL_PLANE_PG_URL` is not configured |
 | `ATTESTOR_STRIPE_USE_MOCK` | Set `true` only in local/test environments to return deterministic mock Checkout/Portal sessions without hitting Stripe |
 | `REDIS_URL` | Redis URL for BullMQ async backend |
+| `REDIS_ADDRESS` | Optional Redis host:port input used by HA secret bootstrap / credential rendering flows |
+| `REDIS_PASSWORD` | Optional Redis password used by HA secret bootstrap / credential rendering flows |
+| `REDIS_USERNAME` | Optional Redis username used by HA secret bootstrap / credential rendering flows |
 | `ATTESTOR_ALLOW_LEGACY_API` | Set `true` to allow flat Ed25519 at `/api/v1/verify` (deprecated) |
 | `CYPRESS_EMAIL` | Cypress demo account email for ONC Cypress API validation |
 | `CYPRESS_PASSWORD` | Cypress demo account password for ONC Cypress API validation |
@@ -558,6 +671,7 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | `UMLS_API_KEY` | Fallback env name for the VSAC UMLS API key |
 | `ATTESTOR_VSAC_MANIFEST_URL` | Optional VSAC manifest URL for `$expand` requests (default `http://cts.nlm.nih.gov/fhir/Library/latest-active`) |
 | `VSAC_FHIR_BASE_URL` | Optional override for the VSAC FHIR base URL (default `https://cts.nlm.nih.gov/fhir`) |
+| `ATTESTOR_SECRET_BOOTSTRAP_PROVIDER` | Default provider for `render:secret-manager-bootstrap`: `aws`, `gke`, or `all` |
 
 ## Project Status
 
@@ -569,4 +683,3 @@ Real PostgreSQL-backed proof is already part of the repository's working surface
 | Expanded verification surface | 1893 tests across 42 suites: 557 unit + 596 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 56 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 13 observability release bundle render + 7 observability receiver probe + 10 observability release input probe + 7 observability promotion packet + 23 Kubernetes observability bundle + 15 DR bundle + 40 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 18 HA credentials render + 10 HA release bundle render + 10 HA release input probe + 7 HA promotion packet + 8 production readiness packet + 11 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | License | UNLICENSED / private |
-| `ATTESTOR_WORKER_HEALTH_PORT` | Optional worker probe port exposing `/health` and `/ready` for orchestrator liveness/readiness checks (default `9808`) |
