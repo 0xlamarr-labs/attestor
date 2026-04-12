@@ -23,9 +23,12 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 ## Quick Navigation
 
 - [Why this exists](#why-this-exists)
+- [How customers buy and use Attestor](#how-customers-buy-and-use-attestor)
+- [Plans and pricing](#plans-and-pricing)
 - [What ships in this repository](#what-ships-in-this-repository)
 - [Recommended production path](#recommended-production-path)
 - [Quick start](#quick-start)
+- [Product packaging and pricing](docs/01-overview/product-packaging.md)
 - [Production readiness guide](docs/08-deployment/production-readiness.md)
 - [Project status](#project-status)
 
@@ -167,6 +170,131 @@ The recognition to have here is simple: most of the missing infrastructure in AI
 | trust lives in people, screenshots, and implicit judgment | trust is decomposed into explicit authority, policy, evidence, and verification |
 | production rollout becomes a collection of one-off controls | product and ops surfaces become repeatable: auth, billing, observability, HA, DR |
 | each new domain reinvents the same governance questions | the acceptance model can travel, even when the domain logic changes |
+
+## How Customers Buy and Use Attestor
+
+Attestor is not a file workspace and not a document app.
+
+Customers buy **hosted API access to the acceptance and proof layer**. They keep their files, data, workflows, and business logic in their own environment, then call Attestor where acceptance, proof, verification, and operational control are needed.
+
+What a paying customer should expect to receive:
+
+- a hosted account and tenant boundary
+- API keys
+- usage and billing visibility
+- entitlement and feature state
+- proof, verification, and filing-capable API surfaces
+- docs and deployment guidance
+
+What they should not expect:
+
+- a hosted file manager
+- a drag-and-drop workspace
+- an AI chat shell
+
+The commercial product is best understood as **infrastructure delivered as a hosted API product**.
+
+```mermaid
+flowchart LR
+  C["Customer systems, data, and workflows"] --> A["Attestor hosted API"]
+  A --> P["Acceptance, proof, verification, control"]
+  P --> O["Production consequence, audit, review"]
+```
+
+## What Customers Actually Get
+
+The thing being bought is larger than an endpoint and smaller than a full workspace platform.
+
+Attestor gives customers:
+
+- governed execution and acceptance
+- portable proof and verification
+- authority-aware review closure
+- hosted billing, usage, and account surfaces
+- operator-ready deployment and promotion paths
+
+That is why the right category is not just "API". It is **acceptance and operating infrastructure**, exposed through APIs and control surfaces.
+
+## Plans and Pricing
+
+The recommended public pricing model should stay simple and intentionally premium.
+
+Attestor is not priced like a commodity AI utility. It sits at the point where AI output can start affecting production, audit, or regulated consequence.
+
+| Plan | Recommended price | Best for | Included shape |
+|---|---:|---|---|
+| Community | Free | self-hosted evaluation, internal development, OSS experimentation | self-host only, docs, local proof path, no hosted SLA |
+| Starter | $499 / month | first production teams and governed pilot workflows | hosted account + API access, 100 governed runs / month, usage and billing surface, API key management |
+| Pro | $1,999 / month | repeated operational use across multiple workflows or business units | hosted account + API access, 1,000 governed runs / month, higher rate limits, stronger runtime headroom |
+| Enterprise | From $7,500 / month | banks, hospitals, insurers, internal AI platform teams, private deployment buyers | hosted or private deployment, negotiated limits, commercial onboarding, compliance/security rollout path |
+
+The pricing intent is deliberate:
+
+- `community` proves the model locally
+- `starter` gets a serious team into production without making Attestor look like a cheap wrapper
+- `pro` is where repeated internal operational use starts to make economic sense
+- `enterprise` is where deployment boundary, procurement, and control requirements dominate
+
+### How Purchase Should Work
+
+The purchase flow does not need a large web app to be legitimate.
+
+The clean first commercial path is:
+
+1. customer reads the repo/docs and chooses a plan
+2. customer pays through Stripe Checkout
+3. Attestor activates the hosted plan and billing state
+4. customer signs in, manages API keys, sees usage/billing, and integrates from their own environment
+
+The existing billing/runtime contract already supports this model through:
+
+- `POST /api/v1/account/billing/checkout`
+- `POST /api/v1/account/billing/portal`
+- `GET /api/v1/account/usage`
+- `GET /api/v1/account/entitlement`
+- `GET /api/v1/account/billing/export`
+
+Stripe should remain the source of public commercial pricing, with these env-mapped recurring price ids:
+
+- `ATTESTOR_STRIPE_PRICE_STARTER`
+- `ATTESTOR_STRIPE_PRICE_PRO`
+- `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
+
+### Commercial Bootstrap
+
+To make the paid plans actually purchasable, the hosted runtime needs only a small Stripe contract:
+
+```bash
+export STRIPE_API_KEY=sk_live_...
+export STRIPE_WEBHOOK_SECRET=whsec_...
+export ATTESTOR_STRIPE_PRICE_STARTER=price_...
+export ATTESTOR_STRIPE_PRICE_PRO=price_...
+export ATTESTOR_STRIPE_PRICE_ENTERPRISE=price_...
+export ATTESTOR_BILLING_SUCCESS_URL=https://<host>/billing/success
+export ATTESTOR_BILLING_CANCEL_URL=https://<host>/billing/cancel
+export ATTESTOR_BILLING_PORTAL_RETURN_URL=https://<host>/account/billing
+```
+
+Once those are set, the repository already ships the main self-serve commercial entrypoints:
+
+- `POST /api/v1/account/billing/checkout`
+- `POST /api/v1/account/billing/portal`
+- `POST /api/v1/billing/stripe/webhook`
+
+### Why The Pricing Is Not Cheap
+
+Attestor is valuable when AI output is no longer only advisory.
+
+Once the work can affect:
+
+- financial reporting
+- treasury and risk operations
+- healthcare review
+- claims and insurer workflows
+- compliance and audit posture
+- other high-consequence internal decisions
+
+the missing layer is not another cheap generation API. It is the acceptance and control infrastructure around that output.
 
 ## What Attestor Is Not
 
@@ -534,6 +662,7 @@ If you want the full shipped-vs-first-slice inventory, expand below.
 | Document | Content |
 |---|---|
 | [Purpose and boundary](docs/01-overview/purpose.md) | Engine identity and non-claims |
+| [Product packaging and pricing](docs/01-overview/product-packaging.md) | Hosted API buying model, plans, and commercial framing |
 | [System overview](docs/02-architecture/system-overview.md) | Engine architecture and current boundaries |
 | [Regulatory alignment](docs/03-governance/regulatory-alignment.md) | Control-objective mapping |
 | [Authority model](docs/04-authority/authority-model.md) | Warrant -> escrow -> receipt -> capsule |

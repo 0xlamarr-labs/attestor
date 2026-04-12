@@ -80,7 +80,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'community',
     displayName: 'Community',
-    description: 'Self-hosted evaluation and internal development.',
+    description: 'Free self-hosted evaluation and internal development for teams validating the acceptance model locally.',
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: null,
     defaultAsyncPendingJobsPerTenant: null,
@@ -92,7 +92,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'starter',
     displayName: 'Starter',
-    description: 'Entry hosted tenant with bounded monthly pipeline usage.',
+    description: 'Hosted API access for first production teams that need governed acceptance without building the control layer themselves.',
     defaultMonthlyRunQuota: 100,
     defaultPipelineRequestsPerWindow: 10,
     defaultAsyncPendingJobsPerTenant: 2,
@@ -104,7 +104,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'pro',
     displayName: 'Pro',
-    description: 'Higher-throughput hosted tenant for repeated operational use.',
+    description: 'Higher-throughput hosted API plan for repeated operational use across multiple internal workflows or business units.',
     defaultMonthlyRunQuota: 1000,
     defaultPipelineRequestsPerWindow: 60,
     defaultAsyncPendingJobsPerTenant: 8,
@@ -116,7 +116,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'enterprise',
     displayName: 'Enterprise',
-    description: 'Hosted or private deployment plan with negotiated limits.',
+    description: 'Hosted or private deployment plan for regulated, high-scale, or custom-control environments with negotiated limits.',
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: 300,
     defaultAsyncPendingJobsPerTenant: 32,

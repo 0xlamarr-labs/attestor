@@ -2,7 +2,7 @@
 
 Architecture of Attestor as of April 2026.
 
-Attestor is a governance and proof engine for AI-assisted high-stakes workflows. The engine pattern is domain-independent. The current reference implementation is financial and remains the strongest end-to-end path in the repository.
+Attestor is acceptance, proof, and operating infrastructure for AI-assisted work. The engine pattern is domain-independent, and the product is consumed through API and hosted control surfaces rather than a document workspace. The current reference implementation is financial and remains the strongest end-to-end path in the repository.
 
 ## Engine Architecture
 

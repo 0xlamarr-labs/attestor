@@ -2,7 +2,9 @@
 
 ## What Attestor Is
 
-Attestor is a governance and proof engine for AI-assisted high-stakes workflows.
+Attestor is acceptance, proof, and operating infrastructure for AI-assisted work.
+
+It is consumed as a hosted API product or private deployment, not as a file-management app.
 
 Its job is to govern acceptance, not generation. A model may propose. Attestor determines whether that proposal can be accepted, what evidence supports it, who may endorse it, and what an outsider can verify later.
 
@@ -71,3 +73,4 @@ Attestor makes AI-assisted output governable. It does not make AI inherently tru
 - Reviewers and control functions who need evidence-bearing acceptance
 - Builders who need portable proof, not just a model answer
 - Organizations that want AI assistance without surrendering authority, auditability, or verification
+- Banks, hospitals, insurers, and internal AI platform teams that need infrastructure rather than another AI app
