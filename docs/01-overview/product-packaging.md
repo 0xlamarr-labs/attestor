@@ -75,6 +75,18 @@ That gives a credible first commercial shape:
 
 The product still remains API-first and infrastructure-first. A website can improve conversion later, but it is not the thing being sold.
 
+## Where Customer Payment And Your Bank Account Meet
+
+Attestor itself does not collect money into your bank account.
+
+The hosted paid path works like this:
+
+1. the customer pays through Stripe Checkout
+2. Stripe records the payment on your Stripe balance
+3. Stripe later pays out to the bank account you connected on the Stripe side
+
+So your bank details matter when you activate live Stripe payouts, not inside the Attestor product surface itself.
+
 ## Minimum Hosted Account Plane
 
 The hosted account plane only needs to do a few things well:

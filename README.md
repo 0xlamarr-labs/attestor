@@ -30,6 +30,7 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 - [Recommended production path](#recommended-production-path)
 - [Quick start](#quick-start)
 - [Hosted customer journey doc](docs/01-overview/hosted-customer-journey.md)
+- [Stripe commercial bootstrap](docs/01-overview/stripe-commercial-bootstrap.md)
 - [Product packaging and pricing](docs/01-overview/product-packaging.md)
 - [Production readiness guide](docs/08-deployment/production-readiness.md)
 - [Project status](#project-status)
@@ -337,6 +338,30 @@ Once those are set, the repository already ships the main self-serve commercial 
 - `POST /api/v1/account/billing/checkout`
 - `POST /api/v1/account/billing/portal`
 - `POST /api/v1/billing/stripe/webhook`
+
+### Where The Money Actually Goes
+
+Customers do not pay your bank account directly through Attestor.
+
+The commercial flow is:
+
+1. the customer pays in Stripe Checkout
+2. Stripe records the payment on your Stripe account
+3. Stripe later pays out your balance to the bank account connected to Stripe
+
+That means your bank details are needed at the point where you activate Stripe for live selling and configure payouts, not when the customer simply signs up for `community`.
+
+The minimum real-world commercial checklist is:
+
+- create the hosted recurring prices in Stripe for `starter`, `pro`, and `enterprise`
+- activate your Stripe live account
+- connect the bank account where payouts should land
+- configure `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET`, and the `ATTESTOR_STRIPE_PRICE_*` env vars
+- point success, cancel, and billing-portal return URLs at the live host
+
+If you have not yet connected a bank account in Stripe, customers can still conceptually reach checkout in test mode, but you do not have a real commercial launch yet.
+
+For the fuller operator checklist, see [Stripe commercial bootstrap](docs/01-overview/stripe-commercial-bootstrap.md).
 
 ### Why The Pricing Is Not Cheap
 
