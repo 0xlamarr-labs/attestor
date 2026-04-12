@@ -45,13 +45,15 @@ spec:
                     app.kubernetes.io/name: attestor-worker
       containers:
         - name: worker
-          image: europe-west1-docker.pkg.dev/project-9180cbda-d681-42d8-8ca/attestor/attestor-worker:2112b47-readinessfix1
+          image: europe-west1-docker.pkg.dev/project-9180cbda-d681-42d8-8ca/attestor/attestor-worker:de677b9-gke1
           imagePullPolicy: IfNotPresent
           command: ["node", "dist/service/worker.js"]
           envFrom:
             - configMapRef:
                 name: attestor-runtime
           env:
+            - name: OTEL_SERVICE_NAME
+              value: "attestor-worker"
             - name: ATTESTOR_HA_MODE
               value: "true"
             - name: ATTESTOR_INSTANCE_ID

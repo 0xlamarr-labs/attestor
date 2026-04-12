@@ -188,6 +188,8 @@ Once the packet is green:
 1. apply the observability bundle
 2. apply the HA bundle
 3. wait for rollout completion
+4. verify `GET /api/v1/admin/telemetry` reports OTLP logs/traces/metrics enabled against the in-cluster receiver service
+5. only then treat Grafana Cloud / managed-backend auth errors as a destination-side credential problem rather than an app-runtime wiring problem
 4. confirm API `/api/v1/ready`
 5. confirm worker `/ready`
 6. confirm traces/logs/metrics reach the backend

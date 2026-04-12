@@ -17,6 +17,7 @@ function main(): void {
   const kustomization = read('ops/kubernetes/ha/kustomization.yaml');
   const apiDeployment = read('ops/kubernetes/ha/api-deployment.yaml');
   const workerDeployment = read('ops/kubernetes/ha/worker-deployment.yaml');
+  const runtimeConfigMap = read('ops/kubernetes/ha/configmap.yaml');
   const apiHpa = read('ops/kubernetes/ha/api-hpa.yaml');
   const workerHpa = read('ops/kubernetes/ha/worker-hpa.yaml');
   const gateway = read('ops/kubernetes/ha/gateway.yaml');
@@ -61,7 +62,9 @@ function main(): void {
   ok(apiDeployment.includes('topologySpreadConstraints:') && apiDeployment.includes('podAntiAffinity:'), 'Kubernetes HA bundle: API deployment spreads replicas across nodes/zones');
   ok(workerDeployment.includes('ATTESTOR_HA_MODE') && workerDeployment.includes('REDIS_URL'), 'Kubernetes HA bundle: worker deployment requires shared Redis and HA mode');
   ok(workerDeployment.includes('ATTESTOR_WORKER_HEALTH_PORT') && workerDeployment.includes('readinessProbe:') && workerDeployment.includes('livenessProbe:'), 'Kubernetes HA bundle: worker deployment exposes health/readiness probes');
+  ok(workerDeployment.includes('OTEL_SERVICE_NAME') && workerDeployment.includes('attestor-worker'), 'Kubernetes HA bundle: worker deployment overrides OTLP service naming so worker traces stay distinct from the API');
   ok(workerDeployment.includes('topologySpreadConstraints:') && workerDeployment.includes('podAntiAffinity:'), 'Kubernetes HA bundle: worker deployment spreads replicas across nodes/zones');
+  ok(runtimeConfigMap.includes('OTEL_EXPORTER_OTLP_ENDPOINT') && runtimeConfigMap.includes('attestor-observability-receiver.attestor-observability.svc.cluster.local:4318'), 'Kubernetes HA bundle: runtime configmap points applications at the in-cluster Alloy OTLP HTTP receiver');
   ok(apiHpa.includes('behavior:') && workerHpa.includes('behavior:'), 'Kubernetes HA bundle: HPAs include scale behaviors');
   ok(apiHpa.includes('memory') && workerHpa.includes('memory'), 'Kubernetes HA bundle: HPAs scale on memory as well as CPU');
   ok(apiPdb.includes('PodDisruptionBudget') && workerPdb.includes('PodDisruptionBudget'), 'Kubernetes HA bundle: PDBs exist for API and worker');
