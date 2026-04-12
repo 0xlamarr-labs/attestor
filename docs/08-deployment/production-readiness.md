@@ -65,6 +65,20 @@ Recommended defaults:
 
 The repo-guided GKE bootstrap path is no longer just theoretical: a reserved global IP + `<ip>.sslip.io` hostname + Gateway API + cert-manager Gateway HTTP-01 solver + `attestor-tls` Secret + HTTP-to-HTTPS redirect has now been live-validated end to end. Use your own delegated hostname for the final production domain, but the bootstrap route itself is already proven.
 
+Once the bootstrap hostname is proven, render the final delegated-domain cutover bundle with:
+
+```bash
+npm run render:gke-domain-cutover -- --hostname=api.example.com --dns-target-ip=<gateway-ip>
+```
+
+That bundle closes the final delta between the already-proven bootstrap route and the final production hostname:
+
+- Gateway HTTPS listener hostname
+- HTTP to HTTPS redirect route
+- cert-manager `ClusterIssuer`
+- cert-manager `Certificate`
+- DNS handoff summary
+
 ## Step 2: Bootstrap the Secret Contract
 
 Render the exact secret contract for GKE:
@@ -196,14 +210,15 @@ Once the packet is green:
 
 1. apply the observability bundle
 2. apply the HA bundle
-3. wait for rollout completion
-4. verify `GET /api/v1/admin/telemetry` reports OTLP logs/traces/metrics enabled against the in-cluster receiver service
-5. only then treat Grafana Cloud / managed-backend auth errors as a destination-side credential problem rather than an app-runtime wiring problem
-4. confirm API `/api/v1/ready`
-5. confirm worker `/ready`
-6. confirm traces/logs/metrics reach the backend
-7. confirm alert routing reaches the real destinations
-8. confirm Stripe / hosted auth / queue / billing critical paths still behave correctly
+3. if you are moving from bootstrap `sslip.io` to a delegated domain, apply the final-domain cutover bundle
+4. wait for rollout completion
+5. verify `GET /api/v1/admin/telemetry` reports OTLP logs/traces/metrics enabled against the in-cluster receiver service
+6. only then treat Grafana Cloud / managed-backend auth errors as a destination-side credential problem rather than an app-runtime wiring problem
+7. confirm API `/api/v1/ready`
+8. confirm worker `/ready`
+9. confirm traces/logs/metrics reach the backend
+10. confirm alert routing reaches the real destinations
+11. confirm Stripe / hosted auth / queue / billing critical paths still behave correctly
 
 ## Step 8: Run a Short Production Rehearsal
 

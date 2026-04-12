@@ -37,3 +37,7 @@ Gateway API HTTP-01 note:
 - apply a real `ClusterIssuer` before the `Certificate`
 - [clusterissuer.example.yaml](/C:/Users/thedi/attestor/ops/kubernetes/ha/providers/cert-manager/clusterissuer.example.yaml) shows the `gatewayHTTPRoute.parentRefs` form that reuses the `attestor` Gateway for ACME solving
 - this repo-guided path is now live-proven on GKE with a static global address, `<ip>.sslip.io`, Gateway HTTP-01 solving, and cert-manager issuance of `attestor-tls`
+
+Final-domain renderer note:
+
+- `npm run render:gke-domain-cutover -- --hostname=<final-domain> --dns-target-ip=<gateway-ip>` emits a ready-to-apply `ClusterIssuer` + `Certificate` pair for the delegated hostname alongside the matching Gateway and HTTPRoute manifests

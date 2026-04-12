@@ -25,6 +25,7 @@ function main(): void {
   const apiPdb = read('ops/kubernetes/ha/api-pdb.yaml');
   const workerPdb = read('ops/kubernetes/ha/worker-pdb.yaml');
   const gkeOverlay = read('ops/kubernetes/ha/providers/gke/kustomization.yaml');
+  const gkeReadme = read('ops/kubernetes/ha/providers/gke/README.md');
   const gkeHealthCheckPolicy = read('ops/kubernetes/ha/providers/gke/healthcheckpolicy.yaml');
   const gkeBackendPolicy = read('ops/kubernetes/ha/providers/gke/gcpbackendpolicy.yaml');
   const gkeBackendPolicyCloudArmor = read('ops/kubernetes/ha/providers/gke/gcpbackendpolicy.cloudarmor.example.yaml');
@@ -50,6 +51,7 @@ function main(): void {
   const releaseBundleScript = read('scripts/render-ha-release-bundle.ts');
   const releaseProbeScript = read('scripts/probe-ha-release-inputs.ts');
   const promotionPacketScript = read('scripts/render-ha-promotion-packet.ts');
+  const gkeDomainCutoverScript = read('scripts/render-gke-domain-cutover.ts');
   const awsProfile = read('ops/kubernetes/ha/profiles/aws-production.json');
   const gkeProfile = read('ops/kubernetes/ha/profiles/gke-production.json');
   const haReadme = read('ops/kubernetes/ha/README.md');
@@ -72,6 +74,7 @@ function main(): void {
   ok(httpRoute.includes('HTTPRoute') && httpRoute.includes('sectionName: http') && !httpRoute.includes('sectionName: https'), 'Kubernetes HA bundle: base HTTPRoute only targets the bootstrap HTTP listener');
   ok(httpRoute.includes('backendRefs:') && httpRoute.includes('attestor-api'), 'Kubernetes HA bundle: HTTPRoute forwards to attestor-api service');
   ok(gkeOverlay.includes('../../'), 'Kubernetes HA bundle: GKE managed LB overlay composes the base bundle');
+  ok(gkeReadme.includes('render:gke-domain-cutover') && gkeReadme.includes('sslip.io') && gkeReadme.includes('A` record'), 'Kubernetes HA bundle: GKE README documents bootstrap sslip.io and final delegated-domain cutover flow');
   ok(gkeHealthCheckPolicy.includes('HealthCheckPolicy') && gkeHealthCheckPolicy.includes('/api/v1/ready'), 'Kubernetes HA bundle: GKE overlay defines managed health check policy');
   ok(gkeBackendPolicy.includes('GCPBackendPolicy') && gkeBackendPolicy.includes('connectionDraining') && !gkeBackendPolicy.includes('securityPolicy'), 'Kubernetes HA bundle: GKE overlay defines backend timeout/draining defaults without requiring Cloud Armor quota');
   ok(gkeBackendPolicyCloudArmor.includes('securityPolicy: attestor-api-armor-policy'), 'Kubernetes HA bundle: GKE Cloud Armor example overlays the backend security policy when quota exists');
@@ -96,6 +99,7 @@ function main(): void {
   ok(externalTlsSecret.includes('kubernetes.io/tls') && externalTlsSecret.includes('attestor-tls'), 'Kubernetes HA bundle: external-secrets overlay can project TLS material');
   ok(profilesReadme.includes('render:ha-profile') && profilesReadme.includes('aws-production.json'), 'Kubernetes HA bundle: profiles README documents benchmark-to-profile tuning flow');
   ok(releaseBundleScript.includes('render-ha-profile.ts') && releaseBundleScript.includes('render-ha-credentials.ts'), 'Kubernetes HA bundle: release bundle renderer composes scaling and credential artifacts');
+  ok(gkeDomainCutoverScript.includes('https-gateway.example.yaml') && gkeDomainCutoverScript.includes('clusterissuer.example.yaml') && gkeDomainCutoverScript.includes('summary.json'), 'Kubernetes HA bundle: final-domain cutover renderer composes GKE Gateway and cert-manager manifests into a DNS handoff bundle');
   ok(releaseProbeScript.includes('render-ha-release-bundle.ts') && releaseProbeScript.includes('ATTESTOR_CONTROL_PLANE_PG_URL') && releaseProbeScript.includes('ATTESTOR_BILLING_LEDGER_PG_URL'), 'Kubernetes HA bundle: release input probe validates shared-state envs and final bundle render');
   ok(promotionPacketScript.includes('ready-for-environment-promotion') && promotionPacketScript.includes('probeHaReleaseInputs') && promotionPacketScript.includes('release-bundle'), 'Kubernetes HA bundle: promotion packet script collapses HA readiness and release handoff into one checkpoint');
   ok(awsProfile.includes('"provider": "aws"') && awsProfile.includes('"availabilityTarget": 0.995'), 'Kubernetes HA bundle: AWS calibration profile ships production SLO defaults');

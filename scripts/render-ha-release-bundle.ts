@@ -46,6 +46,25 @@ function replaceYamlLine(contents: string, key: string, replacementLine: string)
   return contents.replace(pattern, replacementLine);
 }
 
+function replaceContainerImage(contents: string, containerName: string, replacement: string): string {
+  const escaped = containerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(- name:\\s*${escaped}[\\s\\S]*?\\n\\s*image:\\s*)(\\S+)`);
+  if (!pattern.test(contents)) throw new Error(`Expected container image replacement did not match: ${containerName}`);
+  return contents.replace(pattern, `$1${replacement}`);
+}
+
+function ensureHttpRouteHostname(contents: string, hostname: string): string {
+  if (contents.includes('attestor.example.com')) {
+    return contents.replace(/attestor\.example\.com/g, hostname);
+  }
+  if (/^\s*hostnames:\s*$/m.test(contents)) {
+    return contents;
+  }
+  const specPattern = /^spec:\s*$/m;
+  if (!specPattern.test(contents)) throw new Error('Expected HTTPRoute spec block for hostname injection');
+  return contents.replace(specPattern, `spec:\n  hostnames:\n    - ${hostname}`);
+}
+
 function scalarFromYaml(yaml: string, key: string): string | undefined {
   const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = yaml.match(new RegExp(`^\\s*${escaped}:\\s*"?([^"\\n]+)"?\\s*$`, 'm'));
@@ -112,15 +131,15 @@ function main(): void {
     const apiPdb = read('ops/kubernetes/ha/api-pdb.yaml');
     const workerPdb = read('ops/kubernetes/ha/worker-pdb.yaml');
 
-    apiDeployment = replaceOne(apiDeployment, 'ghcr.io/your-org/attestor-api:latest', apiImage);
+    apiDeployment = replaceContainerImage(apiDeployment, 'api', apiImage);
     if (imagePullPolicy !== 'IfNotPresent') {
       apiDeployment = replaceOne(apiDeployment, /imagePullPolicy:\s*\S+/, `imagePullPolicy: ${imagePullPolicy}`);
     }
-    workerDeployment = replaceOne(workerDeployment, 'ghcr.io/your-org/attestor-worker:latest', workerImage);
+    workerDeployment = replaceContainerImage(workerDeployment, 'worker', workerImage);
     if (imagePullPolicy !== 'IfNotPresent') {
       workerDeployment = replaceOne(workerDeployment, /imagePullPolicy:\s*\S+/, `imagePullPolicy: ${imagePullPolicy}`);
     }
-    httpRoute = replaceOne(httpRoute, '- attestor.example.com', `- ${hostname}`);
+    httpRoute = ensureHttpRouteHostname(httpRoute, hostname);
     if (otelEndpoint) {
       configmap = replaceOne(
         configmap,

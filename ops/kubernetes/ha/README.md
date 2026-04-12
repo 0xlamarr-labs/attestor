@@ -77,6 +77,17 @@ GKE public Gateway flow:
 - then apply the GKE policy overlay:
   - `kubectl apply -k ops/kubernetes/ha/providers/gke`
 
+Final delegated-domain cutover:
+
+- render the final-domain Gateway/API/cert-manager bundle with:
+  - `npm run render:gke-domain-cutover -- --hostname=<final-domain> --static-address-name=<named-address> --dns-target-ip=<gateway-ip>`
+- create a DNS `A` record pointing `<final-domain>` at the same public IPv4
+- apply the generated bundle:
+  - `kubectl apply -k .attestor/ha/gke-domain-cutover/<final-domain>`
+- verify:
+  - `https://<final-domain>/api/v1/health`
+  - `https://<final-domain>/api/v1/ready`
+
 Workload-aware autoscaling overlay:
 
 - `kubectl apply -k ops/kubernetes/ha/providers/keda`
@@ -98,6 +109,8 @@ Notes:
   - `npm run render:ha-profile -- --input=.attestor/ha-calibration/latest.json --profile=ops/kubernetes/ha/profiles/aws-production.json`
 - an ops-ready credential/certificate render step is available via:
   - `npm run render:ha-credentials -- --provider=<generic|aws|gke> --output-dir=.attestor/ha/credentials`
+- a dedicated GKE final-domain cutover render step is available via:
+  - `npm run render:gke-domain-cutover -- --hostname=<final-domain> --dns-target-ip=<gateway-ip>`
 - a self-contained release bundle render step is available via:
   - `npm run render:ha-release-bundle -- --provider=<aws|gke|generic> --benchmark=.attestor/ha-calibration/latest.json --output-dir=.attestor/ha/release`
 - a rollout-near release preflight is available via:
