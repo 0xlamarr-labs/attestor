@@ -46,6 +46,7 @@
  * Integration tests hit it over the network.
  */
 
+import { randomUUID } from 'node:crypto';
 import { Hono, type Context } from 'hono';
 import { serve } from '@hono/node-server';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
@@ -249,6 +250,7 @@ import {
 import { buildHostedFeatureServiceView } from './billing-feature-service.js';
 import {
   DEFAULT_HOSTED_PLAN_ID,
+  SELF_HOST_PLAN_ID,
   defaultRateLimitWindowSeconds,
   findHostedPlanByStripePriceId,
   getHostedPlan,
@@ -941,6 +943,27 @@ function adminTenantKeyView(record: TenantKeyRecord) {
   };
 }
 
+function accountApiKeyView(record: TenantKeyRecord) {
+  return adminTenantKeyView(record);
+}
+
+function normalizeSignupTenantSegment(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+    .slice(0, 32);
+}
+
+function deriveSignupTenantId(accountName: string, email: string): string {
+  const [emailLocalPart] = email.split('@', 1);
+  const base = normalizeSignupTenantSegment(accountName)
+    || normalizeSignupTenantSegment(emailLocalPart ?? '')
+    || 'account';
+  return `${base}-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
+}
+
 function adminAccountView(record: HostedAccountRecord) {
   return {
     id: record.id,
@@ -1484,6 +1507,103 @@ app.post('/api/v1/account/users/bootstrap', async (c) => {
   return c.json({
     user: accountUserView(created.record),
     bootstrap: true,
+  }, 201);
+});
+
+app.post('/api/v1/auth/signup', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const accountName = typeof body.accountName === 'string' ? body.accountName.trim() : '';
+  const email = typeof body.email === 'string' ? body.email.trim() : '';
+  const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!accountName || !email || !displayName || !password) {
+    return c.json({ error: 'accountName, email, displayName, and password are required.' }, 400);
+  }
+  if (password.length < 12) {
+    return c.json({ error: 'password must be at least 12 characters long.' }, 400);
+  }
+
+  const existingUser = await findAccountUserByEmailState(email);
+  if (existingUser) {
+    return c.json({ error: `Account user '${email}' already exists.` }, 409);
+  }
+
+  const tenantId = deriveSignupTenantId(accountName, email);
+  let resolvedPlan;
+  try {
+    resolvedPlan = resolvePlanSpec({
+      planId: SELF_HOST_PLAN_ID,
+      defaultPlanId: SELF_HOST_PLAN_ID,
+    });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+
+  let provisioned;
+  try {
+    provisioned = await provisionHostedAccountState({
+      account: {
+        accountName,
+        contactEmail: email,
+        primaryTenantId: tenantId,
+      },
+      key: {
+        tenantId,
+        tenantName: accountName,
+        planId: resolvedPlan.planId,
+        monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+      },
+    });
+  } catch (err) {
+    const mapped = accountStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    const tenantMapped = tenantKeyStoreErrorResponse(c, err);
+    if (tenantMapped) return tenantMapped;
+    throw err;
+  }
+
+  let createdUser;
+  try {
+    createdUser = await createAccountUserState({
+      accountId: provisioned.account.id,
+      email,
+      displayName,
+      password,
+      role: 'account_admin',
+    });
+  } catch (err) {
+    if (err instanceof AccountUserStoreError) {
+      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
+    }
+    throw err;
+  }
+
+  const issued = await issueAccountSessionState({
+    accountId: provisioned.account.id,
+    accountUserId: createdUser.record.id,
+    role: createdUser.record.role,
+  });
+  const loginTouch = await recordAccountUserLoginState(createdUser.record.id);
+  await syncHostedBillingEntitlementForTenant(provisioned.account.primaryTenantId, {
+    lastEventType: 'auth.signup',
+    lastEventAt: new Date().toISOString(),
+  });
+
+  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
+
+  return c.json({
+    signup: true,
+    session: {
+      id: issued.record.id,
+      expiresAt: issued.record.expiresAt,
+      source: 'account_session',
+    },
+    user: accountUserView(loginTouch.record),
+    account: adminAccountView(provisioned.account),
+    initialKey: {
+      ...accountApiKeyView(provisioned.initialKey),
+      apiKey: provisioned.apiKey,
+    },
   }, 201);
 });
 
@@ -2658,6 +2778,204 @@ app.get('/api/v1/account/features', async (c) => {
   if (current instanceof Response) return current;
   const entitlement = await readHostedBillingEntitlement(current.account);
   return c.json(buildHostedFeatureServiceView(entitlement));
+});
+
+app.get('/api/v1/account/api-keys', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
+  const keys = await listTenantKeyRecordsState();
+  return c.json({
+    keys: keys.records
+      .filter((entry) => entry.tenantId === account.primaryTenantId)
+      .map(accountApiKeyView),
+    defaults: {
+      maxActiveKeysPerTenant: tenantKeyStorePolicy().maxActiveKeysPerTenant,
+    },
+  });
+});
+
+app.post('/api/v1/account/api-keys', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
+  const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
+  const planId = tenantRecord?.planId ?? SELF_HOST_PLAN_ID;
+  const monthlyRunQuota = tenantRecord?.monthlyRunQuota ?? null;
+  const tenantName = tenantRecord?.tenantName ?? account.accountName;
+
+  let issued;
+  try {
+    issued = await issueTenantApiKeyState({
+      tenantId: account.primaryTenantId,
+      tenantName,
+      planId,
+      monthlyRunQuota,
+    });
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
+    lastEventType: 'account.api_keys.issue',
+    lastEventAt: new Date().toISOString(),
+  });
+
+  return c.json({
+    key: {
+      ...accountApiKeyView(issued.record),
+      apiKey: issued.apiKey,
+    },
+  }, 201);
+});
+
+app.post('/api/v1/account/api-keys/:id/rotate', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
+  const keys = await listTenantKeyRecordsState();
+  const currentKey = keys.records.find((entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  if (!currentKey) {
+    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
+  }
+
+  let rotated;
+  try {
+    rotated = await rotateTenantApiKeyState(currentKey.id);
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
+    lastEventType: 'account.api_keys.rotate',
+    lastEventAt: new Date().toISOString(),
+  });
+
+  return c.json({
+    previousKey: accountApiKeyView(rotated.previousRecord),
+    newKey: {
+      ...accountApiKeyView(rotated.record),
+      apiKey: rotated.apiKey,
+    },
+  }, 201);
+});
+
+app.post('/api/v1/account/api-keys/:id/deactivate', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
+  const keys = await listTenantKeyRecordsState();
+  const currentKey = keys.records.find((entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  if (!currentKey) {
+    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
+  }
+
+  let result;
+  try {
+    result = await setTenantApiKeyStatusState(currentKey.id, 'inactive');
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
+    lastEventType: 'account.api_keys.deactivate',
+    lastEventAt: new Date().toISOString(),
+  });
+
+  return c.json({
+    key: accountApiKeyView(result.record),
+  });
+});
+
+app.post('/api/v1/account/api-keys/:id/reactivate', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
+  const keys = await listTenantKeyRecordsState();
+  const currentKey = keys.records.find((entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  if (!currentKey) {
+    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
+  }
+
+  let result;
+  try {
+    result = await setTenantApiKeyStatusState(currentKey.id, 'active');
+  } catch (err) {
+    const mapped = tenantKeyStoreErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
+  }
+  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
+    lastEventType: 'account.api_keys.reactivate',
+    lastEventAt: new Date().toISOString(),
+  });
+
+  return c.json({
+    key: accountApiKeyView(result.record),
+  });
+});
+
+app.post('/api/v1/account/api-keys/:id/revoke', async (c) => {
+  const unauthorized = requireAccountSession(c, {
+    roles: ['account_admin'],
+  });
+  if (unauthorized) return unauthorized;
+  const access = currentAccountAccess(c)!;
+  const account = await findHostedAccountByIdState(access.accountId);
+  if (!account) {
+    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  }
+  const keys = await listTenantKeyRecordsState();
+  const currentKey = keys.records.find((entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  if (!currentKey) {
+    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
+  }
+
+  const result = await revokeTenantApiKeyState(currentKey.id);
+  if (!result.record) {
+    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
+  }
+  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
+    lastEventType: 'account.api_keys.revoke',
+    lastEventAt: new Date().toISOString(),
+  });
+
+  return c.json({
+    key: accountApiKeyView(result.record),
+  });
 });
 
 app.get('/api/v1/account/users', async (c) => {

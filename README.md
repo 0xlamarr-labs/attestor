@@ -24,10 +24,12 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 
 - [Why this exists](#why-this-exists)
 - [How customers buy and use Attestor](#how-customers-buy-and-use-attestor)
+- [Hosted customer journey](#hosted-customer-journey)
 - [Plans and pricing](#plans-and-pricing)
 - [What ships in this repository](#what-ships-in-this-repository)
 - [Recommended production path](#recommended-production-path)
 - [Quick start](#quick-start)
+- [Hosted customer journey doc](docs/01-overview/hosted-customer-journey.md)
 - [Product packaging and pricing](docs/01-overview/product-packaging.md)
 - [Production readiness guide](docs/08-deployment/production-readiness.md)
 - [Project status](#project-status)
@@ -201,6 +203,53 @@ flowchart LR
   P --> O["Production consequence, audit, review"]
 ```
 
+If you do not yet have a polished marketing site, the repo and docs can still function as the first commercial surface. A serious buyer should still be able to understand the product, pick a plan, sign up, upgrade through Stripe, and start integrating without ever needing a file workspace.
+
+## Hosted Customer Journey
+
+The intended hosted path is deliberately simple:
+
+1. sign up for a hosted account
+2. receive the first tenant API key immediately
+3. upgrade through Stripe Checkout when paid volume or support is needed
+4. sign in to manage API keys, usage, and billing
+5. call Attestor from the customer's own environment
+
+That journey already maps onto the shipped HTTP surface:
+
+- `POST /api/v1/auth/signup`
+- `POST /api/v1/auth/login`
+- `GET /api/v1/account`
+- `GET /api/v1/account/usage`
+- `GET /api/v1/account/entitlement`
+- `GET /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys/:id/rotate`
+- `POST /api/v1/account/api-keys/:id/deactivate`
+- `POST /api/v1/account/api-keys/:id/reactivate`
+- `POST /api/v1/account/api-keys/:id/revoke`
+- `POST /api/v1/account/billing/checkout`
+- `POST /api/v1/account/billing/portal`
+
+The commercial principle is straightforward:
+
+- `community` creates a real account and first API key
+- paid plans upgrade the same account instead of creating a second product line
+- the customer's real workflows stay in the customer's systems
+- Attestor supplies the acceptance, proof, billing, and control boundary
+
+### What the Hosted Account Plane Must Cover
+
+For the first commercial shape, the account plane only needs to do a few things well:
+
+- show the active plan and entitlement state
+- show usage against the current quota boundary
+- let the customer issue, rotate, deactivate, reactivate, and revoke API keys
+- hand paid upgrades and invoice management off to Stripe
+- point the customer back to docs and quick integration examples
+
+That is enough to make Attestor purchasable and usable as an API-first infrastructure product. It does not need to impersonate a file workspace or document app.
+
 ## What Customers Actually Get
 
 The thing being bought is larger than an endpoint and smaller than a full workspace platform.
@@ -242,12 +291,20 @@ The purchase flow does not need a large web app to be legitimate.
 The clean first commercial path is:
 
 1. customer reads the repo/docs and chooses a plan
-2. customer pays through Stripe Checkout
-3. Attestor activates the hosted plan and billing state
-4. customer signs in, manages API keys, sees usage/billing, and integrates from their own environment
+2. customer signs up and receives a hosted account plus first API key
+3. customer upgrades through Stripe Checkout when the paid plan is needed
+4. Attestor activates the hosted plan and billing state on that same account
+5. customer signs in, manages API keys, sees usage/billing, and integrates from their own environment
 
 The existing billing/runtime contract already supports this model through:
 
+- `POST /api/v1/auth/signup`
+- `GET /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys/:id/rotate`
+- `POST /api/v1/account/api-keys/:id/deactivate`
+- `POST /api/v1/account/api-keys/:id/reactivate`
+- `POST /api/v1/account/api-keys/:id/revoke`
 - `POST /api/v1/account/billing/checkout`
 - `POST /api/v1/account/billing/portal`
 - `GET /api/v1/account/usage`
@@ -420,6 +477,41 @@ Notes:
 - `tests/live-snowflake.test.ts` is env-gated and opt-in.
 - `scripts/real-db-proof.ts` performs real PostgreSQL execution against an embedded instance and emits signed artifacts.
 
+## Hosted Customer Quick Path
+
+If you are evaluating the hosted product rather than self-hosting the repo, the shortest path looks like this:
+
+```bash
+# 1. Create a hosted account and receive the first API key
+curl -X POST https://<host>/api/v1/auth/signup \
+  -H "content-type: application/json" \
+  -d '{
+    "accountName": "Example Co",
+    "email": "founder@example.com",
+    "displayName": "Founder",
+    "password": "ExamplePass123!"
+  }'
+
+# 2. Upgrade the hosted account when you need paid volume
+curl -X POST https://<host>/api/v1/account/billing/checkout \
+  -H "content-type: application/json" \
+  -H "cookie: <account-session-cookie>" \
+  -d '{ "planId": "starter" }'
+
+# 3. List or rotate API keys from the account plane
+curl https://<host>/api/v1/account/api-keys \
+  -H "cookie: <account-session-cookie>"
+```
+
+That is the intended product experience:
+
+- sign up
+- get a real account immediately
+- pay only when you need more than `community`
+- use the API from your own runtime
+
+For the fuller hosted commercial walkthrough, see [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
+
 ## Bounded Service Layer
 
 The repository ships a split API/worker service topology with a bounded public surface:
@@ -445,6 +537,7 @@ API endpoints:
 - `GET /api/v1/ready` - orchestrator readiness probe (200 when ready, 503 when not)
 - `GET /api/v1/domains`
 - `GET /api/v1/connectors`
+- `POST /api/v1/auth/signup`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/passkeys/options`
 - `POST /api/v1/auth/passkeys/verify`
@@ -472,6 +565,12 @@ API endpoints:
 - `GET /api/v1/account/entitlement`
 - `GET /api/v1/account/features`
 - `GET /api/v1/account/usage`
+- `GET /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys/:id/rotate`
+- `POST /api/v1/account/api-keys/:id/deactivate`
+- `POST /api/v1/account/api-keys/:id/reactivate`
+- `POST /api/v1/account/api-keys/:id/revoke`
 - `POST /api/v1/account/users/bootstrap`
 - `GET /api/v1/account/users`
 - `POST /api/v1/account/users`
@@ -614,7 +713,7 @@ If you want the full shipped-vs-first-slice inventory, expand below.
 **First slices** (real, wired into runtime paths, but not fully productized):
 - Filing: evidence obligation in warrant, `POST /api/v1/filing/export` now issues a real XBRL Report Package container by default, and signed pipeline responses now surface the default issued filing package for the built-in US-GAAP path
 - Hosted API shell: built-in hosted plan catalog (`community`, `starter`, `pro`, `enterprise`) + API-key tenant plans + monthly pipeline-run quota enforcement + plan-aware tenant rate limiting on expensive pipeline routes + `/api/v1/account`, `/api/v1/account/entitlement`, `/api/v1/account/usage`, `/api/v1/account/billing/export`, and `/api/v1/account/billing/reconciliation` hosted-customer endpoints. When `ATTESTOR_CONTROL_PLANE_PG_URL` is set, hosted account state, tenant keys, usage, billing entitlements, hosted email-delivery events, admin audit, admin idempotency replay, and Stripe webhook dedupe all move onto a shared PostgreSQL-backed control-plane first slice; otherwise they fall back to local single-node files. `/api/v1/account` now surfaces the current hosted billing entitlement read model, including persisted Stripe entitlement lookup keys / feature ids, alongside Stripe-backed checkout/invoice summary, while `/api/v1/account/billing/export` can return JSON or CSV using live Stripe invoice/charge/active-entitlement listing when available and shared-ledger/mock-summary fallbacks otherwise.
-- Customer auth / RBAC first slice: hosted customer access now supports account users plus opaque server-side sessions with role boundaries (`account_admin`, `billing_admin`, `read_only`). `POST /api/v1/account/users/bootstrap` creates the first `account_admin` from an initial tenant API key, `POST /api/v1/auth/login|logout` + `GET /api/v1/auth/me` provide cookie/header-backed session auth, `POST /api/v1/auth/password/change` rotates the current user's password, `POST /api/v1/account/users/invites` + `POST /api/v1/account/users/invites/accept` provide invite onboarding, and `POST /api/v1/account/users/:id/password-reset` + `POST /api/v1/auth/password/reset` provide password reset tokens. Delivery defaults to manual/API-token mode but now supports real SMTP delivery with link generation when `ATTESTOR_EMAIL_DELIVERY_MODE=smtp`, plus SendGrid- and Mailgun-signed provider analytics via `GET /api/v1/account/email/deliveries`, `GET /api/v1/admin/email/deliveries`, `POST /api/v1/email/sendgrid/webhook`, and `POST /api/v1/email/mailgun/webhook`, carrying delivery ids, provider event history, and projected delivery status across both file-backed and shared PostgreSQL control-plane modes. TOTP MFA is now wired in with `GET /api/v1/account/mfa`, `POST /api/v1/account/mfa/totp/enroll`, `POST /api/v1/account/mfa/totp/confirm`, `POST /api/v1/account/mfa/disable`, and `POST /api/v1/auth/mfa/verify`, including encrypted-at-rest TOTP seeds, short-lived MFA login challenges, recovery codes, and session invalidation on MFA boundary changes. Hosted OIDC SSO first slice is now present via `POST /api/v1/auth/oidc/login`, `GET /api/v1/auth/oidc/callback`, and `GET /api/v1/account/oidc`, with authorization-code + PKCE, sealed stateless login state, issuer+subject identity linking, and TOTP-aware session issuance. Hosted SAML SSO first slice is now present via `GET /api/v1/auth/saml/metadata`, `POST /api/v1/auth/saml/login`, `POST /api/v1/auth/saml/acs`, and `GET /api/v1/account/saml`, with SP-initiated Redirect/POST flow, sealed relay state, signed-response verification, issuer+subject identity linking with existing-user email fallback, one-time replay protection, and TOTP-aware session issuance across both file-backed and shared PostgreSQL control-plane modes. Hosted WebAuthn/passkeys first slice is now present via `GET /api/v1/account/passkeys`, `POST /api/v1/account/passkeys/register/options`, `POST /api/v1/account/passkeys/register/verify`, `POST /api/v1/account/passkeys/:id/delete`, `POST /api/v1/auth/passkeys/options`, and `POST /api/v1/auth/passkeys/verify`, using server-side SimpleWebAuthn verification plus one-time persisted challenge state in the hosted action-token store. The default policy follows the current SimpleWebAuthn passkeys baseline (`userVerification: 'preferred'` and `requireUserVerification: false`) for broader device compatibility, while deployments can opt into stricter UV enforcement with `ATTESTOR_WEBAUTHN_REQUIRE_USER_VERIFICATION=true`. Sessions enforce absolute TTL plus idle timeout and are invalidated on password change/reset, MFA boundary changes, passkey enrollment changes, or account suspension/archive. In shared-control-plane mode, account users, sessions, action tokens, SAML replay state, and hosted email-delivery events move into PostgreSQL alongside the rest of the hosted control-plane. Boundary: one account membership per email, built-in `scrypt` password hashing, SAML is SP-initiated only, signed IdP responses/assertions are required, XML validation uses a strict custom guard rather than a full XSD validator, email-first passkey auth remains a first-slice choice, and provider analytics are now a signed SendGrid + Mailgun first slice rather than a single-provider path.
+- Customer auth / RBAC first slice: hosted customer access now supports self-serve signup plus account users and opaque server-side sessions with role boundaries (`account_admin`, `billing_admin`, `read_only`). `POST /api/v1/auth/signup` creates a hosted `community` account and returns the first tenant API key immediately, `GET/POST /api/v1/account/api-keys` plus `POST /api/v1/account/api-keys/:id/rotate|deactivate|reactivate|revoke` give the hosted account plane a full first-slice API key lifecycle, and `POST /api/v1/account/users/bootstrap` remains available when an operator-created tenant needs to convert an initial tenant API key into the first `account_admin`. `POST /api/v1/auth/login|logout` + `GET /api/v1/auth/me` provide cookie/header-backed session auth, `POST /api/v1/auth/password/change` rotates the current user's password, `POST /api/v1/account/users/invites` + `POST /api/v1/account/users/invites/accept` provide invite onboarding, and `POST /api/v1/account/users/:id/password-reset` + `POST /api/v1/auth/password/reset` provide password reset tokens. Delivery defaults to manual/API-token mode but now supports real SMTP delivery with link generation when `ATTESTOR_EMAIL_DELIVERY_MODE=smtp`, plus SendGrid- and Mailgun-signed provider analytics via `GET /api/v1/account/email/deliveries`, `GET /api/v1/admin/email/deliveries`, `POST /api/v1/email/sendgrid/webhook`, and `POST /api/v1/email/mailgun/webhook`, carrying delivery ids, provider event history, and projected delivery status across both file-backed and shared PostgreSQL control-plane modes. TOTP MFA is now wired in with `GET /api/v1/account/mfa`, `POST /api/v1/account/mfa/totp/enroll`, `POST /api/v1/account/mfa/totp/confirm`, `POST /api/v1/account/mfa/disable`, and `POST /api/v1/auth/mfa/verify`, including encrypted-at-rest TOTP seeds, short-lived MFA login challenges, recovery codes, and session invalidation on MFA boundary changes. Hosted OIDC SSO first slice is now present via `POST /api/v1/auth/oidc/login`, `GET /api/v1/auth/oidc/callback`, and `GET /api/v1/account/oidc`, with authorization-code + PKCE, sealed stateless login state, issuer+subject identity linking, and TOTP-aware session issuance. Hosted SAML SSO first slice is now present via `GET /api/v1/auth/saml/metadata`, `POST /api/v1/auth/saml/login`, `POST /api/v1/auth/saml/acs`, and `GET /api/v1/account/saml`, with SP-initiated Redirect/POST flow, sealed relay state, signed-response verification, issuer+subject identity linking with existing-user email fallback, one-time replay protection, and TOTP-aware session issuance across both file-backed and shared PostgreSQL control-plane modes. Hosted WebAuthn/passkeys first slice is now present via `GET /api/v1/account/passkeys`, `POST /api/v1/account/passkeys/register/options`, `POST /api/v1/account/passkeys/register/verify`, `POST /api/v1/account/passkeys/:id/delete`, `POST /api/v1/auth/passkeys/options`, and `POST /api/v1/auth/passkeys/verify`, using server-side SimpleWebAuthn verification plus one-time persisted challenge state in the hosted action-token store. The default policy follows the current SimpleWebAuthn passkeys baseline (`userVerification: 'preferred'` and `requireUserVerification: false`) for broader device compatibility, while deployments can opt into stricter UV enforcement with `ATTESTOR_WEBAUTHN_REQUIRE_USER_VERIFICATION=true`. Sessions enforce absolute TTL plus idle timeout and are invalidated on password change/reset, MFA boundary changes, passkey enrollment changes, or account suspension/archive. In shared-control-plane mode, account users, sessions, action tokens, SAML replay state, hosted email-delivery events, and tenant API key records move into PostgreSQL alongside the rest of the hosted control-plane. Boundary: one account membership per email, built-in `scrypt` password hashing, SAML is SP-initiated only, signed IdP responses/assertions are required, XML validation uses a strict custom guard rather than a full XSD validator, email-first passkey auth remains a first-slice choice, and provider analytics are now a signed SendGrid + Mailgun first slice rather than a single-provider path.
 - Tenant onboarding CLI: `npm run tenant:keys -- plans|issue|list|rotate|deactivate|reactivate|recover|revoke` manages hosted tenant keys through the current control-plane backend. Built-in plans resolve default quotas centrally; keys are hashed at rest and plaintext is only shown once on issuance. When the shared PostgreSQL control-plane is active and `ATTESTOR_SECRET_ENVELOPE_PROVIDER=vault_transit`, hosted tenant keys also get a sealed recovery envelope backed by Vault Transit, and `POST /api/v1/admin/tenant-keys/:id/recover` / `npm run tenant:keys -- recover --id ...` provide audited break-glass recovery behind `ATTESTOR_TENANT_KEY_RECOVERY_ENABLED=true`.
 - Account provisioning store: hosted account registry with one primary tenant per account, explicit `active/suspended/archived` lifecycle, and Stripe billing summary in this first slice (subscription status, last checkout completion, last invoice outcome). Storage is local file-backed by default and shared PostgreSQL-backed when `ATTESTOR_CONTROL_PLANE_PG_URL` is configured. The same shared PG first slice now also covers hosted account users, opaque customer sessions, and invite/password-reset action tokens used by both manual and SMTP delivery.
 - Admin account API: `GET/POST /api/v1/admin/accounts` creates a hosted customer record and issues the first tenant API key in one operator call. `GET /api/v1/admin/accounts/:id/billing/export` returns JSON/CSV billing export for one hosted account, `GET /api/v1/admin/accounts/:id/billing/reconciliation` returns the per-invoice reconciliation verdict for that account, and `POST /api/v1/admin/accounts/:id/billing/stripe|suspend|reactivate|archive` adds operator billing attachment and account lifecycle controls. Hosted operator provisioning defaults to the `starter` plan unless overridden.
@@ -945,7 +1044,7 @@ The full reference table stays below, but the fastest way to think about the sur
 | Version | 0.1.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
 | Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1942 tests across 43 suites: 461 financial + 96 signing + 596 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 59 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 49 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 GKE domain cutover render + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Expanded verification surface | 1972 tests across 43 suites: 461 financial + 96 signing + 626 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 59 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 49 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 GKE domain cutover render + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | Public GKE HTTPS proof | Live `sslip.io` Gateway API + cert-manager path verified (`http` 301 -> `https` 200) |
 | License | UNLICENSED / private |

@@ -37,9 +37,10 @@ flowchart LR
 The commercial flow should stay simple:
 
 1. choose a plan
-2. pay through Stripe Checkout
-3. receive hosted account access and API credentials
-4. use Attestor from the customer's own environment
+2. sign up and receive a hosted account plus first API key
+3. pay through Stripe Checkout when a paid plan is needed
+4. receive the paid entitlement on the same hosted account
+5. use Attestor from the customer's own environment
 
 That means the first customer-facing product surface only needs to cover:
 
@@ -52,6 +53,39 @@ That means the first customer-facing product surface only needs to cover:
 - docs
 
 It does **not** need a document workspace or file browser.
+
+## Launching Before A Full Website Exists
+
+Attestor can still be a legitimate commercial product before a polished marketing site exists.
+
+The repo and docs can serve as the first commercial surface as long as they make the following obvious:
+
+- what the product is
+- which team should buy it
+- what each plan includes
+- how signup works
+- how checkout works
+- what happens after payment
+
+That gives a credible first commercial shape:
+
+- repo/docs as the public entry
+- Stripe Checkout for paid conversion
+- hosted account plane for keys, usage, and billing
+
+The product still remains API-first and infrastructure-first. A website can improve conversion later, but it is not the thing being sold.
+
+## Minimum Hosted Account Plane
+
+The hosted account plane only needs to do a few things well:
+
+- show the current plan and entitlement state
+- show usage against quota
+- manage API keys
+- let the customer upgrade or manage billing
+- point back to docs and quick integration examples
+
+That is enough for the first complete product line.
 
 ## Recommended Public Pricing
 
@@ -89,12 +123,19 @@ To make the paid plans actually purchasable, configure:
 
 After that, the runtime already exposes the core buying and account-management surface:
 
+- `POST /api/v1/auth/signup`
 - `POST /api/v1/account/billing/checkout`
 - `POST /api/v1/account/billing/portal`
 - `POST /api/v1/billing/stripe/webhook`
 - `GET /api/v1/account`
 - `GET /api/v1/account/usage`
 - `GET /api/v1/account/entitlement`
+- `GET /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys`
+- `POST /api/v1/account/api-keys/:id/rotate`
+- `POST /api/v1/account/api-keys/:id/deactivate`
+- `POST /api/v1/account/api-keys/:id/reactivate`
+- `POST /api/v1/account/api-keys/:id/revoke`
 
 ## Why The Pricing Should Not Be Cheap
 

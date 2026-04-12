@@ -2214,6 +2214,137 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       const telemetryBody = await telemetryRes.json() as any;
       ok(telemetryBody.telemetry.enabled === false, 'Admin Telemetry: disabled by default without OTLP env');
 
+      const signupRes = await fetch(`${BASE}/api/v1/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountName: 'Self Serve Co',
+          email: 'founder@selfserve.example',
+          displayName: 'Founder Owner',
+          password: 'SelfServePass123!',
+        }),
+      });
+      ok(signupRes.status === 201, 'Auth Signup: status 201');
+      const signupBody = await signupRes.json() as any;
+      let signupCookie = cookieHeaderFromResponse(signupRes);
+      ok(Boolean(signupCookie), 'Auth Signup: session cookie issued');
+      ok(signupBody.signup === true, 'Auth Signup: signup flag true');
+      ok(signupBody.user.role === 'account_admin', 'Auth Signup: first user is account_admin');
+      ok(signupBody.initialKey.planId === 'community', 'Auth Signup: community plan applied');
+      ok(typeof signupBody.initialKey.apiKey === 'string', 'Auth Signup: initial API key returned');
+
+      const signupUsageRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${signupBody.initialKey.apiKey}` },
+      });
+      ok(signupUsageRes.status === 200, 'Auth Signup: initial API key works');
+      const signupUsageBody = await signupUsageRes.json() as any;
+      ok(signupUsageBody.tenantContext.planId === 'community', 'Auth Signup: community plan visible in usage');
+
+      const accountKeysRes = await fetch(`${BASE}/api/v1/account/api-keys`, {
+        headers: { Cookie: signupCookie! },
+      });
+      ok(accountKeysRes.status === 200, 'Account API Keys: list status 200');
+      const accountKeysBody = await accountKeysRes.json() as any;
+      ok(accountKeysBody.keys.length === 1, 'Account API Keys: initial key listed');
+      ok(accountKeysBody.keys[0].id === signupBody.initialKey.id, 'Account API Keys: initial key id matches signup response');
+
+      const rotateAccountKeyRes = await fetch(`${BASE}/api/v1/account/api-keys/${signupBody.initialKey.id}/rotate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: signupCookie!,
+        },
+      });
+      ok(rotateAccountKeyRes.status === 201, 'Account API Keys: rotate status 201');
+      const rotateAccountKeyBody = await rotateAccountKeyRes.json() as any;
+      ok(typeof rotateAccountKeyBody.newKey.apiKey === 'string', 'Account API Keys: rotate returns new plaintext key');
+      ok(rotateAccountKeyBody.previousKey.id === signupBody.initialKey.id, 'Account API Keys: rotate preserves previous key id reference');
+
+      const revokeSupersededKeyRes = await fetch(`${BASE}/api/v1/account/api-keys/${signupBody.initialKey.id}/revoke`, {
+        method: 'POST',
+        headers: { Cookie: signupCookie! },
+      });
+      ok(revokeSupersededKeyRes.status === 200, 'Account API Keys: revoke superseded signup key status 200');
+      const revokeSupersededKeyBody = await revokeSupersededKeyRes.json() as any;
+      ok(revokeSupersededKeyBody.key.status === 'revoked', 'Account API Keys: superseded signup key marked revoked');
+
+      const issueAccountKeyRes = await fetch(`${BASE}/api/v1/account/api-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: signupCookie!,
+        },
+      });
+      ok(issueAccountKeyRes.status === 201, 'Account API Keys: issue status 201');
+      const issueAccountKeyBody = await issueAccountKeyRes.json() as any;
+      ok(typeof issueAccountKeyBody.key.apiKey === 'string', 'Account API Keys: plaintext key returned on issue');
+      ok(issueAccountKeyBody.key.planId === 'community', 'Account API Keys: issued key inherits community plan');
+
+      const deactivateKeyRes = await fetch(`${BASE}/api/v1/account/api-keys/${issueAccountKeyBody.key.id}/deactivate`, {
+        method: 'POST',
+        headers: { Cookie: signupCookie! },
+      });
+      ok(deactivateKeyRes.status === 200, 'Account API Keys: deactivate status 200');
+      const deactivateKeyBody = await deactivateKeyRes.json() as any;
+      ok(deactivateKeyBody.key.status === 'inactive', 'Account API Keys: key marked inactive');
+
+      const reactivateKeyRes = await fetch(`${BASE}/api/v1/account/api-keys/${issueAccountKeyBody.key.id}/reactivate`, {
+        method: 'POST',
+        headers: { Cookie: signupCookie! },
+      });
+      ok(reactivateKeyRes.status === 200, 'Account API Keys: reactivate status 200');
+      const reactivateKeyBody = await reactivateKeyRes.json() as any;
+      ok(reactivateKeyBody.key.status === 'active', 'Account API Keys: key marked active again');
+
+      const revokeKeyRes = await fetch(`${BASE}/api/v1/account/api-keys/${issueAccountKeyBody.key.id}/revoke`, {
+        method: 'POST',
+        headers: { Cookie: signupCookie! },
+      });
+      ok(revokeKeyRes.status === 200, 'Account API Keys: revoke status 200');
+      const revokeKeyBody = await revokeKeyRes.json() as any;
+      ok(revokeKeyBody.key.status === 'revoked', 'Account API Keys: key marked revoked');
+
+      const signupReadOnlyCreateRes = await fetch(`${BASE}/api/v1/account/users`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: signupCookie!,
+        },
+        body: JSON.stringify({
+          email: 'reader@selfserve.example',
+          displayName: 'Reader',
+          password: 'ReaderPass123!',
+          role: 'read_only',
+        }),
+      });
+      ok(signupReadOnlyCreateRes.status === 201, 'Account API Keys: create read_only user status 201');
+
+      const signupReadOnlyLoginRes = await fetch(`${BASE}/api/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'reader@selfserve.example',
+          password: 'ReaderPass123!',
+        }),
+      });
+      ok(signupReadOnlyLoginRes.status === 200, 'Account API Keys: read_only login status 200');
+      const signupReadOnlyCookie = cookieHeaderFromResponse(signupReadOnlyLoginRes);
+      ok(Boolean(signupReadOnlyCookie), 'Account API Keys: read_only session cookie issued');
+
+      const readOnlyListKeysRes = await fetch(`${BASE}/api/v1/account/api-keys`, {
+        headers: { Cookie: signupReadOnlyCookie! },
+      });
+      ok(readOnlyListKeysRes.status === 403, 'Account API Keys: read_only blocked from listing keys');
+
+      const readOnlyIssueKeyRes = await fetch(`${BASE}/api/v1/account/api-keys`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: signupReadOnlyCookie!,
+        },
+      });
+      ok(readOnlyIssueKeyRes.status === 403, 'Account API Keys: read_only blocked from issuing keys');
+
       const noAuth = await fetch(`${BASE}/api/v1/admin/tenant-keys`);
       ok(noAuth.status === 401, 'Admin API: auth required');
 

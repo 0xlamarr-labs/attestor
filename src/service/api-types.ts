@@ -407,6 +407,27 @@ export interface AccountBootstrapUserResponse {
   bootstrap: true;
 }
 
+export interface AuthSignupRequest {
+  accountName: string;
+  email: string;
+  displayName: string;
+  password: string;
+}
+
+export interface AccountApiKeyRecord extends AdminTenantKeyRecord {}
+
+export interface AuthSignupResponse {
+  signup: true;
+  session: {
+    id: string;
+    expiresAt: string;
+    source: 'account_session';
+  };
+  user: AccountUserRecordView;
+  account: AdminAccountRecord;
+  initialKey: AccountApiKeyRecord & { apiKey: string };
+}
+
 export interface AccountCreateUserRequest {
   email: string;
   displayName: string;
@@ -508,6 +529,26 @@ export interface AccountIssuePasswordResetResponse {
 export interface AuthLoginRequest {
   email: string;
   password: string;
+}
+
+export interface AccountApiKeysListResponse {
+  keys: AccountApiKeyRecord[];
+  defaults: {
+    maxActiveKeysPerTenant: number;
+  };
+}
+
+export interface AccountIssueApiKeyResponse {
+  key: AccountApiKeyRecord & { apiKey: string };
+}
+
+export interface AccountRotateApiKeyResponse {
+  previousKey: AccountApiKeyRecord;
+  newKey: AccountApiKeyRecord & { apiKey: string };
+}
+
+export interface AccountApiKeyStatusResponse {
+  key: AccountApiKeyRecord;
 }
 
 export interface AuthOidcLoginRequest {
