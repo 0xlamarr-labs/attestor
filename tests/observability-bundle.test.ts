@@ -27,6 +27,8 @@ function main(): void {
   const tempo = read('ops/observability/tempo/tempo.yml');
   const loki = read('ops/observability/loki/loki.yml');
   const bundleReadme = read('ops/observability/README.md');
+  const grafanaAlloyReadme = read('ops/kubernetes/observability/providers/grafana-alloy/README.md');
+  const grafanaAlloyValuesExample = read('ops/kubernetes/observability/providers/grafana-alloy/otlp-gateway.values.example.yaml');
   const alertRenderScript = read('scripts/render-alertmanager-config.mjs');
   const credentialsRenderScript = read('scripts/render-observability-credentials.ts');
   const benchmarkScript = read('scripts/benchmark-observability.ts');
@@ -95,6 +97,9 @@ function main(): void {
   ok(regulatedProfile.includes('"prometheusDays": 30') && regulatedProfile.includes('"availabilityTarget": 0.995'), 'Observability bundle: regulated profile ships longer-retention defaults');
   ok(leanProfile.includes('"prometheusDays": 15') && leanProfile.includes('"tempoHours": 336'), 'Observability bundle: lean profile ships cost-aware retention defaults');
   ok(bundleReadme.includes('docker compose -f docker-compose.observability.yml up'), 'Observability bundle: README documents startup command');
+  ok(bundleReadme.includes('single Grafana Cloud OTLP gateway') && bundleReadme.includes('Grafana tenant id'), 'Observability bundle: README documents the unified Grafana Cloud OTLP gateway auth shape');
+  ok(grafanaAlloyReadme.includes('single Grafana Cloud OTLP gateway') && grafanaAlloyReadme.includes('otlpHttpUrl') && grafanaAlloyReadme.includes('Grafana tenant id'), 'Observability bundle: Grafana Alloy README explains unified OTLP gateway credentials');
+  ok(grafanaAlloyValuesExample.includes('type: otlp') && grafanaAlloyValuesExample.includes('protocol: http') && grafanaAlloyValuesExample.includes('/otlp') && grafanaAlloyValuesExample.includes('<grafana-instance-tenant-id>'), 'Observability bundle: Grafana Alloy example values pin the unified OTLP gateway pattern');
 
   console.log(`\nObservability bundle tests: ${passed} passed, 0 failed`);
 }

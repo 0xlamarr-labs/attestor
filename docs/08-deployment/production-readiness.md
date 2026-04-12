@@ -102,6 +102,15 @@ You still need to load:
 - `ALERTMANAGER_CRITICAL_PAGERDUTY_ROUTING_KEY`
 - any security / billing / Slack / email routing secrets you actually use
 
+For the recommended Grafana Alloy / Grafana Cloud path, the right mental model
+is a **single OTLP gateway**, not a split metrics/logs/traces credential set:
+
+- `GRAFANA_CLOUD_OTLP_ENDPOINT` should point at the stack `otlpHttpUrl`
+  connection value, typically ending in `/otlp`
+- `GRAFANA_CLOUD_OTLP_USERNAME` should be the stack's Grafana tenant id from
+  the same connections payload
+- do not reuse the separate Prometheus, Loki, or Tempo tenant ids here
+
 ### HA / runtime secrets
 
 - `REDIS_URL`

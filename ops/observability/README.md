@@ -116,6 +116,7 @@ Managed collector rollout:
 - `ops/kubernetes/observability/providers/grafana-cloud/` remains the upstream-collector compatibility path using Collector `basicauth` with endpoint/username/token secrets instead of a raw Authorization header
 - `ops/kubernetes/observability/providers/external-secrets/` ships `ExternalSecret` templates for the Grafana Cloud collector secret and Alertmanager routing secret
 - the current live GKE runtime path is Attestor API/worker -> `attestor-observability-receiver.attestor-observability.svc.cluster.local:4318` -> Grafana Alloy -> managed backend, so `GET /api/v1/admin/telemetry` is the fastest way to separate app-runtime OTLP wiring from downstream destination credential issues
+- the current recommended managed-backend auth shape is a **single Grafana Cloud OTLP gateway** (`otlp-gateway-.../otlp`) with the stack's Grafana tenant id as the basic-auth username, not the older split Prometheus/Loki/Tempo tenant-id pattern
 - `benchmark:observability` is the intended last-mile tuning bridge before calling the shipped SLO/retention defaults production-final
 
 Boundary:

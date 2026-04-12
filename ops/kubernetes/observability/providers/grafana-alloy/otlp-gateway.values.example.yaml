@@ -1,0 +1,34 @@
+cluster:
+  name: attestor-prod
+
+applicationObservability:
+  enabled: true
+  collector: receiver
+  destinations:
+    - grafanaCloud
+  receivers:
+    otlp:
+      grpc:
+        enabled: true
+      http:
+        enabled: true
+
+collectors:
+  receiver:
+    presets:
+      - singleton
+
+destinations:
+  grafanaCloud:
+    type: otlp
+    # Grafana Cloud OTLP gateway uses OTLP/HTTP on the Alloy path.
+    protocol: http
+    # Replace this with the stack's otlpHttpUrl from the Grafana Cloud
+    # connections payload and append /otlp when the URL is emitted without it.
+    url: https://otlp-gateway-prod-<region>.grafana.net/otlp
+    auth:
+      type: basic
+      # Use the Grafana tenant id from the same connections payload, not the
+      # separate Prometheus / Loki / Tempo tenant ids.
+      username: "<grafana-instance-tenant-id>"
+      password: "<grafana-cloud-otlp-token>"
