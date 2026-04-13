@@ -74,6 +74,14 @@ async function main(): Promise<void> {
     ATTESTOR_ADMIN_API_KEY: process.env.ATTESTOR_ADMIN_API_KEY,
     ATTESTOR_METRICS_API_KEY: process.env.ATTESTOR_METRICS_API_KEY,
     ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY: process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY,
+    STRIPE_API_KEY: process.env.STRIPE_API_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    ATTESTOR_STRIPE_PRICE_STARTER: process.env.ATTESTOR_STRIPE_PRICE_STARTER,
+    ATTESTOR_STRIPE_PRICE_PRO: process.env.ATTESTOR_STRIPE_PRICE_PRO,
+    ATTESTOR_STRIPE_PRICE_ENTERPRISE: process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE,
+    ATTESTOR_BILLING_SUCCESS_URL: process.env.ATTESTOR_BILLING_SUCCESS_URL,
+    ATTESTOR_BILLING_CANCEL_URL: process.env.ATTESTOR_BILLING_CANCEL_URL,
+    ATTESTOR_BILLING_PORTAL_RETURN_URL: process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL,
     ATTESTOR_TLS_MODE: process.env.ATTESTOR_TLS_MODE,
     ATTESTOR_TLS_CERT_PEM_FILE: process.env.ATTESTOR_TLS_CERT_PEM_FILE,
     ATTESTOR_TLS_KEY_PEM_FILE: process.env.ATTESTOR_TLS_KEY_PEM_FILE,
@@ -111,6 +119,14 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_METRICS_API_KEY = 'metrics-key';
     process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'mfa-key';
+    process.env.STRIPE_API_KEY = 'sk_live_probe';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_probe';
+    process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_probe';
+    process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_probe';
+    process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_probe';
+    process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://ha.attestor.example.invalid/billing/success';
+    process.env.ATTESTOR_BILLING_CANCEL_URL = 'https://ha.attestor.example.invalid/billing/cancel';
+    process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://ha.attestor.example.invalid/settings/billing';
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
     process.env.ATTESTOR_TLS_KEY_PEM_FILE = keyPath;
@@ -124,6 +140,12 @@ async function main(): Promise<void> {
     ok(ready.rolloutReadiness.connectivityProbeSucceeded === true, 'HA release probe: runtime connectivity passes in preflight');
     ok(ready.benchmark.p95LatencyMs === 620 && ready.benchmark.requestsPerSecond === 14.85, 'HA release probe: benchmark truth is echoed back');
     ok(ready.provider === 'generic' && ready.tlsMode === 'secret', 'HA release probe: provider and tls mode are captured');
+
+    delete process.env.STRIPE_API_KEY;
+    const missingStripe = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(missingStripe.rolloutReadiness.envComplete === false, 'HA release probe: missing Stripe API key blocks public deployment readiness');
+    ok(missingStripe.rolloutReadiness.issues.some((issue) => issue.includes('STRIPE_API_KEY')), 'HA release probe: missing Stripe API key issue is surfaced');
+    process.env.STRIPE_API_KEY = 'sk_live_probe';
 
     process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE = 'external-secret';
     process.env.ATTESTOR_HA_SECRET_STORE = 'platform-secrets';
@@ -157,6 +179,12 @@ async function main(): Promise<void> {
     const insecureOidc = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
     ok(insecureOidc.rolloutReadiness.envComplete === false, 'HA release probe: insecure hosted OIDC override blocks public deployment readiness');
     ok(insecureOidc.rolloutReadiness.issues.some((issue) => issue.includes('OIDC_ALLOW_INSECURE_HTTP')), 'HA release probe: insecure hosted OIDC issue is surfaced');
+    delete process.env.ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP;
+
+    process.env.ATTESTOR_BILLING_SUCCESS_URL = 'http://ha.attestor.example.invalid/billing/success';
+    const insecureBillingUrl = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(insecureBillingUrl.rolloutReadiness.envComplete === false, 'HA release probe: insecure billing return URLs block public deployment readiness');
+    ok(insecureBillingUrl.rolloutReadiness.issues.some((issue) => issue.includes('ATTESTOR_BILLING_SUCCESS_URL')), 'HA release probe: insecure billing URL issue is surfaced');
 
     console.log(`\nHA release input probe tests: ${passed} passed, 0 failed`);
   } finally {

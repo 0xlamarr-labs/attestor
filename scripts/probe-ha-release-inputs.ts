@@ -36,6 +36,21 @@ function required(name: string, value: string | null, issues: string[]): void {
   if (!value) issues.push(`${name} is required.`);
 }
 
+function requireAbsoluteHttpsUrl(name: string, value: string | null, issues: string[]): void {
+  if (!value) {
+    issues.push(`${name} is required.`);
+    return;
+  }
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'https:') {
+      issues.push(`${name} must use https:// for a public deployment.`);
+    }
+  } catch {
+    issues.push(`${name} must be a valid absolute URL.`);
+  }
+}
+
 function pushInvalid(message: string, issues: string[]): void {
   issues.push(message);
 }
@@ -95,6 +110,16 @@ export async function probeHaReleaseInputs(options?: {
   }
   if (publicHostname && envTruthy('ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP')) {
     pushInvalid('ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP must not be enabled for a public deployment.', issues);
+  }
+  if (publicHostname) {
+    required('STRIPE_API_KEY', env('STRIPE_API_KEY'), issues);
+    required('STRIPE_WEBHOOK_SECRET', env('STRIPE_WEBHOOK_SECRET'), issues);
+    required('ATTESTOR_STRIPE_PRICE_STARTER', env('ATTESTOR_STRIPE_PRICE_STARTER'), issues);
+    required('ATTESTOR_STRIPE_PRICE_PRO', env('ATTESTOR_STRIPE_PRICE_PRO'), issues);
+    required('ATTESTOR_STRIPE_PRICE_ENTERPRISE', env('ATTESTOR_STRIPE_PRICE_ENTERPRISE'), issues);
+    requireAbsoluteHttpsUrl('ATTESTOR_BILLING_SUCCESS_URL', env('ATTESTOR_BILLING_SUCCESS_URL'), issues);
+    requireAbsoluteHttpsUrl('ATTESTOR_BILLING_CANCEL_URL', env('ATTESTOR_BILLING_CANCEL_URL'), issues);
+    requireAbsoluteHttpsUrl('ATTESTOR_BILLING_PORTAL_RETURN_URL', env('ATTESTOR_BILLING_PORTAL_RETURN_URL'), issues);
   }
   const publicBaseUrl = env('ATTESTOR_PUBLIC_BASE_URL');
   if (publicHostname && publicBaseUrl) {

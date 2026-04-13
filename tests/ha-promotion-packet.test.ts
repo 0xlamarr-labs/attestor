@@ -74,6 +74,14 @@ async function main(): Promise<void> {
     ATTESTOR_ADMIN_API_KEY: process.env.ATTESTOR_ADMIN_API_KEY,
     ATTESTOR_METRICS_API_KEY: process.env.ATTESTOR_METRICS_API_KEY,
     ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY: process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY,
+    STRIPE_API_KEY: process.env.STRIPE_API_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    ATTESTOR_STRIPE_PRICE_STARTER: process.env.ATTESTOR_STRIPE_PRICE_STARTER,
+    ATTESTOR_STRIPE_PRICE_PRO: process.env.ATTESTOR_STRIPE_PRICE_PRO,
+    ATTESTOR_STRIPE_PRICE_ENTERPRISE: process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE,
+    ATTESTOR_BILLING_SUCCESS_URL: process.env.ATTESTOR_BILLING_SUCCESS_URL,
+    ATTESTOR_BILLING_CANCEL_URL: process.env.ATTESTOR_BILLING_CANCEL_URL,
+    ATTESTOR_BILLING_PORTAL_RETURN_URL: process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL,
     ATTESTOR_TLS_MODE: process.env.ATTESTOR_TLS_MODE,
     ATTESTOR_TLS_CERT_PEM_FILE: process.env.ATTESTOR_TLS_CERT_PEM_FILE,
     ATTESTOR_TLS_KEY_PEM_FILE: process.env.ATTESTOR_TLS_KEY_PEM_FILE,
@@ -109,6 +117,14 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_METRICS_API_KEY = 'metrics-key';
     process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'mfa-key';
+    process.env.STRIPE_API_KEY = 'sk_live_promotion';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_promotion';
+    process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_promotion';
+    process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_promotion';
+    process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_promotion';
+    process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://ha.attestor.example.invalid/billing/success';
+    process.env.ATTESTOR_BILLING_CANCEL_URL = 'https://ha.attestor.example.invalid/billing/cancel';
+    process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://ha.attestor.example.invalid/settings/billing';
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
     process.env.ATTESTOR_TLS_KEY_PEM_FILE = keyPath;
@@ -126,6 +142,15 @@ async function main(): Promise<void> {
     ok(ready.artifacts.releaseSummaryPath !== null, 'HA promotion packet: release summary is present when environment is complete');
     ok(readFileSync(resolve(tempDir, 'ready', 'README.md'), 'utf8').includes('Recommended apply flow'), 'HA promotion packet: rollout README is written');
     ok(readFileSync(resolve(tempDir, 'ready', 'summary.json'), 'utf8').includes('ready-for-environment-promotion'), 'HA promotion packet: summary captures the final readiness state');
+
+    delete process.env.STRIPE_API_KEY;
+    const missingStripe = await renderHaPromotionPacket({
+      provider: 'generic',
+      benchmarkPath,
+      outputDir: resolve(tempDir, 'missing-stripe'),
+    });
+    ok(missingStripe.readiness.state === 'blocked-on-environment-inputs', 'HA promotion packet: missing Stripe API key blocks public deployment readiness');
+    ok(missingStripe.readiness.missingInputs.some((item) => item.includes('STRIPE_API_KEY')), 'HA promotion packet: missing Stripe API key is surfaced for public deployment');
 
     console.log(`\nHA promotion packet tests: ${passed} passed, 0 failed`);
   } finally {

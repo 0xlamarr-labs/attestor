@@ -338,6 +338,141 @@ const app = new Hono();
 const startTime = Date.now();
 const serviceInstanceId = resolveServiceInstanceId();
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function renderHostedReturnPage(options: {
+  title: string;
+  eyebrow: string;
+  message: string;
+  actions: Array<{ href: string; label: string }>;
+}): string {
+  const actions = options.actions
+    .map((action) => `<a class="action" href="${escapeHtml(action.href)}">${escapeHtml(action.label)}</a>`)
+    .join('');
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(options.title)}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "Segoe UI", sans-serif;
+        background: #f5f7fb;
+        color: #132238;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top left, rgba(44, 123, 229, 0.12), transparent 36%),
+          radial-gradient(circle at bottom right, rgba(18, 184, 134, 0.14), transparent 38%),
+          #f5f7fb;
+      }
+      main {
+        width: min(640px, calc(100vw - 32px));
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+        padding: 32px;
+      }
+      .eyebrow {
+        margin: 0 0 12px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #2c7be5;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: clamp(28px, 4vw, 40px);
+        line-height: 1.05;
+      }
+      p {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.6;
+        color: #40556f;
+      }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+      .action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        padding: 11px 18px;
+        font-weight: 600;
+        text-decoration: none;
+        background: #132238;
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">${escapeHtml(options.eyebrow)}</p>
+      <h1>${escapeHtml(options.title)}</h1>
+      <p>${escapeHtml(options.message)}</p>
+      <nav>${actions}</nav>
+    </main>
+  </body>
+</html>`;
+}
+
+app.get('/billing/success', (c) => c.body(renderHostedReturnPage({
+  eyebrow: 'Billing',
+  title: 'Checkout completed',
+  message: 'Stripe checkout finished successfully. Attestor will reflect the updated billing state as soon as webhook reconciliation completes.',
+  actions: [
+    { href: '/settings/billing', label: 'Open billing settings' },
+    { href: '/api/v1/auth/me', label: 'Check current session' },
+  ],
+}), 200, {
+  'content-type': 'text/html; charset=utf-8',
+}));
+
+app.get('/billing/cancel', (c) => c.body(renderHostedReturnPage({
+  eyebrow: 'Billing',
+  title: 'Checkout canceled',
+  message: 'No billing change was applied. You can review the current account state and start a new checkout when you are ready.',
+  actions: [
+    { href: '/settings/billing', label: 'Return to billing settings' },
+    { href: '/api/v1/account/billing/export', label: 'View billing export endpoint' },
+  ],
+}), 200, {
+  'content-type': 'text/html; charset=utf-8',
+}));
+
+app.get('/settings/billing', (c) => c.body(renderHostedReturnPage({
+  eyebrow: 'Hosted account',
+  title: 'Billing settings',
+  message: 'This hosted control-plane surface provides a safe return target for Stripe portal and checkout flows while the account state is reconciled server-side.',
+  actions: [
+    { href: '/api/v1/account', label: 'Open account summary endpoint' },
+    { href: '/api/v1/account/billing/export', label: 'Open billing export endpoint' },
+  ],
+}), 200, {
+  'content-type': 'text/html; charset=utf-8',
+}));
+
+app.get('/app', (c) => c.redirect('/settings/billing', 302));
+
 app.use('/api/*', async (c, next) => {
   const requestUrl = new URL(c.req.url);
   const remoteAddress = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()

@@ -107,6 +107,14 @@ async function main(): Promise<void> {
     ATTESTOR_ADMIN_API_KEY: process.env.ATTESTOR_ADMIN_API_KEY,
     ATTESTOR_METRICS_API_KEY: process.env.ATTESTOR_METRICS_API_KEY,
     ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY: process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY,
+    STRIPE_API_KEY: process.env.STRIPE_API_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    ATTESTOR_STRIPE_PRICE_STARTER: process.env.ATTESTOR_STRIPE_PRICE_STARTER,
+    ATTESTOR_STRIPE_PRICE_PRO: process.env.ATTESTOR_STRIPE_PRICE_PRO,
+    ATTESTOR_STRIPE_PRICE_ENTERPRISE: process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE,
+    ATTESTOR_BILLING_SUCCESS_URL: process.env.ATTESTOR_BILLING_SUCCESS_URL,
+    ATTESTOR_BILLING_CANCEL_URL: process.env.ATTESTOR_BILLING_CANCEL_URL,
+    ATTESTOR_BILLING_PORTAL_RETURN_URL: process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL,
     ATTESTOR_REPO_PIPELINE_READY: process.env.ATTESTOR_REPO_PIPELINE_READY,
     ATTESTOR_TLS_MODE: process.env.ATTESTOR_TLS_MODE,
     ATTESTOR_TLS_CERT_PEM_FILE: process.env.ATTESTOR_TLS_CERT_PEM_FILE,
@@ -173,6 +181,14 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_METRICS_API_KEY = 'metrics-key';
     process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'mfa-key';
+    process.env.STRIPE_API_KEY = 'sk_live_readiness';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_readiness';
+    process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_readiness';
+    process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_readiness';
+    process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_readiness';
+    process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://ha.attestor.example.invalid/billing/success';
+    process.env.ATTESTOR_BILLING_CANCEL_URL = 'https://ha.attestor.example.invalid/billing/cancel';
+    process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://ha.attestor.example.invalid/settings/billing';
     process.env.ATTESTOR_REPO_PIPELINE_READY = 'true';
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;

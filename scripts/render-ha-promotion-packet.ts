@@ -53,6 +53,16 @@ function detectMissingInputs(provider: Provider, tlsMode: string): string[] {
   requireOne('ATTESTOR_ADMIN_API_KEY');
   requireOne('ATTESTOR_METRICS_API_KEY');
   requireOne('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY');
+  if (env('ATTESTOR_PUBLIC_HOSTNAME')) {
+    requireOne('STRIPE_API_KEY');
+    requireOne('STRIPE_WEBHOOK_SECRET');
+    requireOne('ATTESTOR_STRIPE_PRICE_STARTER');
+    requireOne('ATTESTOR_STRIPE_PRICE_PRO');
+    requireOne('ATTESTOR_STRIPE_PRICE_ENTERPRISE');
+    requireOne('ATTESTOR_BILLING_SUCCESS_URL');
+    requireOne('ATTESTOR_BILLING_CANCEL_URL');
+    requireOne('ATTESTOR_BILLING_PORTAL_RETURN_URL');
+  }
 
   if (tlsMode === 'secret') {
     requireOne('ATTESTOR_TLS_CERT_PEM');

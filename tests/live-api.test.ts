@@ -1838,6 +1838,22 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(String(portalReadyBody.portalUrl).includes('/portal/'), 'Account Billing: portal URL returned');
       ok(portalReadyBody.mock === true, 'Account Billing: portal mock mode surfaced');
 
+      const checkoutSuccessPageRes = await fetch(`${BASE}/billing/success`);
+      ok(checkoutSuccessPageRes.status === 200, 'Billing pages: success return surface responds');
+      ok((await checkoutSuccessPageRes.text()).includes('Checkout completed'), 'Billing pages: success return surface explains checkout completion');
+
+      const checkoutCancelPageRes = await fetch(`${BASE}/billing/cancel`);
+      ok(checkoutCancelPageRes.status === 200, 'Billing pages: cancel return surface responds');
+      ok((await checkoutCancelPageRes.text()).includes('Checkout canceled'), 'Billing pages: cancel return surface explains cancellation');
+
+      const billingSettingsPageRes = await fetch(`${BASE}/settings/billing`);
+      ok(billingSettingsPageRes.status === 200, 'Billing pages: billing settings return surface responds');
+      ok((await billingSettingsPageRes.text()).includes('Billing settings'), 'Billing pages: billing settings return surface explains next steps');
+
+      const appReturnRes = await fetch(`${BASE}/app`);
+      ok(appReturnRes.status === 200, 'Billing pages: legacy app return path resolves');
+      ok(appReturnRes.url.endsWith('/settings/billing'), 'Billing pages: legacy app return path redirects to billing settings');
+
       const accountSummaryAfterWebhookRes = await fetch(`${BASE}/api/v1/account`, {
         headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },
       });
