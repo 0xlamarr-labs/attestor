@@ -316,6 +316,7 @@ import {
   listHostedStripeActiveEntitlements,
   listHostedStripeInvoiceLineItems,
 } from './stripe-billing.js';
+import { isSupportedStripeWebhookEvent } from './stripe-webhook-events.js';
 import {
   buildHostedBillingExport,
   renderHostedBillingExportCsv,
@@ -3757,21 +3758,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     });
   };
   try {
-    const supportedEvent =
-      event.type === 'customer.subscription.created'
-      || event.type === 'customer.subscription.updated'
-      || event.type === 'customer.subscription.deleted'
-      || event.type === 'customer.subscription.paused'
-      || event.type === 'customer.subscription.resumed'
-      || event.type === 'checkout.session.completed'
-      || event.type === 'charge.succeeded'
-      || event.type === 'charge.failed'
-      || event.type === 'charge.refunded'
-      || event.type === 'entitlements.active_entitlement_summary.updated'
-      || event.type === 'invoice.paid'
-      || event.type === 'invoice.payment_failed';
-
-    if (!supportedEvent) {
+    if (!isSupportedStripeWebhookEvent(event.type)) {
       observeBillingWebhookEvent(event.type, 'ignored');
       if (sharedBillingLedger) {
         await finalizeStripeBillingEvent({
