@@ -73,6 +73,7 @@
     "render:observability-promotion-packet": "tsx scripts/render-observability-promotion-packet.ts",
     "render:production-readiness-packet": "tsx scripts/render-production-readiness-packet.ts",
     "render:secret-manager-bootstrap": "tsx scripts/render-secret-manager-bootstrap.ts",
+    "probe:production-hosted-flow": "tsx scripts/probe-production-hosted-flow.ts",
     "probe:alert-routing": "tsx scripts/probe-alert-routing.ts",
     "probe:observability-receivers": "tsx scripts/probe-observability-receivers.ts",
     "probe:observability-release-inputs": "tsx scripts/probe-observability-release-inputs.ts",
@@ -89,7 +90,7 @@
     "keygen": "tsx -e \"import{generateKeyPair,saveKeyPair}from'./src/signing/keys.js';const kp=generateKeyPair();saveKeyPair(kp,'.attestor/private.pem','.attestor/public.pem');console.log('Key pair generated:',kp.fingerprint)\""
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.12",
+    "@hono/node-server": "^1.19.14",
     "@napi-rs/keyring": "^1.2.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/api-logs": "^0.214.0",
@@ -111,7 +112,7 @@
     "cda-schematron-validator": "^1.1.12",
     "dotenv": "^17.0.0",
     "embedded-postgres": "^18.3.0-beta.16",
-    "hono": "^4.12.10",
+    "hono": "^4.12.12",
     "ioredis": "^5.10.1",
     "jose": "^6.2.2",
     "jszip": "^3.10.1",
@@ -132,6 +133,9 @@
   },
   "devDependencies": {
     "tsx": "^4.19.2"
+  },
+  "overrides": {
+    "axios": "^1.15.0"
   },
   "engines": {
     "node": ">=22"
