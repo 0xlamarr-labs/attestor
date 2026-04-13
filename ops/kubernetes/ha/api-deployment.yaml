@@ -10,8 +10,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 1
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: attestor-api
@@ -203,8 +203,8 @@ spec:
             timeoutSeconds: 3
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: 150m
+              memory: 256Mi
             limits:
               cpu: "1"
               memory: 1Gi
