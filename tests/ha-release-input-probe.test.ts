@@ -72,10 +72,14 @@ async function main(): Promise<void> {
     ATTESTOR_CONTROL_PLANE_PG_URL: process.env.ATTESTOR_CONTROL_PLANE_PG_URL,
     ATTESTOR_BILLING_LEDGER_PG_URL: process.env.ATTESTOR_BILLING_LEDGER_PG_URL,
     ATTESTOR_ADMIN_API_KEY: process.env.ATTESTOR_ADMIN_API_KEY,
+    ATTESTOR_METRICS_API_KEY: process.env.ATTESTOR_METRICS_API_KEY,
+    ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY: process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY,
     ATTESTOR_TLS_MODE: process.env.ATTESTOR_TLS_MODE,
     ATTESTOR_TLS_CERT_PEM_FILE: process.env.ATTESTOR_TLS_CERT_PEM_FILE,
     ATTESTOR_TLS_KEY_PEM_FILE: process.env.ATTESTOR_TLS_KEY_PEM_FILE,
     ATTESTOR_SESSION_COOKIE_SECURE: process.env.ATTESTOR_SESSION_COOKIE_SECURE,
+    ATTESTOR_STRIPE_USE_MOCK: process.env.ATTESTOR_STRIPE_USE_MOCK,
+    ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP: process.env.ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP,
     ATTESTOR_HA_RUNTIME_SECRET_MODE: process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE,
     ATTESTOR_HA_SECRET_STORE: process.env.ATTESTOR_HA_SECRET_STORE,
     ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND: process.env.ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND,
@@ -105,6 +109,8 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
     process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
+    process.env.ATTESTOR_METRICS_API_KEY = 'metrics-key';
+    process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'mfa-key';
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
     process.env.ATTESTOR_TLS_KEY_PEM_FILE = keyPath;
@@ -139,6 +145,18 @@ async function main(): Promise<void> {
     const insecureCookie = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
     ok(insecureCookie.rolloutReadiness.envComplete === false, 'HA release probe: explicit insecure session cookies block public deployment readiness');
     ok(insecureCookie.rolloutReadiness.issues.some((issue) => issue.includes('SESSION_COOKIE_SECURE')), 'HA release probe: insecure session cookie issue is surfaced');
+    delete process.env.ATTESTOR_SESSION_COOKIE_SECURE;
+
+    process.env.ATTESTOR_STRIPE_USE_MOCK = 'true';
+    const mockStripe = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(mockStripe.rolloutReadiness.envComplete === false, 'HA release probe: mock Stripe blocks public deployment readiness');
+    ok(mockStripe.rolloutReadiness.issues.some((issue) => issue.includes('STRIPE_USE_MOCK')), 'HA release probe: mock Stripe issue is surfaced');
+    delete process.env.ATTESTOR_STRIPE_USE_MOCK;
+
+    process.env.ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP = 'true';
+    const insecureOidc = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(insecureOidc.rolloutReadiness.envComplete === false, 'HA release probe: insecure hosted OIDC override blocks public deployment readiness');
+    ok(insecureOidc.rolloutReadiness.issues.some((issue) => issue.includes('OIDC_ALLOW_INSECURE_HTTP')), 'HA release probe: insecure hosted OIDC issue is surfaced');
 
     console.log(`\nHA release input probe tests: ${passed} passed, 0 failed`);
   } finally {

@@ -19,6 +19,10 @@ function env(name: string): string | null {
   return value && value.trim() ? value.trim() : null;
 }
 
+function envTruthy(name: string): boolean {
+  return /^(1|true|yes|on)$/i.test(process.env[name] ?? '');
+}
+
 function envOrFile(name: string): string | null {
   const direct = env(name);
   if (direct) return direct;
@@ -79,10 +83,41 @@ export async function probeHaReleaseInputs(options?: {
   required('ATTESTOR_CONTROL_PLANE_PG_URL', env('ATTESTOR_CONTROL_PLANE_PG_URL'), issues);
   required('ATTESTOR_BILLING_LEDGER_PG_URL', env('ATTESTOR_BILLING_LEDGER_PG_URL'), issues);
   required('ATTESTOR_ADMIN_API_KEY', env('ATTESTOR_ADMIN_API_KEY'), issues);
+  required('ATTESTOR_METRICS_API_KEY', env('ATTESTOR_METRICS_API_KEY'), issues);
+  required('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY', env('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY'), issues);
   const sessionCookieSecure = env('ATTESTOR_SESSION_COOKIE_SECURE');
   const publicHostname = env('ATTESTOR_PUBLIC_HOSTNAME');
   if (publicHostname && /^(0|false|no)$/i.test(sessionCookieSecure ?? '')) {
     pushInvalid('ATTESTOR_SESSION_COOKIE_SECURE must not be false when ATTESTOR_PUBLIC_HOSTNAME is set for a public deployment.', issues);
+  }
+  if (publicHostname && envTruthy('ATTESTOR_STRIPE_USE_MOCK')) {
+    pushInvalid('ATTESTOR_STRIPE_USE_MOCK must not be enabled for a public deployment.', issues);
+  }
+  if (publicHostname && envTruthy('ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP')) {
+    pushInvalid('ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP must not be enabled for a public deployment.', issues);
+  }
+  const publicBaseUrl = env('ATTESTOR_PUBLIC_BASE_URL');
+  if (publicHostname && publicBaseUrl) {
+    try {
+      if (new URL(publicBaseUrl).protocol !== 'https:') {
+        pushInvalid('ATTESTOR_PUBLIC_BASE_URL must use https:// for a public deployment.', issues);
+      }
+    } catch {
+      pushInvalid('ATTESTOR_PUBLIC_BASE_URL must be a valid absolute URL when set.', issues);
+    }
+  }
+  const oidcIssuerUrl = env('ATTESTOR_HOSTED_OIDC_ISSUER_URL');
+  const oidcClientId = env('ATTESTOR_HOSTED_OIDC_CLIENT_ID');
+  if (oidcIssuerUrl && oidcClientId) {
+    required('ATTESTOR_HOSTED_OIDC_STATE_KEY', env('ATTESTOR_HOSTED_OIDC_STATE_KEY'), issues);
+  }
+  const samlMetadataConfigured = Boolean(env('ATTESTOR_HOSTED_SAML_IDP_METADATA_XML') || env('ATTESTOR_HOSTED_SAML_IDP_METADATA_PATH'));
+  if (samlMetadataConfigured) {
+    required('ATTESTOR_HOSTED_SAML_RELAY_STATE_KEY', env('ATTESTOR_HOSTED_SAML_RELAY_STATE_KEY'), issues);
+    if (envTruthy('ATTESTOR_HOSTED_SAML_SIGN_AUTHN_REQUESTS')) {
+      required('ATTESTOR_HOSTED_SAML_SP_PRIVATE_KEY or ATTESTOR_HOSTED_SAML_SP_PRIVATE_KEY_PATH', envOrFile('ATTESTOR_HOSTED_SAML_SP_PRIVATE_KEY'), issues);
+      required('ATTESTOR_HOSTED_SAML_SP_CERT or ATTESTOR_HOSTED_SAML_SP_CERT_PATH', envOrFile('ATTESTOR_HOSTED_SAML_SP_CERT'), issues);
+    }
   }
 
   if (provider === 'aws' && tlsMode === 'aws-acm') {

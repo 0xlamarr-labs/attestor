@@ -104,6 +104,12 @@ spec:
                   name: attestor-runtime-secrets
                   key: metrics-api-key
                   optional: true
+            - name: ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: account-mfa-encryption-key
+                  optional: true
             - name: STRIPE_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -142,6 +148,30 @@ spec:
                 secretKeyRef:
                   name: attestor-runtime-secrets
                   key: hosted-oidc-client-secret
+                  optional: true
+            - name: ATTESTOR_HOSTED_OIDC_STATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: hosted-oidc-state-key
+                  optional: true
+            - name: ATTESTOR_HOSTED_SAML_RELAY_STATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: hosted-saml-relay-state-key
+                  optional: true
+            - name: ATTESTOR_HOSTED_SAML_SP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: hosted-saml-sp-private-key
+                  optional: true
+            - name: ATTESTOR_HOSTED_SAML_SP_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: hosted-saml-sp-cert
                   optional: true
           lifecycle:
             preStop:

@@ -55,6 +55,8 @@ function main(): void {
     const seed = readFileSync(resolve(tempDir, 'gke', 'seed.json'), 'utf8');
     ok(seed.includes('REPLACE_ME_OTLP_ENDPOINT'), 'Secret manager bootstrap: structured seed contains Grafana placeholder data');
     ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_ADMIN_API_KEY'), 'Secret manager bootstrap: runtime seed contains admin API key placeholder');
+    ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY'), 'Secret manager bootstrap: runtime seed contains MFA encryption key placeholder');
+    ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_HOSTED_OIDC_STATE_KEY'), 'Secret manager bootstrap: runtime seed contains hosted OIDC state key placeholder');
     ok(seed.includes('"corp-attestor-admin-api-key"'), 'Secret manager bootstrap: GKE seed uses normalized remote secret ids');
 
     const readme = readFileSync(resolve(tempDir, 'aws', 'README.md'), 'utf8');

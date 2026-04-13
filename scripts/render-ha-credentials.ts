@@ -22,11 +22,17 @@ const runtimeSecretMappings: SecretMapping[] = [
   { envName: 'ATTESTOR_PG_URL', secretKey: 'runtime-pg-url', remoteSuffix: 'runtime-pg-url' },
   { envName: 'ATTESTOR_ADMIN_API_KEY', secretKey: 'admin-api-key', remoteSuffix: 'admin-api-key' },
   { envName: 'ATTESTOR_METRICS_API_KEY', secretKey: 'metrics-api-key', remoteSuffix: 'metrics-api-key' },
+  { envName: 'ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY', secretKey: 'account-mfa-encryption-key', remoteSuffix: 'account-mfa-encryption-key' },
   { envName: 'STRIPE_API_KEY', secretKey: 'stripe-api-key', remoteSuffix: 'stripe-api-key' },
   { envName: 'STRIPE_WEBHOOK_SECRET', secretKey: 'stripe-webhook-secret', remoteSuffix: 'stripe-webhook-secret' },
   { envName: 'ATTESTOR_STRIPE_PRICE_STARTER', secretKey: 'stripe-price-starter', remoteSuffix: 'stripe-price-starter' },
   { envName: 'ATTESTOR_STRIPE_PRICE_PRO', secretKey: 'stripe-price-pro', remoteSuffix: 'stripe-price-pro' },
   { envName: 'ATTESTOR_STRIPE_PRICE_ENTERPRISE', secretKey: 'stripe-price-enterprise', remoteSuffix: 'stripe-price-enterprise' },
+  { envName: 'ATTESTOR_HOSTED_OIDC_CLIENT_SECRET', secretKey: 'hosted-oidc-client-secret', remoteSuffix: 'hosted-oidc-client-secret' },
+  { envName: 'ATTESTOR_HOSTED_OIDC_STATE_KEY', secretKey: 'hosted-oidc-state-key', remoteSuffix: 'hosted-oidc-state-key' },
+  { envName: 'ATTESTOR_HOSTED_SAML_RELAY_STATE_KEY', secretKey: 'hosted-saml-relay-state-key', remoteSuffix: 'hosted-saml-relay-state-key' },
+  { envName: 'ATTESTOR_HOSTED_SAML_SP_PRIVATE_KEY', secretKey: 'hosted-saml-sp-private-key', remoteSuffix: 'hosted-saml-sp-private-key' },
+  { envName: 'ATTESTOR_HOSTED_SAML_SP_CERT', secretKey: 'hosted-saml-sp-cert', remoteSuffix: 'hosted-saml-sp-cert' },
 ];
 
 function arg(name: string, fallback?: string): string | undefined {

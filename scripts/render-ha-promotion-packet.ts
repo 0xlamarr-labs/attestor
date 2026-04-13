@@ -51,6 +51,8 @@ function detectMissingInputs(provider: Provider, tlsMode: string): string[] {
   requireOne('ATTESTOR_CONTROL_PLANE_PG_URL');
   requireOne('ATTESTOR_BILLING_LEDGER_PG_URL');
   requireOne('ATTESTOR_ADMIN_API_KEY');
+  requireOne('ATTESTOR_METRICS_API_KEY');
+  requireOne('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY');
 
   if (tlsMode === 'secret') {
     requireOne('ATTESTOR_TLS_CERT_PEM');
@@ -64,6 +66,16 @@ function detectMissingInputs(provider: Provider, tlsMode: string): string[] {
   }
   if ((env('ATTESTOR_HA_RUNTIME_SECRET_MODE') ?? '') === 'external-secret' || tlsMode === 'external-secret') {
     requireOne('ATTESTOR_HA_SECRET_STORE');
+  }
+  if (env('ATTESTOR_HOSTED_OIDC_ISSUER_URL') && env('ATTESTOR_HOSTED_OIDC_CLIENT_ID')) {
+    requireOne('ATTESTOR_HOSTED_OIDC_STATE_KEY');
+  }
+  if (env('ATTESTOR_HOSTED_SAML_IDP_METADATA_XML') || env('ATTESTOR_HOSTED_SAML_IDP_METADATA_PATH')) {
+    requireOne('ATTESTOR_HOSTED_SAML_RELAY_STATE_KEY');
+    if (/^(1|true|yes|on)$/i.test(env('ATTESTOR_HOSTED_SAML_SIGN_AUTHN_REQUESTS') ?? '')) {
+      requireOne('ATTESTOR_HOSTED_SAML_SP_PRIVATE_KEY');
+      requireOne('ATTESTOR_HOSTED_SAML_SP_CERT');
+    }
   }
 
   return missing;
