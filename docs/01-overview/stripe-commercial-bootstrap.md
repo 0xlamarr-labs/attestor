@@ -26,15 +26,22 @@ Create recurring Stripe prices for:
 
 The recommended public list prices are:
 
-- `starter`: `$499 / month`
-- `pro`: `$1,999 / month`
-- `enterprise`: `from $7,500 / month`
+- `starter`: `EUR 499 / month`
+- `pro`: `EUR 1,999 / month`
+- `enterprise`: `from EUR 7,500 / month`
 
 Map those live Stripe price ids into:
 
 - `ATTESTOR_STRIPE_PRICE_STARTER`
 - `ATTESTOR_STRIPE_PRICE_PRO`
 - `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
+
+For the default hosted funnel:
+
+- `community` remains self-hosted, not a hosted free tier
+- `starter` is the self-serve hosted entry plan
+- `starter` carries a `14-day free trial`
+- `pro` and `enterprise` do not get an automatic self-serve trial by default
 
 ### 2. Activate Your Stripe Live Account
 
@@ -83,9 +90,10 @@ export STRIPE_WEBHOOK_SECRET=whsec_...
 export ATTESTOR_STRIPE_PRICE_STARTER=price_...
 export ATTESTOR_STRIPE_PRICE_PRO=price_...
 export ATTESTOR_STRIPE_PRICE_ENTERPRISE=price_...
+export ATTESTOR_STRIPE_STARTER_TRIAL_DAYS=14
 export ATTESTOR_BILLING_SUCCESS_URL=https://<host>/billing/success
 export ATTESTOR_BILLING_CANCEL_URL=https://<host>/billing/cancel
-export ATTESTOR_BILLING_PORTAL_RETURN_URL=https://<host>/account/billing
+export ATTESTOR_BILLING_PORTAL_RETURN_URL=https://<host>/settings/billing
 ```
 
 ## 4. Wire The Webhook
@@ -117,7 +125,7 @@ The minimum valid commercial surface is:
 
 That is enough to make the hosted API product purchasable.
 
-## What “Commercially Live” Means For Attestor
+## What "Commercially Live" Means For Attestor
 
 Attestor is commercially live when all of these are true:
 

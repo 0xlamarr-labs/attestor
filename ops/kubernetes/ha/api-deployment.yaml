@@ -104,6 +104,39 @@ spec:
                   name: attestor-runtime-secrets
                   key: metrics-api-key
                   optional: true
+            - name: STRIPE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: stripe-api-key
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: stripe-webhook-secret
+            - name: ATTESTOR_STRIPE_PRICE_STARTER
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: stripe-price-starter
+            - name: ATTESTOR_STRIPE_PRICE_PRO
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: stripe-price-pro
+            - name: ATTESTOR_STRIPE_PRICE_ENTERPRISE
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: stripe-price-enterprise
+            - name: ATTESTOR_STRIPE_STARTER_TRIAL_DAYS
+              value: "14"
+            - name: ATTESTOR_BILLING_SUCCESS_URL
+              value: "https://attestor.example.com/billing/success"
+            - name: ATTESTOR_BILLING_CANCEL_URL
+              value: "https://attestor.example.com/billing/cancel"
+            - name: ATTESTOR_BILLING_PORTAL_RETURN_URL
+              value: "https://attestor.example.com/settings/billing"
             - name: ATTESTOR_HOSTED_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:

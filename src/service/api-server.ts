@@ -261,6 +261,7 @@ import {
   resolvePlanRateLimit,
   resolvePlanSpec,
   resolvePlanStripePrice,
+  resolvePlanStripeTrialDays,
 } from './plan-catalog.js';
 import { type AdminAuditAction } from './admin-audit-log.js';
 import { hashJsonValue } from './json-stable.js';
@@ -984,6 +985,7 @@ function adminPlanView() {
     id: plan.id,
     displayName: plan.displayName,
     description: plan.description,
+    defaultStripeTrialDays: resolvePlanStripeTrialDays(plan.id).trialDays,
     defaultMonthlyRunQuota: plan.defaultMonthlyRunQuota,
     defaultPipelineRequestsPerWindow: resolvePlanRateLimit(plan.id).requestsPerWindow,
     defaultAsyncPendingJobsPerTenant: resolvePlanAsyncQueue(plan.id).pendingJobsPerTenant,
@@ -3381,6 +3383,7 @@ app.post('/api/v1/account/billing/checkout', async (c) => {
     tenantId: current.tenant.tenantId,
     planId: checkout.planId,
     stripePriceId: checkout.stripePriceId,
+    trialDays: checkout.trialDays,
     checkoutSessionId: checkout.sessionId,
     checkoutUrl: checkout.url,
     mock: checkout.mock,

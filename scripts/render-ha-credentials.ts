@@ -22,6 +22,11 @@ const runtimeSecretMappings: SecretMapping[] = [
   { envName: 'ATTESTOR_PG_URL', secretKey: 'runtime-pg-url', remoteSuffix: 'runtime-pg-url' },
   { envName: 'ATTESTOR_ADMIN_API_KEY', secretKey: 'admin-api-key', remoteSuffix: 'admin-api-key' },
   { envName: 'ATTESTOR_METRICS_API_KEY', secretKey: 'metrics-api-key', remoteSuffix: 'metrics-api-key' },
+  { envName: 'STRIPE_API_KEY', secretKey: 'stripe-api-key', remoteSuffix: 'stripe-api-key' },
+  { envName: 'STRIPE_WEBHOOK_SECRET', secretKey: 'stripe-webhook-secret', remoteSuffix: 'stripe-webhook-secret' },
+  { envName: 'ATTESTOR_STRIPE_PRICE_STARTER', secretKey: 'stripe-price-starter', remoteSuffix: 'stripe-price-starter' },
+  { envName: 'ATTESTOR_STRIPE_PRICE_PRO', secretKey: 'stripe-price-pro', remoteSuffix: 'stripe-price-pro' },
+  { envName: 'ATTESTOR_STRIPE_PRICE_ENTERPRISE', secretKey: 'stripe-price-enterprise', remoteSuffix: 'stripe-price-enterprise' },
 ];
 
 function arg(name: string, fallback?: string): string | undefined {

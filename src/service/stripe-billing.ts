@@ -11,7 +11,7 @@ import Stripe from 'stripe';
 import type { HostedAccountRecord } from './account-store.js';
 import type { HostedPlanDefinition } from './plan-catalog.js';
 import type { TenantContext } from './tenant-isolation.js';
-import { resolvePlanStripePrice } from './plan-catalog.js';
+import { resolvePlanStripePrice, resolvePlanStripeTrialDays } from './plan-catalog.js';
 
 export class StripeBillingError extends Error {
   constructor(
@@ -77,6 +77,7 @@ export interface HostedCheckoutSessionResult {
   url: string;
   planId: string;
   stripePriceId: string;
+  trialDays: number | null;
   mode: 'subscription';
   mock: boolean;
 }
@@ -315,6 +316,7 @@ export async function createHostedCheckoutSession(options: {
   idempotencyKey: string;
 }): Promise<HostedCheckoutSessionResult> {
   const { planId, priceId } = planPriceOrThrow(options.plan.id);
+  const trialDays = resolvePlanStripeTrialDays(options.plan.id).trialDays;
   const successUrl = requiredUrl('ATTESTOR_BILLING_SUCCESS_URL');
   const cancelUrl = requiredUrl('ATTESTOR_BILLING_CANCEL_URL');
   const idempotencyKey = options.idempotencyKey.trim();
@@ -335,6 +337,7 @@ export async function createHostedCheckoutSession(options: {
       url: `https://billing.stripe.test/checkout/${token}`,
       planId,
       stripePriceId: priceId,
+      trialDays,
       mode: 'subscription',
       mock: true,
     };
@@ -354,7 +357,9 @@ export async function createHostedCheckoutSession(options: {
     customer: options.account.billing.stripeCustomerId ?? undefined,
     customer_email: options.account.billing.stripeCustomerId ? undefined : options.account.contactEmail,
     metadata,
-    subscription_data: { metadata },
+    subscription_data: trialDays === null
+      ? { metadata }
+      : { metadata, trial_period_days: trialDays },
     allow_promotion_codes: true,
   }, {
     idempotencyKey,
@@ -369,6 +374,7 @@ export async function createHostedCheckoutSession(options: {
     url: session.url,
     planId,
     stripePriceId: priceId,
+    trialDays,
     mode: 'subscription',
     mock: false,
   };

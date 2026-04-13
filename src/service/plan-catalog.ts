@@ -13,6 +13,7 @@ export interface HostedPlanDefinition {
   id: HostedPlanId;
   displayName: string;
   description: string;
+  defaultStripeTrialDays: number | null;
   defaultMonthlyRunQuota: number | null;
   defaultPipelineRequestsPerWindow: number | null;
   defaultAsyncPendingJobsPerTenant: number | null;
@@ -73,6 +74,14 @@ export interface PlanStripePriceSpec {
   source: 'env' | 'unconfigured' | 'custom_unconfigured';
 }
 
+export interface PlanStripeTrialSpec {
+  planId: string;
+  trialDays: number | null;
+  configured: boolean;
+  knownPlan: boolean;
+  source: 'plan_default' | 'env_override' | 'custom_unconfigured';
+}
+
 export const SELF_HOST_PLAN_ID: HostedPlanId = 'community';
 export const DEFAULT_HOSTED_PLAN_ID: HostedPlanId = 'starter';
 
@@ -81,6 +90,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     id: 'community',
     displayName: 'Community',
     description: 'Free self-hosted evaluation and internal development for teams validating the acceptance model locally.',
+    defaultStripeTrialDays: null,
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: null,
     defaultAsyncPendingJobsPerTenant: null,
@@ -92,7 +102,8 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'starter',
     displayName: 'Starter',
-    description: 'Hosted API access for first production teams that need governed acceptance without building the control layer themselves.',
+    description: 'Hosted API access for first production teams that need governed acceptance without building the control layer themselves, including a 14-day free trial.',
+    defaultStripeTrialDays: 14,
     defaultMonthlyRunQuota: 100,
     defaultPipelineRequestsPerWindow: 10,
     defaultAsyncPendingJobsPerTenant: 2,
@@ -105,6 +116,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     id: 'pro',
     displayName: 'Pro',
     description: 'Higher-throughput hosted API plan for repeated operational use across multiple internal workflows or business units.',
+    defaultStripeTrialDays: null,
     defaultMonthlyRunQuota: 1000,
     defaultPipelineRequestsPerWindow: 60,
     defaultAsyncPendingJobsPerTenant: 8,
@@ -117,6 +129,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
     id: 'enterprise',
     displayName: 'Enterprise',
     description: 'Hosted or private deployment plan for regulated, high-scale, or custom-control environments with negotiated limits.',
+    defaultStripeTrialDays: null,
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: 300,
     defaultAsyncPendingJobsPerTenant: 32,
@@ -155,6 +168,15 @@ function asyncDispatchWeightEnvNameForPlan(planId: HostedPlanId): string {
 
 function stripePriceEnvNameForPlan(planId: HostedPlanId): string {
   return `ATTESTOR_STRIPE_PRICE_${planId.toUpperCase()}`;
+}
+
+function stripeTrialEnvNameForPlan(planId: HostedPlanId): string {
+  return `ATTESTOR_STRIPE_${planId.toUpperCase()}_TRIAL_DAYS`;
+}
+
+function normalizeTrialDays(days: number | null | undefined): number | null {
+  if (typeof days !== 'number' || !Number.isInteger(days) || days <= 0) return null;
+  return days;
 }
 
 export function defaultRateLimitWindowSeconds(): number {
@@ -319,6 +341,33 @@ export function resolvePlanStripePrice(planId: string | null | undefined): PlanS
     configured: Boolean(priceId),
     knownPlan: true,
     source: priceId ? 'env' : 'unconfigured',
+  };
+}
+
+export function resolvePlanStripeTrialDays(planId: string | null | undefined): PlanStripeTrialSpec {
+  const resolvedPlanId = planId?.trim() || SELF_HOST_PLAN_ID;
+  const plan = getHostedPlan(resolvedPlanId);
+
+  if (!plan) {
+    return {
+      planId: resolvedPlanId,
+      trialDays: null,
+      configured: false,
+      knownPlan: false,
+      source: 'custom_unconfigured',
+    };
+  }
+
+  const rawOverride = process.env[stripeTrialEnvNameForPlan(plan.id)]?.trim() ?? '';
+  const parsedOverride = rawOverride ? normalizeTrialDays(Number.parseInt(rawOverride, 10)) : null;
+  const trialDays = parsedOverride ?? plan.defaultStripeTrialDays;
+
+  return {
+    planId: plan.id,
+    trialDays,
+    configured: trialDays !== null,
+    knownPlan: true,
+    source: parsedOverride !== null ? 'env_override' : 'plan_default',
   };
 }
 

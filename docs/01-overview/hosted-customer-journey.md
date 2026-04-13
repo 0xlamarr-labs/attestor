@@ -56,9 +56,9 @@ For developers, internal evaluation, and self-hosted validation.
 Expected path:
 
 1. read the repo and docs
-2. self-host or create a hosted community account
-3. receive an API key
-4. validate the acceptance model locally or against low-volume hosted use
+2. self-host the stack locally or in the team's own environment
+3. validate the acceptance model against real internal workflows
+4. move to hosted `starter` when a shared managed account plane is needed
 
 ### Starter
 
@@ -67,7 +67,7 @@ For the first serious production team.
 Expected path:
 
 1. sign up hosted account
-2. upgrade through Stripe Checkout
+2. start the 14-day free trial through Stripe Checkout
 3. manage API keys and usage
 4. integrate one real workflow from the customer's own stack
 

@@ -234,7 +234,8 @@ That journey already maps onto the shipped HTTP surface:
 
 The commercial principle is straightforward:
 
-- `community` creates a real account and first API key
+- `community` remains the free self-hosted path
+- hosted signup creates a real account and first API key
 - paid plans upgrade the same account instead of creating a second product line
 - the customer's real workflows stay in the customer's systems
 - Attestor supplies the acceptance, proof, billing, and control boundary
@@ -274,16 +275,27 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 | Plan | Recommended price | Best for | Included shape |
 |---|---:|---|---|
 | Community | Free | self-hosted evaluation, internal development, OSS experimentation | self-host only, docs, local proof path, no hosted SLA |
-| Starter | $499 / month | first production teams and governed pilot workflows | hosted account + API access, 100 governed runs / month, usage and billing surface, API key management |
-| Pro | $1,999 / month | repeated operational use across multiple workflows or business units | hosted account + API access, 1,000 governed runs / month, higher rate limits, stronger runtime headroom |
-| Enterprise | From $7,500 / month | banks, hospitals, insurers, internal AI platform teams, private deployment buyers | hosted or private deployment, negotiated limits, commercial onboarding, compliance/security rollout path |
+| Starter | EUR 499 / month | first production teams and governed pilot workflows | hosted account + API access, 100 governed runs / month, 14-day free trial, usage and billing surface, API key management |
+| Pro | EUR 1,999 / month | repeated operational use across multiple workflows or business units | hosted account + API access, 1,000 governed runs / month, higher rate limits, stronger runtime headroom |
+| Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, internal AI platform teams, private deployment buyers | hosted or private deployment, negotiated limits, commercial onboarding, compliance/security rollout path |
 
 The pricing intent is deliberate:
 
 - `community` proves the model locally
-- `starter` gets a serious team into production without making Attestor look like a cheap wrapper
+- `starter` gets a serious team into production with a 14-day trial, without making Attestor look like a cheap wrapper
 - `pro` is where repeated internal operational use starts to make economic sense
 - `enterprise` is where deployment boundary, procurement, and control requirements dominate
+
+### Fastest Enterprise Sales Framing
+
+The easiest way to sell Attestor is not as "another AI app". It is as the control layer that lets a serious team accept AI-assisted work without losing reviewer authority, auditability, or rollout discipline.
+
+For enterprise buyers, lead with:
+
+- evidence-first acceptance instead of raw model confidence
+- signed proof, verification, and replayable audit history
+- account, billing, usage, and entitlement surfaces that make procurement and internal platform adoption legible
+- deployment choice: hosted now, private deployment when boundary/compliance requirements win
 
 ### How Purchase Should Work
 
@@ -317,6 +329,7 @@ Stripe should remain the source of public commercial pricing, with these env-map
 - `ATTESTOR_STRIPE_PRICE_STARTER`
 - `ATTESTOR_STRIPE_PRICE_PRO`
 - `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
+- `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS`
 
 ### Commercial Bootstrap
 
@@ -328,9 +341,10 @@ export STRIPE_WEBHOOK_SECRET=whsec_...
 export ATTESTOR_STRIPE_PRICE_STARTER=price_...
 export ATTESTOR_STRIPE_PRICE_PRO=price_...
 export ATTESTOR_STRIPE_PRICE_ENTERPRISE=price_...
+export ATTESTOR_STRIPE_STARTER_TRIAL_DAYS=14
 export ATTESTOR_BILLING_SUCCESS_URL=https://<host>/billing/success
 export ATTESTOR_BILLING_CANCEL_URL=https://<host>/billing/cancel
-export ATTESTOR_BILLING_PORTAL_RETURN_URL=https://<host>/account/billing
+export ATTESTOR_BILLING_PORTAL_RETURN_URL=https://<host>/settings/billing
 ```
 
 Once those are set, the repository already ships the main self-serve commercial entrypoints:
@@ -1035,6 +1049,7 @@ The full reference table stays below, but the fastest way to think about the sur
 | `ATTESTOR_STRIPE_PRICE_STARTER` | Stripe recurring price id for the hosted `starter` plan |
 | `ATTESTOR_STRIPE_PRICE_PRO` | Stripe recurring price id for the hosted `pro` plan |
 | `ATTESTOR_STRIPE_PRICE_ENTERPRISE` | Stripe recurring price id for the hosted `enterprise` plan |
+| `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS` | Optional starter-plan Stripe trial length in days; defaults to `14` |
 | `ATTESTOR_BILLING_SUCCESS_URL` | Hosted return URL for successful Stripe Checkout sessions |
 | `ATTESTOR_BILLING_CANCEL_URL` | Hosted return URL for canceled Stripe Checkout sessions |
 | `ATTESTOR_BILLING_PORTAL_RETURN_URL` | Hosted return URL for Stripe Billing Portal sessions |

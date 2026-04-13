@@ -108,15 +108,16 @@ They are intentionally not cheap. Attestor is not a utility wrapper. It is infra
 | Plan | Recommended price | Best for | Included hosted shape |
 |---|---:|---|---|
 | Community | Free | self-hosted evaluation, internal development, OSS experimentation | self-host only, local proof path, docs, no hosted SLA |
-| Starter | $499 / month | first production teams, pilot-to-production workflows, small internal rollout | 100 governed runs / month, hosted account + API access, usage and billing surface, API keys, bounded hosted control layer |
-| Pro | $1,999 / month | repeated operational use, multiple workflows, higher internal adoption | 1,000 governed runs / month, higher rate limits, stronger async/runtime capacity, hosted account/billing/usage surfaces, richer operational headroom |
-| Enterprise | From $7,500 / month | banks, hospitals, insurers, large AI platform teams, private deployment buyers | negotiated limits, hosted or private deployment, commercial support path, security/compliance onboarding, custom rollout boundary |
+| Starter | EUR 499 / month | first production teams, pilot-to-production workflows, small internal rollout | 100 governed runs / month, hosted account + API access, 14-day free trial, usage and billing surface, API keys, bounded hosted control layer |
+| Pro | EUR 1,999 / month | repeated operational use, multiple workflows, higher internal adoption | 1,000 governed runs / month, higher rate limits, stronger async/runtime capacity, hosted account/billing/usage surfaces, richer operational headroom |
+| Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, large AI platform teams, private deployment buyers | negotiated limits, hosted or private deployment, commercial support path, security/compliance onboarding, custom rollout boundary |
 
 These prices should map to the Stripe price ids configured through:
 
 - `ATTESTOR_STRIPE_PRICE_STARTER`
 - `ATTESTOR_STRIPE_PRICE_PRO`
 - `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
+- `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS`
 
 ## Commercial Bootstrap
 
@@ -129,6 +130,7 @@ To make the paid plans actually purchasable, configure:
 - `ATTESTOR_STRIPE_PRICE_STARTER`
 - `ATTESTOR_STRIPE_PRICE_PRO`
 - `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
+- `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS`
 - `ATTESTOR_BILLING_SUCCESS_URL`
 - `ATTESTOR_BILLING_CANCEL_URL`
 - `ATTESTOR_BILLING_PORTAL_RETURN_URL`
@@ -207,6 +209,7 @@ What they get:
 - API key management
 - usage view
 - billing view
+- 14-day free trial before the first paid cycle
 - bounded monthly included volume
 
 ### Pro
@@ -230,6 +233,18 @@ What they get:
 - custom commercial path
 - hosted or private deployment shape
 - structured onboarding for control, security, and rollout
+
+## Fastest Way To Sell It
+
+The fastest enterprise sales pattern is to avoid pitching Attestor as a generic AI layer.
+
+Pitch it as:
+
+- the acceptance and control plane between model output and production consequence
+- the evidence system that makes reviewer signoff and later audit possible
+- the operational product surface that procurement can actually buy: account, usage, billing, entitlement, and deployment boundary
+
+That mirrors how strong infrastructure sellers win enterprise adoption: they sell control, legibility, and rollout safety before they sell convenience.
 
 ## Product Truth To Preserve Everywhere
 

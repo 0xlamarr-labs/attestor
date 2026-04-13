@@ -938,6 +938,7 @@ export interface AccountBillingCheckoutResponse {
   tenantId: string;
   planId: 'starter' | 'pro' | 'enterprise';
   stripePriceId: string;
+  trialDays: number | null;
   checkoutSessionId: string;
   checkoutUrl: string;
   mock: boolean;
@@ -1236,6 +1237,7 @@ export interface HostedPlanSummary {
   id: 'community' | 'starter' | 'pro' | 'enterprise';
   displayName: string;
   description: string;
+  defaultStripeTrialDays: number | null;
   defaultMonthlyRunQuota: number | null;
   defaultPipelineRequestsPerWindow: number | null;
   defaultAsyncPendingJobsPerTenant: number | null;
