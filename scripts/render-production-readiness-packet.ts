@@ -163,17 +163,19 @@ export async function renderProductionReadinessPacket(options?: {
   const environmentInputsComplete = observabilityPacket.readiness.environmentInputsComplete
     && haPacket.readiness.environmentInputsComplete;
   const benchmarkFreshnessPassed = freshnessIssues.length === 0;
+  const repoPipelineReady = observabilityPacket.readiness.repoPipelineReady
+    && haPacket.readiness.repoPipelineReady;
   const promotionGatePassed = observabilityPacket.readiness.promotionGatePassed
     && haPacket.readiness.promotionGatePassed;
 
   const packet: ProductionReadinessPacket = {
     generatedAt: new Date().toISOString(),
     readiness: {
-      repoPipelineReady: true,
+      repoPipelineReady,
       environmentInputsComplete,
       benchmarkFreshnessPassed,
       promotionGatePassed,
-      state: environmentInputsComplete && benchmarkFreshnessPassed && promotionGatePassed
+      state: repoPipelineReady && environmentInputsComplete && benchmarkFreshnessPassed && promotionGatePassed
         ? 'ready-for-environment-promotion'
         : 'blocked-on-environment-inputs',
       issues,

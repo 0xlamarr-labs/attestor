@@ -60,6 +60,7 @@ async function main(): Promise<void> {
     OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: process.env.OTEL_EXPORTER_OTLP_METRICS_PROTOCOL,
     OTEL_METRIC_EXPORT_INTERVAL: process.env.OTEL_METRIC_EXPORT_INTERVAL,
     OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
+    ATTESTOR_REPO_PIPELINE_READY: process.env.ATTESTOR_REPO_PIPELINE_READY,
   };
 
   const collector = createServer((_req, res) => {
@@ -121,6 +122,7 @@ async function main(): Promise<void> {
     process.env.OTEL_EXPORTER_OTLP_METRICS_PROTOCOL = 'http/protobuf';
     process.env.OTEL_METRIC_EXPORT_INTERVAL = '200';
     process.env.OTEL_SERVICE_NAME = 'attestor-observability-promotion-packet-test';
+    process.env.ATTESTOR_REPO_PIPELINE_READY = 'true';
 
     const ready = await renderObservabilityPromotionPacket({
       provider: 'grafana-cloud',

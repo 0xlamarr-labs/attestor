@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { probeObservabilityReleaseInputs } from './probe-observability-release-inputs.ts';
+import { resolveRepoPipelineReadiness } from './repo-pipeline-readiness.ts';
 
 type Provider = 'generic' | 'grafana-cloud' | 'grafana-alloy';
 type SecretMode = 'secret' | 'external-secret';
@@ -142,8 +143,14 @@ export async function renderObservabilityPromotionPacket(options?: {
     alertmanagerUrl,
   });
 
+  const repoPipeline = resolveRepoPipelineReadiness();
   const missingInputs = detectMissingInputs(provider, secretMode);
-  const issues = [...new Set([...probe.releaseReadiness.issues, ...missingInputs.map((item) => `${item} is still missing.`)])];
+  if (repoPipeline.missingInput) missingInputs.push(repoPipeline.missingInput);
+  const issues = [...new Set([
+    ...probe.releaseReadiness.issues,
+    ...missingInputs.map((item) => `${item} is still missing.`),
+    ...(repoPipeline.issue ? [repoPipeline.issue] : []),
+  ])];
   const environmentInputsComplete = missingInputs.length === 0 && probe.releaseReadiness.envComplete;
   const promotionGatePassed = probe.releaseReadiness.bundleRenderSucceeded
     && probe.releaseReadiness.receiverProbeSucceeded
@@ -187,10 +194,10 @@ ${formatChecklist(missingInputs)}
       successRate: benchmark.successRate ?? null,
     },
     readiness: {
-      repoPipelineReady: true,
+      repoPipelineReady: repoPipeline.ready,
       environmentInputsComplete,
       promotionGatePassed,
-      state: environmentInputsComplete && promotionGatePassed
+      state: repoPipeline.ready && environmentInputsComplete && promotionGatePassed
         ? 'ready-for-environment-promotion'
         : 'blocked-on-environment-inputs',
       issues,

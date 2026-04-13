@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { probeHaReleaseInputs } from './probe-ha-release-inputs.ts';
+import { resolveRepoPipelineReadiness } from './repo-pipeline-readiness.ts';
 
 type Provider = 'generic' | 'aws' | 'gke';
 
@@ -107,8 +108,14 @@ export async function renderHaPromotionPacket(options?: {
 
   const benchmark = readJson<{ requestsPerSecond: number; p95LatencyMs: number; successRate?: number }>(benchmarkPath);
   const probe = await probeHaReleaseInputs({ provider, benchmarkPath });
+  const repoPipeline = resolveRepoPipelineReadiness();
   const missingInputs = detectMissingInputs(provider, tlsMode);
-  const issues = [...new Set([...probe.rolloutReadiness.issues, ...missingInputs.map((item) => `${item} is still missing.`)])];
+  if (repoPipeline.missingInput) missingInputs.push(repoPipeline.missingInput);
+  const issues = [...new Set([
+    ...probe.rolloutReadiness.issues,
+    ...missingInputs.map((item) => `${item} is still missing.`),
+    ...(repoPipeline.issue ? [repoPipeline.issue] : []),
+  ])];
   const environmentInputsComplete = missingInputs.length === 0 && probe.rolloutReadiness.envComplete;
   const promotionGatePassed = probe.rolloutReadiness.bundleRenderSucceeded && probe.rolloutReadiness.connectivityProbeSucceeded;
 
@@ -147,10 +154,10 @@ ${formatChecklist(missingInputs)}
       successRate: benchmark.successRate ?? null,
     },
     readiness: {
-      repoPipelineReady: true,
+      repoPipelineReady: repoPipeline.ready,
       environmentInputsComplete,
       promotionGatePassed,
-      state: environmentInputsComplete && promotionGatePassed
+      state: repoPipeline.ready && environmentInputsComplete && promotionGatePassed
         ? 'ready-for-environment-promotion'
         : 'blocked-on-environment-inputs',
       issues,

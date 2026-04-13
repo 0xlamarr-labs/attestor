@@ -79,6 +79,11 @@ export async function probeHaReleaseInputs(options?: {
   required('ATTESTOR_CONTROL_PLANE_PG_URL', env('ATTESTOR_CONTROL_PLANE_PG_URL'), issues);
   required('ATTESTOR_BILLING_LEDGER_PG_URL', env('ATTESTOR_BILLING_LEDGER_PG_URL'), issues);
   required('ATTESTOR_ADMIN_API_KEY', env('ATTESTOR_ADMIN_API_KEY'), issues);
+  const sessionCookieSecure = env('ATTESTOR_SESSION_COOKIE_SECURE');
+  const publicHostname = env('ATTESTOR_PUBLIC_HOSTNAME');
+  if (publicHostname && /^(0|false|no)$/i.test(sessionCookieSecure ?? '')) {
+    pushInvalid('ATTESTOR_SESSION_COOKIE_SECURE must not be false when ATTESTOR_PUBLIC_HOSTNAME is set for a public deployment.', issues);
+  }
 
   if (provider === 'aws' && tlsMode === 'aws-acm') {
     required('ATTESTOR_AWS_ALB_CERTIFICATE_ARNS', env('ATTESTOR_AWS_ALB_CERTIFICATE_ARNS'), issues);

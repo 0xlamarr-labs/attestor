@@ -61,7 +61,28 @@ export function sessionIdleTimeoutMinutes(): number {
 }
 
 export function sessionCookieSecure(): boolean {
-  return /^(1|true|yes)$/i.test(process.env.ATTESTOR_SESSION_COOKIE_SECURE ?? '');
+  const explicit = process.env.ATTESTOR_SESSION_COOKIE_SECURE?.trim();
+  if (explicit) {
+    return /^(1|true|yes)$/i.test(explicit);
+  }
+
+  const publicBaseUrl = process.env.ATTESTOR_PUBLIC_BASE_URL?.trim();
+  if (publicBaseUrl) {
+    try {
+      return new URL(publicBaseUrl).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  const publicHostname = process.env.ATTESTOR_PUBLIC_HOSTNAME?.trim().toLowerCase();
+  if (publicHostname) {
+    return publicHostname !== 'localhost'
+      && publicHostname !== '127.0.0.1'
+      && publicHostname !== '::1';
+  }
+
+  return false;
 }
 
 function defaultStore(): AccountSessionStoreFile {

@@ -75,6 +75,7 @@ async function main(): Promise<void> {
     ATTESTOR_TLS_MODE: process.env.ATTESTOR_TLS_MODE,
     ATTESTOR_TLS_CERT_PEM_FILE: process.env.ATTESTOR_TLS_CERT_PEM_FILE,
     ATTESTOR_TLS_KEY_PEM_FILE: process.env.ATTESTOR_TLS_KEY_PEM_FILE,
+    ATTESTOR_SESSION_COOKIE_SECURE: process.env.ATTESTOR_SESSION_COOKIE_SECURE,
     ATTESTOR_HA_RUNTIME_SECRET_MODE: process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE,
     ATTESTOR_HA_SECRET_STORE: process.env.ATTESTOR_HA_SECRET_STORE,
     ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND: process.env.ATTESTOR_HA_EXTERNAL_SECRET_STORE_KIND,
@@ -107,6 +108,7 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
     process.env.ATTESTOR_TLS_KEY_PEM_FILE = keyPath;
+    delete process.env.ATTESTOR_SESSION_COOKIE_SECURE;
     delete process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE;
     delete process.env.ATTESTOR_HA_SECRET_STORE;
 
@@ -132,6 +134,11 @@ async function main(): Promise<void> {
     ok(validExternalSecret.rolloutReadiness.envComplete === true, 'HA release probe: valid External Secrets lifecycle settings pass');
     ok(validExternalSecret.rolloutReadiness.bundleRenderSucceeded === true, 'HA release probe: valid External Secrets lifecycle settings still render');
     ok(validExternalSecret.rolloutReadiness.connectivityProbeSucceeded === true, 'HA release probe: valid External Secrets lifecycle settings keep runtime connectivity green');
+
+    process.env.ATTESTOR_SESSION_COOKIE_SECURE = 'false';
+    const insecureCookie = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(insecureCookie.rolloutReadiness.envComplete === false, 'HA release probe: explicit insecure session cookies block public deployment readiness');
+    ok(insecureCookie.rolloutReadiness.issues.some((issue) => issue.includes('SESSION_COOKIE_SECURE')), 'HA release probe: insecure session cookie issue is surfaced');
 
     console.log(`\nHA release input probe tests: ${passed} passed, 0 failed`);
   } finally {

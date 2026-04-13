@@ -77,6 +77,7 @@ async function main(): Promise<void> {
     ATTESTOR_TLS_KEY_PEM_FILE: process.env.ATTESTOR_TLS_KEY_PEM_FILE,
     ATTESTOR_HA_SECRET_STORE: process.env.ATTESTOR_HA_SECRET_STORE,
     ATTESTOR_HA_RUNTIME_SECRET_MODE: process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE,
+    ATTESTOR_REPO_PIPELINE_READY: process.env.ATTESTOR_REPO_PIPELINE_READY,
   };
 
   try {
@@ -109,6 +110,7 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_TLS_KEY_PEM_FILE = keyPath;
     delete process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE;
     delete process.env.ATTESTOR_HA_SECRET_STORE;
+    process.env.ATTESTOR_REPO_PIPELINE_READY = 'true';
 
     const ready = await renderHaPromotionPacket({
       provider: 'generic',

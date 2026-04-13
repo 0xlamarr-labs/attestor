@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/financial/financial.test.ts && tsx src/signing/signing.test.ts && tsx tests/stripe-commercial-config.test.ts && tsx tests/stripe-webhook-events.test.ts",
+    "test": "tsx src/financial/financial.test.ts && tsx src/signing/signing.test.ts && tsx tests/account-session-cookie-security.test.ts && tsx tests/stripe-commercial-config.test.ts && tsx tests/stripe-webhook-events.test.ts",
     "test:financial": "tsx src/financial/financial.test.ts",
     "test:signing": "tsx src/signing/signing.test.ts",
     "test:stripe-commercial": "tsx tests/stripe-commercial-config.test.ts",
