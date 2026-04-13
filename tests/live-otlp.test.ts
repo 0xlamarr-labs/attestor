@@ -113,7 +113,7 @@ async function main(): Promise<void> {
     process.env.OTEL_METRIC_EXPORT_INTERVAL = '200';
     process.env.OTEL_SERVICE_NAME = 'attestor-live-otlp-test';
 
-    const telemetry = initializeTelemetry('0.1.0');
+    const telemetry = initializeTelemetry('1.0.0');
 
     console.log('\n[Live OTLP Export]');
 

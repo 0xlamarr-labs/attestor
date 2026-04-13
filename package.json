@@ -1,6 +1,6 @@
 {
   "name": "attestor",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Governance and proof engine for AI-assisted high-stakes workflows",
   "type": "module",
   "main": "dist/financial/cli.js",

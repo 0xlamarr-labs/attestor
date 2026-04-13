@@ -176,7 +176,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(Boolean(res.headers.get('traceparent')), 'Health: traceparent header present');
       const body = await res.json() as any;
       ok(body.status === 'healthy', 'Health: status=healthy');
-      ok(body.version === '0.1.0', 'Health: version correct');
+      ok(body.version === '1.0.0', 'Health: version correct');
       ok(Array.isArray(body.domains), 'Health: domains is array');
       ok(body.domains.includes('finance'), 'Health: finance domain registered');
       ok(body.domains.includes('healthcare'), 'Health: healthcare domain registered');

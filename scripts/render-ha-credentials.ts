@@ -356,7 +356,6 @@ function main(): void {
     'spec:',
     '  default:',
     `    sslPolicy: ${gkeSslPolicy ?? 'replace-me'}`,
-    '    allowGlobalAccess: true',
     '  targetRef:',
     '    group: gateway.networking.k8s.io',
     '    kind: Gateway',

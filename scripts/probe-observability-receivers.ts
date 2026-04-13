@@ -101,7 +101,7 @@ export async function probeObservabilityReceivers(options?: {
   const prometheusUrl = options?.prometheusUrl ?? arg('prometheus-url', env('ATTESTOR_OBSERVABILITY_PROMETHEUS_URL') ?? env('PROMETHEUS_BASE_URL'));
   const alertmanagerUrl = options?.alertmanagerUrl ?? arg('alertmanager-url', env('ATTESTOR_OBSERVABILITY_ALERTMANAGER_URL') ?? env('ALERTMANAGER_BASE_URL'));
 
-  const telemetry = initializeTelemetry('0.1.0');
+  const telemetry = initializeTelemetry('1.0.0');
   let flushSucceeded = false;
   let flushError: string | null = null;
 

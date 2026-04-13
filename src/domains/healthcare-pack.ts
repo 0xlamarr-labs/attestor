@@ -14,7 +14,7 @@ import type { DomainPack } from './domain-pack.js';
 
 export const healthcareDomainPack: DomainPack = {
   id: 'healthcare',
-  version: '0.1.0',
+  version: '1.0.0',
   displayName: 'Healthcare Quality Analytics',
   description: 'Clinical quality measures, population health analytics, and healthcare reporting governance.',
 

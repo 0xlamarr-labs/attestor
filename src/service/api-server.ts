@@ -1545,7 +1545,7 @@ app.get('/api/v1/health', (c) => {
   });
   return c.json({
     status: 'healthy',
-    version: '0.1.0',
+    version: '1.0.0',
     instanceId: serviceInstanceId,
     uptime: Math.floor((Date.now() - startTime) / 1000),
     domains: domainRegistry.listIds(),
@@ -5190,7 +5190,7 @@ app.get('/api/v1/admin/metrics', (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  return c.body(renderPrometheusMetrics('0.1.0'), 200, {
+  return c.body(renderPrometheusMetrics('1.0.0'), 200, {
     'content-type': 'text/plain; version=0.0.4; charset=utf-8',
     'cache-control': 'no-store',
   });
@@ -5200,7 +5200,7 @@ app.get('/api/v1/metrics', (c) => {
   const unauthorized = currentMetricsAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  return c.body(renderPrometheusMetrics('0.1.0'), 200, {
+  return c.body(renderPrometheusMetrics('1.0.0'), 200, {
     'content-type': 'text/plain; version=0.0.4; charset=utf-8',
     'cache-control': 'no-store',
   });
@@ -6923,7 +6923,7 @@ app.get('/api/v1/ready', (c) => {
 // ─── Server Start/Stop ──────────────────────────────────────────────────────
 
 export function startServer(port: number = 3700): { port: number; close: () => void } {
-  const telemetry = initializeTelemetry('0.1.0');
+  const telemetry = initializeTelemetry('1.0.0');
   configureTenantAsyncExecutionCoordinator({
     redisUrl: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() || sharedRedisUrl,
     redisMode: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() ? 'explicit' : redisMode,
