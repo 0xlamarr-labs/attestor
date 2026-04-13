@@ -11,6 +11,9 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 > [!IMPORTANT]
 > Attestor does not try to prove that AI is universally trustworthy. It gives teams a disciplined way to decide when AI-assisted work can be accepted, and when it must still be blocked, reviewed, or bounded more tightly.
 
+> [!NOTE]
+> This repository is source-available under the Business Source License 1.1. Public source access is allowed, non-production use is allowed, and production use requires a commercial license until the Change Date listed in [LICENSE](/C:/Users/thedi/attestor/LICENSE).
+
 ## At a Glance
 
 | If you need to... | Attestor gives you... |
@@ -1087,6 +1090,6 @@ The full reference table stays below, but the fastest way to think about the sur
 | Expanded verification surface | 1972 tests across 43 suites: 461 financial + 96 signing + 626 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 59 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 49 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 GKE domain cutover render + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | Public GKE HTTPS proof | Live `sslip.io` Gateway API + cert-manager path verified (`http` 301 -> `https` 200) |
-| License | UNLICENSED / private |
+| License | Business Source License 1.1 (`LICENSE`), Change License `GPL-2.0-or-later` on 2030-04-13 |
 
 </details>
