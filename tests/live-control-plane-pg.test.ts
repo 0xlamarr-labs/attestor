@@ -135,7 +135,7 @@ async function run(): Promise<void> {
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_live_control_plane';
   process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://attestor.dev/billing/success';
   process.env.ATTESTOR_BILLING_CANCEL_URL = 'https://attestor.dev/billing/cancel';
-  process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://attestor.dev/app';
+  process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://attestor.dev/settings/billing';
   process.env.ATTESTOR_STRIPE_PRICE_STARTER = 'price_starter_monthly';
   process.env.ATTESTOR_STRIPE_PRICE_PRO = 'price_pro_monthly';
   process.env.ATTESTOR_STRIPE_PRICE_ENTERPRISE = 'price_enterprise_monthly';

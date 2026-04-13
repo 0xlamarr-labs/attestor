@@ -89,7 +89,7 @@ async function run(): Promise<void> {
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_tenant_key_vault';
   process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://attestor.dev/billing/success';
   process.env.ATTESTOR_BILLING_CANCEL_URL = 'https://attestor.dev/billing/cancel';
-  process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://attestor.dev/app';
+  process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'https://attestor.dev/settings/billing';
   process.env.ATTESTOR_SECRET_ENVELOPE_PROVIDER = 'vault_transit';
   process.env.ATTESTOR_VAULT_TRANSIT_BASE_URL = `http://127.0.0.1:${vaultPort}`;
   process.env.ATTESTOR_VAULT_TRANSIT_TOKEN = 'vault-test-token';

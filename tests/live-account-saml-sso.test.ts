@@ -209,7 +209,7 @@ function buildCommonApiEnv(workDir: string, base: string): NodeJS.ProcessEnv {
     STRIPE_WEBHOOK_SECRET: 'whsec_live_saml',
     ATTESTOR_BILLING_SUCCESS_URL: 'https://attestor.dev/billing/success',
     ATTESTOR_BILLING_CANCEL_URL: 'https://attestor.dev/billing/cancel',
-    ATTESTOR_BILLING_PORTAL_RETURN_URL: 'https://attestor.dev/app',
+    ATTESTOR_BILLING_PORTAL_RETURN_URL: 'https://attestor.dev/settings/billing',
     ATTESTOR_STRIPE_PRICE_STARTER: 'price_starter_monthly',
     ATTESTOR_STRIPE_PRICE_PRO: 'price_pro_monthly',
     ATTESTOR_STRIPE_PRICE_ENTERPRISE: 'price_enterprise_monthly',

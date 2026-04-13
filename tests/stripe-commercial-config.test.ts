@@ -1,5 +1,9 @@
 import { strict as assert } from 'node:assert';
-import { createHostedCheckoutSession } from '../src/service/stripe-billing.js';
+import {
+  StripeBillingError,
+  createHostedBillingPortalSession,
+  createHostedCheckoutSession,
+} from '../src/service/stripe-billing.js';
 import { getHostedPlan, resolvePlanStripeTrialDays } from '../src/service/plan-catalog.js';
 
 let passed = 0;
@@ -72,6 +76,39 @@ async function main(): Promise<void> {
       idempotencyKey: 'pro-no-trial-test',
     });
     ok(proCheckout.trialDays === null, 'Stripe commercial config: pro checkout returns no trial in mock mode');
+
+    process.env.ATTESTOR_BILLING_SUCCESS_URL = '/billing/success';
+    let invalidCheckoutUrlError: unknown = null;
+    try {
+      await createHostedCheckoutSession({
+        account,
+        tenant,
+        plan: starter!,
+        idempotencyKey: 'invalid-url-test',
+      });
+    } catch (error) {
+      invalidCheckoutUrlError = error;
+    }
+    ok(invalidCheckoutUrlError instanceof StripeBillingError, 'Stripe commercial config: invalid checkout return URL raises StripeBillingError');
+    ok((invalidCheckoutUrlError as StripeBillingError).code === 'CONFIG', 'Stripe commercial config: invalid checkout return URL is treated as config error');
+
+    process.env.ATTESTOR_BILLING_SUCCESS_URL = 'https://attestor.example.invalid/billing/success';
+    process.env.ATTESTOR_BILLING_PORTAL_RETURN_URL = 'javascript:alert(1)';
+    let invalidPortalUrlError: unknown = null;
+    try {
+      await createHostedBillingPortalSession({
+        account: {
+          ...account,
+          billing: {
+            stripeCustomerId: 'cus_123',
+          },
+        },
+      });
+    } catch (error) {
+      invalidPortalUrlError = error;
+    }
+    ok(invalidPortalUrlError instanceof StripeBillingError, 'Stripe commercial config: invalid portal return URL raises StripeBillingError');
+    ok((invalidPortalUrlError as StripeBillingError).code === 'CONFIG', 'Stripe commercial config: invalid portal return URL is treated as config error');
 
     console.log(`\nStripe commercial config tests: ${passed} passed, 0 failed`);
   } finally {

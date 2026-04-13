@@ -55,7 +55,16 @@ function requiredUrl(envName: 'ATTESTOR_BILLING_SUCCESS_URL' | 'ATTESTOR_BILLING
   if (!value) {
     throw new StripeBillingError('CONFIG', `${envName} must be set for hosted Stripe billing flows.`);
   }
-  return value;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new StripeBillingError('CONFIG', `${envName} must be a valid absolute URL for hosted Stripe billing flows.`);
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new StripeBillingError('CONFIG', `${envName} must use http:// or https:// for hosted Stripe billing flows.`);
+  }
+  return parsed.toString();
 }
 
 function planPriceOrThrow(planId: string): { planId: string; priceId: string } {
