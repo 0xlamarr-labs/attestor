@@ -59,9 +59,7 @@ The commercial rule to preserve is simple:
 - zero-cost evaluation can start with the repo or a hosted account signup
 - included hosted pipeline volume starts at `starter`
 
-## Launching Before A Full Website Exists
-
-Attestor can still be a legitimate commercial product before a polished marketing site exists.
+## Commercial Surface
 
 The repo and docs can serve as the first commercial surface as long as they make the following obvious:
 
@@ -78,7 +76,7 @@ That gives a credible first commercial shape:
 - Stripe Checkout for paid conversion
 - hosted account plane for keys, usage, and billing
 
-The product still remains API-first and infrastructure-first. A website can improve conversion later, but it is not the thing being sold.
+The product still remains API-first and infrastructure-first. The thing being sold is the acceptance and operating layer itself.
 
 ## Where Customer Payment And Your Bank Account Meet
 

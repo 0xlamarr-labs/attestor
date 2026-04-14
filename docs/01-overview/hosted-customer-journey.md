@@ -52,19 +52,20 @@ flowchart LR
 If someone skims this page, they should still understand the buying path:
 
 - `community` = try Attestor first
-- `starter` = first hosted paid plan with a 14-day trial
-- `pro` = buy hosted usage for repeated real work
-- `enterprise` = talk to sales for private deployment or procurement-heavy rollout
+- `starter`, `pro`, `enterprise` = paid plans on the same account
+- first create the account, then open Stripe Checkout for the plan, then pay, then keep using that same account
 
-If someone wants `pro` right now, the path is simple:
+## What To Send And When
 
-1. create the account
-2. open Stripe Checkout for `pro`
-3. pay
-4. keep using the same account after payment
+Use this order:
 
-Today this path is API-first rather than a polished website, so the route contract is documented below.
-Right now that means registration happens through the hosted signup API rather than a normal web form.
+1. create the account:
+   send `accountName`, `email`, `displayName`, and `password` to `POST /api/v1/auth/signup`
+2. start checkout for the plan:
+   send `planId` (`starter`, `pro`, or `enterprise`) to `POST /api/v1/account/billing/checkout`
+3. open the returned `checkoutUrl` and finish payment in Stripe
+4. keep using the same account after checkout completes
+5. manage invoices or payment details later through `POST /api/v1/account/billing/portal`
 
 ## Billing In One Minute
 
@@ -157,9 +158,7 @@ The hosted customer journey already maps to the shipped API surface:
 - `POST /api/v1/account/billing/portal`
 - `POST /api/v1/billing/stripe/webhook`
 
-## Launching Before A Full Website Exists
-
-Attestor does not need a polished marketing site to become a real product.
+## Commercial Surface
 
 The repo and docs can already serve as the initial commercial surface when they clearly answer:
 

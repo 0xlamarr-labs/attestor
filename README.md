@@ -207,7 +207,7 @@ flowchart LR
   P --> O["Production consequence, audit, review"]
 ```
 
-If you do not yet have a polished marketing site, the repo and docs can still function as the first commercial surface. A serious buyer should still be able to understand the product, pick a plan, sign up, upgrade through Stripe, and start integrating without ever needing a file workspace.
+The repo and docs should already function as the commercial surface. A serious buyer should be able to understand the product, pick a plan, sign up, upgrade through Stripe, and start integrating without ever needing a file workspace.
 
 ## Hosted Customer Journey
 
@@ -221,15 +221,26 @@ The intended hosted path is deliberately simple:
 
 ### The 3-Second Version
 
-If you just want the simplest possible explanation:
+If you just want the shortest practical explanation:
 
-- want to try Attestor first: start with `community`
-- want real hosted usage: pick `starter` or `pro`
-- want `pro` right now: create your account, open Stripe Checkout for `pro`, pay, and keep using the same account
-- want private deployment or a procurement path: choose `enterprise`
+- `community` = try Attestor first
+- `starter`, `pro`, `enterprise` = paid plans on the same account
+- first create the account, then open Stripe Checkout for the plan you want, then pay, then keep using that same account
 
-Today there is not yet a separate polished marketing website for self-serve signup. The buyer path starts with hosted account signup, then continues on the same account into Stripe Checkout.
-Right now that means registration happens through the hosted signup API rather than a normal web form.
+### How To Activate A Plan
+
+Use this exact order:
+
+1. Create the account:
+   send `accountName`, `email`, `displayName`, and `password` to `POST /api/v1/auth/signup`
+2. Start checkout for the plan:
+   send `planId` (`starter`, `pro`, or `enterprise`) to `POST /api/v1/account/billing/checkout`
+3. Open the returned `checkoutUrl` and complete payment in Stripe
+4. Stripe updates the same account after checkout completes
+5. Use the account normally:
+   `GET /api/v1/account`, `GET /api/v1/account/usage`, `GET /api/v1/account/api-keys`
+6. Manage invoices or payment details later:
+   `POST /api/v1/account/billing/portal`
 
 That journey already maps onto the shipped HTTP surface:
 
@@ -326,16 +337,12 @@ For enterprise buyers, lead with:
 
 ### How Purchase Should Work
 
-The purchase flow does not need to be complicated.
+The purchase flow is simple:
 
-If you want `pro` today, the intended path is:
-
-1. create your account
-2. choose `pro`
-3. pay in Stripe Checkout
-4. return to the same account and keep using Attestor there
-
-Today this path is API-first rather than a polished website, which is why the exact signup and checkout routes are documented in the hosted customer journey doc.
+1. create the account
+2. start checkout for the chosen plan
+3. pay in Stripe
+4. keep using the same account after activation
 
 ### Commercial Bootstrap
 
