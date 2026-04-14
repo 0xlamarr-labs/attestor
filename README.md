@@ -219,6 +219,18 @@ The intended hosted path is deliberately simple:
 4. sign in to manage API keys, usage, and billing
 5. call Attestor from the customer's own environment
 
+### The 3-Second Version
+
+If you just want the simplest possible explanation:
+
+- want to try Attestor first: start with `community`
+- want real hosted usage: pick `starter` or `pro`
+- want `pro` right now: create your account, open Stripe Checkout for `pro`, pay, and keep using the same account
+- want private deployment or a procurement path: choose `enterprise`
+
+Today there is not yet a separate polished marketing website for self-serve signup. The buyer path starts with hosted account signup, then continues on the same account into Stripe Checkout.
+Right now that means registration happens through the hosted signup API rather than a normal web form.
+
 That journey already maps onto the shipped HTTP surface:
 
 - `POST /api/v1/auth/signup`
@@ -314,37 +326,16 @@ For enterprise buyers, lead with:
 
 ### How Purchase Should Work
 
-The purchase flow does not need a large web app to be legitimate.
+The purchase flow does not need to be complicated.
 
-The clean first commercial path is:
+If you want `pro` today, the intended path is:
 
-1. customer reads the repo/docs and chooses a plan
-2. customer signs up and receives a hosted account plus first API key
-3. customer upgrades through Stripe Checkout when the paid plan is needed
-4. Attestor activates the hosted plan and billing state on that same account
-5. customer signs in, manages API keys, sees usage/billing, and integrates from their own environment
+1. create your account
+2. choose `pro`
+3. pay in Stripe Checkout
+4. return to the same account and keep using Attestor there
 
-The existing billing/runtime contract already supports this model through:
-
-- `POST /api/v1/auth/signup`
-- `GET /api/v1/account/api-keys`
-- `POST /api/v1/account/api-keys`
-- `POST /api/v1/account/api-keys/:id/rotate`
-- `POST /api/v1/account/api-keys/:id/deactivate`
-- `POST /api/v1/account/api-keys/:id/reactivate`
-- `POST /api/v1/account/api-keys/:id/revoke`
-- `POST /api/v1/account/billing/checkout`
-- `POST /api/v1/account/billing/portal`
-- `GET /api/v1/account/usage`
-- `GET /api/v1/account/entitlement`
-- `GET /api/v1/account/billing/export`
-
-Stripe should remain the source of public commercial pricing, with these env-mapped recurring price ids:
-
-- `ATTESTOR_STRIPE_PRICE_STARTER`
-- `ATTESTOR_STRIPE_PRICE_PRO`
-- `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
-- `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS`
+Today this path is API-first rather than a polished website, which is why the exact signup and checkout routes are documented in the hosted customer journey doc.
 
 ### Commercial Bootstrap
 

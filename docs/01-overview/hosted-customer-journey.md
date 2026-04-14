@@ -47,6 +47,25 @@ flowchart LR
   A --> C["Customer systems call Attestor API"]
 ```
 
+## The 3-Second Version
+
+If someone skims this page, they should still understand the buying path:
+
+- `community` = try Attestor first
+- `starter` = first hosted paid plan with a 14-day trial
+- `pro` = buy hosted usage for repeated real work
+- `enterprise` = talk to sales for private deployment or procurement-heavy rollout
+
+If someone wants `pro` right now, the path is simple:
+
+1. create the account
+2. open Stripe Checkout for `pro`
+3. pay
+4. keep using the same account after payment
+
+Today this path is API-first rather than a polished website, so the route contract is documented below.
+Right now that means registration happens through the hosted signup API rather than a normal web form.
+
 ## Billing In One Minute
 
 If a customer asks "how does payment work?" the answer should stay this simple:
