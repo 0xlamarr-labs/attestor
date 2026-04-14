@@ -36,7 +36,8 @@ async function main(): Promise<void> {
 
     ok(starter?.defaultStripeTrialDays === 14, 'Stripe commercial config: starter defaults to a 14-day trial');
     ok(pro?.defaultStripeTrialDays === null, 'Stripe commercial config: pro defaults to no trial');
-    ok(community?.intendedFor === 'self_host', 'Stripe commercial config: community remains self-host only');
+    ok(community?.intendedFor === 'self_host', 'Stripe commercial config: community remains the non-Stripe evaluation plan');
+    ok(community?.defaultMonthlyRunQuota === 0, 'Stripe commercial config: community exposes zero included hosted runs');
 
     process.env.ATTESTOR_STRIPE_STARTER_TRIAL_DAYS = '21';
     ok(resolvePlanStripeTrialDays('starter').trialDays === 21, 'Stripe commercial config: starter trial can be overridden by env');

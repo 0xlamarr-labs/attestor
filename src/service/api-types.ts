@@ -425,6 +425,12 @@ export interface AuthSignupResponse {
   };
   user: AccountUserRecordView;
   account: AdminAccountRecord;
+  commercial: {
+    currentPhase: 'evaluation' | 'paid';
+    includedMonthlyRunQuota: number | null;
+    firstHostedPlanId: string;
+    firstHostedPlanTrialDays: number | null;
+  };
   initialKey: AccountApiKeyRecord & { apiKey: string };
 }
 

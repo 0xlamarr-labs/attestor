@@ -818,6 +818,9 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(plansBody.defaults.asyncExecutionShared === true, 'Admin Plans: async execution backend reported as shared');
       ok(plansBody.defaults.asyncWeightedDispatchShared === true, 'Admin Plans: async weighted dispatch backend reported as shared');
       const starterPlan = plansBody.plans.find((entry: any) => entry.id === 'starter');
+      const communityPlan = plansBody.plans.find((entry: any) => entry.id === 'community');
+      ok(Boolean(communityPlan), 'Admin Plans: community plan present');
+      ok(communityPlan.defaultMonthlyRunQuota === 0, 'Admin Plans: community hosted quota = 0');
       ok(Boolean(starterPlan), 'Admin Plans: starter plan present');
       ok(starterPlan.defaultMonthlyRunQuota === 100, 'Admin Plans: starter quota = 100');
       ok(starterPlan.defaultPipelineRequestsPerWindow === 3, 'Admin Plans: starter rate limit = 3');
@@ -2253,6 +2256,10 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(signupBody.signup === true, 'Auth Signup: signup flag true');
       ok(signupBody.user.role === 'account_admin', 'Auth Signup: first user is account_admin');
       ok(signupBody.initialKey.planId === 'community', 'Auth Signup: community plan applied');
+      ok(signupBody.commercial.currentPhase === 'evaluation', 'Auth Signup: signup starts in evaluation phase');
+      ok(signupBody.commercial.includedMonthlyRunQuota === 0, 'Auth Signup: no hosted pipeline quota included before upgrade');
+      ok(signupBody.commercial.firstHostedPlanId === 'starter', 'Auth Signup: starter is the first hosted paid plan');
+      ok(signupBody.commercial.firstHostedPlanTrialDays === 14, 'Auth Signup: starter trial surfaced in signup response');
       ok(typeof signupBody.initialKey.apiKey === 'string', 'Auth Signup: initial API key returned');
 
       const signupUsageRes = await fetch(`${BASE}/api/v1/account/usage`, {
@@ -2261,6 +2268,25 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(signupUsageRes.status === 200, 'Auth Signup: initial API key works');
       const signupUsageBody = await signupUsageRes.json() as any;
       ok(signupUsageBody.tenantContext.planId === 'community', 'Auth Signup: community plan visible in usage');
+      ok(signupUsageBody.usage.quota === 0, 'Auth Signup: community signup has zero included hosted runs');
+      ok(signupUsageBody.usage.enforced === true, 'Auth Signup: zero hosted quota is enforced');
+
+      const signupPipelineBlockedRes = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${signupBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(signupPipelineBlockedRes.status === 429, 'Auth Signup: evaluation account cannot consume hosted pipeline volume before upgrade');
 
       const accountKeysRes = await fetch(`${BASE}/api/v1/account/api-keys`, {
         headers: { Cookie: signupCookie! },

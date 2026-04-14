@@ -51,7 +51,7 @@ flowchart LR
 
 If a customer asks "how does payment work?" the answer should stay this simple:
 
-1. `community` covers the zero-cost evaluation path.
+1. `community` covers the zero-cost evaluation path, but included hosted pipeline volume starts at `starter`.
 2. hosted signup creates the account the customer keeps using.
 3. `starter` is the first hosted paid plan and begins with a 14-day free trial.
 4. `pro` and `enterprise` are paid upgrades on that same account.
@@ -70,7 +70,7 @@ Expected path:
 1. read the repo and docs
 2. self-host the stack locally or in the team's own environment
 3. validate the acceptance model against real internal workflows
-4. move to hosted `starter` when a shared managed account plane is needed
+4. optionally create a hosted account early, then move to hosted `starter` when real hosted usage is needed
 
 ### Starter
 

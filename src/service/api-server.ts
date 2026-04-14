@@ -1782,6 +1782,12 @@ app.post('/api/v1/auth/signup', async (c) => {
     },
     user: accountUserView(loginTouch.record),
     account: adminAccountView(provisioned.account),
+    commercial: {
+      currentPhase: resolvedPlan.monthlyRunQuota === 0 ? 'evaluation' : 'paid',
+      includedMonthlyRunQuota: resolvedPlan.monthlyRunQuota,
+      firstHostedPlanId: DEFAULT_HOSTED_PLAN_ID,
+      firstHostedPlanTrialDays: resolvePlanStripeTrialDays(DEFAULT_HOSTED_PLAN_ID).trialDays,
+    },
     initialKey: {
       ...accountApiKeyView(provisioned.initialKey),
       apiKey: provisioned.apiKey,

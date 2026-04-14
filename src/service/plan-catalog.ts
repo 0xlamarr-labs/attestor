@@ -89,9 +89,9 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'community',
     displayName: 'Community',
-    description: 'Free self-hosted evaluation and internal development for teams validating the acceptance model locally.',
+    description: 'Zero-cost evaluation path for local validation and hosted account setup before a paid hosted plan. No included hosted pipeline volume.',
     defaultStripeTrialDays: null,
-    defaultMonthlyRunQuota: null,
+    defaultMonthlyRunQuota: 0,
     defaultPipelineRequestsPerWindow: null,
     defaultAsyncPendingJobsPerTenant: null,
     defaultAsyncActiveJobsPerTenant: null,
