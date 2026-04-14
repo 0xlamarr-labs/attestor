@@ -237,7 +237,7 @@ That journey already maps onto the shipped HTTP surface:
 
 The commercial principle is straightforward:
 
-- `community` remains the free self-hosted path
+- `community` covers the zero-cost evaluation path
 - hosted signup creates a real account and first API key
 - paid plans upgrade the same account instead of creating a second product line
 - the customer's real workflows stay in the customer's systems
@@ -281,6 +281,18 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 | Starter | EUR 499 / month | first production teams and governed pilot workflows | hosted account + API access, 100 governed runs / month, 14-day free trial, usage and billing surface, API key management |
 | Pro | EUR 1,999 / month | repeated operational use across multiple workflows or business units | hosted account + API access, 1,000 governed runs / month, higher rate limits, stronger runtime headroom |
 | Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, internal AI platform teams, private deployment buyers | hosted or private deployment, negotiated limits, commercial onboarding, compliance/security rollout path |
+
+### How Billing Works
+
+This is the shortest honest version:
+
+1. `community` covers the zero-cost evaluation path.
+2. hosted signup creates the account you will keep using; you do not create a second paid account later.
+3. `starter` is the first hosted paid plan and begins with a 14-day free trial.
+4. `pro` and `enterprise` are paid upgrades on that same account.
+5. Stripe Checkout starts the paid plan, and the Stripe Billing Portal is where payment details, invoices, and plan changes are managed.
+
+If someone only reads one billing section in the repo, it should be this one.
 
 The pricing intent is deliberate:
 
@@ -538,6 +550,7 @@ curl -X POST https://<host>/api/v1/auth/signup \
 curl -X POST https://<host>/api/v1/account/billing/checkout \
   -H "content-type: application/json" \
   -H "cookie: <account-session-cookie>" \
+  -H "Idempotency-Key: checkout-starter-001" \
   -d '{ "planId": "starter" }'
 
 # 3. List or rotate API keys from the account plane

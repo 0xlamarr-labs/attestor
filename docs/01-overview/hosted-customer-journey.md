@@ -47,6 +47,18 @@ flowchart LR
   A --> C["Customer systems call Attestor API"]
 ```
 
+## Billing In One Minute
+
+If a customer asks "how does payment work?" the answer should stay this simple:
+
+1. `community` covers the zero-cost evaluation path.
+2. hosted signup creates the account the customer keeps using.
+3. `starter` is the first hosted paid plan and begins with a 14-day free trial.
+4. `pro` and `enterprise` are paid upgrades on that same account.
+5. Stripe Checkout starts the plan, and the Stripe Billing Portal is where payment details, invoices, and plan changes are managed.
+
+That is the whole payment story most buyers need before they decide whether to continue.
+
 ## Entry Path By Plan
 
 ### Community

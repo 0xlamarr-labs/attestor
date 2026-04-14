@@ -351,8 +351,18 @@ function renderHostedReturnPage(options: {
   title: string;
   eyebrow: string;
   message: string;
+  bullets?: string[];
+  note?: string;
   actions: Array<{ href: string; label: string }>;
 }): string {
+  const bulletMarkup = (options.bullets ?? []).length > 0
+    ? `<ul>${(options.bullets ?? [])
+      .map((entry) => `<li>${escapeHtml(entry)}</li>`)
+      .join('')}</ul>`
+    : '';
+  const noteMarkup = options.note
+    ? `<p class="note">${escapeHtml(options.note)}</p>`
+    : '';
   const actions = options.actions
     .map((action) => `<a class="action" href="${escapeHtml(action.href)}">${escapeHtml(action.label)}</a>`)
     .join('');
@@ -405,6 +415,20 @@ function renderHostedReturnPage(options: {
         line-height: 1.6;
         color: #40556f;
       }
+      ul {
+        margin: 18px 0 0;
+        padding-left: 20px;
+        color: #29415e;
+        line-height: 1.7;
+      }
+      li + li {
+        margin-top: 8px;
+      }
+      .note {
+        margin-top: 18px;
+        font-size: 14px;
+        color: #5c728d;
+      }
       nav {
         display: flex;
         flex-wrap: wrap;
@@ -429,6 +453,8 @@ function renderHostedReturnPage(options: {
       <p class="eyebrow">${escapeHtml(options.eyebrow)}</p>
       <h1>${escapeHtml(options.title)}</h1>
       <p>${escapeHtml(options.message)}</p>
+      ${bulletMarkup}
+      ${noteMarkup}
       <nav>${actions}</nav>
     </main>
   </body>
@@ -438,10 +464,16 @@ function renderHostedReturnPage(options: {
 app.get('/billing/success', (c) => c.body(renderHostedReturnPage({
   eyebrow: 'Billing',
   title: 'Checkout completed',
-  message: 'Stripe checkout finished successfully. Attestor will reflect the updated billing state as soon as webhook reconciliation completes.',
+  message: 'Your checkout finished successfully. Attestor keeps the same account and updates the plan on that account as soon as Stripe webhook reconciliation completes.',
+  bullets: [
+    'Starter begins with a 14-day free trial before the first paid cycle.',
+    'If the plan view still looks unchanged, wait a few seconds and refresh.',
+    'You can manage payment details, invoices, and plan changes from the billing portal.',
+  ],
+  note: 'The machine-readable account endpoints remain the source of truth for API-first customers.',
   actions: [
-    { href: '/settings/billing', label: 'Open billing settings' },
-    { href: '/api/v1/auth/me', label: 'Check current session' },
+    { href: '/settings/billing', label: 'Open billing summary' },
+    { href: '/api/v1/account', label: 'View account summary (JSON)' },
   ],
 }), 200, {
   'content-type': 'text/html; charset=utf-8',
@@ -450,10 +482,15 @@ app.get('/billing/success', (c) => c.body(renderHostedReturnPage({
 app.get('/billing/cancel', (c) => c.body(renderHostedReturnPage({
   eyebrow: 'Billing',
   title: 'Checkout canceled',
-  message: 'No billing change was applied. You can review the current account state and start a new checkout when you are ready.',
+  message: 'No plan change was applied. Your existing account stays exactly as it was before checkout started.',
+  bullets: [
+    'You can start checkout again from the same hosted account.',
+    'Starter is the first hosted paid plan and includes a 14-day free trial.',
+    'If you are still evaluating, you can wait to upgrade until you are ready.',
+  ],
   actions: [
-    { href: '/settings/billing', label: 'Return to billing settings' },
-    { href: '/api/v1/account/billing/export', label: 'View billing export endpoint' },
+    { href: '/settings/billing', label: 'Return to billing summary' },
+    { href: '/api/v1/account', label: 'View current account (JSON)' },
   ],
 }), 200, {
   'content-type': 'text/html; charset=utf-8',
@@ -462,10 +499,17 @@ app.get('/billing/cancel', (c) => c.body(renderHostedReturnPage({
 app.get('/settings/billing', (c) => c.body(renderHostedReturnPage({
   eyebrow: 'Hosted account',
   title: 'Billing settings',
-  message: 'This hosted control-plane surface provides a safe return target for Stripe portal and checkout flows while the account state is reconciled server-side.',
+  message: 'This is the simple return page for billing. Use it after checkout or the Stripe billing portal to confirm what happens next.',
+  bullets: [
+    'Hosted signup creates the account you will keep using.',
+    'Starter is the first hosted paid plan and includes a 14-day free trial.',
+    'Pro and Enterprise are paid upgrades on the same account.',
+    'Use Stripe Checkout to start a paid plan and the billing portal to manage it later.',
+  ],
+  note: 'If you are integrating directly against the API, the account and billing export endpoints below remain the canonical machine-readable views.',
   actions: [
-    { href: '/api/v1/account', label: 'Open account summary endpoint' },
-    { href: '/api/v1/account/billing/export', label: 'Open billing export endpoint' },
+    { href: '/api/v1/account', label: 'View current plan and usage (JSON)' },
+    { href: '/api/v1/account/billing/export', label: 'View invoices and charges (JSON/CSV)' },
   ],
 }), 200, {
   'content-type': 'text/html; charset=utf-8',

@@ -1840,15 +1840,21 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
 
       const checkoutSuccessPageRes = await fetch(`${BASE}/billing/success`);
       ok(checkoutSuccessPageRes.status === 200, 'Billing pages: success return surface responds');
-      ok((await checkoutSuccessPageRes.text()).includes('Checkout completed'), 'Billing pages: success return surface explains checkout completion');
+      const checkoutSuccessPage = await checkoutSuccessPageRes.text();
+      ok(checkoutSuccessPage.includes('Checkout completed'), 'Billing pages: success return surface explains checkout completion');
+      ok(checkoutSuccessPage.includes('14-day free trial'), 'Billing pages: success return surface explains the starter trial in human terms');
 
       const checkoutCancelPageRes = await fetch(`${BASE}/billing/cancel`);
       ok(checkoutCancelPageRes.status === 200, 'Billing pages: cancel return surface responds');
-      ok((await checkoutCancelPageRes.text()).includes('Checkout canceled'), 'Billing pages: cancel return surface explains cancellation');
+      const checkoutCancelPage = await checkoutCancelPageRes.text();
+      ok(checkoutCancelPage.includes('Checkout canceled'), 'Billing pages: cancel return surface explains cancellation');
+      ok(checkoutCancelPage.includes('same hosted account'), 'Billing pages: cancel return surface explains that the account is unchanged');
 
       const billingSettingsPageRes = await fetch(`${BASE}/settings/billing`);
       ok(billingSettingsPageRes.status === 200, 'Billing pages: billing settings return surface responds');
-      ok((await billingSettingsPageRes.text()).includes('Billing settings'), 'Billing pages: billing settings return surface explains next steps');
+      const billingSettingsPage = await billingSettingsPageRes.text();
+      ok(billingSettingsPage.includes('Billing settings'), 'Billing pages: billing settings return surface explains next steps');
+      ok(billingSettingsPage.includes('Starter is the first hosted paid plan'), 'Billing pages: billing settings summarises the plan ladder in plain language');
 
       const appReturnRes = await fetch(`${BASE}/app`);
       ok(appReturnRes.status === 200, 'Billing pages: legacy app return path resolves');
