@@ -75,7 +75,7 @@ export async function runFinancialTests(): Promise<number> {
 
     // Hybrid: both live
     const hybrid = buildLiveProof('test', 'replay', {
-      upstream: { live: true, provider: 'openai', model: 'gpt-5.4' },
+      upstream: { live: true, provider: 'openai', model: 'o3' },
       execution: { live: true, provider: 'snowflake', mode: 'live_db' },
     });
     ok(hybrid.mode === 'hybrid', 'Hybrid: mode=hybrid');

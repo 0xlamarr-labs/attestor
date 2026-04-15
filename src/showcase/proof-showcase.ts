@@ -69,6 +69,7 @@ export interface BuildProofShowcasePacketInput {
   kit: VerificationKit;
   generatedAt?: string;
   proofLabel?: string;
+  rerunCommand?: string;
   schemaAttestation?: SchemaAttestationLike | null;
 }
 
@@ -280,7 +281,7 @@ export function buildProofShowcasePacket(input: BuildProofShowcasePacketInput): 
     },
     artifactFiles,
     commands: {
-      rerun: 'npx tsx scripts/real-db-proof.ts',
+      rerun: input.rerunCommand ?? 'npx tsx scripts/real-db-proof.ts',
       verifyKit: input.kit.trustChain && input.kit.caPublicKeyPem
         ? `npm run verify:cert -- ${latestPrefix}/evidence/kit.json`
         : `npm run verify:cert -- ${latestPrefix}/evidence/kit.json --allow-legacy-verify`,

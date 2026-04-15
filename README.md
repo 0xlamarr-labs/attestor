@@ -512,6 +512,9 @@ npx tsx scripts/real-db-proof.ts
 # Human-readable proof packet from a real PostgreSQL run
 npm run showcase:proof
 
+# Human-readable proof packet from a live hybrid run (requires OPENAI_API_KEY)
+npm run showcase:proof:hybrid
+
 # Multi-query signed proof
 npx tsx src/financial/cli.ts multi-query
 
@@ -553,6 +556,7 @@ Notes:
 - `tests/live-snowflake.test.ts` is env-gated and opt-in.
 - `scripts/real-db-proof.ts` performs real PostgreSQL execution against an embedded instance and emits signed artifacts.
 - `npm run showcase:proof` reruns the real PostgreSQL proof and emits a shareable packet under `.attestor/showcase/latest/` as Markdown, HTML, and JSON.
+- `npm run showcase:proof:hybrid` runs the live hybrid counterparty exercise and emits the same packet shape with portable verification artifacts under `.attestor/showcase/latest/`.
 
 ## Hosted Customer Quick Path
 

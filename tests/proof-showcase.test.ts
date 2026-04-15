@@ -14,7 +14,7 @@ function ok(condition: unknown, message: string): void {
 }
 
 async function main(): Promise<void> {
-  const kit = {
+  const degradedKit = {
     certificate: {
       certificateId: 'cert_demo123',
       issuedAt: '2026-04-15T09:30:00.000Z',
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   const packet = buildProofShowcasePacket({
     proofDir: 'C:/Users/thedi/attestor/.attestor/proofs/real-pg-proof_demo',
     latestPacketDir: '.attestor/showcase/latest',
-    kit,
+    kit: degradedKit,
     schemaAttestation: {
       schemaFingerprint: 'schema_fp_demo',
       attestationHash: 'att_hash_demo',
@@ -98,6 +98,82 @@ async function main(): Promise<void> {
   ok(html.includes('Accepted with partial proof coverage'), 'Proof showcase HTML: includes headline');
   ok(html.includes('evidence/certificate.json'), 'Proof showcase HTML: links to evidence certificate');
   ok(!html.includes('PROOF_DEGRADED'), 'Proof showcase HTML: avoids raw status-code shouting');
+
+  const verifiedHybridKit = {
+    certificate: {
+      certificateId: 'cert_hybrid123',
+      issuedAt: '2026-04-15T10:45:00.000Z',
+      decisionSummary: 'Governed pass for hybrid live proof run',
+      signing: {
+        fingerprint: 'fp_hybrid',
+      },
+    },
+    bundle: {
+      runId: 'financial-live-counterparty-demo',
+      decision: 'pass',
+      evidence: {
+        auditEntryCount: 9,
+        auditChainIntact: true,
+      },
+      governance: {
+        review: {
+          required: true,
+        },
+      },
+      proof: {
+        executionProvider: 'sqlite',
+        executionLive: true,
+        upstreamLive: true,
+        mode: 'hybrid',
+      },
+    },
+    trustChain: {
+      version: '1.0',
+      type: 'attestor.trust_chain.v1',
+    },
+    caPublicKeyPem: '-----BEGIN PUBLIC KEY-----demo-----END PUBLIC KEY-----',
+    verification: {
+      overall: 'verified',
+      cryptographic: {
+        valid: true,
+        fingerprint: 'fp_hybrid',
+      },
+      governanceSufficiency: {
+        sufficient: true,
+        scoringDecision: 'pass',
+      },
+      authority: {
+        state: 'authorized',
+      },
+      reviewerEndorsement: {
+        present: true,
+        verified: true,
+        reviewerName: 'Hybrid Reviewer',
+      },
+      proofCompleteness: {
+        executionLive: true,
+        upstreamLive: true,
+        executionProvider: 'sqlite',
+        hasDbContextEvidence: false,
+        gapCount: 0,
+        gaps: [],
+      },
+    },
+  } as unknown as VerificationKit;
+
+  const hybridPacket = buildProofShowcasePacket({
+    proofDir: 'C:/Users/thedi/attestor/.attestor-financial/runs/financial-live-counterparty-demo',
+    latestPacketDir: '.attestor/showcase/latest',
+    proofLabel: 'Live hybrid proof run (counterparty)',
+    rerunCommand: 'npx tsx src/financial/cli.ts live-scenario counterparty',
+    kit: verifiedHybridKit,
+  });
+
+  ok(hybridPacket.headline === 'Accepted with fully verifiable proof', 'Proof showcase: verified hybrid headline is strong but truthful');
+  ok(!hybridPacket.limitations.some((item) => item.includes('live upstream model call')), 'Proof showcase: verified hybrid packet does not falsely claim missing upstream proof');
+  ok(hybridPacket.limitations.some((item) => item.includes('No schema attestation file')), 'Proof showcase: verified hybrid packet still calls out missing schema attestation');
+  ok(hybridPacket.commands.rerun === 'npx tsx src/financial/cli.ts live-scenario counterparty', 'Proof showcase: rerun command can point at the hybrid proof path');
+  ok(!hybridPacket.commands.verifyKit.includes('--allow-legacy-verify'), 'Proof showcase: PKI-backed hybrid kit does not require legacy verification override');
 
   console.log(`\nProof showcase tests: ${passed} passed, 0 failed`);
 }

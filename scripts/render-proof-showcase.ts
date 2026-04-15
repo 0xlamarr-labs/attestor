@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import type { VerificationKit } from '../src/signing/bundle.js';
@@ -12,11 +12,13 @@ import {
 interface ScriptArgs {
   fromDir: string | null;
   skipRun: boolean;
+  liveScenario: string | null;
 }
 
 function parseArgs(argv: string[]): ScriptArgs {
   let fromDir: string | null = null;
   let skipRun = false;
+  let liveScenario: string | null = null;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--skip-run') {
@@ -30,9 +32,18 @@ function parseArgs(argv: string[]): ScriptArgs {
     }
     if (arg.startsWith('--from=')) {
       fromDir = resolve(arg.slice('--from='.length));
+      continue;
+    }
+    if (arg === '--live-scenario') {
+      liveScenario = argv[index + 1] ? argv[index + 1] : null;
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('--live-scenario=')) {
+      liveScenario = arg.slice('--live-scenario='.length);
     }
   }
-  return { fromDir, skipRun };
+  return { fromDir, skipRun, liveScenario };
 }
 
 function realProofCommand(): { command: string; args: string[] } {
@@ -55,6 +66,26 @@ function runRealProof(): void {
   }
 }
 
+function liveProofCommand(scenarioId: string): { command: string; args: string[] } {
+  const tsxCli = join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  return {
+    command: process.execPath,
+    args: [tsxCli, 'src/financial/cli.ts', 'live-scenario', scenarioId],
+  };
+}
+
+function runLiveScenario(scenarioId: string): void {
+  const { command, args } = liveProofCommand(scenarioId);
+  const result = spawnSync(command, args, {
+    cwd: process.cwd(),
+    stdio: 'inherit',
+  });
+  if (result.status !== 0) {
+    const detail = result.error ? result.error.message : `status ${result.status ?? 'unknown'}`;
+    throw new Error(`live scenario failed: ${detail}.`);
+  }
+}
+
 function latestRealProofDir(): string {
   const proofRoot = resolve('.attestor', 'proofs');
   if (!existsSync(proofRoot)) {
@@ -62,13 +93,52 @@ function latestRealProofDir(): string {
   }
   const latest = readdirSync(proofRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name.startsWith('real-pg-proof_'))
+    .map((entry) => ({ name: entry.name, mtimeMs: statSync(join(proofRoot, entry.name)).mtimeMs }))
+    .sort((left, right) => left.mtimeMs - right.mtimeMs)
     .map((entry) => entry.name)
-    .sort()
     .at(-1);
   if (!latest) {
     throw new Error('No real PostgreSQL proof artifacts were found under .attestor/proofs/.');
   }
   return join(proofRoot, latest);
+}
+
+function latestHybridProofDir(scenarioId: string | null = null): string {
+  const runsRoot = resolve('.attestor-financial', 'runs');
+  if (!existsSync(runsRoot)) {
+    throw new Error('No live hybrid run directory exists yet. Run src/financial/cli.ts live-scenario first.');
+  }
+  const prefix = scenarioId ? `financial-live-${scenarioId}-` : 'financial-live-';
+  const latest = readdirSync(runsRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
+    .map((entry) => ({ name: entry.name, mtimeMs: statSync(join(runsRoot, entry.name)).mtimeMs }))
+    .sort((left, right) => left.mtimeMs - right.mtimeMs)
+    .map((entry) => entry.name)
+    .at(-1);
+  if (!latest) {
+    throw new Error(`No live hybrid proof artifacts were found under .attestor-financial/runs/ for prefix "${prefix}".`);
+  }
+  return join(runsRoot, latest);
+}
+
+function inferProofContext(
+  proofDir: string,
+  explicitLiveScenario: string | null,
+): { proofLabel: string; rerunCommand: string } {
+  const baseName = proofDir.replaceAll('\\', '/').split('/').at(-1) ?? 'latest-proof';
+  if (explicitLiveScenario || baseName.startsWith('financial-live-')) {
+    const inferredScenario = explicitLiveScenario
+      ?? baseName.match(/^financial-live-([a-z0-9_-]+)-/iu)?.[1]
+      ?? 'counterparty';
+    return {
+      proofLabel: `Live hybrid proof run (${inferredScenario})`,
+      rerunCommand: `npx tsx src/financial/cli.ts live-scenario ${inferredScenario}`,
+    };
+  }
+  return {
+    proofLabel: 'Real PostgreSQL-backed proof run',
+    rerunCommand: 'npx tsx scripts/real-db-proof.ts',
+  };
 }
 
 function copyArtifactIfPresent(sourceDir: string, destinationDir: string, name: string): void {
@@ -80,16 +150,22 @@ function copyArtifactIfPresent(sourceDir: string, destinationDir: string, name: 
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   if (!args.fromDir && !args.skipRun) {
-    console.log('\nGenerating a fresh real PostgreSQL-backed proof before rendering the showcase packet...\n');
-    runRealProof();
+    if (args.liveScenario) {
+      console.log(`\nGenerating a fresh live hybrid proof for scenario "${args.liveScenario}" before rendering the showcase packet...\n`);
+      runLiveScenario(args.liveScenario);
+    } else {
+      console.log('\nGenerating a fresh real PostgreSQL-backed proof before rendering the showcase packet...\n');
+      runRealProof();
+    }
   }
 
-  const proofDir = args.fromDir ?? latestRealProofDir();
+  const proofDir = args.fromDir ?? (args.liveScenario ? latestHybridProofDir(args.liveScenario) : latestRealProofDir());
   const proofBaseName = proofDir.replaceAll('\\', '/').split('/').at(-1) ?? 'latest-proof';
   const showcaseRoot = resolve('.attestor', 'showcase');
   const packetDir = join(showcaseRoot, proofBaseName);
   const latestPacketDir = join(showcaseRoot, 'latest');
   const evidenceDir = join(packetDir, 'evidence');
+  const proofContext = inferProofContext(proofDir, args.liveScenario);
 
   rmSync(packetDir, { recursive: true, force: true });
   mkdirSync(evidenceDir, { recursive: true });
@@ -104,6 +180,7 @@ function main(): void {
   copyArtifactIfPresent(proofDir, evidenceDir, 'public-key.pem');
   copyArtifactIfPresent(proofDir, evidenceDir, 'reviewer-public.pem');
   copyArtifactIfPresent(proofDir, evidenceDir, 'verification-summary.json');
+  copyArtifactIfPresent(proofDir, evidenceDir, 'bundle.json');
   copyArtifactIfPresent(proofDir, evidenceDir, 'schema-attestation.json');
   copyArtifactIfPresent(proofDir, evidenceDir, 'trust-chain.json');
   copyArtifactIfPresent(proofDir, evidenceDir, 'ca-public.pem');
@@ -112,6 +189,8 @@ function main(): void {
     proofDir: proofDir.replaceAll('\\', '/'),
     latestPacketDir: '.attestor/showcase/latest',
     kit,
+    proofLabel: proofContext.proofLabel,
+    rerunCommand: proofContext.rerunCommand,
     schemaAttestation,
   });
 

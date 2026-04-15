@@ -79,6 +79,7 @@
     "probe:observability-release-inputs": "tsx scripts/probe-observability-release-inputs.ts",
     "tenant:keys": "tsx src/service/tenant-admin.ts",
     "showcase:proof": "tsx scripts/render-proof-showcase.ts",
+    "showcase:proof:hybrid": "tsx scripts/render-proof-showcase.ts --live-scenario counterparty",
     "start": "tsx src/financial/cli.ts",
     "list": "tsx src/financial/cli.ts list",
     "scenario": "tsx src/financial/cli.ts scenario",

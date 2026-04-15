@@ -1,5 +1,5 @@
 /**
- * OpenAI API client for GPT-5.4 Thinking.
+ * OpenAI API client for the configured reasoning model.
  * Used for upstream analysis and verification.
  *
  * Uses the Responses API for reasoning control support.
@@ -48,7 +48,7 @@ export const GPT_MODEL = 'o3' as const;
 const MODEL = GPT_MODEL;
 
 /**
- * Call GPT-5.4 Thinking via the Responses API.
+ * Call the configured OpenAI reasoning model via the Responses API.
  *
  * The Responses API supports:
  * - reasoning.effort: controls how much thinking the model invests
@@ -74,7 +74,7 @@ export function buildGptRequestBody(params: GptCallParams) {
 export async function callGpt(params: GptCallParams): Promise<GptCallResult> {
   const { systemPrompt, userMessage, stage, effort = 'high', maxTokens = 32000 } = params;
 
-  logger.info(stage, `Calling GPT-5.4 Thinking (effort: ${effort})...`);
+  logger.info(stage, `Calling OpenAI reasoning model ${MODEL} (effort: ${effort})...`);
 
   let lastError: unknown;
 
@@ -105,7 +105,7 @@ export async function callGpt(params: GptCallParams): Promise<GptCallResult> {
       }
 
       if (!content) {
-        throw new ParseError(stage, 'Empty response from GPT-5.4');
+        throw new ParseError(stage, `Empty response from OpenAI model ${MODEL}`);
       }
 
       const usage = response.usage;
@@ -113,7 +113,7 @@ export async function callGpt(params: GptCallParams): Promise<GptCallResult> {
       const outputTokens = usage?.output_tokens ?? 0;
       const cachedInputTokens = (usage as any)?.input_tokens_details?.cached_tokens ?? 0;
 
-      logger.info(stage, `GPT-5.4 response received`, {
+      logger.info(stage, `OpenAI model ${MODEL} response received`, {
         tokens: inputTokens + outputTokens,
         effort,
         cached: cachedInputTokens,
@@ -132,7 +132,7 @@ export async function callGpt(params: GptCallParams): Promise<GptCallResult> {
       if (err instanceof ParseError) throw err;
 
       if (attempt === 0) {
-        logger.warn(stage, `GPT-5.4 call failed, retrying in ${RETRY_DELAY_MS}ms...`, {
+        logger.warn(stage, `OpenAI model ${MODEL} call failed, retrying in ${RETRY_DELAY_MS}ms...`, {
           error: err instanceof Error ? err.message : String(err),
         });
         await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));

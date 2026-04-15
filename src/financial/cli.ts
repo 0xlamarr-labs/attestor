@@ -42,6 +42,7 @@ import type { FinancialRunReport, LiveProofInput } from './types.js';
 import { generateKeyPair, loadPrivateKey, loadPublicKey, derivePublicKeyIdentity, type AttestorKeyPair } from '../signing/keys.js';
 import { verifyCertificate } from '../signing/certificate.js';
 import { buildVerificationKit } from '../signing/bundle.js';
+import type { TrustChain } from '../signing/pki-chain.js';
 import { runPostgresProve } from '../connectors/postgres-prove.js';
 import { isPostgresConfigured } from '../connectors/postgres.js';
 import { runMultiQueryPipeline, type MultiQueryUnit } from './multi-query-pipeline.js';
@@ -78,6 +79,18 @@ type PersistedArtifactPaths = {
   candidateSql: string;
   sqlGeneration: string | null;
   snapshotDir: string | null;
+};
+
+type PersistedPortableProofPaths = {
+  outDir: string;
+  certificate: string;
+  publicKey: string;
+  kit: string;
+  verificationSummary: string;
+  bundle: string;
+  reviewerPublicKey: string | null;
+  trustChain: string | null;
+  caPublicKey: string | null;
 };
 
 type LiveScenarioDefinition = {
@@ -229,6 +242,54 @@ function persistFinancialArtifacts(
   };
 }
 
+function persistPortableProofArtifacts(input: {
+  report: FinancialRunReport;
+  kit: NonNullable<ReturnType<typeof buildVerificationKit>>;
+  outDir: string;
+  signerPublicKeyPem: string;
+  reviewerPublicKeyPem?: string | null;
+  trustChain?: TrustChain | null;
+  caPublicKeyPem?: string | null;
+}): PersistedPortableProofPaths {
+  mkdirSync(input.outDir, { recursive: true });
+
+  const certificatePath = join(input.outDir, 'certificate.json');
+  const publicKeyPath = join(input.outDir, 'public-key.pem');
+  const kitPath = join(input.outDir, 'kit.json');
+  const verificationSummaryPath = join(input.outDir, 'verification-summary.json');
+  const bundlePath = join(input.outDir, 'bundle.json');
+  const reviewerPublicKeyPath = input.reviewerPublicKeyPem ? join(input.outDir, 'reviewer-public.pem') : null;
+  const trustChainPath = input.trustChain ? join(input.outDir, 'trust-chain.json') : null;
+  const caPublicKeyPath = input.caPublicKeyPem ? join(input.outDir, 'ca-public.pem') : null;
+
+  writeFileSync(certificatePath, `${JSON.stringify(input.report.certificate, null, 2)}\n`, 'utf8');
+  writeFileSync(publicKeyPath, input.signerPublicKeyPem, 'utf8');
+  writeFileSync(kitPath, `${JSON.stringify(input.kit, null, 2)}\n`, 'utf8');
+  writeFileSync(verificationSummaryPath, `${JSON.stringify(input.kit.verification, null, 2)}\n`, 'utf8');
+  writeFileSync(bundlePath, `${JSON.stringify(input.kit.bundle, null, 2)}\n`, 'utf8');
+  if (reviewerPublicKeyPath && input.reviewerPublicKeyPem) {
+    writeFileSync(reviewerPublicKeyPath, input.reviewerPublicKeyPem, 'utf8');
+  }
+  if (trustChainPath && input.trustChain) {
+    writeFileSync(trustChainPath, `${JSON.stringify(input.trustChain, null, 2)}\n`, 'utf8');
+  }
+  if (caPublicKeyPath && input.caPublicKeyPem) {
+    writeFileSync(caPublicKeyPath, input.caPublicKeyPem, 'utf8');
+  }
+
+  return {
+    outDir: input.outDir,
+    certificate: certificatePath,
+    publicKey: publicKeyPath,
+    kit: kitPath,
+    verificationSummary: verificationSummaryPath,
+    bundle: bundlePath,
+    reviewerPublicKey: reviewerPublicKeyPath,
+    trustChain: trustChainPath,
+    caPublicKey: caPublicKeyPath,
+  };
+}
+
 function printReportSummary(report: FinancialRunReport): void {
   console.log(`  Decision: ${report.decision.toUpperCase()}`);
   console.log(`  Scorers: ${report.scoring.scorersRun} ran`);
@@ -345,12 +406,30 @@ async function runLiveScenario(id: string): Promise<void> {
   console.log(`  Run ID: ${runId}\n`);
 
   const overallStart = Date.now();
+  const { generatePkiHierarchy } = await import('../signing/pki-chain.js');
+  const pkiHierarchy = generatePkiHierarchy('Attestor Live Scenario CA', 'Live Scenario Runtime Signer', 'Live Scenario Reviewer');
+  const signingKeyPair = pkiHierarchy.signer.keyPair;
+  const reviewerKeyPair = pkiHierarchy.reviewer.keyPair;
   const snapshot = materializeSqliteFixtureDatabases(snapshotDir, COUNTERPARTY_LIVE_DATABASES);
   const generated = await generateLiveCounterpartySql(snapshot.bindings);
   const input = scenario.buildInput(runId, generated.sql, generated.proof);
+  input.intent = { ...input.intent, materialityTier: 'high' };
   input.liveExecution = {
     provider: 'sqlite',
     bindings: snapshot.bindings,
+  };
+  input.signingKeyPair = signingKeyPair;
+  input.approval = {
+    status: 'approved',
+    reviewerRole: 'attestor_operator',
+    reviewNote: 'Approved for hybrid live proof showcase.',
+    reviewerIdentity: {
+      name: 'Attestor Live Reviewer',
+      role: 'attestor_operator',
+      identifier: `financial-live-reviewer:${runId}`,
+      signerFingerprint: null,
+    },
+    reviewerKeyPair,
   };
 
   const report = runFinancialPipeline(input);
@@ -359,6 +438,29 @@ async function runLiveScenario(id: string): Promise<void> {
     sqlGeneration: generated.metadata,
     snapshotDir,
   });
+  const certificateVerification = report.certificate
+    ? verifyCertificate(report.certificate, signingKeyPair.publicKeyPem)
+    : null;
+  const kit = report.certificate
+    ? buildVerificationKit(
+      report,
+      signingKeyPair.publicKeyPem,
+      reviewerKeyPair.publicKeyPem,
+      pkiHierarchy.chains.signer,
+      pkiHierarchy.ca.keyPair.publicKeyPem,
+    )
+    : null;
+  const portableArtifacts = report.certificate && kit
+    ? persistPortableProofArtifacts({
+      report,
+      kit,
+      outDir: runDir,
+      signerPublicKeyPem: signingKeyPair.publicKeyPem,
+      reviewerPublicKeyPem: reviewerKeyPair.publicKeyPem,
+      trustChain: pkiHierarchy.chains.signer,
+      caPublicKeyPem: pkiHierarchy.ca.keyPair.publicKeyPem,
+    })
+    : null;
 
   printReportSummary(report);
   console.log(`  Snapshot: ${report.snapshot.version} (${report.snapshot.sourceCount ?? report.snapshot.fixtureCount} ${report.snapshot.sourceKind ?? 'fixture'} source${(report.snapshot.sourceCount ?? report.snapshot.fixtureCount) === 1 ? '' : 's'})`);
@@ -376,7 +478,24 @@ async function runLiveScenario(id: string): Promise<void> {
   console.log(`    candidate-sql: ${persisted.candidateSql}`);
   if (persisted.sqlGeneration) console.log(`    sql-generation: ${persisted.sqlGeneration}`);
   if (persisted.snapshotDir) console.log(`    snapshot-dir: ${persisted.snapshotDir}`);
+  if (portableArtifacts) {
+    console.log(`    certificate: ${portableArtifacts.certificate}`);
+    console.log(`    kit: ${portableArtifacts.kit}`);
+    console.log(`    verification-summary: ${portableArtifacts.verificationSummary}`);
+    console.log(`    bundle: ${portableArtifacts.bundle}`);
+    console.log(`    public-key: ${portableArtifacts.publicKey}`);
+    if (portableArtifacts.reviewerPublicKey) console.log(`    reviewer-public-key: ${portableArtifacts.reviewerPublicKey}`);
+    if (portableArtifacts.trustChain) console.log(`    trust-chain: ${portableArtifacts.trustChain}`);
+    if (portableArtifacts.caPublicKey) console.log(`    ca-public-key: ${portableArtifacts.caPublicKey}`);
+  }
   console.log('');
+  if (certificateVerification && kit) {
+    console.log(`  Certificate: ${certificateVerification.overall.toUpperCase()} (${report.certificate?.certificateId})`);
+    console.log(`  Verification kit: ${kit.verification.overall.toUpperCase()} — proof=${kit.verification.proofCompleteness.mode}, gaps=${kit.verification.proofCompleteness.gapCount}, reviewer=${kit.verification.reviewerEndorsement.verified ? 'verified' : 'not verified'}`);
+    console.log(`  Re-verify: npm run verify:cert -- ${runDir.replaceAll('\\', '/')}/kit.json`);
+    console.log(`  Showcase:   npm run showcase:proof -- --from ${runDir.replaceAll('\\', '/')} --skip-run`);
+    console.log('');
+  }
   console.log(renderPackSummary(report.outputPack));
 }
 
