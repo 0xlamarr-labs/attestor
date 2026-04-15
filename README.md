@@ -91,27 +91,12 @@ Finance is the proving ground, not the ceiling.
 
 Attestor keeps maturity claims separated by track.
 
-**Single-query proof**
-
-- signed certificates
-- verification kits
-- run-bound reviewer endorsements
-- real PostgreSQL-backed proof path
-- independent verification CLI
-
-**Multi-query proof**
-
-- aggregate governance across multiple units
-- signed multi-query certificates
-- multi-query verification kits
-- differential evidence and portable output packs
-
-**Runtime proof**
-
-- bounded execution
-- predictive guardrail preflight
-- reproducible PostgreSQL bootstrap
-- schema and data-state attestation in the Postgres proof path
+| Track | What is real today |
+|---|---|
+| Single-query proof | signed certificates, verification kits, run-bound reviewer endorsements, independent verification CLI |
+| Shareable proof packets | real PostgreSQL packet via `npm run showcase:proof`, live hybrid packet via `npm run showcase:proof:hybrid` |
+| Multi-query proof | aggregate governance, signed multi-query certificates, portable multi-query kits, differential evidence |
+| Runtime proof | bounded execution, predictive guardrails, reproducible PostgreSQL bootstrap, Postgres schema/data-state attestation |
 
 ## What Ships in This Repository
 
@@ -506,13 +491,11 @@ npm run prove -- counterparty .attestor
 # Signed single-query proof with a separate reviewer key
 npm run prove -- counterparty .attestor --reviewer-key-dir ./reviewer-keys
 
-# Reproducible real PostgreSQL-backed proof
+# Real PostgreSQL-backed proof + packet
 npx tsx scripts/real-db-proof.ts
-
-# Human-readable proof packet from a real PostgreSQL run
 npm run showcase:proof
 
-# Human-readable proof packet from a live hybrid run (requires OPENAI_API_KEY)
+# Live hybrid proof + packet (requires OPENAI_API_KEY)
 npm run showcase:proof:hybrid
 
 # Multi-query signed proof
@@ -554,9 +537,8 @@ Notes:
 
 - `npm test` runs the core financial + signing suites.
 - `tests/live-snowflake.test.ts` is env-gated and opt-in.
-- `scripts/real-db-proof.ts` performs real PostgreSQL execution against an embedded instance and emits signed artifacts.
-- `npm run showcase:proof` reruns the real PostgreSQL proof and emits a shareable packet under `.attestor/showcase/latest/` as Markdown, HTML, and JSON.
-- `npm run showcase:proof:hybrid` runs the live hybrid counterparty exercise and emits the same packet shape with portable verification artifacts under `.attestor/showcase/latest/`.
+- `npm run showcase:proof` emits a shareable PostgreSQL-backed packet under `.attestor/showcase/latest/`.
+- `npm run showcase:proof:hybrid` emits the same packet shape from a live OpenAI + SQLite hybrid run under `.attestor/showcase/latest/`.
 
 ## Hosted Customer Quick Path
 
@@ -762,17 +744,17 @@ The repository is broader than finance in architecture, but not equally deep in 
 - Snowflake is a real connector module with env-gated live testing, API connector routing, and CLI `prove --connector snowflake` support.
 - XBRL US-GAAP 2024 and xBRL-CSV EBA DPM 2.0 are real filing adapters; US-GAAP is used for API export and signed auto-summary, while xBRL-CSV EBA is registered in the filing export surface.
 
-## PostgreSQL Product Proof
+## Proof Paths Available Today
 
-Real PostgreSQL-backed proof is already part of the repository's working surface.
+Two proof paths are ready to show:
 
-- Bounded read-only execution
-- EXPLAIN-based predictive guardrails
-- Demo bootstrap via `pg-demo-init`
-- Self-contained proof run via `scripts/real-db-proof.ts`
-- Execution provider and execution-context evidence in bundle and kit
-- Deep schema/data-state attestation in the Postgres prove path: column + constraint + index fingerprints, txid snapshot, per-table bounded content fingerprints, attestation hash, and persisted historical comparison across time
-- API responses distinguish `schema_attestation_full`, `schema_attestation_connector`, and `execution_context_only` evidence scopes, with verifier-facing schema attestation details surfaced on the full Postgres prove path
+- **PostgreSQL-backed proof**: bounded read-only execution, predictive guardrails, execution-context evidence, and deeper schema/data-state attestation. Use this when you want the strongest database-grounded packet.
+- **Live hybrid proof**: real upstream model call plus live bounded SQLite execution, signed certificate, reviewer endorsement, PKI-backed verification kit, and a shareable packet. Use this when you want the cleanest end-to-end product proof quickly.
+
+In practice:
+
+- `npm run showcase:proof` = strongest database evidence
+- `npm run showcase:proof:hybrid` = strongest end-to-end live product proof
 
 ## Current Capability Maturity
 
