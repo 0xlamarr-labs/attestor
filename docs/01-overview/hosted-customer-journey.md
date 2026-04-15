@@ -76,7 +76,7 @@ Keep the public packaging language simple:
 - `community` = zero-cost evaluation and the first `10` hosted runs
 - `starter` = the first paid hosted plan, good for one live workflow
 - `pro` = the larger hosted plan for several workflows or one business unit
-- `enterprise` = negotiated scale, hosted enterprise, or private deployment
+- `enterprise` = negotiated scale, hosted enterprise, or a customer-operated deployment boundary
 
 This document stays focused on the buying sequence. The detailed plan wording lives in the README so it only needs maintenance in one place.
 

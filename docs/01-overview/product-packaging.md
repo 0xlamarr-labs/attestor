@@ -5,7 +5,7 @@ Attestor is not sold as a file-management app or a generic AI workspace.
 It is sold as **acceptance, proof, and operating infrastructure for AI-assisted work**, delivered either as:
 
 - a **hosted API product**
-- or a **private deployment** for teams that need stricter control boundaries
+- or a **customer-operated deployment path** for teams that need stricter control boundaries
 
 That is the central commercial truth to preserve in every public description.
 
@@ -102,7 +102,7 @@ This file should preserve the internal packaging rule behind that public table:
 - `community` = free evaluation path plus the first `10` hosted runs
 - `starter` = EUR 499 / month for one serious team and one live workflow
 - `pro` = EUR 1,999 / month for several workflows or one business unit
-- `enterprise` = from EUR 7,500 / month for negotiated scale, stricter rollout, or private deployment
+- `enterprise` = from EUR 7,500 / month for negotiated scale, stricter rollout, or a customer-operated deployment path
 
 These prices should map to the Stripe price ids configured through:
 

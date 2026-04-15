@@ -128,7 +128,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'enterprise',
     displayName: 'Enterprise',
-    description: 'Hosted or private deployment plan for regulated, high-scale, or custom-control environments with negotiated limits.',
+    description: 'Hosted enterprise or customer-operated deployment plan for regulated, high-scale, or custom-control environments with negotiated limits.',
     defaultStripeTrialDays: null,
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: 300,

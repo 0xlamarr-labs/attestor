@@ -303,7 +303,7 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 | Community | Free | zero-cost evaluation, repo-based validation, early account setup | docs, local proof path, hosted account signup, `10` included hosted runs |
 | Starter | EUR 499 / month | first production teams and governed pilot workflows | hosted account + API access, 100 governed runs / month, 14-day free trial, usage and billing surface, API key management |
 | Pro | EUR 1,999 / month | repeated operational use across multiple workflows or business units | hosted account + API access, 1,000 governed runs / month, higher rate limits, stronger runtime headroom |
-| Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, internal AI platform teams, private deployment buyers | hosted or private deployment, negotiated limits, commercial onboarding, compliance/security rollout path |
+| Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, internal AI platform teams, teams needing a customer-controlled deployment boundary | hosted enterprise or customer-operated deployment path, negotiated limits, commercial onboarding, compliance/security rollout path |
 
 ### Included By Plan
 
@@ -315,7 +315,7 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 | Billing portal and invoices | upgrade path only | included | included | included |
 | API key management | included | included | included | included |
 | Rate limit and async headroom | evaluation only | standard | higher | negotiated |
-| Private deployment path | self-host evaluation | No | No | Yes |
+| Customer-operated deployment path | self-host evaluation | No | No | Yes |
 
 ### How To Think About Runs
 
@@ -363,7 +363,7 @@ For enterprise buyers, lead with:
 - evidence-first acceptance instead of raw model confidence
 - signed proof, verification, and replayable audit history
 - account, billing, usage, and entitlement surfaces that make procurement and internal platform adoption legible
-- deployment choice: hosted now, private deployment when boundary/compliance requirements win
+- deployment choice: hosted now, customer-operated deployment when boundary/compliance requirements win
 
 ### Commercial Bootstrap
 
