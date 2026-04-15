@@ -305,6 +305,25 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 | Pro | EUR 1,999 / month | repeated operational use across multiple workflows or business units | hosted account + API access, 1,000 governed runs / month, higher rate limits, stronger runtime headroom |
 | Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, internal AI platform teams, private deployment buyers | hosted or private deployment, negotiated limits, commercial onboarding, compliance/security rollout path |
 
+### Included By Plan
+
+| Capability | Community | Starter | Pro | Enterprise |
+|---|---|---|---|---|
+| Hosted account signup | Yes | Yes | Yes | Yes |
+| Included hosted runs / month | `0` included | `100` | `1,000` | negotiated |
+| 14-day trial | No | Yes | No default | negotiated |
+| Billing portal and invoices | upgrade path only | included | included | included |
+| API key management | included | included | included | included |
+| Rate limit and async headroom | evaluation only | standard | higher | negotiated |
+| Private deployment path | self-host evaluation | No | No | Yes |
+
+If someone is scanning quickly, the shortest reading is:
+
+- `community` = evaluate Attestor and create the account, but no included hosted pipeline volume
+- `starter` = first real hosted paid plan, with `100` governed runs / month and a `14-day` trial
+- `pro` = same hosted model with `1,000` governed runs / month and stronger runtime headroom
+- `enterprise` = negotiated limits plus hosted or private deployment
+
 ### How Billing Works
 
 This is the shortest honest version:
