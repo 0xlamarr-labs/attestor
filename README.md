@@ -32,6 +32,7 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 - [What ships in this repository](#what-ships-in-this-repository)
 - [Recommended production path](#recommended-production-path)
 - [Quick start](#quick-start)
+- [Current demo and test surface](#current-demo-and-test-surface)
 - [Hosted customer journey doc](docs/01-overview/hosted-customer-journey.md)
 - [Stripe commercial bootstrap](docs/01-overview/stripe-commercial-bootstrap.md)
 - [Product packaging and pricing](docs/01-overview/product-packaging.md)
@@ -533,12 +534,26 @@ npx tsx tests/live-async-tenant-execution-redis.test.ts
 npx tsx tests/live-snowflake.test.ts
 ```
 
-Notes:
+## Current Demo and Test Surface
 
-- `npm test` runs the core financial + signing suites.
-- `tests/live-snowflake.test.ts` is env-gated and opt-in.
-- `npm run showcase:proof` emits a shareable PostgreSQL-backed packet under `.attestor/showcase/latest/`.
-- `npm run showcase:proof:hybrid` emits the same packet shape from a live OpenAI + SQLite hybrid run under `.attestor/showcase/latest/`.
+If you want to show Attestor as it exists today, this is the shortest map:
+
+| Goal | Run | What it proves |
+|---|---|---|
+| Core correctness | `npm test` | financial engine, signing, billing config, webhook surface, and proof-showcase rendering |
+| Safe local gate | `npm run verify` | typecheck + core tests + build |
+| Broad repo validation | `npm run verify:full` | the wider live and integration surface; some suites remain env-gated |
+| Strongest end-to-end live demo | `npm run showcase:proof:hybrid` | real upstream OpenAI call + live bounded SQLite execution + signed certificate + reviewer endorsement + PKI-backed verification kit + shareable packet |
+| Strongest database-grounded demo | `npm run showcase:proof` | real PostgreSQL-backed packet with stronger execution-context and schema-attestation evidence |
+| Outsider verification | `npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json` | the latest packet can be verified independently of the runtime |
+
+If you only want one full demonstration path, use this:
+
+1. `npm run showcase:proof:hybrid`
+2. Open `.attestor/showcase/latest/index.html`
+3. Run `npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json`
+
+That gives you the cleanest current “this is a real product result” flow.
 
 ## Hosted Customer Quick Path
 
