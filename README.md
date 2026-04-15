@@ -537,35 +537,30 @@ npx tsx tests/live-snowflake.test.ts
 
 ## Current Verified Evidence
 
-As of **April 15, 2026**, the repository is not only describing proof paths. It has already produced them.
+The strongest black-and-white evidence in this repository is **reproducible proof generation and independent verification**, not committed historical snapshots.
 
-| Evidence | Current black-and-white state |
+What the repo can produce today:
+
+| Evidence path | What it proves |
 |---|---|
-| Latest live hybrid proof packet | `PASS` decision, proof mode `hybrid`, `upstream_live=true`, `execution_live=true`, `gaps=0` |
-| Latest portable verification kit | independently verified as `VERIFIED` |
-| Reviewer authority | present, signed, run-bound, and independently verified |
-| PKI chain | verified end to end for the runtime signer |
-| Shareable packet | rendered under `.attestor/showcase/latest/` as Markdown, HTML, and JSON |
-| Additional proof path already in repo | separate PostgreSQL-backed packet path with deeper schema/data-state evidence via `npm run showcase:proof` |
+| `npm run showcase:proof:hybrid` | generates a live hybrid packet from a real upstream model call, live bounded SQLite execution, reviewer endorsement, and PKI-backed proof material |
+| `npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json` | independently verifies the generated portable verification kit outside the main runtime |
+| `npm run showcase:proof` | generates a separate PostgreSQL-grounded packet with deeper schema/data-state evidence |
+| `.attestor/showcase/latest/` | local output location for the generated Markdown, HTML, JSON, and evidence files after a showcase run |
 
-The latest verifier result looked like this in plain language:
+The important boundary is:
 
-```text
-Decision: pass
-Mode: hybrid
-Upstream: live
-Execution: live (sqlite)
-Gaps: none
-Reviewer endorsement: verified
-Overall: VERIFIED
-PKI: VERIFIED
+- the proof paths are real and runnable
+- the verification kit is independently checkable
+- the packet output is generated locally when you run the showcase commands
+- `.attestor/showcase/latest/` is not treated here as a committed historical snapshot in the public repo
+
+If you want the most direct black-and-white proof on your own machine, run:
+
+```bash
+npm run showcase:proof:hybrid
+npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
 ```
-
-The current generated packet lives here:
-
-- `.attestor/showcase/latest/README.md`
-- `.attestor/showcase/latest/index.html`
-- `.attestor/showcase/latest/packet.json`
 
 ## Current Demo and Test Surface
 
