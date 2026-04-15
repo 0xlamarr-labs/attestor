@@ -322,7 +322,6 @@ import {
   renderHostedBillingExportCsv,
 } from './billing-export.js';
 import { buildHostedBillingReconciliation } from './billing-reconciliation.js';
-import { renderAttestorSite } from './site.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -462,14 +461,6 @@ function renderHostedReturnPage(options: {
 </html>`;
 }
 
-app.get('/', (c) => c.body(renderAttestorSite(), 200, {
-  'content-type': 'text/html; charset=utf-8',
-}));
-
-app.get('/console', (c) => c.body(renderAttestorSite(), 200, {
-  'content-type': 'text/html; charset=utf-8',
-}));
-
 app.get('/billing/success', (c) => c.body(renderHostedReturnPage({
   eyebrow: 'Billing',
   title: 'Checkout completed',
@@ -481,7 +472,7 @@ app.get('/billing/success', (c) => c.body(renderHostedReturnPage({
   ],
   note: 'The machine-readable account endpoints remain the source of truth for API-first customers.',
   actions: [
-    { href: '/console', label: 'Open account console' },
+    { href: '/settings/billing', label: 'Open billing summary' },
     { href: '/api/v1/account', label: 'View account summary (JSON)' },
   ],
 }), 200, {
@@ -498,7 +489,7 @@ app.get('/billing/cancel', (c) => c.body(renderHostedReturnPage({
     'If you are still evaluating, you can wait to upgrade until you are ready.',
   ],
   actions: [
-    { href: '/console', label: 'Return to account console' },
+    { href: '/settings/billing', label: 'Return to billing summary' },
     { href: '/api/v1/account', label: 'View current account (JSON)' },
   ],
 }), 200, {
@@ -517,7 +508,6 @@ app.get('/settings/billing', (c) => c.body(renderHostedReturnPage({
   ],
   note: 'If you are integrating directly against the API, the account and billing export endpoints below remain the canonical machine-readable views.',
   actions: [
-    { href: '/console', label: 'Open account console' },
     { href: '/api/v1/account', label: 'View current plan and usage (JSON)' },
     { href: '/api/v1/account/billing/export', label: 'View invoices and charges (JSON/CSV)' },
   ],

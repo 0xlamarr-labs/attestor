@@ -1841,21 +1841,6 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(String(portalReadyBody.portalUrl).includes('/portal/'), 'Account Billing: portal URL returned');
       ok(portalReadyBody.mock === true, 'Account Billing: portal mock mode surfaced');
 
-      const homePageRes = await fetch(`${BASE}/`);
-      ok(homePageRes.status === 200, 'Site: home page responds');
-      ok((homePageRes.headers.get('content-type') ?? '').includes('text/html'), 'Site: home page is HTML');
-      const homePage = await homePageRes.text();
-      ok(homePage.includes('Between model output and production consequence.'), 'Site: home page carries the core Attestor positioning');
-      ok(homePage.includes('Attestor account console'), 'Site: home page includes the working account console');
-      ok(homePage.includes('Start with Community'), 'Site: home page exposes a clear evaluation CTA');
-      ok(homePage.includes('Included by plan'), 'Site: home page includes a direct per-plan inclusion comparison');
-
-      const consolePageRes = await fetch(`${BASE}/console`);
-      ok(consolePageRes.status === 200, 'Site: console route responds');
-      const consolePage = await consolePageRes.text();
-      ok(consolePage.includes('Create the account'), 'Site: console route includes signup surface');
-      ok(consolePage.includes('Open billing portal'), 'Site: console route includes billing controls');
-
       const checkoutSuccessPageRes = await fetch(`${BASE}/billing/success`);
       ok(checkoutSuccessPageRes.status === 200, 'Billing pages: success return surface responds');
       const checkoutSuccessPage = await checkoutSuccessPageRes.text();
