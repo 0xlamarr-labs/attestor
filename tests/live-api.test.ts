@@ -102,6 +102,12 @@ function cookieHeaderFromResponse(res: Response): string | null {
   return cookiePair?.trim() || null;
 }
 
+function unsignedBearerToken(payload: Record<string, unknown>): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${header}.${body}.`;
+}
+
 async function run() {
   mkdirSync('.attestor', { recursive: true });
 
@@ -906,6 +912,36 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(accountUsageRes.status === 200, 'Admin Accounts: initial key works on tenant route');
       const accountUsageBody = await accountUsageRes.json() as any;
       ok(accountUsageBody.rateLimit.requestsPerWindow === 3, 'Admin Accounts: starter rate limit visible on account usage');
+
+      const forgedTenantToken = unsignedBearerToken({
+        tenantId: createAccountBody.account.primaryTenantId,
+        tenantName: 'Forged Tenant',
+        planId: 'enterprise',
+        monthlyRunQuota: 999999,
+      });
+      const forgedUsageRes = await fetch(`${BASE}/api/v1/account/usage`, {
+        headers: { Authorization: `Bearer ${forgedTenantToken}` },
+      });
+      ok(forgedUsageRes.status === 401, 'Hosted auth: unsigned bearer tenant claim is rejected');
+      const forgedUsageBody = await forgedUsageRes.json() as any;
+      ok(
+        String(forgedUsageBody.error ?? '').includes('Valid tenant API key required'),
+        'Hosted auth: forged bearer rejection explains tenant API key requirement',
+      );
+
+      const forgedBootstrapRes = await fetch(`${BASE}/api/v1/account/users/bootstrap`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${forgedTenantToken}`,
+        },
+        body: JSON.stringify({
+          email: 'forged@account.example',
+          displayName: 'Forged Admin',
+          password: 'ForgedBootstrap123!',
+        }),
+      });
+      ok(forgedBootstrapRes.status === 401, 'Hosted auth: forged bearer token cannot bootstrap an account admin');
 
       const accountSummaryRes = await fetch(`${BASE}/api/v1/account`, {
         headers: { Authorization: `Bearer ${createAccountBody.initialKey.apiKey}` },

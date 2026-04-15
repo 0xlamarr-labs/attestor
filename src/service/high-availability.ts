@@ -5,6 +5,7 @@ type AsyncBackendMode = 'bullmq' | 'in_process' | 'none';
 
 export interface ApiHighAvailabilityState {
   enabled: boolean;
+  publicHosted: boolean;
   instanceId: string;
   ready: boolean;
   issues: string[];
@@ -31,6 +32,13 @@ export function isHighAvailabilityModeEnabled(): boolean {
   return envTruthy(process.env.ATTESTOR_HA_MODE);
 }
 
+export function isPublicHostedModeEnabled(): boolean {
+  return Boolean(
+    process.env.ATTESTOR_PUBLIC_HOSTNAME?.trim()
+    || process.env.ATTESTOR_PUBLIC_BASE_URL?.trim(),
+  );
+}
+
 export function resolveServiceInstanceId(): string {
   return process.env.ATTESTOR_INSTANCE_ID?.trim()
     || process.env.OTEL_SERVICE_INSTANCE_ID?.trim()
@@ -46,6 +54,7 @@ export function evaluateApiHighAvailabilityState(input: {
   sharedBillingLedger: boolean;
 }): ApiHighAvailabilityState {
   const enabled = isHighAvailabilityModeEnabled();
+  const publicHosted = isPublicHostedModeEnabled();
   const issues: string[] = [];
 
   if (enabled) {
@@ -60,10 +69,29 @@ export function evaluateApiHighAvailabilityState(input: {
     }
   }
 
+  if (publicHosted) {
+    if (!input.sharedControlPlane) {
+      issues.push('Public hosted deployments require ATTESTOR_CONTROL_PLANE_PG_URL so account, session, and tenant state do not fall back to local file-backed stores.');
+    }
+    if (!input.sharedBillingLedger) {
+      issues.push('Public hosted deployments require ATTESTOR_BILLING_LEDGER_PG_URL so billing and reconciliation state is durably shared.');
+    }
+    if (/^(0|false|no)$/i.test(process.env.ATTESTOR_SESSION_COOKIE_SECURE ?? '')) {
+      issues.push('Public hosted deployments must not set ATTESTOR_SESSION_COOKIE_SECURE=false.');
+    }
+    if (envTruthy(process.env.ATTESTOR_STRIPE_USE_MOCK)) {
+      issues.push('Public hosted deployments must not enable ATTESTOR_STRIPE_USE_MOCK.');
+    }
+    if (envTruthy(process.env.ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP)) {
+      issues.push('Public hosted deployments must not enable ATTESTOR_HOSTED_OIDC_ALLOW_INSECURE_HTTP.');
+    }
+  }
+
   return {
     enabled,
+    publicHosted,
     instanceId: resolveServiceInstanceId(),
-    ready: !enabled || issues.length === 0,
+    ready: issues.length === 0,
     issues,
     redisMode: input.redisMode,
     asyncBackendMode: input.asyncBackendMode,

@@ -188,6 +188,47 @@ async function main(): Promise<void> {
     ok(output.includes('ATTESTOR_CONTROL_PLANE_PG_URL'), 'HA guard: failure mentions shared control-plane requirement');
     ok(output.includes('REDIS_URL-backed external Redis'), 'HA guard: failure mentions external Redis requirement');
 
+    const publicHostedPort = await reservePort();
+    const publicHosted = spawn(
+      process.execPath,
+      [tsxCli, 'src/service/api-server.ts'],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          PORT: String(publicHostedPort),
+          ATTESTOR_INSTANCE_ID: 'public-hosted-guard-test',
+          ATTESTOR_HA_MODE: '',
+          ATTESTOR_PUBLIC_HOSTNAME: 'api.attestor.example.invalid',
+          ATTESTOR_CONTROL_PLANE_PG_URL: '',
+          ATTESTOR_BILLING_LEDGER_PG_URL: '',
+          ATTESTOR_SESSION_COOKIE_SECURE: 'false',
+          ATTESTOR_STRIPE_USE_MOCK: 'true',
+          REDIS_URL: '',
+          OTEL_TRACES_EXPORTER: '',
+          OTEL_METRICS_EXPORTER: '',
+        },
+        stdio: 'pipe',
+      },
+    );
+
+    const publicHostedChunks: Buffer[] = [];
+    publicHosted.stdout.on('data', (chunk) => publicHostedChunks.push(Buffer.from(chunk)));
+    publicHosted.stderr.on('data', (chunk) => publicHostedChunks.push(Buffer.from(chunk)));
+
+    const publicHostedExitCode = await new Promise<number | null>((resolve) => {
+      publicHosted.once('exit', (code) => resolve(code));
+      setTimeout(() => resolve(null), 15000).unref();
+    });
+
+    const publicHostedOutput = Buffer.concat(publicHostedChunks).toString('utf8');
+    ok(publicHostedExitCode !== 0, 'Public hosted guard: unsafe hosted startup exits non-zero');
+    ok(publicHostedOutput.includes('Public hosted startup guard failed'), 'Public hosted guard: startup failure explains hosted guard');
+    ok(publicHostedOutput.includes('ATTESTOR_CONTROL_PLANE_PG_URL'), 'Public hosted guard: failure mentions shared control-plane requirement');
+    ok(publicHostedOutput.includes('ATTESTOR_BILLING_LEDGER_PG_URL'), 'Public hosted guard: failure mentions shared billing ledger requirement');
+    ok(publicHostedOutput.includes('ATTESTOR_SESSION_COOKIE_SECURE=false'), 'Public hosted guard: failure mentions secure session cookie requirement');
+    ok(publicHostedOutput.includes('ATTESTOR_STRIPE_USE_MOCK'), 'Public hosted guard: failure mentions Stripe mock prohibition');
+
     console.log(`  Live HA tests: ${passed} passed, 0 failed`);
   } finally {
     await cleanup();

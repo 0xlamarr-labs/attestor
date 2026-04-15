@@ -2,16 +2,16 @@
  * Tenant Isolation — Bounded Multi-Tenant First Slice
  *
  * Provides request-level tenant identification and isolation
- * via Bearer auth using API keys or tenant claims.
+ * via Bearer auth using tenant API keys or hosted account sessions.
  *
  * ARCHITECTURE:
- * - Each request carries a Bearer token with optional tenantId
- * - Middleware extracts tenantId and injects into request context
+ * - Each request carries either a tenant API key or a hosted account session
+ * - Middleware resolves tenant identity from verified control-plane state
  * - All logging/artifacts include tenantId for audit trail
  * - No shared state between tenants
  *
  * BOUNDARY:
- * - Token-based tenant identification (not database isolation)
+ * - API-key/session-based tenant identification (not database isolation)
  * - API key lookup can come from env or local file-backed operator store
  * - Plan/quota metadata can ride with API keys for hosted enforcement
  * - No full multi-node customer identity fabric yet; hosted tenant truth can be shared via the control-plane PostgreSQL first slice
@@ -38,7 +38,7 @@ export interface TenantContext {
   tenantId: string;
   tenantName: string | null;
   authenticatedAt: string;
-  source: 'bearer_token' | 'api_key' | 'account_session' | 'anonymous';
+  source: 'api_key' | 'account_session' | 'anonymous';
   planId: string | null;
   monthlyRunQuota: number | null;
 }
@@ -113,15 +113,15 @@ export async function extractTenantContext(authHeader: string | undefined): Prom
 
   const tenant = tenantKeys.get(token);
   if (tenant) {
-      return {
-        tenantId: tenant.tenantId,
-        tenantName: tenant.tenantName,
-        authenticatedAt: new Date().toISOString(),
-        source: 'api_key',
-        planId: tenant.planId,
-        monthlyRunQuota: tenant.monthlyRunQuota,
-      };
-    }
+    return {
+      tenantId: tenant.tenantId,
+      tenantName: tenant.tenantName,
+      authenticatedAt: new Date().toISOString(),
+      source: 'api_key',
+      planId: tenant.planId,
+      monthlyRunQuota: tenant.monthlyRunQuota,
+    };
+  }
 
   const fileBackedTenant = await findActiveTenantKeyState(token, { markUsed: true });
   if (fileBackedTenant) {
@@ -134,24 +134,6 @@ export async function extractTenantContext(authHeader: string | undefined): Prom
       monthlyRunQuota: fileBackedTenant.monthlyRunQuota,
     };
   }
-
-  // Try JWT decode for tenantId claim
-  try {
-    const [, payloadB64] = token.split('.');
-    if (payloadB64) {
-      const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
-      if (payload.tenantId) {
-        return {
-          tenantId: payload.tenantId,
-          tenantName: payload.tenantName ?? null,
-          authenticatedAt: new Date().toISOString(),
-          source: 'bearer_token',
-          planId: payload.planId ?? null,
-          monthlyRunQuota: typeof payload.monthlyRunQuota === 'number' ? payload.monthlyRunQuota : null,
-        };
-      }
-    }
-  } catch { /* not a JWT — ignore */ }
 
   return null;
 }

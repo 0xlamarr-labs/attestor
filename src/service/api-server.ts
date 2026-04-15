@@ -1648,8 +1648,8 @@ app.get('/api/v1/connectors', async (c) => {
 app.post('/api/v1/account/users/bootstrap', async (c) => {
   const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
-  if (current.tenant.source !== 'api_key' && current.tenant.source !== 'bearer_token') {
-    return c.json({ error: 'Bootstrap requires a tenant API key or bearer token.' }, 403);
+  if (current.tenant.source !== 'api_key') {
+    return c.json({ error: 'Bootstrap requires a tenant API key.' }, 403);
   }
 
   const existingUsers = await countAccountUsersForAccountState(current.account.id);
@@ -6961,7 +6961,7 @@ app.get('/api/v1/ready', (c) => {
     if (!checks.redis) ready = false;
   }
 
-  if (highAvailability.enabled) {
+  if (highAvailability.enabled || highAvailability.publicHosted) {
     checks.highAvailability = highAvailability.ready;
     if (!checks.highAvailability) ready = false;
   }
@@ -6992,8 +6992,13 @@ export function startServer(port: number = 3700): { port: number; close: () => v
     sharedControlPlane: isSharedControlPlaneConfigured(),
     sharedBillingLedger: !!process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim(),
   });
-  if (highAvailability.enabled && !highAvailability.ready) {
-    throw new Error(`ATTESTOR_HA_MODE startup guard failed for instance '${highAvailability.instanceId}': ${highAvailability.issues.join(' ')}`);
+  if (!highAvailability.ready) {
+    if (highAvailability.enabled) {
+      throw new Error(`ATTESTOR_HA_MODE startup guard failed for instance '${highAvailability.instanceId}': ${highAvailability.issues.join(' ')}`);
+    }
+    if (highAvailability.publicHosted) {
+      throw new Error(`Public hosted startup guard failed for instance '${highAvailability.instanceId}': ${highAvailability.issues.join(' ')}`);
+    }
   }
   if (highAvailability.enabled) {
     console.log(`[ha] Multi-node first slice enabled for instance '${highAvailability.instanceId}' (redis=${highAvailability.redisMode}, sharedControlPlane=${highAvailability.sharedControlPlane}, sharedBillingLedger=${highAvailability.sharedBillingLedger})`);
