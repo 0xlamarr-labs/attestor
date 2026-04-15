@@ -32,6 +32,7 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 - [What ships in this repository](#what-ships-in-this-repository)
 - [Recommended production path](#recommended-production-path)
 - [Quick start](#quick-start)
+- [Current verified evidence](#current-verified-evidence)
 - [Current demo and test surface](#current-demo-and-test-surface)
 - [Hosted customer journey doc](docs/01-overview/hosted-customer-journey.md)
 - [Stripe commercial bootstrap](docs/01-overview/stripe-commercial-bootstrap.md)
@@ -533,6 +534,38 @@ npx tsx tests/live-rate-limit-redis.test.ts
 npx tsx tests/live-async-tenant-execution-redis.test.ts
 npx tsx tests/live-snowflake.test.ts
 ```
+
+## Current Verified Evidence
+
+As of **April 15, 2026**, the repository is not only describing proof paths. It has already produced them.
+
+| Evidence | Current black-and-white state |
+|---|---|
+| Latest live hybrid proof packet | `PASS` decision, proof mode `hybrid`, `upstream_live=true`, `execution_live=true`, `gaps=0` |
+| Latest portable verification kit | independently verified as `VERIFIED` |
+| Reviewer authority | present, signed, run-bound, and independently verified |
+| PKI chain | verified end to end for the runtime signer |
+| Shareable packet | rendered under `.attestor/showcase/latest/` as Markdown, HTML, and JSON |
+| Additional proof path already in repo | separate PostgreSQL-backed packet path with deeper schema/data-state evidence via `npm run showcase:proof` |
+
+The latest verifier result looked like this in plain language:
+
+```text
+Decision: pass
+Mode: hybrid
+Upstream: live
+Execution: live (sqlite)
+Gaps: none
+Reviewer endorsement: verified
+Overall: VERIFIED
+PKI: VERIFIED
+```
+
+The current generated packet lives here:
+
+- `.attestor/showcase/latest/README.md`
+- `.attestor/showcase/latest/index.html`
+- `.attestor/showcase/latest/packet.json`
 
 ## Current Demo and Test Surface
 
@@ -1123,8 +1156,8 @@ The full reference table stays below, but the fastest way to think about the sur
 |---|---|
 | Version | 1.0.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
-| Core verification gate | 557 tests (`npm test`: 461 financial + 96 signing) |
-| Expanded verification surface | 1972 tests across 43 suites: 461 financial + 96 signing + 626 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 59 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 49 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 GKE domain cutover render + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Core verification gate | 598 checks (`npm test`: 461 financial + 96 signing + 5 account session cookie security + 12 Stripe commercial config + 8 Stripe webhook events + 16 proof showcase) |
+| Expanded verification surface | 2013 checks across 43 suites: 461 financial + 96 signing + 5 account session cookie security + 12 Stripe commercial config + 8 Stripe webhook events + 16 proof showcase + 626 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 59 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 49 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 GKE domain cutover render + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local) and `npm run verify:full` (safe local + live/integration suites) |
 | Public GKE HTTPS proof | Live `sslip.io` Gateway API + cert-manager path verified (`http` 301 -> `https` 200) |
 | License | Business Source License 1.1 (`LICENSE`), Change License `GPL-2.0-or-later` on 2030-04-13 |
