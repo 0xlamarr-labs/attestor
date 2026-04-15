@@ -509,6 +509,9 @@ npm run prove -- counterparty .attestor --reviewer-key-dir ./reviewer-keys
 # Reproducible real PostgreSQL-backed proof
 npx tsx scripts/real-db-proof.ts
 
+# Human-readable proof packet from a real PostgreSQL run
+npm run showcase:proof
+
 # Multi-query signed proof
 npx tsx src/financial/cli.ts multi-query
 
@@ -549,6 +552,7 @@ Notes:
 - `npm test` runs the core financial + signing suites.
 - `tests/live-snowflake.test.ts` is env-gated and opt-in.
 - `scripts/real-db-proof.ts` performs real PostgreSQL execution against an embedded instance and emits signed artifacts.
+- `npm run showcase:proof` reruns the real PostgreSQL proof and emits a shareable packet under `.attestor/showcase/latest/` as Markdown, HTML, and JSON.
 
 ## Hosted Customer Quick Path
 

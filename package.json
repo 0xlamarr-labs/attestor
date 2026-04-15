@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/financial/financial.test.ts && tsx src/signing/signing.test.ts && tsx tests/account-session-cookie-security.test.ts && tsx tests/stripe-commercial-config.test.ts && tsx tests/stripe-webhook-events.test.ts",
+    "test": "tsx src/financial/financial.test.ts && tsx src/signing/signing.test.ts && tsx tests/account-session-cookie-security.test.ts && tsx tests/stripe-commercial-config.test.ts && tsx tests/stripe-webhook-events.test.ts && tsx tests/proof-showcase.test.ts",
     "test:financial": "tsx src/financial/financial.test.ts",
     "test:signing": "tsx src/signing/signing.test.ts",
     "test:stripe-commercial": "tsx tests/stripe-commercial-config.test.ts",
@@ -78,6 +78,7 @@
     "probe:observability-receivers": "tsx scripts/probe-observability-receivers.ts",
     "probe:observability-release-inputs": "tsx scripts/probe-observability-release-inputs.ts",
     "tenant:keys": "tsx src/service/tenant-admin.ts",
+    "showcase:proof": "tsx scripts/render-proof-showcase.ts",
     "start": "tsx src/financial/cli.ts",
     "list": "tsx src/financial/cli.ts list",
     "scenario": "tsx src/financial/cli.ts scenario",

@@ -107,9 +107,10 @@ async function main() {
 
     // ── Step 3: Generate signing keys ──
     console.log('\n  [3/7] Generating signing keys...');
-    const { generateKeyPair } = await import('../src/signing/keys.js');
-    const signingKeyPair = generateKeyPair();
-    const reviewerKeyPair = generateKeyPair();
+    const { generatePkiHierarchy } = await import('../src/signing/pki-chain.js');
+    const pkiHierarchy = generatePkiHierarchy('Attestor Real Proof CA', 'Real Proof Runtime Signer', 'Real Proof Reviewer');
+    const signingKeyPair = pkiHierarchy.signer.keyPair;
+    const reviewerKeyPair = pkiHierarchy.reviewer.keyPair;
     console.log(`  ✓ Signing key: ${signingKeyPair.fingerprint}`);
     console.log(`  ✓ Reviewer key: ${reviewerKeyPair.fingerprint}`);
 
@@ -221,7 +222,13 @@ async function main() {
     console.log(`    Overall:     ${certVerify.overall === 'valid' ? '✓ VALID' : '✗ ' + certVerify.overall}`);
 
     // Verification kit
-    const kit = buildVerificationKit(report, signingKeyPair.publicKeyPem, reviewerKeyPair.publicKeyPem);
+    const kit = buildVerificationKit(
+      report,
+      signingKeyPair.publicKeyPem,
+      reviewerKeyPair.publicKeyPem,
+      pkiHierarchy.chains.signer,
+      pkiHierarchy.ca.keyPair.publicKeyPem,
+    );
     if (!kit) {
       console.error('  ✗ Kit build failed');
       await cleanup();
@@ -251,6 +258,8 @@ async function main() {
     writeFileSync(join(outDir, 'public-key.pem'), signingKeyPair.publicKeyPem);
     writeFileSync(join(outDir, 'reviewer-public.pem'), reviewerKeyPair.publicKeyPem);
     writeFileSync(join(outDir, 'verification-summary.json'), JSON.stringify(kit.verification, null, 2));
+    writeFileSync(join(outDir, 'trust-chain.json'), JSON.stringify(pkiHierarchy.chains.signer, null, 2));
+    writeFileSync(join(outDir, 'ca-public.pem'), pkiHierarchy.ca.keyPair.publicKeyPem);
 
     console.log(`  ✓ Artifacts saved to: ${outDir}/`);
     console.log(`    kit.json                — full verification kit`);
