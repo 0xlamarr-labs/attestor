@@ -38,8 +38,8 @@ Map those live Stripe price ids into:
 
 For the default hosted funnel:
 
-- `community` covers the zero-cost evaluation path
-- `starter` is the self-serve hosted entry plan and the first plan with included hosted volume
+- `community` covers the zero-cost evaluation path and includes the first `10` hosted runs
+- `starter` is the self-serve hosted entry plan and the first paid hosted plan
 - `starter` carries a `14-day free trial`
 - `pro` and `enterprise` do not get an automatic self-serve trial by default
 

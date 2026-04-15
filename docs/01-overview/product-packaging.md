@@ -57,7 +57,7 @@ It does **not** need a document workspace or file browser.
 The commercial rule to preserve is simple:
 
 - zero-cost evaluation can start with the repo or a hosted account signup
-- included hosted pipeline volume starts at `starter`
+- `community` includes the first `10` hosted runs before a paid hosted plan is needed
 
 ## Commercial Surface
 
@@ -110,7 +110,7 @@ They are intentionally not cheap. Attestor is not a utility wrapper. It is infra
 
 | Plan | Recommended price | Best for | Included hosted shape |
 |---|---:|---|---|
-| Community | Free | zero-cost evaluation, repo-based validation, early account setup | docs, local proof path, hosted account signup, no included hosted pipeline runs |
+| Community | Free | zero-cost evaluation, repo-based validation, early account setup | docs, local proof path, hosted account signup, `10` included hosted runs |
 | Starter | EUR 499 / month | first production teams, pilot-to-production workflows, small internal rollout | 100 governed runs / month, hosted account + API access, 14-day free trial, usage and billing surface, API keys, bounded hosted control layer |
 | Pro | EUR 1,999 / month | repeated operational use, multiple workflows, higher internal adoption | 1,000 governed runs / month, higher rate limits, stronger async/runtime capacity, hosted account/billing/usage surfaces, richer operational headroom |
 | Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, large AI platform teams, private deployment buyers | negotiated limits, hosted or private deployment, commercial support path, security/compliance onboarding, custom rollout boundary |
@@ -198,7 +198,7 @@ What they get:
 
 What they do **not** get:
 
-- included hosted pipeline volume
+- large included hosted volume beyond the first `10` hosted runs
 - hosted support commitments
 - hosted operational guarantees
 

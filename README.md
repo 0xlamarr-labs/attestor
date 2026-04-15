@@ -300,7 +300,7 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 
 | Plan | Recommended price | Best for | Included shape |
 |---|---:|---|---|
-| Community | Free | zero-cost evaluation, repo-based validation, early account setup | docs, local proof path, hosted account signup, no included hosted pipeline runs |
+| Community | Free | zero-cost evaluation, repo-based validation, early account setup | docs, local proof path, hosted account signup, `10` included hosted runs |
 | Starter | EUR 499 / month | first production teams and governed pilot workflows | hosted account + API access, 100 governed runs / month, 14-day free trial, usage and billing surface, API key management |
 | Pro | EUR 1,999 / month | repeated operational use across multiple workflows or business units | hosted account + API access, 1,000 governed runs / month, higher rate limits, stronger runtime headroom |
 | Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, internal AI platform teams, private deployment buyers | hosted or private deployment, negotiated limits, commercial onboarding, compliance/security rollout path |
@@ -310,7 +310,7 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 | Capability | Community | Starter | Pro | Enterprise |
 |---|---|---|---|---|
 | Hosted account signup | Yes | Yes | Yes | Yes |
-| Included hosted runs / month | `0` included | `100` | `1,000` | negotiated |
+| Included hosted runs / month | `10` | `100` | `1,000` | negotiated |
 | 14-day trial | No | Yes | No default | negotiated |
 | Billing portal and invoices | upgrade path only | included | included | included |
 | API key management | included | included | included | included |
@@ -319,7 +319,7 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 
 If someone is scanning quickly, the shortest reading is:
 
-- `community` = evaluate Attestor and create the account, but no included hosted pipeline volume
+- `community` = evaluate Attestor, create the account, and use the first `10` hosted runs before deciding whether to upgrade
 - `starter` = first real hosted paid plan, with `100` governed runs / month and a `14-day` trial
 - `pro` = same hosted model with `1,000` governed runs / month and stronger runtime headroom
 - `enterprise` = negotiated limits plus hosted or private deployment
@@ -328,7 +328,7 @@ If someone is scanning quickly, the shortest reading is:
 
 This is the shortest honest version:
 
-1. `community` covers the zero-cost evaluation path, but included hosted pipeline volume starts at `starter`.
+1. `community` covers the zero-cost evaluation path and includes the first `10` hosted runs.
 2. hosted signup creates the account you will keep using; you do not create a second paid account later.
 3. `starter` is the first hosted paid plan and begins with a 14-day free trial.
 4. `pro` and `enterprise` are paid upgrades on that same account.
@@ -338,7 +338,7 @@ If someone only reads one billing section in the repo, it should be this one.
 
 The pricing intent is deliberate:
 
-- `community` proves the model locally and gives teams a zero-cost account setup path
+- `community` proves the model locally, gives teams a zero-cost account setup path, and includes the first `10` hosted runs
 - `starter` gets a serious team into production with a 14-day trial, without making Attestor look like a cheap wrapper
 - `pro` is where repeated internal operational use starts to make economic sense
 - `enterprise` is where deployment boundary, procurement, and control requirements dominate

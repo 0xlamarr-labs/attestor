@@ -820,7 +820,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       const starterPlan = plansBody.plans.find((entry: any) => entry.id === 'starter');
       const communityPlan = plansBody.plans.find((entry: any) => entry.id === 'community');
       ok(Boolean(communityPlan), 'Admin Plans: community plan present');
-      ok(communityPlan.defaultMonthlyRunQuota === 0, 'Admin Plans: community hosted quota = 0');
+      ok(communityPlan.defaultMonthlyRunQuota === 10, 'Admin Plans: community hosted quota = 10');
       ok(Boolean(starterPlan), 'Admin Plans: starter plan present');
       ok(starterPlan.defaultMonthlyRunQuota === 100, 'Admin Plans: starter quota = 100');
       ok(starterPlan.defaultPipelineRequestsPerWindow === 3, 'Admin Plans: starter rate limit = 3');
@@ -2257,7 +2257,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(signupBody.user.role === 'account_admin', 'Auth Signup: first user is account_admin');
       ok(signupBody.initialKey.planId === 'community', 'Auth Signup: community plan applied');
       ok(signupBody.commercial.currentPhase === 'evaluation', 'Auth Signup: signup starts in evaluation phase');
-      ok(signupBody.commercial.includedMonthlyRunQuota === 0, 'Auth Signup: no hosted pipeline quota included before upgrade');
+      ok(signupBody.commercial.includedMonthlyRunQuota === 10, 'Auth Signup: community includes 10 hosted runs before upgrade');
       ok(signupBody.commercial.firstHostedPlanId === 'starter', 'Auth Signup: starter is the first hosted paid plan');
       ok(signupBody.commercial.firstHostedPlanTrialDays === 14, 'Auth Signup: starter trial surfaced in signup response');
       ok(typeof signupBody.initialKey.apiKey === 'string', 'Auth Signup: initial API key returned');
@@ -2268,10 +2268,10 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(signupUsageRes.status === 200, 'Auth Signup: initial API key works');
       const signupUsageBody = await signupUsageRes.json() as any;
       ok(signupUsageBody.tenantContext.planId === 'community', 'Auth Signup: community plan visible in usage');
-      ok(signupUsageBody.usage.quota === 0, 'Auth Signup: community signup has zero included hosted runs');
-      ok(signupUsageBody.usage.enforced === true, 'Auth Signup: zero hosted quota is enforced');
+      ok(signupUsageBody.usage.quota === 10, 'Auth Signup: community signup has 10 included hosted runs');
+      ok(signupUsageBody.usage.enforced === true, 'Auth Signup: community hosted quota is enforced');
 
-      const signupPipelineBlockedRes = await fetch(`${BASE}/api/v1/pipeline/run`, {
+      const signupPipelineRunRes = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2286,7 +2286,45 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
           sign: false,
         }),
       });
-      ok(signupPipelineBlockedRes.status === 429, 'Auth Signup: evaluation account cannot consume hosted pipeline volume before upgrade');
+      ok(signupPipelineRunRes.status === 200, 'Auth Signup: evaluation account can consume one of the included community hosted runs');
+      const signupPipelineRunBody = await signupPipelineRunRes.json() as any;
+      ok(signupPipelineRunBody.decision === 'pass', 'Auth Signup: community hosted run still executes the governed pipeline');
+
+      for (let attempt = 2; attempt <= 10; attempt += 1) {
+        const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${signupBody.initialKey.apiKey}`,
+          },
+          body: JSON.stringify({
+            candidateSql: COUNTERPARTY_SQL,
+            intent: COUNTERPARTY_INTENT,
+            fixtures: [COUNTERPARTY_FIXTURE],
+            generatedReport: COUNTERPARTY_REPORT,
+            reportContract: COUNTERPARTY_REPORT_CONTRACT,
+            sign: false,
+          }),
+        });
+        ok(res.status === 200, `Auth Signup: community run ${attempt} stays within the included quota`);
+      }
+
+      const signupQuotaExceededRes = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${signupBody.initialKey.apiKey}`,
+        },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: false,
+        }),
+      });
+      ok(signupQuotaExceededRes.status === 429, 'Auth Signup: community hosted run 11 is blocked after the included 10 runs are consumed');
 
       const accountKeysRes = await fetch(`${BASE}/api/v1/account/api-keys`, {
         headers: { Cookie: signupCookie! },

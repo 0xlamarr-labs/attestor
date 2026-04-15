@@ -89,9 +89,9 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'community',
     displayName: 'Community',
-    description: 'Zero-cost evaluation path for local validation and hosted account setup before a paid hosted plan. No included hosted pipeline volume.',
+    description: 'Zero-cost evaluation path for local validation and hosted account setup, including 10 hosted runs before a paid hosted plan is needed.',
     defaultStripeTrialDays: null,
-    defaultMonthlyRunQuota: 0,
+    defaultMonthlyRunQuota: 10,
     defaultPipelineRequestsPerWindow: null,
     defaultAsyncPendingJobsPerTenant: null,
     defaultAsyncActiveJobsPerTenant: null,
