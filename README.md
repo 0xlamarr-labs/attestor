@@ -317,12 +317,30 @@ Attestor is not priced like a commodity AI utility. It sits at the point where A
 | Rate limit and async headroom | evaluation only | standard | higher | negotiated |
 | Private deployment path | self-host evaluation | No | No | Yes |
 
-If someone is scanning quickly, the shortest reading is:
+### How To Think About Runs
 
-- `community` = evaluate Attestor, create the account, and use the first `10` hosted runs before deciding whether to upgrade
-- `starter` = first real hosted paid plan, with `100` governed runs / month and a `14-day` trial
-- `pro` = same hosted model with `1,000` governed runs / month and stronger runtime headroom
-- `enterprise` = negotiated limits plus hosted or private deployment
+A `run` is one governed Attestor pipeline execution against one workflow input.
+
+That means:
+
+- it is not one login
+- it is not one whole month of work
+- it is one reviewable acceptance/proof pass through the hosted pipeline
+
+Use the packages like this:
+
+| Plan | What it really buys | What it usually means in practice |
+|---|---|---|
+| Community | first validation | a small number of test or pilot runs before any paid commitment |
+| Starter | one live workflow | one serious team running one production workflow with normal reruns and review cycles |
+| Pro | several live workflows | one department or business unit running multiple recurring workflows |
+| Enterprise | negotiated scale | multiple teams, entities, or control surfaces where fixed public quotas stop being the right contract |
+
+The run numbers only make sense when tied to workflow shape:
+
+- if a team uses Attestor for a monthly or quarterly reporting pack, `100` runs can last a long time
+- if a team uses it for one daily control with reruns and exception handling, `100` runs is a starter budget, not a long-term ceiling
+- if a bank wants several daily workflows across treasury, reporting, reconciliation, or risk, `1,000` runs becomes the practical floor rather than the ceiling
 
 ### How Billing Works
 
@@ -336,13 +354,6 @@ This is the shortest honest version:
 
 If someone only reads one billing section in the repo, it should be this one.
 
-The pricing intent is deliberate:
-
-- `community` proves the model locally, gives teams a zero-cost account setup path, and includes the first `10` hosted runs
-- `starter` gets a serious team into production with a 14-day trial, without making Attestor look like a cheap wrapper
-- `pro` is where repeated internal operational use starts to make economic sense
-- `enterprise` is where deployment boundary, procurement, and control requirements dominate
-
 ### Fastest Enterprise Sales Framing
 
 The easiest way to sell Attestor is not as "another AI app". It is as the control layer that lets a serious team accept AI-assisted work without losing reviewer authority, auditability, or rollout discipline.
@@ -353,15 +364,6 @@ For enterprise buyers, lead with:
 - signed proof, verification, and replayable audit history
 - account, billing, usage, and entitlement surfaces that make procurement and internal platform adoption legible
 - deployment choice: hosted now, private deployment when boundary/compliance requirements win
-
-### How Purchase Should Work
-
-The purchase flow is simple:
-
-1. create the account
-2. start checkout for the chosen plan
-3. pay in Stripe
-4. keep using the same account after activation
 
 ### Commercial Bootstrap
 

@@ -36,12 +36,11 @@ Map those live Stripe price ids into:
 - `ATTESTOR_STRIPE_PRICE_PRO`
 - `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
 
-For the default hosted funnel:
+For the default hosted funnel, keep the same commercial rule as the README:
 
-- `community` covers the zero-cost evaluation path and includes the first `10` hosted runs
-- `starter` is the self-serve hosted entry plan and the first paid hosted plan
-- `starter` carries a `14-day free trial`
-- `pro` and `enterprise` do not get an automatic self-serve trial by default
+- `community` = free evaluation plus the first `10` hosted runs
+- `starter` = the first paid hosted plan, with a `14-day` free trial
+- `pro` and `enterprise` = paid upgrades on that same account
 
 ### 2. Activate Your Stripe Live Account
 

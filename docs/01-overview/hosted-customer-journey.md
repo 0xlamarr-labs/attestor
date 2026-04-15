@@ -55,6 +55,8 @@ If someone skims this page, they should still understand the buying path:
 - `starter`, `pro`, `enterprise` = paid plans on the same account
 - first create the account, then open Stripe Checkout for the plan, then pay, then keep using that same account
 
+For the fuller public plan wording and run-sizing guidance, keep the README `Plans and Pricing` section as the source of truth.
+
 ## What To Send And When
 
 Use this order:
@@ -67,63 +69,16 @@ Use this order:
 4. keep using the same account after checkout completes
 5. manage invoices or payment details later through `POST /api/v1/account/billing/portal`
 
-## Billing In One Minute
+## Choosing A Plan
 
-If a customer asks "how does payment work?" the answer should stay this simple:
+Keep the public packaging language simple:
 
-1. `community` covers the zero-cost evaluation path and includes the first `10` hosted runs.
-2. hosted signup creates the account the customer keeps using.
-3. `starter` is the first hosted paid plan and begins with a 14-day free trial.
-4. `pro` and `enterprise` are paid upgrades on that same account.
-5. Stripe Checkout starts the plan, and the Stripe Billing Portal is where payment details, invoices, and plan changes are managed.
+- `community` = zero-cost evaluation and the first `10` hosted runs
+- `starter` = the first paid hosted plan, good for one live workflow
+- `pro` = the larger hosted plan for several workflows or one business unit
+- `enterprise` = negotiated scale, hosted enterprise, or private deployment
 
-That is the whole payment story most buyers need before they decide whether to continue.
-
-## Entry Path By Plan
-
-### Community
-
-For developers, internal evaluation, and self-hosted validation.
-
-Expected path:
-
-1. read the repo and docs
-2. self-host the stack locally or in the team's own environment
-3. validate the acceptance model against real internal workflows
-4. optionally create a hosted account early, use the first `10` hosted runs on that same account, then move to hosted `starter` when more volume is needed
-
-### Starter
-
-For the first serious production team.
-
-Expected path:
-
-1. sign up hosted account
-2. start the 14-day free trial through Stripe Checkout
-3. manage API keys and usage
-4. integrate one real workflow from the customer's own stack
-
-### Pro
-
-For repeated internal operational use across more than one workflow or business unit.
-
-Expected path:
-
-1. sign up or convert an existing community/starter account
-2. purchase higher hosted limits through Stripe
-3. operate multiple internal integrations from the same account plane
-
-### Enterprise
-
-For banks, hospitals, insurers, and internal AI platform teams with stricter rollout boundaries.
-
-Expected path:
-
-1. qualify the deployment boundary and commercial shape
-2. close the commercial agreement
-3. onboard hosted enterprise or private deployment
-
-Enterprise can stay sales-led even if `starter` and `pro` are self-serve.
+This document stays focused on the buying sequence. The detailed plan wording lives in the README so it only needs maintenance in one place.
 
 ## The Minimum Hosted Account Plane
 
@@ -160,28 +115,11 @@ The hosted customer journey already maps to the shipped API surface:
 
 ## Commercial Surface
 
-The repo and docs can already serve as the initial commercial surface when they clearly answer:
+The practical commercial surface is:
 
-- what Attestor is
-- who it is for
-- which plan the customer should choose
-- how signup works
-- how billing works
-- how API access is issued
-
-That means a credible first launch surface can be:
-
-- GitHub repo
-- README
-- docs
-- Stripe Checkout-backed hosted account flow
-
-The customer still gets a real commercial product:
-
-- hosted account
-- API access
-- usage and billing
-- documented integration path
+- README for the public product and plan story
+- this document for the hosted buying sequence
+- Stripe Checkout plus Billing Portal for payment and plan management
 
 ## Commercial Truth
 

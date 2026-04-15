@@ -1,27 +1,9 @@
 # Purpose
 
-## What Attestor Is
+Use this page as the shortest internal orientation note.
 
-Attestor is acceptance, proof, and operating infrastructure for AI-assisted work.
-
-It is consumed as a hosted API product or private deployment, not as a file-management app.
-
-Its job is to govern acceptance, not generation. A model may propose. Attestor determines whether that proposal can be accepted, what evidence supports it, who may endorse it, and what an outsider can verify later.
-
-The engine architecture is domain-independent. The repository's reference implementation is financial and remains the deepest path in the codebase.
-
-## Why It Exists
-
-AI becomes useful before it becomes admissible.
-
-In consequence-bearing workflows, the missing layer is usually not "better generation." It is governed acceptance:
-
-- typed contracts before execution
-- deterministic controls independent of generation
-- explicit review and authority closure
-- portable proof after the fact
-
-Without that layer, organizations get raw execution, authority collapse, weak evidence, and overclaimed proof.
+For the public product framing, use the [README](../../README.md).
+For the architecture map, use [System overview](../02-architecture/system-overview.md).
 
 ## Current Repository Truth
 
@@ -56,16 +38,6 @@ Those modules prove architectural breadth. They do not yet imply finance-level e
 - Not a distributed enterprise control plane
 
 Attestor makes AI-assisted output governable. It does not make AI inherently trustworthy.
-
-## Proof Maturity
-
-**Single-query:** mature signed certificate and verification-kit path.
-
-**Multi-query:** signed run-level certificate and verification-kit path exists, with reviewer binding and differential evidence, but not per-unit certificate issuance.
-
-**Real PostgreSQL:** real bounded proof path is working, including a self-contained proof script, reproducible demo bootstrap, and schema/data-state attestation capture in the Postgres prove helper.
-
-**Service and identity:** the API can issue, verify, export filings, and run async jobs as a bounded first slice. Operator-asserted reviewer identity is standard; API-path OIDC verification and CLI device flow are shipped as first slices; full IAM flow is not.
 
 ## Who This Is For
 

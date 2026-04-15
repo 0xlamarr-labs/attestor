@@ -61,22 +61,13 @@ The commercial rule to preserve is simple:
 
 ## Commercial Surface
 
-The repo and docs can serve as the first commercial surface as long as they make the following obvious:
+Keep the surface split small:
 
-- what the product is
-- which team should buy it
-- what each plan includes
-- how signup works
-- how checkout works
-- what happens after payment
+- README = public product and plan explanation
+- hosted customer journey = signup and checkout sequence
+- Stripe commercial bootstrap = operator setup
 
-That gives a credible first commercial shape:
-
-- repo/docs as the public entry
-- Stripe Checkout for paid conversion
-- hosted account plane for keys, usage, and billing
-
-The product still remains API-first and infrastructure-first. The thing being sold is the acceptance and operating layer itself.
+That avoids maintaining the same commercial story in three places.
 
 ## Where Customer Payment And Your Bank Account Meet
 
@@ -104,16 +95,14 @@ That is enough for the first complete product line.
 
 ## Recommended Public Pricing
 
-These are the recommended list prices for the hosted product.
+Keep the README `Plans and Pricing` section as the single source of truth for buyer-facing copy.
 
-They are intentionally not cheap. Attestor is not a utility wrapper. It is infrastructure for high-consequence AI-assisted work.
+This file should preserve the internal packaging rule behind that public table:
 
-| Plan | Recommended price | Best for | Included hosted shape |
-|---|---:|---|---|
-| Community | Free | zero-cost evaluation, repo-based validation, early account setup | docs, local proof path, hosted account signup, `10` included hosted runs |
-| Starter | EUR 499 / month | first production teams, pilot-to-production workflows, small internal rollout | 100 governed runs / month, hosted account + API access, 14-day free trial, usage and billing surface, API keys, bounded hosted control layer |
-| Pro | EUR 1,999 / month | repeated operational use, multiple workflows, higher internal adoption | 1,000 governed runs / month, higher rate limits, stronger async/runtime capacity, hosted account/billing/usage surfaces, richer operational headroom |
-| Enterprise | From EUR 7,500 / month | banks, hospitals, insurers, large AI platform teams, private deployment buyers | negotiated limits, hosted or private deployment, commercial support path, security/compliance onboarding, custom rollout boundary |
+- `community` = free evaluation path plus the first `10` hosted runs
+- `starter` = EUR 499 / month for one serious team and one live workflow
+- `pro` = EUR 1,999 / month for several workflows or one business unit
+- `enterprise` = from EUR 7,500 / month for negotiated scale, stricter rollout, or private deployment
 
 These prices should map to the Stripe price ids configured through:
 
@@ -181,62 +170,6 @@ and less like:
 - commodity generation APIs
 - lightweight wrappers
 - casual productivity SaaS
-
-## What Each Plan Means In Practice
-
-### Community
-
-For teams proving the model locally or running self-hosted evaluation.
-
-What they get:
-
-- the repository
-- docs
-- local proof and verification paths
-- self-hosted experimentation
-- optional hosted account setup before moving to a paid hosted plan
-
-What they do **not** get:
-
-- large included hosted volume beyond the first `10` hosted runs
-- hosted support commitments
-- hosted operational guarantees
-
-### Starter
-
-For a team that wants to put Attestor in front of one real workflow and buy hosted access without building a governance layer from scratch.
-
-What they get:
-
-- hosted API access
-- hosted account and tenant state
-- API key management
-- usage view
-- billing view
-- 14-day free trial before the first paid cycle
-- bounded monthly included volume
-
-### Pro
-
-For teams where Attestor becomes part of repeated operating practice rather than a single pilot.
-
-What they get:
-
-- materially more monthly volume
-- higher throughput and queue headroom
-- better fit for multiple internal workflows
-- stronger fit for real operational use
-
-### Enterprise
-
-For organizations where procurement, compliance, uptime, and deployment boundary matter as much as feature list.
-
-What they get:
-
-- negotiated limits
-- custom commercial path
-- hosted or private deployment shape
-- structured onboarding for control, security, and rollout
 
 ## Fastest Way To Sell It
 
