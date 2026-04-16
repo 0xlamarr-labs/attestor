@@ -131,12 +131,14 @@ function inferProofContext(
       ?? baseName.match(/^financial-live-([a-z0-9_-]+)-/iu)?.[1]
       ?? 'counterparty';
     return {
-      proofLabel: `Live hybrid proof run (${inferredScenario})`,
+      proofLabel: inferredScenario === 'counterparty'
+        ? 'Counterparty exposure reporting acceptance (live hybrid)'
+        : `Financial workflow acceptance (${inferredScenario}, live hybrid)`,
       rerunCommand: `npx tsx src/financial/cli.ts live-scenario ${inferredScenario}`,
     };
   }
   return {
-    proofLabel: 'Real PostgreSQL-backed proof run',
+    proofLabel: 'PostgreSQL-backed financial reporting acceptance proof',
     rerunCommand: 'npx tsx scripts/real-db-proof.ts',
   };
 }

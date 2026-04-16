@@ -84,10 +84,12 @@ async function main(): Promise<void> {
   });
 
   ok(packet.headline === 'Accepted with partial proof coverage', 'Proof showcase: headline stays truthful when proof is degraded');
+  ok(packet.title === 'Attestor Financial Reporting Acceptance Packet', 'Proof showcase: financial proof packets get a finance-specific title');
   ok(packet.limitations.some((item) => item.includes('does not prove a live upstream model call')), 'Proof showcase: limitations call out missing upstream proof');
   ok(packet.limitations.some((item) => item.includes('does not include PKI chain material yet')), 'Proof showcase: limitations call out missing PKI chain material');
   ok(packet.schemaAttestation.present, 'Proof showcase: schema attestation presence is reflected');
   ok(packet.commands.verifyKit.includes('--allow-legacy-verify'), 'Proof showcase: kit verify command includes legacy override when PKI chain is absent');
+  ok(packet.proofRun.sourceProofDir === '.attestor/proofs/real-pg-proof_demo', 'Proof showcase: proof source path is repo-relative when possible');
 
   const markdown = renderProofShowcaseMarkdown(packet);
   ok(markdown.includes('## Truthful limitations'), 'Proof showcase markdown: includes truthful limitations section');
@@ -164,16 +166,18 @@ async function main(): Promise<void> {
   const hybridPacket = buildProofShowcasePacket({
     proofDir: 'C:/Users/thedi/attestor/.attestor-financial/runs/financial-live-counterparty-demo',
     latestPacketDir: '.attestor/showcase/latest',
-    proofLabel: 'Live hybrid proof run (counterparty)',
+    proofLabel: 'Counterparty exposure reporting acceptance (live hybrid)',
     rerunCommand: 'npx tsx src/financial/cli.ts live-scenario counterparty',
     kit: verifiedHybridKit,
   });
 
   ok(hybridPacket.headline === 'Accepted with fully verifiable proof', 'Proof showcase: verified hybrid headline is strong but truthful');
+  ok(hybridPacket.title === 'Attestor Financial Reporting Acceptance Packet', 'Proof showcase: hybrid counterparty packet gets finance-specific title');
   ok(!hybridPacket.limitations.some((item) => item.includes('live upstream model call')), 'Proof showcase: verified hybrid packet does not falsely claim missing upstream proof');
   ok(hybridPacket.limitations.some((item) => item.includes('No schema attestation file')), 'Proof showcase: verified hybrid packet still calls out missing schema attestation');
   ok(hybridPacket.commands.rerun === 'npx tsx src/financial/cli.ts live-scenario counterparty', 'Proof showcase: rerun command can point at the hybrid proof path');
   ok(!hybridPacket.commands.verifyKit.includes('--allow-legacy-verify'), 'Proof showcase: PKI-backed hybrid kit does not require legacy verification override');
+  ok(hybridPacket.proofRun.sourceProofDir === '.attestor-financial/runs/financial-live-counterparty-demo', 'Proof showcase: hybrid proof source path is repo-relative when possible');
 
   console.log(`\nProof showcase tests: ${passed} passed, 0 failed`);
 }

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attestor Financial Reporting Acceptance Packet</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f3e4;
+        --panel: rgba(255, 252, 244, 0.92);
+        --ink: #2c2a24;
+        --muted: #655f52;
+        --line: rgba(70, 62, 41, 0.14);
+        --accent: #b99a4d;
+        --pass: #2f7d55;
+        --warn: #9a6c17;
+        --fail: #a23b32;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(255,255,255,0.75), transparent 48%),
+          linear-gradient(180deg, #fbf8ef 0%, var(--bg) 55%, #f0e7cf 100%);
+        color: var(--ink);
+      }
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 48px 28px 64px;
+      }
+      .hero {
+        background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(249,244,228,0.88));
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 32px;
+        box-shadow: 0 24px 60px rgba(62, 49, 19, 0.08);
+      }
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 12px;
+        color: var(--accent);
+        margin-bottom: 12px;
+      }
+      h1 {
+        font-size: clamp(34px, 5vw, 56px);
+        line-height: 1.02;
+        margin: 0 0 12px;
+      }
+      .summary {
+        font-size: 18px;
+        line-height: 1.6;
+        max-width: 760px;
+        color: var(--muted);
+      }
+      .glance {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+        margin-top: 28px;
+      }
+      .metric {
+        background: rgba(255,255,255,0.76);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 16px;
+      }
+      .metric .label {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .metric .value {
+        font-size: 20px;
+        font-weight: 700;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 18px;
+        margin-top: 24px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 16px 42px rgba(62, 49, 19, 0.06);
+      }
+      h2 {
+        margin-top: 0;
+        margin-bottom: 14px;
+        font-size: 22px;
+      }
+      ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+      li {
+        margin-bottom: 14px;
+        line-height: 1.5;
+      }
+      .detail {
+        color: var(--muted);
+        font-size: 15px;
+        margin-top: 4px;
+      }
+      .badge {
+        display: inline-block;
+        margin-left: 10px;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+      }
+      .status-pass { background: rgba(47,125,85,0.12); color: var(--pass); }
+      .status-warn { background: rgba(154,108,23,0.14); color: var(--warn); }
+      .status-fail { background: rgba(162,59,50,0.12); color: var(--fail); }
+      code {
+        font-family: "Consolas", "SFMono-Regular", monospace;
+        font-size: 13px;
+        background: rgba(46, 38, 24, 0.06);
+        padding: 2px 6px;
+        border-radius: 6px;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: rgba(46, 38, 24, 0.06);
+        border-radius: 14px;
+        padding: 16px;
+        overflow: auto;
+      }
+      a { color: #6f5310; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Attestor proof packet</div>
+        <h1>Accepted with fully verifiable proof</h1>
+        <p class="summary">Attestor produced a PASS decision for an AI-assisted financial reporting workflow and issued a portable proof kit. The packet can be re-verified outside the platform, and this run shows hybrid with sqlite. The current verification verdict is verified.</p>
+        <div class="glance">
+          <div class="metric"><div class="label">Decision</div><div class="value">PASS</div></div>
+          <div class="metric"><div class="label">Verification</div><div class="value">Verified</div></div>
+          <div class="metric"><div class="label">Certificate</div><div class="value">cert_cd5a662e2df8b93e</div></div>
+          <div class="metric"><div class="label">Execution</div><div class="value">Live (sqlite)</div></div>
+        </div>
+      </section>
+
+      <div class="grid">
+        <section class="panel">
+          <h2>What this run shows</h2>
+          <ul><li>The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.</li><li>The run emitted certificate cert_cd5a662e2df8b93e and a portable verification kit that can be checked without API access.</li><li>The evidence chain contains 11 audit entries and is intact.</li><li>Execution was live and recorded against sqlite.</li><li>The packet includes a verified reviewer endorsement for Attestor Live Reviewer.</li></ul>
+        </section>
+        <section class="panel">
+          <h2>Verification checks</h2>
+          <ul><li><strong>Certificate signature</strong><span class="badge status-pass">PASS</span><div class="detail">Ed25519 signature valid for signer 5bcdf5caecb4342d.</div></li><li><strong>Governance sufficiency</strong><span class="badge status-pass">PASS</span><div class="detail">SQL, policy, and guardrails all passed for decision pass.</div></li><li><strong>Authority closure</strong><span class="badge status-pass">PASS</span><div class="detail">Warrant, escrow, and receipt reached an authorized state.</div></li><li><strong>Reviewer endorsement</strong><span class="badge status-pass">PASS</span><div class="detail">Reviewer endorsement verified for Attestor Live Reviewer.</div></li><li><strong>Live execution evidence</strong><span class="badge status-pass">PASS</span><div class="detail">Execution ran live against sqlite.</div></li><li><strong>Execution context evidence</strong><span class="badge status-warn">WARN</span><div class="detail">No database execution-context hash is present in the proof bundle.</div></li></ul>
+        </section>
+      </div>
+
+      <div class="grid">
+        <section class="panel">
+          <h2>Truthful limitations</h2>
+          <ul><li>No schema attestation file was captured for this run.</li></ul>
+        </section>
+        <section class="panel">
+          <h2>Included evidence</h2>
+          <ul><li><a href="evidence/kit.json">Verification kit</a><div class="detail">Portable proof bundle with certificate, authority bundle, and verification summary.</div></li><li><a href="evidence/certificate.json">Certificate</a><div class="detail">Ed25519-signed attestation certificate for the governed run.</div></li><li><a href="evidence/public-key.pem">Signer public key</a><div class="detail">Public key needed to independently verify the certificate signature.</div></li><li><a href="evidence/reviewer-public.pem">Reviewer public key</a><div class="detail">Public key needed to independently verify the reviewer endorsement.</div></li><li><a href="evidence/verification-summary.json">Verification summary</a><div class="detail">The six-dimensional verification verdict emitted for this packet.</div></li><li><a href="evidence/trust-chain.json">Trust chain</a><div class="detail">PKI trust chain for the runtime signer used by this proof packet.</div></li><li><a href="evidence/ca-public.pem">CA public key</a><div class="detail">CA public key used to verify the runtime signer leaf certificate.</div></li></ul>
+        </section>
+      </div>
+
+      
+
+      <section class="panel">
+        <h2>Re-run and verify</h2>
+        <pre>npx tsx src/financial/cli.ts live-scenario counterparty
+npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
+npm run verify:cert -- .attestor/showcase/latest/evidence/certificate.json .attestor/showcase/latest/evidence/public-key.pem</pre>
+        <p class="detail">Source proof directory: <code>.attestor-financial/runs/financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c</code></p>
+      </section>
+    </main>
+  </body>
+</html>

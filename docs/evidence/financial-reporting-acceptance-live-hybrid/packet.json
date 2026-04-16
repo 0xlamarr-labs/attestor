@@ -1,0 +1,120 @@
+{
+  "title": "Attestor Financial Reporting Acceptance Packet",
+  "headline": "Accepted with fully verifiable proof",
+  "generatedAt": "2026-04-16T10:38:06.308Z",
+  "summary": "Attestor produced a PASS decision for an AI-assisted financial reporting workflow and issued a portable proof kit. The packet can be re-verified outside the platform, and this run shows hybrid with sqlite. The current verification verdict is verified.",
+  "proofRun": {
+    "label": "Counterparty exposure reporting acceptance (live hybrid)",
+    "source": "real_execution",
+    "decision": "pass",
+    "decisionSummary": "8 scorers: pass. Authority: authorized.",
+    "verificationOverall": "verified",
+    "issuedAt": "2026-04-16T10:38:06.241Z",
+    "certificateId": "cert_cd5a662e2df8b93e",
+    "runId": "financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c",
+    "signerFingerprint": "5bcdf5caecb4342d",
+    "reviewerName": "Attestor Live Reviewer",
+    "reviewerVerified": true,
+    "reviewRequired": true,
+    "executionProvider": "sqlite",
+    "executionLive": true,
+    "upstreamLive": true,
+    "executionMode": "hybrid",
+    "dbContextEvidence": false,
+    "auditEntryCount": 11,
+    "proofGaps": [],
+    "sourceProofDir": ".attestor-financial/runs/financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c"
+  },
+  "verificationChecks": [
+    {
+      "label": "Certificate signature",
+      "status": "pass",
+      "detail": "Ed25519 signature valid for signer 5bcdf5caecb4342d."
+    },
+    {
+      "label": "Governance sufficiency",
+      "status": "pass",
+      "detail": "SQL, policy, and guardrails all passed for decision pass."
+    },
+    {
+      "label": "Authority closure",
+      "status": "pass",
+      "detail": "Warrant, escrow, and receipt reached an authorized state."
+    },
+    {
+      "label": "Reviewer endorsement",
+      "status": "pass",
+      "detail": "Reviewer endorsement verified for Attestor Live Reviewer."
+    },
+    {
+      "label": "Live execution evidence",
+      "status": "pass",
+      "detail": "Execution ran live against sqlite."
+    },
+    {
+      "label": "Execution context evidence",
+      "status": "warn",
+      "detail": "No database execution-context hash is present in the proof bundle."
+    }
+  ],
+  "keyTakeaways": [
+    "The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.",
+    "The run emitted certificate cert_cd5a662e2df8b93e and a portable verification kit that can be checked without API access.",
+    "The evidence chain contains 11 audit entries and is intact.",
+    "Execution was live and recorded against sqlite.",
+    "The packet includes a verified reviewer endorsement for Attestor Live Reviewer."
+  ],
+  "limitations": [
+    "No schema attestation file was captured for this run."
+  ],
+  "schemaAttestation": {
+    "present": false,
+    "tableCount": 0,
+    "tables": [],
+    "sentinelCount": 0,
+    "schemaFingerprint": null,
+    "attestationHash": null
+  },
+  "artifactFiles": [
+    {
+      "label": "Verification kit",
+      "relativePath": "evidence/kit.json",
+      "description": "Portable proof bundle with certificate, authority bundle, and verification summary."
+    },
+    {
+      "label": "Certificate",
+      "relativePath": "evidence/certificate.json",
+      "description": "Ed25519-signed attestation certificate for the governed run."
+    },
+    {
+      "label": "Signer public key",
+      "relativePath": "evidence/public-key.pem",
+      "description": "Public key needed to independently verify the certificate signature."
+    },
+    {
+      "label": "Reviewer public key",
+      "relativePath": "evidence/reviewer-public.pem",
+      "description": "Public key needed to independently verify the reviewer endorsement."
+    },
+    {
+      "label": "Verification summary",
+      "relativePath": "evidence/verification-summary.json",
+      "description": "The six-dimensional verification verdict emitted for this packet."
+    },
+    {
+      "label": "Trust chain",
+      "relativePath": "evidence/trust-chain.json",
+      "description": "PKI trust chain for the runtime signer used by this proof packet."
+    },
+    {
+      "label": "CA public key",
+      "relativePath": "evidence/ca-public.pem",
+      "description": "CA public key used to verify the runtime signer leaf certificate."
+    }
+  ],
+  "commands": {
+    "rerun": "npx tsx src/financial/cli.ts live-scenario counterparty",
+    "verifyKit": "npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json",
+    "verifyCertificate": "npm run verify:cert -- .attestor/showcase/latest/evidence/certificate.json .attestor/showcase/latest/evidence/public-key.pem"
+  }
+}

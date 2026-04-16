@@ -1,0 +1,246 @@
+{
+  "version": "1.0",
+  "type": "attestor.verification_kit.v1",
+  "certificate": {
+    "version": "1.0",
+    "type": "attestor.certificate.v1",
+    "certificateId": "cert_cd5a662e2df8b93e",
+    "issuedAt": "2026-04-16T10:38:06.241Z",
+    "runIdentity": "771e59bf5a1f0bfb",
+    "decision": "pass",
+    "decisionSummary": "8 scorers: pass. Authority: authorized.",
+    "authority": {
+      "warrantStatus": "fulfilled",
+      "obligationsFulfilled": 9,
+      "obligationsTotal": 9,
+      "escrowState": "released",
+      "receiptStatus": "issued",
+      "capsuleAuthority": "authorized"
+    },
+    "evidence": {
+      "evidenceChainRoot": "897bbef5c00b0072",
+      "evidenceChainTerminal": "0ea44953debc6478",
+      "auditChainIntact": true,
+      "auditEntryCount": 11,
+      "sqlHash": "1780ed002d72af98",
+      "snapshotHash": "f94d0fcb32d6de90"
+    },
+    "governance": {
+      "sqlGovernance": "pass",
+      "policy": "pass",
+      "guardrails": "pass",
+      "dataContracts": "pass",
+      "scorersRun": 8,
+      "reviewRequired": true
+    },
+    "liveProof": {
+      "mode": "hybrid",
+      "upstreamLive": true,
+      "executionLive": true,
+      "consistent": true
+    },
+    "signing": {
+      "algorithm": "ed25519",
+      "publicKey": "452af8efe80fab5379497c6000c50a34efe04a847a463cdf693c5a1d670d552d",
+      "fingerprint": "5bcdf5caecb4342d",
+      "signature": "b869cd049d43b7a6b7f886285a3a04a2687fe7d9d49cc5bfdb47746e5f523e29512a39213befa2b46aceec384561b56c4fed712d6895794d9454fe40facd9501"
+    }
+  },
+  "bundle": {
+    "version": "1.0",
+    "type": "attestor.authority_bundle.v1",
+    "runId": "financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c",
+    "timestamp": "2026-04-16T10:38:06.235Z",
+    "decision": "pass",
+    "authority": {
+      "warrant": {
+        "id": "wrnt_financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c_8c29c6a1",
+        "status": "fulfilled",
+        "trustLevel": "human_approved",
+        "obligationsFulfilled": 9,
+        "obligationsTotal": 9
+      },
+      "escrow": {
+        "state": "released",
+        "releasedCount": 10,
+        "totalObligations": 10,
+        "reviewHeld": false
+      },
+      "receipt": {
+        "id": "rcpt_financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c_9d2d6bfaff5d471f",
+        "status": "issued",
+        "signatureMode": "unsigned"
+      },
+      "capsule": {
+        "id": "caps_financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c_c8f0a8ab52ee2561",
+        "authorityState": "authorized",
+        "factCount": 1
+      }
+    },
+    "evidence": {
+      "chainRoot": "897bbef5c00b0072",
+      "chainTerminal": "0ea44953debc6478",
+      "replayIdentity": "771e59bf5a1f0bfb",
+      "auditEntryCount": 11,
+      "auditChainIntact": true,
+      "sqlHash": "1780ed002d72af98",
+      "snapshotHash": "f94d0fcb32d6de90"
+    },
+    "governance": {
+      "sqlGovernance": {
+        "result": "pass",
+        "gatesPassed": 6,
+        "gatesTotal": 6
+      },
+      "policy": {
+        "result": "pass",
+        "leastPrivilegePreserved": true
+      },
+      "guardrails": {
+        "result": "pass",
+        "checksRun": 6
+      },
+      "dataContracts": {
+        "result": "pass",
+        "checksRun": 11,
+        "failedCount": 0
+      },
+      "scoring": {
+        "decision": "pass",
+        "scorersRun": 8,
+        "passCount": 8,
+        "failCount": 0,
+        "warnCount": 0
+      },
+      "review": {
+        "required": true,
+        "triggeredBy": [
+          "mat_high"
+        ],
+        "endorsement": {
+          "endorsedAt": "2026-04-16T10:38:06.232Z",
+          "reviewerName": "Attestor Live Reviewer",
+          "reviewerRole": "attestor_operator",
+          "endorsedDecision": "approved",
+          "signed": true,
+          "runBinding": {
+            "runId": "financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c",
+            "replayIdentity": "771e59bf5a1f0bfb",
+            "evidenceChainTerminal": "0ea44953debc6478"
+          },
+          "signerFingerprint": "729bcfcfe97b5136"
+        }
+      }
+    },
+    "proof": {
+      "mode": "hybrid",
+      "upstreamLive": true,
+      "executionLive": true,
+      "executionProvider": "sqlite",
+      "executionContextHash": null,
+      "consistent": true,
+      "gapCategories": []
+    },
+    "filing": {
+      "status": "internal_report_ready",
+      "blockingGapCount": 0
+    }
+  },
+  "signerPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEARSr47+gPq1N5SXxgAMUKNO/gSoR6RjzfaTxaHWcNVS0=\n-----END PUBLIC KEY-----\n",
+  "trustChain": {
+    "version": "1.0",
+    "type": "attestor.trust_chain.v1",
+    "ca": {
+      "version": "1.0",
+      "type": "attestor.ca_certificate.v1",
+      "certificateId": "ca_8fed83b40fe13502",
+      "name": "Attestor Live Scenario CA",
+      "notBefore": "2026-04-16T10:37:55.793Z",
+      "notAfter": "2027-04-16T10:37:55.793Z",
+      "isCA": true,
+      "publicKey": "90366d318a21bd7bde9c799c1734e12663b22e4d0bd089ef1fa35220f357b9cb",
+      "fingerprint": "f91347b6bdb13f01",
+      "signature": "6f2b7cdb68c2fb52f5a02171bd6b8c603e3b76011d272e35ca0ab1a07b1b3abd6a1494379868f46a6d45f33e9095bb69e6d4c57881395576b356bfa7bf8eee05"
+    },
+    "leaf": {
+      "version": "1.0",
+      "type": "attestor.leaf_certificate.v1",
+      "certificateId": "leaf_d04f67f7ab516d0d",
+      "subject": "Live Scenario Runtime Signer",
+      "role": "runtime_signer",
+      "notBefore": "2026-04-16T10:37:55.796Z",
+      "notAfter": "2026-07-15T10:37:55.796Z",
+      "subjectPublicKey": "452af8efe80fab5379497c6000c50a34efe04a847a463cdf693c5a1d670d552d",
+      "subjectFingerprint": "5bcdf5caecb4342d",
+      "issuerFingerprint": "f91347b6bdb13f01",
+      "issuerSignature": "4deff0aaf55e243616053235fed5cc0a099f21842077925fa78360388f4222bda0b79d5389c751d399033da5fda0ec554a7f2075a2c63356d2c8ce13550b1f07"
+    }
+  },
+  "caPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAkDZtMYohvXvenHmcFzThJmOyLk0L0InvH6NSIPNXucs=\n-----END PUBLIC KEY-----\n",
+  "reviewerEndorsement": {
+    "endorsedAt": "2026-04-16T10:38:06.232Z",
+    "reviewer": {
+      "name": "Attestor Live Reviewer",
+      "role": "attestor_operator",
+      "identifier": "financial-live-reviewer:financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c",
+      "signerFingerprint": "729bcfcfe97b5136"
+    },
+    "endorsedDecision": "approved",
+    "rationale": "Approved for hybrid live proof showcase.",
+    "scope": [
+      "output_pack",
+      "dossier"
+    ],
+    "runBinding": {
+      "runId": "financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c",
+      "replayIdentity": "771e59bf5a1f0bfb",
+      "evidenceChainTerminal": "0ea44953debc6478"
+    },
+    "signature": "2ae36c0216ec56590c55256f038fff7788a9e124ad22bf0fcebdf53d2ab0f3bced611c39be231536de5ad702fceb025905bb17f7e6bf769c6031f971d922df02"
+  },
+  "reviewerPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAbcfCxCEE6K/BTxqbRFyA4tQtW+FoO3hxEAwJT5WwP7Q=\n-----END PUBLIC KEY-----\n",
+  "verification": {
+    "cryptographic": {
+      "valid": true,
+      "algorithm": "ed25519",
+      "fingerprint": "5bcdf5caecb4342d"
+    },
+    "structural": {
+      "valid": true,
+      "version": "1.0",
+      "type": "attestor.certificate.v1"
+    },
+    "authority": {
+      "state": "authorized",
+      "warrantFulfilled": true,
+      "escrowReleased": true,
+      "receiptIssued": true
+    },
+    "governanceSufficiency": {
+      "sufficient": true,
+      "sqlPass": true,
+      "policyPass": true,
+      "guardrailsPass": true,
+      "scoringDecision": "pass"
+    },
+    "proofCompleteness": {
+      "mode": "hybrid",
+      "gapCount": 0,
+      "gaps": [],
+      "executionLive": true,
+      "upstreamLive": true,
+      "executionProvider": "sqlite",
+      "hasDbContextEvidence": false
+    },
+    "reviewerEndorsement": {
+      "present": true,
+      "signed": true,
+      "boundToRun": true,
+      "bindingMismatch": false,
+      "verified": true,
+      "reviewerName": "Attestor Live Reviewer",
+      "fingerprint": "729bcfcfe97b5136"
+    },
+    "overall": "verified"
+  }
+}

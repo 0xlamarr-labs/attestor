@@ -2,7 +2,7 @@
 
 Attestor is not sold as a file-management app or a generic AI workspace.
 
-It is sold as **acceptance, proof, and operating infrastructure for AI-assisted work**, delivered either as:
+It is sold as **acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance**, delivered either as:
 
 - a **hosted API product**
 - or a **customer-operated deployment path** for teams that need stricter control boundaries
@@ -22,6 +22,12 @@ They are buying:
 - API access they can call from their own environment
 
 Their files, data, workflows, and business logic stay in **their** systems.
+
+The repo should now be read finance-first:
+
+- the first clear buyer problem is AI-assisted financial reporting acceptance
+- the first clearest demo is the counterparty exposure reporting packet
+- broader cross-domain expansion is secondary to that wedge
 
 Attestor sits around the acceptance boundary:
 
@@ -194,4 +200,4 @@ Do not describe Attestor as:
 
 Describe it as:
 
-**Acceptance, proof, and operating infrastructure for AI-assisted work, delivered as a hosted API product.**
+**Acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance, delivered as a hosted API product.**

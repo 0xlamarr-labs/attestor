@@ -1,12 +1,12 @@
 # Attestor
 
-**Acceptance, proof, and operating infrastructure for AI-assisted work.**
+**Acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance.**
 
-Most AI systems can produce something useful before an organization knows how to accept it responsibly. That is the real gap Attestor is built to close.
+Most AI systems can produce something useful before a finance or reporting team knows how to accept it responsibly. That is the real gap Attestor is built to close.
 
-Attestor sits between model output and real-world consequence. It does not try to be the model. It turns AI-assisted work into something that can be reviewed, signed, verified, monitored, and operated with much higher confidence.
+Attestor sits between model output and a reporting consequence. It does not try to be the model. It turns AI-assisted reporting work into something that can be reviewed, signed, verified, monitored, and operated with much higher confidence.
 
-The deepest shipped proving ground today is financial: reporting, treasury, risk, reconciliation, and filing-oriented evidence. But the architectural claim is broader than finance. The same acceptance pattern matters anywhere AI output must cross from suggestion into production, audit, or regulated consequence.
+The current primary wedge is financial: reporting, treasury, risk, reconciliation, and filing-oriented evidence. The architectural pattern can travel beyond finance, but the repo should be read first as a finance-first acceptance product, not as a vague general AI governance claim.
 
 > [!IMPORTANT]
 > Attestor does not try to prove that AI is universally trustworthy. It gives teams a disciplined way to decide when AI-assisted work can be accepted, and when it must still be blocked, reviewed, or bounded more tightly.
@@ -18,10 +18,10 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 
 | If you need to... | Attestor gives you... |
 |---|---|
-| move AI-assisted work closer to production without blind trust | typed contracts, bounded execution, deterministic evidence, reviewer authority |
-| prove later why something was accepted | signed certificates, verification kits, audit trail, schema/data-state attestation |
+| move AI-assisted financial reporting closer to production without blind trust | typed contracts, bounded execution, deterministic evidence, reviewer authority |
+| prove later why a reporting output was accepted | signed certificates, verification kits, audit trail, schema/data-state attestation |
 | run it as an actual product surface | hosted auth, billing, observability, HA, DR, promotion packets |
-| carry the same acceptance model across domains | finance-proven depth, healthcare slice, connector + filing adapter model |
+| expand the same acceptance model later | finance-proven depth, healthcare slice, connector + filing adapter model |
 
 ## Quick Navigation
 
@@ -34,6 +34,7 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 - [Quick start](#quick-start)
 - [Current verified evidence](#current-verified-evidence)
 - [Current demo and test surface](#current-demo-and-test-surface)
+- [Financial reporting acceptance wedge](docs/01-overview/financial-reporting-acceptance.md)
 - [Hosted customer journey doc](docs/01-overview/hosted-customer-journey.md)
 - [Stripe commercial bootstrap](docs/01-overview/stripe-commercial-bootstrap.md)
 - [Product packaging and pricing](docs/01-overview/product-packaging.md)
@@ -42,7 +43,7 @@ The deepest shipped proving ground today is financial: reporting, treasury, risk
 
 ## The Step Change
 
-The practical jump is not from "no AI" to "AI". It is from "AI can suggest" to "AI-assisted work can be accepted with evidence, policy, and operational control".
+The practical jump is not from "no AI" to "AI". It is from "AI can suggest" to "AI-assisted reporting work can be accepted with evidence, policy, and operational control".
 
 ```mermaid
 flowchart LR
@@ -56,7 +57,7 @@ Without that middle layer, many AI systems stay advisory. With it, they can move
 
 The deepest AI bottleneck is no longer generation. It is acceptance.
 
-In serious workflows, the key questions are not only "can the model say something helpful?" but also:
+In serious reporting and control workflows, the key questions are not only "can the model say something helpful?" but also:
 
 - can this be accepted safely?
 - who is allowed to endorse it?
@@ -70,18 +71,19 @@ Attestor answers those questions with governed acceptance:
 - authority is explicit instead of implied
 - proof becomes portable instead of trapped inside one runtime
 
-## Where It Applies
+## Primary Wedge
 
-The pattern matters anywhere AI can assist, but raw output still cannot cross the line into production, audit, or consequence on its own:
+The first thing Attestor should mean is:
 
-- financial analytics and reporting
-- risk and control operations
-- healthcare analytics and quality review
-- insurance and claims support
-- supply-chain and industrial operations
-- legal, compliance, and public-sector review workflows
+**AI-assisted financial reporting acceptance.**
 
-That is architectural scope, not inflated scope. The current repository is deepest in finance, but the acceptance model and operating surface are intentionally broader, with healthcare plus cross-domain control-plane/runtime work already present.
+That means:
+
+- a report section, metric, or filing-oriented output may be generated or assisted by AI
+- the workflow still needs a clear acceptance boundary before someone relies on it
+- Attestor supplies the evidence, reviewer authority, verification material, and control surface around that boundary
+
+For the detailed wedge framing and current official anchors, see [AI-assisted financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 
 ## Why Finance Is First
 
@@ -100,6 +102,15 @@ Attestor keeps maturity claims separated by track.
 | Multi-query proof | aggregate governance, signed multi-query certificates, portable multi-query kits, differential evidence |
 | Runtime proof | bounded execution, predictive guardrails, reproducible PostgreSQL bootstrap, Postgres schema/data-state attestation |
 
+## Canonical Proof Surface
+
+The default product proof is not a generic AI demo. It is a finance-first acceptance packet for a reporting workflow.
+
+- canonical scenario: counterparty exposure reporting acceptance
+- canonical live proof command: `npm run showcase:proof:hybrid`
+- canonical verification command: `npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json`
+- committed sample packet: [docs/evidence/financial-reporting-acceptance-live-hybrid/README.md](docs/evidence/financial-reporting-acceptance-live-hybrid/README.md)
+
 ## What Ships in This Repository
 
 Attestor is already more than a verifier demo, finance helper, or lab prototype.
@@ -110,7 +121,7 @@ Attestor is already more than a verifier demo, finance helper, or lab prototype.
 | Product surface | bounded API + worker topology, hosted auth/RBAC, billing, tenant/runtime policy, observability, HA, DR, secret-manager bootstrap, promotion packets |
 | Domain depth | finance as the deepest slice, healthcare as a second slice, PostgreSQL + Snowflake connectors, filing adapters |
 
-That is the real jump: not only generating work with AI, but making AI-assisted work acceptable inside systems that still need evidence, authority, and operational discipline.
+That is the real jump: not only generating reporting work with AI, but making AI-assisted reporting work acceptable inside systems that still need evidence, authority, and operational discipline.
 
 <details>
 <summary>Detailed shipped modules</summary>
@@ -343,7 +354,7 @@ If someone only reads one billing section in the repo, it should be this one.
 
 ### Fastest Enterprise Sales Framing
 
-The easiest way to sell Attestor is not as "another AI app". It is as the control layer that lets a serious team accept AI-assisted work without losing reviewer authority, auditability, or rollout discipline.
+The easiest way to sell Attestor is not as "another AI app". It is as the control layer that lets a serious team accept AI-assisted financial reporting work without losing reviewer authority, auditability, or rollout discipline.
 
 For enterprise buyers, lead with:
 
@@ -537,7 +548,7 @@ npx tsx tests/live-snowflake.test.ts
 
 ## Current Verified Evidence
 
-The strongest black-and-white evidence in this repository is **reproducible proof generation and independent verification**, not committed historical snapshots.
+The strongest black-and-white evidence in this repository is **reproducible proof generation and independent verification**, with one committed finance-first sample packet included for direct inspection.
 
 What the repo can produce today:
 
@@ -546,14 +557,16 @@ What the repo can produce today:
 | `npm run showcase:proof:hybrid` | generates a live hybrid packet from a real upstream model call, live bounded SQLite execution, reviewer endorsement, and PKI-backed proof material |
 | `npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json` | independently verifies the generated portable verification kit outside the main runtime |
 | `npm run showcase:proof` | generates a separate PostgreSQL-grounded packet with deeper schema/data-state evidence |
+| `docs/evidence/financial-reporting-acceptance-live-hybrid/` | committed sample packet for the counterparty exposure reporting-acceptance flow, including certificate, kit, and verification material |
 | `.attestor/showcase/latest/` | local output location for the generated Markdown, HTML, JSON, and evidence files after a showcase run |
 
 The important boundary is:
 
 - the proof paths are real and runnable
 - the verification kit is independently checkable
+- one committed sample packet is included as a finance-first inspection surface
 - the packet output is generated locally when you run the showcase commands
-- `.attestor/showcase/latest/` is not treated here as a committed historical snapshot in the public repo
+- `.attestor/showcase/latest/` is still generated output, not treated here as a committed historical snapshot in the public repo
 
 If you want the most direct black-and-white proof on your own machine, run:
 

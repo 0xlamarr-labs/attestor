@@ -1,0 +1,44 @@
+{
+  "cryptographic": {
+    "valid": true,
+    "algorithm": "ed25519",
+    "fingerprint": "5bcdf5caecb4342d"
+  },
+  "structural": {
+    "valid": true,
+    "version": "1.0",
+    "type": "attestor.certificate.v1"
+  },
+  "authority": {
+    "state": "authorized",
+    "warrantFulfilled": true,
+    "escrowReleased": true,
+    "receiptIssued": true
+  },
+  "governanceSufficiency": {
+    "sufficient": true,
+    "sqlPass": true,
+    "policyPass": true,
+    "guardrailsPass": true,
+    "scoringDecision": "pass"
+  },
+  "proofCompleteness": {
+    "mode": "hybrid",
+    "gapCount": 0,
+    "gaps": [],
+    "executionLive": true,
+    "upstreamLive": true,
+    "executionProvider": "sqlite",
+    "hasDbContextEvidence": false
+  },
+  "reviewerEndorsement": {
+    "present": true,
+    "signed": true,
+    "boundToRun": true,
+    "bindingMismatch": false,
+    "verified": true,
+    "reviewerName": "Attestor Live Reviewer",
+    "fingerprint": "729bcfcfe97b5136"
+  },
+  "overall": "verified"
+}

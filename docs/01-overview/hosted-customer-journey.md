@@ -1,6 +1,6 @@
 # Hosted Customer Journey
 
-Attestor is bought and used as an API-first infrastructure product.
+Attestor is bought and used as an API-first infrastructure product, with **AI-assisted financial reporting acceptance** as the primary wedge.
 
 That means the customer does not come to Attestor to manage files in a hosted workspace. The customer keeps data, files, and business workflows in their own systems, then uses Attestor where governed acceptance, proof, verification, and operational control are required.
 
@@ -24,7 +24,7 @@ What the customer does not buy:
 
 The category to preserve is:
 
-**Acceptance, proof, and operating infrastructure for AI-assisted work, delivered as a hosted API product.**
+**Acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance, delivered as a hosted API product.**
 
 ## The Buying Flow
 
@@ -74,8 +74,8 @@ Use this order:
 Keep the public packaging language simple:
 
 - `community` = zero-cost evaluation and the first `10` hosted runs
-- `starter` = the first paid hosted plan, good for one live workflow
-- `pro` = the larger hosted plan for several workflows or one business unit
+- `starter` = the first paid hosted plan, good for one live reporting workflow
+- `pro` = the larger hosted plan for several recurring reporting or control workflows
 - `enterprise` = negotiated scale, hosted enterprise, or a customer-operated deployment boundary
 
 This document stays focused on the buying sequence. The detailed plan wording lives in the README so it only needs maintenance in one place.
@@ -135,4 +135,4 @@ The customer is buying:
 
 That is why the strongest description is still:
 
-**Attestor is acceptance, proof, and operating infrastructure for AI-assisted work, delivered as a hosted API product.**
+**Attestor is acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance, delivered as a hosted API product.**

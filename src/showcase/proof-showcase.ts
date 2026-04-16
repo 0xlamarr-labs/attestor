@@ -73,6 +73,12 @@ export interface BuildProofShowcasePacketInput {
   schemaAttestation?: SchemaAttestationLike | null;
 }
 
+function normalizeProofSourcePath(value: string): string {
+  const normalized = value.replaceAll('\\', '/');
+  const cwd = process.cwd().replaceAll('\\', '/').replace(/\/+$/u, '');
+  return normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : normalized;
+}
+
 function titleCase(value: string): string {
   return value
     .split(/[_\s-]+/u)
@@ -85,6 +91,21 @@ function humanizeVerificationOverall(value: string): string {
   return titleCase(value.replace(/_/gu, ' '));
 }
 
+function isFinancialReportingContext(input: BuildProofShowcasePacketInput): boolean {
+  const corpus = [
+    input.proofDir,
+    input.proofLabel ?? '',
+    input.rerunCommand ?? '',
+    input.kit.bundle.runId ?? '',
+  ].join(' ').toLowerCase();
+  return corpus.includes('financial')
+    || corpus.includes('counterparty')
+    || corpus.includes('liquidity')
+    || corpus.includes('reconciliation')
+    || corpus.includes('real-db-proof')
+    || corpus.includes('real-pg-proof');
+}
+
 function headlineFor(kit: VerificationKit): string {
   const { decision } = kit.bundle;
   const { overall } = kit.verification;
@@ -95,10 +116,17 @@ function headlineFor(kit: VerificationKit): string {
   return `${titleCase(decision)} result with ${overall.replace(/_/gu, ' ')} verification`;
 }
 
-function summaryFor(kit: VerificationKit): string {
+function summaryFor(kit: VerificationKit, financialReportingContext: boolean): string {
   const executionProvider = kit.bundle.proof.executionProvider ?? 'unknown execution provider';
   const proofMode = kit.bundle.proof.mode.replace(/_/gu, ' ');
   const verificationState = humanizeVerificationOverall(kit.verification.overall).toLowerCase();
+  if (financialReportingContext) {
+    return [
+      `Attestor produced a ${kit.bundle.decision.toUpperCase()} decision for an AI-assisted financial reporting workflow and issued a portable proof kit.`,
+      `The packet can be re-verified outside the platform, and this run shows ${proofMode} with ${executionProvider}.`,
+      `The current verification verdict is ${verificationState}.`,
+    ].join(' ');
+  }
   return [
     `Attestor produced a ${kit.bundle.decision.toUpperCase()} decision for a governed workflow and issued a portable proof kit.`,
     `The packet can be re-verified outside the platform, and this run shows ${proofMode} with ${executionProvider}.`,
@@ -158,8 +186,12 @@ function buildVerificationChecks(kit: VerificationKit): ProofShowcasePacket['ver
 function buildKeyTakeaways(
   kit: VerificationKit,
   schemaAttestation: SchemaAttestationLike | null | undefined,
+  financialReportingContext: boolean,
 ): string[] {
   const takeaways = [
+    financialReportingContext
+      ? `The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.`
+      : `The run emitted certificate ${kit.certificate.certificateId} and a portable verification kit that can be checked without API access.`,
     `The run emitted certificate ${kit.certificate.certificateId} and a portable verification kit that can be checked without API access.`,
     `The evidence chain contains ${kit.bundle.evidence.auditEntryCount} audit entries and is ${kit.bundle.evidence.auditChainIntact ? 'intact' : 'not intact'}.`,
   ];
@@ -213,6 +245,7 @@ function escapeHtml(value: string): string {
 export function buildProofShowcasePacket(input: BuildProofShowcasePacketInput): ProofShowcasePacket {
   const generatedAt = input.generatedAt ?? new Date().toISOString();
   const schemaAttestation = input.schemaAttestation ?? null;
+  const financialReportingContext = isFinancialReportingContext(input);
   const latestPrefix = input.latestPacketDir.replaceAll('\\', '/');
   const artifactFiles: ProofShowcasePacket['artifactFiles'] = [
     { label: 'Verification kit', relativePath: 'evidence/kit.json', description: 'Portable proof bundle with certificate, authority bundle, and verification summary.' },
@@ -242,10 +275,12 @@ export function buildProofShowcasePacket(input: BuildProofShowcasePacketInput): 
   }
 
   return {
-    title: 'Attestor Proof Packet',
+    title: financialReportingContext
+      ? 'Attestor Financial Reporting Acceptance Packet'
+      : 'Attestor Proof Packet',
     headline: headlineFor(input.kit),
     generatedAt,
-    summary: summaryFor(input.kit),
+    summary: summaryFor(input.kit, financialReportingContext),
     proofRun: {
       label: input.proofLabel ?? 'Real PostgreSQL-backed proof run',
       source: input.kit.bundle.proof.executionLive ? 'real_execution' : 'fixture_execution',
@@ -266,10 +301,10 @@ export function buildProofShowcasePacket(input: BuildProofShowcasePacketInput): 
       dbContextEvidence: input.kit.verification.proofCompleteness.hasDbContextEvidence,
       auditEntryCount: input.kit.bundle.evidence.auditEntryCount,
       proofGaps: input.kit.verification.proofCompleteness.gaps,
-      sourceProofDir: input.proofDir.replaceAll('\\', '/'),
+      sourceProofDir: normalizeProofSourcePath(input.proofDir),
     },
     verificationChecks: buildVerificationChecks(input.kit),
-    keyTakeaways: buildKeyTakeaways(input.kit, schemaAttestation),
+    keyTakeaways: buildKeyTakeaways(input.kit, schemaAttestation, financialReportingContext),
     limitations: buildLimitations(input.kit, schemaAttestation),
     schemaAttestation: {
       present: !!schemaAttestation,

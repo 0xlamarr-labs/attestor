@@ -1895,6 +1895,24 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(billingSettingsPage.includes('Billing settings'), 'Billing pages: billing settings return surface explains next steps');
       ok(billingSettingsPage.includes('Starter is the first hosted paid plan'), 'Billing pages: billing settings summarises the plan ladder in plain language');
 
+      const landingPageRes = await fetch(`${BASE}/`);
+      ok(landingPageRes.status === 200, 'Site surface: landing page responds');
+      const landingPage = await landingPageRes.text();
+      ok(landingPage.includes('AI-assisted financial reporting acceptance'), 'Site surface: landing page leads with the finance wedge');
+      ok(landingPage.includes('Counterparty exposure reporting acceptance'), 'Site surface: landing page points at the canonical reporting proof');
+
+      const proofSurfaceRes = await fetch(`${BASE}/proof/financial-reporting-acceptance`);
+      ok(proofSurfaceRes.status === 200, 'Site surface: proof page responds');
+      const proofSurface = await proofSurfaceRes.text();
+      ok(proofSurface.includes('shown as evidence instead of promise'), 'Site surface: proof page frames the product through evidence');
+      ok(proofSurface.includes('committed hybrid packet'), 'Site surface: proof page explains that a committed packet is available');
+
+      const proofKitRes = await fetch(`${BASE}/proof/financial-reporting-acceptance/evidence/kit.json`);
+      ok(proofKitRes.status === 200, 'Site surface: committed proof kit endpoint responds');
+      ok((proofKitRes.headers.get('content-type') ?? '').includes('application/json'), 'Site surface: committed proof kit endpoint returns JSON');
+      const proofKitBody = await proofKitRes.json() as any;
+      ok(proofKitBody.verification.overall === 'verified', 'Site surface: committed proof kit exposes a verified packet');
+
       const appReturnRes = await fetch(`${BASE}/app`);
       ok(appReturnRes.status === 200, 'Billing pages: legacy app return path resolves');
       ok(appReturnRes.url.endsWith('/settings/billing'), 'Billing pages: legacy app return path redirects to billing settings');

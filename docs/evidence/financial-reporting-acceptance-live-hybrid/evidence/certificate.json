@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "type": "attestor.certificate.v1",
+  "certificateId": "cert_cd5a662e2df8b93e",
+  "issuedAt": "2026-04-16T10:38:06.241Z",
+  "runIdentity": "771e59bf5a1f0bfb",
+  "decision": "pass",
+  "decisionSummary": "8 scorers: pass. Authority: authorized.",
+  "authority": {
+    "warrantStatus": "fulfilled",
+    "obligationsFulfilled": 9,
+    "obligationsTotal": 9,
+    "escrowState": "released",
+    "receiptStatus": "issued",
+    "capsuleAuthority": "authorized"
+  },
+  "evidence": {
+    "evidenceChainRoot": "897bbef5c00b0072",
+    "evidenceChainTerminal": "0ea44953debc6478",
+    "auditChainIntact": true,
+    "auditEntryCount": 11,
+    "sqlHash": "1780ed002d72af98",
+    "snapshotHash": "f94d0fcb32d6de90"
+  },
+  "governance": {
+    "sqlGovernance": "pass",
+    "policy": "pass",
+    "guardrails": "pass",
+    "dataContracts": "pass",
+    "scorersRun": 8,
+    "reviewRequired": true
+  },
+  "liveProof": {
+    "mode": "hybrid",
+    "upstreamLive": true,
+    "executionLive": true,
+    "consistent": true
+  },
+  "signing": {
+    "algorithm": "ed25519",
+    "publicKey": "452af8efe80fab5379497c6000c50a34efe04a847a463cdf693c5a1d670d552d",
+    "fingerprint": "5bcdf5caecb4342d",
+    "signature": "b869cd049d43b7a6b7f886285a3a04a2687fe7d9d49cc5bfdb47746e5f523e29512a39213befa2b46aceec384561b56c4fed712d6895794d9454fe40facd9501"
+  }
+}

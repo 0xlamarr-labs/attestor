@@ -89,7 +89,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'community',
     displayName: 'Community',
-    description: 'Zero-cost evaluation path for local validation and hosted account setup, including 10 hosted runs before a paid hosted plan is needed.',
+    description: 'Zero-cost evaluation path for local validation and early hosted financial-reporting acceptance checks, including 10 hosted runs before a paid hosted plan is needed.',
     defaultStripeTrialDays: null,
     defaultMonthlyRunQuota: 10,
     defaultPipelineRequestsPerWindow: null,
@@ -102,7 +102,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'starter',
     displayName: 'Starter',
-    description: 'Hosted API access for first production teams that need governed acceptance without building the control layer themselves, including a 14-day free trial.',
+    description: 'Hosted API access for the first live AI-assisted financial reporting workflow, including a 14-day free trial and governed acceptance without building the control layer yourself.',
     defaultStripeTrialDays: 14,
     defaultMonthlyRunQuota: 100,
     defaultPipelineRequestsPerWindow: 10,
@@ -115,7 +115,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'pro',
     displayName: 'Pro',
-    description: 'Higher-throughput hosted API plan for repeated operational use across multiple internal workflows or business units.',
+    description: 'Higher-throughput hosted API plan for repeated financial reporting or control use across multiple internal workflows or business units.',
     defaultStripeTrialDays: null,
     defaultMonthlyRunQuota: 1000,
     defaultPipelineRequestsPerWindow: 60,
@@ -128,7 +128,7 @@ const PLAN_CATALOG: HostedPlanDefinition[] = [
   {
     id: 'enterprise',
     displayName: 'Enterprise',
-    description: 'Hosted enterprise or customer-operated deployment plan for regulated, high-scale, or custom-control environments with negotiated limits.',
+    description: 'Hosted enterprise or customer-operated deployment plan for regulated reporting environments, higher-scale control surfaces, or negotiated deployment boundaries.',
     defaultStripeTrialDays: null,
     defaultMonthlyRunQuota: null,
     defaultPipelineRequestsPerWindow: 300,

@@ -1,0 +1,100 @@
+{
+  "version": "1.0",
+  "type": "attestor.authority_bundle.v1",
+  "runId": "financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c",
+  "timestamp": "2026-04-16T10:38:06.235Z",
+  "decision": "pass",
+  "authority": {
+    "warrant": {
+      "id": "wrnt_financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c_8c29c6a1",
+      "status": "fulfilled",
+      "trustLevel": "human_approved",
+      "obligationsFulfilled": 9,
+      "obligationsTotal": 9
+    },
+    "escrow": {
+      "state": "released",
+      "releasedCount": 10,
+      "totalObligations": 10,
+      "reviewHeld": false
+    },
+    "receipt": {
+      "id": "rcpt_financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c_9d2d6bfaff5d471f",
+      "status": "issued",
+      "signatureMode": "unsigned"
+    },
+    "capsule": {
+      "id": "caps_financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c_c8f0a8ab52ee2561",
+      "authorityState": "authorized",
+      "factCount": 1
+    }
+  },
+  "evidence": {
+    "chainRoot": "897bbef5c00b0072",
+    "chainTerminal": "0ea44953debc6478",
+    "replayIdentity": "771e59bf5a1f0bfb",
+    "auditEntryCount": 11,
+    "auditChainIntact": true,
+    "sqlHash": "1780ed002d72af98",
+    "snapshotHash": "f94d0fcb32d6de90"
+  },
+  "governance": {
+    "sqlGovernance": {
+      "result": "pass",
+      "gatesPassed": 6,
+      "gatesTotal": 6
+    },
+    "policy": {
+      "result": "pass",
+      "leastPrivilegePreserved": true
+    },
+    "guardrails": {
+      "result": "pass",
+      "checksRun": 6
+    },
+    "dataContracts": {
+      "result": "pass",
+      "checksRun": 11,
+      "failedCount": 0
+    },
+    "scoring": {
+      "decision": "pass",
+      "scorersRun": 8,
+      "passCount": 8,
+      "failCount": 0,
+      "warnCount": 0
+    },
+    "review": {
+      "required": true,
+      "triggeredBy": [
+        "mat_high"
+      ],
+      "endorsement": {
+        "endorsedAt": "2026-04-16T10:38:06.232Z",
+        "reviewerName": "Attestor Live Reviewer",
+        "reviewerRole": "attestor_operator",
+        "endorsedDecision": "approved",
+        "signed": true,
+        "runBinding": {
+          "runId": "financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c",
+          "replayIdentity": "771e59bf5a1f0bfb",
+          "evidenceChainTerminal": "0ea44953debc6478"
+        },
+        "signerFingerprint": "729bcfcfe97b5136"
+      }
+    }
+  },
+  "proof": {
+    "mode": "hybrid",
+    "upstreamLive": true,
+    "executionLive": true,
+    "executionProvider": "sqlite",
+    "executionContextHash": null,
+    "consistent": true,
+    "gapCategories": []
+  },
+  "filing": {
+    "status": "internal_report_ready",
+    "blockingGapCount": 0
+  }
+}

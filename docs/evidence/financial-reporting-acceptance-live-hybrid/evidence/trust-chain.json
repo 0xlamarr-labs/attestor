@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "type": "attestor.trust_chain.v1",
+  "ca": {
+    "version": "1.0",
+    "type": "attestor.ca_certificate.v1",
+    "certificateId": "ca_8fed83b40fe13502",
+    "name": "Attestor Live Scenario CA",
+    "notBefore": "2026-04-16T10:37:55.793Z",
+    "notAfter": "2027-04-16T10:37:55.793Z",
+    "isCA": true,
+    "publicKey": "90366d318a21bd7bde9c799c1734e12663b22e4d0bd089ef1fa35220f357b9cb",
+    "fingerprint": "f91347b6bdb13f01",
+    "signature": "6f2b7cdb68c2fb52f5a02171bd6b8c603e3b76011d272e35ca0ab1a07b1b3abd6a1494379868f46a6d45f33e9095bb69e6d4c57881395576b356bfa7bf8eee05"
+  },
+  "leaf": {
+    "version": "1.0",
+    "type": "attestor.leaf_certificate.v1",
+    "certificateId": "leaf_d04f67f7ab516d0d",
+    "subject": "Live Scenario Runtime Signer",
+    "role": "runtime_signer",
+    "notBefore": "2026-04-16T10:37:55.796Z",
+    "notAfter": "2026-07-15T10:37:55.796Z",
+    "subjectPublicKey": "452af8efe80fab5379497c6000c50a34efe04a847a463cdf693c5a1d670d552d",
+    "subjectFingerprint": "5bcdf5caecb4342d",
+    "issuerFingerprint": "f91347b6bdb13f01",
+    "issuerSignature": "4deff0aaf55e243616053235fed5cc0a099f21842077925fa78360388f4222bda0b79d5389c751d399033da5fda0ec554a7f2075a2c63356d2c8ce13550b1f07"
+  }
+}
