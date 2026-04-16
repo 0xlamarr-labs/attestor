@@ -20,10 +20,10 @@ export interface ProofShowcasePacket {
     decision: string;
     decisionSummary: string;
     verificationOverall: string;
-    issuedAt: string;
-    certificateId: string;
-    runId: string;
-    signerFingerprint: string;
+    issuedAt: string | null;
+    certificateId: string | null;
+    runId: string | null;
+    signerFingerprint: string | null;
     reviewerName: string | null;
     reviewerVerified: boolean;
     reviewRequired: boolean;
@@ -34,7 +34,7 @@ export interface ProofShowcasePacket {
     dbContextEvidence: boolean;
     auditEntryCount: number;
     proofGaps: string[];
-    sourceProofDir: string;
+    sourceProofDir: string | null;
   };
   verificationChecks: Array<{
     label: string;
@@ -140,7 +140,7 @@ function buildVerificationChecks(kit: VerificationKit): ProofShowcasePacket['ver
     label: 'Certificate signature',
     status: kit.verification.cryptographic.valid ? 'pass' : 'fail',
     detail: kit.verification.cryptographic.valid
-      ? `Ed25519 signature valid for signer ${kit.verification.cryptographic.fingerprint}.`
+      ? 'Ed25519 certificate signature verified.'
       : 'Certificate signature or signer fingerprint did not verify.',
   });
   checks.push({
@@ -161,7 +161,7 @@ function buildVerificationChecks(kit: VerificationKit): ProofShowcasePacket['ver
     label: 'Reviewer endorsement',
     status: kit.verification.reviewerEndorsement.verified ? 'pass' : 'warn',
     detail: kit.verification.reviewerEndorsement.verified
-      ? `Reviewer endorsement verified for ${kit.verification.reviewerEndorsement.reviewerName ?? 'unknown reviewer'}.`
+      ? 'Reviewer endorsement is present, bound to the run, and independently verified.'
       : (kit.verification.reviewerEndorsement.present
         ? 'A reviewer endorsed the run, but independent verification is incomplete or missing.'
         : 'No reviewer endorsement is present in this packet.'),
@@ -190,16 +190,16 @@ function buildKeyTakeaways(
 ): string[] {
   const takeaways = [
     financialReportingContext
-      ? `The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.`
-      : `The run emitted certificate ${kit.certificate.certificateId} and a portable verification kit that can be checked without API access.`,
-    `The run emitted certificate ${kit.certificate.certificateId} and a portable verification kit that can be checked without API access.`,
+      ? 'The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.'
+      : 'The run emitted a portable verification kit that can be checked without API access.',
+    'The run emitted a portable verification kit that can be checked without API access.',
     `The evidence chain contains ${kit.bundle.evidence.auditEntryCount} audit entries and is ${kit.bundle.evidence.auditChainIntact ? 'intact' : 'not intact'}.`,
   ];
   if (kit.verification.proofCompleteness.executionLive) {
     takeaways.push(`Execution was live and recorded against ${kit.verification.proofCompleteness.executionProvider ?? 'the configured runtime'}.`);
   }
   if (kit.verification.reviewerEndorsement.verified) {
-    takeaways.push(`The packet includes a verified reviewer endorsement for ${kit.verification.reviewerEndorsement.reviewerName ?? 'the assigned reviewer'}.`);
+    takeaways.push('The packet includes a verified reviewer endorsement.');
   }
   if (schemaAttestation) {
     takeaways.push(`Schema attestation was captured for ${schemaAttestation.tables.length} table(s): ${schemaAttestation.tables.join(', ')}.`);
@@ -287,11 +287,11 @@ export function buildProofShowcasePacket(input: BuildProofShowcasePacketInput): 
       decision: input.kit.bundle.decision,
       decisionSummary: input.kit.certificate.decisionSummary,
       verificationOverall: input.kit.verification.overall,
-      issuedAt: input.kit.certificate.issuedAt,
-      certificateId: input.kit.certificate.certificateId,
-      runId: input.kit.bundle.runId,
-      signerFingerprint: input.kit.certificate.signing.fingerprint,
-      reviewerName: input.kit.verification.reviewerEndorsement.reviewerName,
+      issuedAt: null,
+      certificateId: null,
+      runId: null,
+      signerFingerprint: null,
+      reviewerName: null,
       reviewerVerified: input.kit.verification.reviewerEndorsement.verified,
       reviewRequired: input.kit.bundle.governance.review.required,
       executionProvider: input.kit.bundle.proof.executionProvider ?? null,
@@ -301,7 +301,7 @@ export function buildProofShowcasePacket(input: BuildProofShowcasePacketInput): 
       dbContextEvidence: input.kit.verification.proofCompleteness.hasDbContextEvidence,
       auditEntryCount: input.kit.bundle.evidence.auditEntryCount,
       proofGaps: input.kit.verification.proofCompleteness.gaps,
-      sourceProofDir: normalizeProofSourcePath(input.proofDir),
+      sourceProofDir: null,
     },
     verificationChecks: buildVerificationChecks(input.kit),
     keyTakeaways: buildKeyTakeaways(input.kit, schemaAttestation, financialReportingContext),
@@ -338,13 +338,11 @@ export function renderProofShowcaseMarkdown(packet: ProofShowcasePacket): string
   lines.push(`- **Workflow:** ${packet.proofRun.label}`);
   lines.push(`- **Decision:** ${packet.proofRun.decision.toUpperCase()}`);
   lines.push(`- **Verification:** ${humanizeVerificationOverall(packet.proofRun.verificationOverall)}`);
-  lines.push(`- **Certificate:** ${packet.proofRun.certificateId}`);
-  lines.push(`- **Issued:** ${packet.proofRun.issuedAt}`);
-  lines.push(`- **Signer fingerprint:** ${packet.proofRun.signerFingerprint}`);
+  lines.push(`- **Proof mode:** ${humanizeVerificationOverall(packet.proofRun.executionMode)}`);
   lines.push(`- **Execution:** ${packet.proofRun.executionLive ? 'live' : 'fixture'}${packet.proofRun.executionProvider ? ` (${packet.proofRun.executionProvider})` : ''}`);
+  lines.push(`- **Reviewer endorsement:** ${packet.proofRun.reviewerVerified ? 'verified' : (packet.proofRun.reviewRequired ? 'required' : 'not required')}`);
   lines.push(`- **DB context evidence:** ${packet.proofRun.dbContextEvidence ? 'present' : 'not present'}`);
   lines.push(`- **Audit entries:** ${packet.proofRun.auditEntryCount}`);
-  lines.push(`- **Source proof directory:** \`${packet.proofRun.sourceProofDir}\``);
   lines.push('');
   lines.push('## What this run shows');
   lines.push('');
@@ -567,7 +565,7 @@ export function renderProofShowcaseHtml(packet: ProofShowcasePacket): string {
         <div class="glance">
           <div class="metric"><div class="label">Decision</div><div class="value">${escapeHtml(packet.proofRun.decision.toUpperCase())}</div></div>
           <div class="metric"><div class="label">Verification</div><div class="value">${escapeHtml(humanizeVerificationOverall(packet.proofRun.verificationOverall))}</div></div>
-          <div class="metric"><div class="label">Certificate</div><div class="value">${escapeHtml(packet.proofRun.certificateId)}</div></div>
+          <div class="metric"><div class="label">Proof mode</div><div class="value">${escapeHtml(humanizeVerificationOverall(packet.proofRun.executionMode))}</div></div>
           <div class="metric"><div class="label">Execution</div><div class="value">${escapeHtml(packet.proofRun.executionLive ? 'Live' : 'Fixture')}${packet.proofRun.executionProvider ? ` (${escapeHtml(packet.proofRun.executionProvider)})` : ''}</div></div>
         </div>
       </section>
@@ -599,7 +597,7 @@ export function renderProofShowcaseHtml(packet: ProofShowcasePacket): string {
       <section class="panel">
         <h2>Re-run and verify</h2>
         <pre>${escapeHtml(`${packet.commands.rerun}\n${packet.commands.verifyKit}\n${packet.commands.verifyCertificate}`)}</pre>
-        <p class="detail">Source proof directory: <code>${escapeHtml(packet.proofRun.sourceProofDir)}</code></p>
+        <p class="detail">The verification kit remains the canonical external proof surface.</p>
       </section>
     </main>
   </body>

@@ -14,9 +14,10 @@
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { AccountUserRole } from './account-user-store.js';
+import { withFileLock, writeTextFileAtomic } from './file-store.js';
 
 export interface AccountSessionRecord {
   id: string;
@@ -122,7 +123,7 @@ function loadStore(): AccountSessionStoreFile {
 function saveStore(store: AccountSessionStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function pruneExpiredSessions(store: AccountSessionStoreFile): boolean {
@@ -136,9 +137,12 @@ export function listAccountSessions(): {
   records: AccountSessionRecord[];
   path: string;
 } {
-  const store = loadStore();
-  if (pruneExpiredSessions(store)) saveStore(store);
-  return { records: store.records, path: storePath() };
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    if (pruneExpiredSessions(store)) saveStore(store);
+    return { records: [...store.records], path };
+  });
 }
 
 export function buildAccountSessionRecord(input: IssueAccountSessionInput): {
@@ -170,12 +174,15 @@ export function issueAccountSession(input: IssueAccountSessionInput): {
   record: AccountSessionRecord;
   path: string;
 } {
-  const store = loadStore();
-  if (pruneExpiredSessions(store)) saveStore(store);
-  const { sessionToken, record } = buildAccountSessionRecord(input);
-  store.records.push(record);
-  saveStore(store);
-  return { sessionToken, record, path: storePath() };
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    if (pruneExpiredSessions(store)) saveStore(store);
+    const { sessionToken, record } = buildAccountSessionRecord(input);
+    store.records.push(record);
+    saveStore(store);
+    return { sessionToken, record, path };
+  });
 }
 
 export function findAccountSessionByToken(
@@ -183,33 +190,38 @@ export function findAccountSessionByToken(
   options?: { touch?: boolean },
 ): AccountSessionRecord | null {
   const hashed = hashToken(token);
-  const store = loadStore();
-  let changed = pruneExpiredSessions(store);
-  const record = store.records.find((entry) => entry.tokenHash === hashed) ?? null;
-  if (!record || record.revokedAt) {
+  return withFileLock(storePath(), () => {
+    const store = loadStore();
+    let changed = pruneExpiredSessions(store);
+    const record = store.records.find((entry) => entry.tokenHash === hashed) ?? null;
+    if (!record || record.revokedAt) {
+      if (changed) saveStore(store);
+      return null;
+    }
+    if (options?.touch) {
+      record.lastSeenAt = new Date().toISOString();
+      changed = true;
+    }
     if (changed) saveStore(store);
-    return null;
-  }
-  if (options?.touch) {
-    record.lastSeenAt = new Date().toISOString();
-    changed = true;
-  }
-  if (changed) saveStore(store);
-  return record;
+    return { ...record };
+  });
 }
 
 export function revokeAccountSession(id: string): {
   record: AccountSessionRecord | null;
   path: string;
 } {
-  const store = loadStore();
-  const record = store.records.find((entry) => entry.id === id) ?? null;
-  if (!record) return { record: null, path: storePath() };
-  if (!record.revokedAt) {
-    record.revokedAt = new Date().toISOString();
-    saveStore(store);
-  }
-  return { record, path: storePath() };
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    const record = store.records.find((entry) => entry.id === id) ?? null;
+    if (!record) return { record: null, path };
+    if (!record.revokedAt) {
+      record.revokedAt = new Date().toISOString();
+      saveStore(store);
+    }
+    return { record: { ...record }, path };
+  });
 }
 
 export function revokeAccountSessionByToken(token: string): {
@@ -217,49 +229,59 @@ export function revokeAccountSessionByToken(token: string): {
   path: string;
 } {
   const hashed = hashToken(token);
-  const store = loadStore();
-  const record = store.records.find((entry) => entry.tokenHash === hashed) ?? null;
-  if (!record) return { record: null, path: storePath() };
-  if (!record.revokedAt) {
-    record.revokedAt = new Date().toISOString();
-    saveStore(store);
-  }
-  return { record, path: storePath() };
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    const record = store.records.find((entry) => entry.tokenHash === hashed) ?? null;
+    if (!record) return { record: null, path };
+    if (!record.revokedAt) {
+      record.revokedAt = new Date().toISOString();
+      saveStore(store);
+    }
+    return { record: { ...record }, path };
+  });
 }
 
 export function revokeAccountSessionsForUser(accountUserId: string): {
   revokedCount: number;
   path: string;
 } {
-  const store = loadStore();
-  let revokedCount = 0;
-  for (const record of store.records) {
-    if (record.accountUserId === accountUserId && !record.revokedAt) {
-      record.revokedAt = new Date().toISOString();
-      revokedCount += 1;
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    let revokedCount = 0;
+    for (const record of store.records) {
+      if (record.accountUserId === accountUserId && !record.revokedAt) {
+        record.revokedAt = new Date().toISOString();
+        revokedCount += 1;
+      }
     }
-  }
-  if (revokedCount > 0) saveStore(store);
-  return { revokedCount, path: storePath() };
+    if (revokedCount > 0) saveStore(store);
+    return { revokedCount, path };
+  });
 }
 
 export function revokeAccountSessionsForAccount(accountId: string): {
   revokedCount: number;
   path: string;
 } {
-  const store = loadStore();
-  let revokedCount = 0;
-  for (const record of store.records) {
-    if (record.accountId === accountId && !record.revokedAt) {
-      record.revokedAt = new Date().toISOString();
-      revokedCount += 1;
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    let revokedCount = 0;
+    for (const record of store.records) {
+      if (record.accountId === accountId && !record.revokedAt) {
+        record.revokedAt = new Date().toISOString();
+        revokedCount += 1;
+      }
     }
-  }
-  if (revokedCount > 0) saveStore(store);
-  return { revokedCount, path: storePath() };
+    if (revokedCount > 0) saveStore(store);
+    return { revokedCount, path };
+  });
 }
 
 export function resetAccountSessionStoreForTests(): void {
   const path = storePath();
   if (existsSync(path)) rmSync(path, { force: true });
+  if (existsSync(`${path}.lock`)) rmSync(`${path}.lock`, { recursive: true, force: true });
 }

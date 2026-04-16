@@ -32,7 +32,7 @@ This is the fast path for:
 Render the dedicated cutover bundle with:
 
 ```powershell
-npm run render:gke-domain-cutover -- --hostname=api.example.com --static-address-name=attestor-gateway-ip --dns-target-ip=34.49.37.115
+npm run render:gke-domain-cutover -- --hostname=api.example.com --static-address-name=attestor-gateway-ip --dns-target-ip=203.0.113.10
 ```
 
 The generated bundle contains:

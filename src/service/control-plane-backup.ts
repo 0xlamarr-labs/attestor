@@ -1,5 +1,5 @@
-/**
- * Control Plane Backup / Restore â€” first-slice operational safety tooling.
+﻿/**
+ * Control Plane Backup / Restore - first-slice operational safety tooling.
  *
  * BOUNDARY:
  * - Logical snapshot of file-backed control-plane state plus optional shared billing ledger export
@@ -571,3 +571,4 @@ export function describeControlPlaneSnapshot(snapshotDir: string): {
     integrityHash: sha256String(JSON.stringify(manifest)),
   };
 }
+

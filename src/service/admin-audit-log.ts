@@ -8,8 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { writeTextFileAtomic } from './file-store.js';
 import { hashJsonValue } from './json-stable.js';
 
 export type AdminAuditAction =
@@ -74,7 +75,7 @@ function loadLog(): AdminAuditLogFile {
 function saveLog(log: AdminAuditLogFile): void {
   const path = logPath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(log, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(log, null, 2)}\n`);
 }
 
 function computeEventHash(record: Omit<AdminAuditRecord, 'eventHash'>): string {

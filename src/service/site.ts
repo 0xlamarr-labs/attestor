@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+﻿import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ProofShowcasePacket } from '../showcase/proof-showcase.js';
 
@@ -180,8 +180,9 @@ function renderProofStrip(packet: ProofShowcasePacket | null): string {
       <div class="proof-metrics">
         <div><span>Decision</span><strong>${escapeHtml(packet.proofRun.decision.toUpperCase())}</strong></div>
         <div><span>Verification</span><strong>${escapeHtml(packet.proofRun.verificationOverall.replaceAll('_', ' '))}</strong></div>
+        <div><span>Proof mode</span><strong>${escapeHtml(packet.proofRun.executionMode.replaceAll('_', ' '))}</strong></div>
         <div><span>Execution</span><strong>${escapeHtml(packet.proofRun.executionLive ? 'live' : 'fixture')}${packet.proofRun.executionProvider ? ` (${escapeHtml(packet.proofRun.executionProvider)})` : ''}</strong></div>
-        <div><span>Reviewer</span><strong>${escapeHtml(packet.proofRun.reviewerName ?? 'n/a')}</strong></div>
+        <div><span>Reviewer endorsement</span><strong>${escapeHtml(packet.proofRun.reviewerVerified ? 'verified' : (packet.proofRun.reviewRequired ? 'required' : 'not required'))}</strong></div>
       </div>
       <ul class="evidence-list">${verificationChecks}</ul>
       <nav class="cta-row">
@@ -414,7 +415,7 @@ export function renderFinancialReportingLandingPage(packet: ProofShowcasePacket 
       }
       .proof-metrics {
         display: grid;
-        grid-template-columns: repeat(4, minmax(120px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 14px;
         margin-top: 22px;
       }
@@ -588,11 +589,11 @@ export function renderFinancialReportingLandingPage(packet: ProofShowcasePacket 
           <div class="support-copy">
             <p class="eyebrow">Why this wedge is real</p>
             <h2>Financial reporting already has identity, validation, and audit boundaries. AI has to meet them.</h2>
-            <p>This is not an invented category. The reporting world already expects authenticated filers, bounded submission flows, structured taxonomies, validation rules, and evidence that survives after the first person clicks “looks good.”</p>
+            <p>This is not an invented category. The reporting world already expects authenticated filers, bounded submission flows, structured taxonomies, validation rules, and evidence that survives after the first person clicks "looks good."</p>
             <ul class="support-list">
               <li><strong>EDGAR Next</strong> moves SEC filing access toward stronger identity, role, and API-token discipline.</li>
               <li><strong>ESEF</strong> and <strong>EBA</strong> reporting frameworks keep tightening structured tagging, validation, and filing-packaging expectations.</li>
-              <li><strong>NIST’s Generative AI Profile</strong> reinforces documentation, monitoring, and human-governed risk controls around GenAI systems.</li>
+              <li><strong>NIST's Generative AI Profile</strong> reinforces documentation, monitoring, and human-governed risk controls around GenAI systems.</li>
             </ul>
           </div>
           <aside class="reference-box">
@@ -834,10 +835,10 @@ export function renderFinancialReportingProofPage(packet: ProofShowcasePacket | 
           <div class="metrics">
             <div class="metric"><span>Decision</span><strong>${escapeHtml(packet?.proofRun.decision.toUpperCase() ?? 'n/a')}</strong></div>
             <div class="metric"><span>Verification</span><strong>${escapeHtml(packet?.proofRun.verificationOverall.replaceAll('_', ' ') ?? 'n/a')}</strong></div>
-            <div class="metric"><span>Execution</span><strong>${escapeHtml(packet?.proofRun.executionProvider ?? 'n/a')}</strong></div>
-            <div class="metric"><span>Reviewer</span><strong>${escapeHtml(packet?.proofRun.reviewerName ?? 'n/a')}</strong></div>
-            <div class="metric"><span>Certificate</span><strong>${escapeHtml(packet?.proofRun.certificateId ?? 'n/a')}</strong></div>
-            <div class="metric"><span>Run</span><strong>${escapeHtml(packet?.proofRun.runId ?? 'n/a')}</strong></div>
+            <div class="metric"><span>Proof mode</span><strong>${escapeHtml(packet?.proofRun.executionMode.replaceAll('_', ' ') ?? 'n/a')}</strong></div>
+            <div class="metric"><span>Execution</span><strong>${escapeHtml(packet?.proofRun.executionLive ? 'live' : 'fixture')}${packet?.proofRun.executionProvider ? ` (${escapeHtml(packet.proofRun.executionProvider)})` : ''}</strong></div>
+            <div class="metric"><span>Reviewer endorsement</span><strong>${escapeHtml(packet?.proofRun.reviewerVerified ? 'verified' : (packet?.proofRun.reviewRequired ? 'required' : 'not required'))}</strong></div>
+            <div class="metric"><span>Audit entries</span><strong>${escapeHtml(String(packet?.proofRun.auditEntryCount ?? 'n/a'))}</strong></div>
           </div>
         </section>
 
@@ -871,3 +872,4 @@ export function renderFinancialReportingProofPage(packet: ProofShowcasePacket | 
   </body>
 </html>`;
 }
+

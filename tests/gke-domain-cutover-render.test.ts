@@ -27,7 +27,7 @@ function main(): void {
         'scripts/render-gke-domain-cutover.ts',
         '--hostname=attestor.example.invalid',
         '--static-address-name=attestor-prod-ip',
-        '--dns-target-ip=34.49.37.115',
+        '--dns-target-ip=203.0.113.10',
         '--cluster-issuer=letsencrypt-prod',
         '--tls-secret-name=attestor-tls',
         '--acme-email=ops@attestor.example.invalid',
@@ -55,7 +55,7 @@ function main(): void {
     ok(route.includes('attestor.example.invalid') && route.includes('attestor-api'), 'GKE domain cutover render: HTTPRoute targets the final hostname and API service');
     ok(certificate.includes('attestor.example.invalid') && certificate.includes('letsencrypt-prod') && certificate.includes('attestor-tls'), 'GKE domain cutover render: Certificate carries hostname, issuer, and secret name');
     ok(issuer.includes('ops@attestor.example.invalid') && issuer.includes('gatewayHTTPRoute') && issuer.includes('name: attestor') && issuer.includes('namespace: attestor'), 'GKE domain cutover render: ClusterIssuer carries ACME email and Gateway HTTP-01 solver');
-    ok(summary.dnsRecord.target === '34.49.37.115' && summary.bootstrapHostname === '34.49.37.115.sslip.io', 'GKE domain cutover render: summary preserves DNS target and bootstrap sslip.io hostname');
+    ok(summary.dnsRecord.target === '203.0.113.10' && summary.bootstrapHostname === '203.0.113.10.sslip.io', 'GKE domain cutover render: summary preserves DNS target and bootstrap sslip.io hostname');
     ok(readme.includes('kubectl apply -k') && readme.includes('attestor.example.invalid') && readme.includes('/api/v1/health') && readme.includes('/api/v1/ready'), 'GKE domain cutover render: handoff README documents apply flow, hostname, and verification URLs');
 
     console.log(`\nGKE domain cutover render tests: ${passed} passed, 0 failed`);

@@ -7,9 +7,10 @@
  * - Expired entries are pruned opportunistically
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { HostedSamlReplayRecord } from './account-saml.js';
+import { writeTextFileAtomic } from './file-store.js';
 
 interface HostedSamlReplayStoreFile {
   version: 1;
@@ -55,7 +56,7 @@ function loadStore(): HostedSamlReplayStoreFile {
 function saveStore(store: HostedSamlReplayStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function pruneExpired(store: HostedSamlReplayStoreFile): boolean {
@@ -109,4 +110,3 @@ export function resetHostedSamlReplayStoreForTests(): void {
   const path = storePath();
   if (existsSync(path)) rmSync(path, { force: true });
 }
-

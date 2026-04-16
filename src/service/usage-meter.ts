@@ -10,8 +10,9 @@
  * - Intended for hosted-product shell and quota enforcement
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { writeTextFileAtomic } from './file-store.js';
 
 export interface UsageContext {
   tenantId: string;
@@ -68,7 +69,7 @@ function loadLedger(): UsageLedgerFile {
 function saveLedger(ledger: UsageLedgerFile): void {
   const path = ledgerPath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(ledger, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(ledger, null, 2)}\n`);
 }
 
 function loadUsedCount(tenantId: string, period: string): number {

@@ -9,28 +9,26 @@ Attestor produced a PASS decision for an AI-assisted financial reporting workflo
 - **Workflow:** Counterparty exposure reporting acceptance (live hybrid)
 - **Decision:** PASS
 - **Verification:** Verified
-- **Certificate:** cert_cd5a662e2df8b93e
-- **Issued:** 2026-04-16T10:38:06.241Z
-- **Signer fingerprint:** 5bcdf5caecb4342d
+- **Proof mode:** Hybrid
 - **Execution:** live (sqlite)
+- **Reviewer endorsement:** verified
 - **DB context evidence:** not present
 - **Audit entries:** 11
-- **Source proof directory:** `.attestor-financial/runs/financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c`
 
 ## What this run shows
 
 - The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.
-- The run emitted certificate cert_cd5a662e2df8b93e and a portable verification kit that can be checked without API access.
+- The run emitted a portable verification kit that can be checked without API access.
 - The evidence chain contains 11 audit entries and is intact.
 - Execution was live and recorded against sqlite.
-- The packet includes a verified reviewer endorsement for Attestor Live Reviewer.
+- The packet includes a verified reviewer endorsement.
 
 ## Verification checks
 
-- **Certificate signature:** PASS - Ed25519 signature valid for signer 5bcdf5caecb4342d.
+- **Certificate signature:** PASS - Ed25519 certificate signature verified.
 - **Governance sufficiency:** PASS - SQL, policy, and guardrails all passed for decision pass.
 - **Authority closure:** PASS - Warrant, escrow, and receipt reached an authorized state.
-- **Reviewer endorsement:** PASS - Reviewer endorsement verified for Attestor Live Reviewer.
+- **Reviewer endorsement:** PASS - Reviewer endorsement is present, bound to the run, and independently verified.
 - **Live execution evidence:** PASS - Execution ran live against sqlite.
 - **Execution context evidence:** WARN - No database execution-context hash is present in the proof bundle.
 

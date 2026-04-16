@@ -13,10 +13,11 @@
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DEFAULT_HOSTED_PLAN_ID, resolvePlanSpec } from './plan-catalog.js';
 import type { SecretEnvelopeRecord } from './secret-envelope.js';
+import { writeTextFileAtomic } from './file-store.js';
 
 export type TenantKeyStatus = 'active' | 'inactive' | 'revoked';
 
@@ -165,7 +166,7 @@ function loadStore(): TenantKeyStoreFile {
 function saveStore(store: TenantKeyStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function countActiveKeysForTenant(store: TenantKeyStoreFile, tenantId: string): number {

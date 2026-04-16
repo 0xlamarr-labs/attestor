@@ -89,17 +89,21 @@ async function main(): Promise<void> {
   ok(packet.limitations.some((item) => item.includes('does not include PKI chain material yet')), 'Proof showcase: limitations call out missing PKI chain material');
   ok(packet.schemaAttestation.present, 'Proof showcase: schema attestation presence is reflected');
   ok(packet.commands.verifyKit.includes('--allow-legacy-verify'), 'Proof showcase: kit verify command includes legacy override when PKI chain is absent');
-  ok(packet.proofRun.sourceProofDir === '.attestor/proofs/real-pg-proof_demo', 'Proof showcase: proof source path is repo-relative when possible');
+  ok(packet.proofRun.sourceProofDir === null, 'Proof showcase: public packet omits internal proof source paths');
+  ok(packet.proofRun.certificateId === null, 'Proof showcase: public packet omits internal certificate identifiers');
+  ok(packet.proofRun.reviewerName === null, 'Proof showcase: public packet omits reviewer identity');
 
   const markdown = renderProofShowcaseMarkdown(packet);
   ok(markdown.includes('## Truthful limitations'), 'Proof showcase markdown: includes truthful limitations section');
-  ok(markdown.includes('Attestor Operator'), 'Proof showcase markdown: includes reviewer identity when verified');
+  ok(!markdown.includes('Attestor Operator'), 'Proof showcase markdown: omits reviewer identity');
+  ok(!markdown.includes('.attestor/proofs/'), 'Proof showcase markdown: omits internal proof paths');
   ok(markdown.includes('[Verification kit](evidence/kit.json)'), 'Proof showcase markdown: links to copied evidence');
 
   const html = renderProofShowcaseHtml(packet);
   ok(html.includes('Accepted with partial proof coverage'), 'Proof showcase HTML: includes headline');
   ok(html.includes('evidence/certificate.json'), 'Proof showcase HTML: links to evidence certificate');
   ok(!html.includes('PROOF_DEGRADED'), 'Proof showcase HTML: avoids raw status-code shouting');
+  ok(!html.includes('Attestor Operator') && !html.includes('.attestor/proofs/'), 'Proof showcase HTML: omits reviewer identity and internal proof path');
 
   const verifiedHybridKit = {
     certificate: {
@@ -177,7 +181,7 @@ async function main(): Promise<void> {
   ok(hybridPacket.limitations.some((item) => item.includes('No schema attestation file')), 'Proof showcase: verified hybrid packet still calls out missing schema attestation');
   ok(hybridPacket.commands.rerun === 'npx tsx src/financial/cli.ts live-scenario counterparty', 'Proof showcase: rerun command can point at the hybrid proof path');
   ok(!hybridPacket.commands.verifyKit.includes('--allow-legacy-verify'), 'Proof showcase: PKI-backed hybrid kit does not require legacy verification override');
-  ok(hybridPacket.proofRun.sourceProofDir === '.attestor-financial/runs/financial-live-counterparty-demo', 'Proof showcase: hybrid proof source path is repo-relative when possible');
+  ok(hybridPacket.proofRun.sourceProofDir === null, 'Proof showcase: hybrid public packet omits internal proof source paths');
 
   console.log(`\nProof showcase tests: ${passed} passed, 0 failed`);
 }

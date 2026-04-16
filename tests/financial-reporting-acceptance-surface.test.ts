@@ -22,16 +22,21 @@ async function main(): Promise<void> {
   ok(packet !== null, 'Finance acceptance surface: committed packet is present');
   ok(packet?.title === 'Attestor Financial Reporting Acceptance Packet', 'Finance acceptance surface: packet title is finance-specific');
   ok(packet?.proofRun.label.includes('Counterparty exposure reporting acceptance'), 'Finance acceptance surface: packet label names the reporting workflow');
-  ok(packet?.proofRun.sourceProofDir.startsWith('.attestor-financial/runs/financial-live-counterparty-'), 'Finance acceptance surface: packet source path is repo-relative');
+  ok(packet?.proofRun.sourceProofDir === null, 'Finance acceptance surface: committed packet hides the internal source proof directory');
+  ok(packet?.proofRun.certificateId === null, 'Finance acceptance surface: committed packet hides the internal certificate identifier');
+  ok(packet?.proofRun.reviewerName === null, 'Finance acceptance surface: committed packet hides reviewer identity');
 
   const landing = renderFinancialReportingLandingPage(packet);
   ok(landing.includes('AI-assisted financial reporting acceptance'), 'Finance acceptance surface: landing page leads with the finance wedge');
   ok(landing.includes('/proof/financial-reporting-acceptance'), 'Finance acceptance surface: landing page points at the proof surface');
   ok(landing.includes('Community') && landing.includes('Starter') && landing.includes('Pro') && landing.includes('Enterprise'), 'Finance acceptance surface: landing page includes the plan ladder');
+  ok(landing.includes('Reviewer endorsement') && !landing.includes('Attestor Live Reviewer'), 'Finance acceptance surface: landing page keeps reviewer proof without exposing reviewer identity');
 
   const proofPage = renderFinancialReportingProofPage(packet);
   ok(proofPage.includes('shown as evidence instead of promise'), 'Finance acceptance surface: proof page frames the proof as evidence');
-  ok(proofPage.includes(packet?.proofRun.certificateId ?? ''), 'Finance acceptance surface: proof page surfaces the committed certificate id');
+  ok(!proofPage.includes('.attestor-financial/runs/'), 'Finance acceptance surface: proof page does not expose internal source proof paths');
+  ok(!proofPage.includes('cert_'), 'Finance acceptance surface: proof page does not expose internal certificate identifiers');
+  ok(!proofPage.includes('Attestor Live Reviewer'), 'Finance acceptance surface: proof page does not expose reviewer identity');
 
   const certificate = JSON.parse(readFileSync(resolve(evidenceRoot, 'evidence', 'certificate.json'), 'utf8')) as AttestationCertificate;
   const publicKeyPem = readFileSync(resolve(evidenceRoot, 'evidence', 'public-key.pem'), 'utf8');

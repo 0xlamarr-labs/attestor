@@ -21,7 +21,7 @@ async function main(): Promise<void> {
     delete process.env.ATTESTOR_PUBLIC_HOSTNAME;
     ok(sessionCookieSecure() === false, 'Account session cookies: local default stays insecure when no public endpoint is configured');
 
-    process.env.ATTESTOR_PUBLIC_HOSTNAME = '34.49.37.115.sslip.io';
+    process.env.ATTESTOR_PUBLIC_HOSTNAME = '203.0.113.10.sslip.io';
     ok(sessionCookieSecure() === true, 'Account session cookies: public hostname defaults cookies to secure');
 
     delete process.env.ATTESTOR_PUBLIC_HOSTNAME;

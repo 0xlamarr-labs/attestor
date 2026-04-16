@@ -149,7 +149,7 @@
         <div class="glance">
           <div class="metric"><div class="label">Decision</div><div class="value">PASS</div></div>
           <div class="metric"><div class="label">Verification</div><div class="value">Verified</div></div>
-          <div class="metric"><div class="label">Certificate</div><div class="value">cert_cd5a662e2df8b93e</div></div>
+          <div class="metric"><div class="label">Proof mode</div><div class="value">Hybrid</div></div>
           <div class="metric"><div class="label">Execution</div><div class="value">Live (sqlite)</div></div>
         </div>
       </section>
@@ -157,11 +157,11 @@
       <div class="grid">
         <section class="panel">
           <h2>What this run shows</h2>
-          <ul><li>The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.</li><li>The run emitted certificate cert_cd5a662e2df8b93e and a portable verification kit that can be checked without API access.</li><li>The evidence chain contains 11 audit entries and is intact.</li><li>Execution was live and recorded against sqlite.</li><li>The packet includes a verified reviewer endorsement for Attestor Live Reviewer.</li></ul>
+          <ul><li>The run shows an AI-assisted financial reporting acceptance flow, not just a raw model response.</li><li>The run emitted a portable verification kit that can be checked without API access.</li><li>The evidence chain contains 11 audit entries and is intact.</li><li>Execution was live and recorded against sqlite.</li><li>The packet includes a verified reviewer endorsement.</li></ul>
         </section>
         <section class="panel">
           <h2>Verification checks</h2>
-          <ul><li><strong>Certificate signature</strong><span class="badge status-pass">PASS</span><div class="detail">Ed25519 signature valid for signer 5bcdf5caecb4342d.</div></li><li><strong>Governance sufficiency</strong><span class="badge status-pass">PASS</span><div class="detail">SQL, policy, and guardrails all passed for decision pass.</div></li><li><strong>Authority closure</strong><span class="badge status-pass">PASS</span><div class="detail">Warrant, escrow, and receipt reached an authorized state.</div></li><li><strong>Reviewer endorsement</strong><span class="badge status-pass">PASS</span><div class="detail">Reviewer endorsement verified for Attestor Live Reviewer.</div></li><li><strong>Live execution evidence</strong><span class="badge status-pass">PASS</span><div class="detail">Execution ran live against sqlite.</div></li><li><strong>Execution context evidence</strong><span class="badge status-warn">WARN</span><div class="detail">No database execution-context hash is present in the proof bundle.</div></li></ul>
+          <ul><li><strong>Certificate signature</strong><span class="badge status-pass">PASS</span><div class="detail">Ed25519 certificate signature verified.</div></li><li><strong>Governance sufficiency</strong><span class="badge status-pass">PASS</span><div class="detail">SQL, policy, and guardrails all passed for decision pass.</div></li><li><strong>Authority closure</strong><span class="badge status-pass">PASS</span><div class="detail">Warrant, escrow, and receipt reached an authorized state.</div></li><li><strong>Reviewer endorsement</strong><span class="badge status-pass">PASS</span><div class="detail">Reviewer endorsement is present, bound to the run, and independently verified.</div></li><li><strong>Live execution evidence</strong><span class="badge status-pass">PASS</span><div class="detail">Execution ran live against sqlite.</div></li><li><strong>Execution context evidence</strong><span class="badge status-warn">WARN</span><div class="detail">No database execution-context hash is present in the proof bundle.</div></li></ul>
         </section>
       </div>
 
@@ -183,7 +183,7 @@
         <pre>npx tsx src/financial/cli.ts live-scenario counterparty
 npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
 npm run verify:cert -- .attestor/showcase/latest/evidence/certificate.json .attestor/showcase/latest/evidence/public-key.pem</pre>
-        <p class="detail">Source proof directory: <code>.attestor-financial/runs/financial-live-counterparty-aa6e481f-d4ce-4fac-a82a-37c5abbcb20c</code></p>
+        <p class="detail">The verification kit remains the canonical external proof surface.</p>
       </section>
     </main>
   </body>

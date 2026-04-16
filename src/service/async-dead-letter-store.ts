@@ -7,8 +7,9 @@
  * - Not a full incident-management system or long-term analytics warehouse
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { writeTextFileAtomic } from './file-store.js';
 
 export type AsyncDeadLetterBackendMode = 'bullmq' | 'in_process';
 
@@ -62,7 +63,7 @@ function loadStore(): AsyncDeadLetterStoreFile {
 function saveStore(store: AsyncDeadLetterStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function sortRecords(records: AsyncDeadLetterRecord[]): AsyncDeadLetterRecord[] {

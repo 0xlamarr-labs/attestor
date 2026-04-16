@@ -13,9 +13,10 @@
  */
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import type { AccountUserRole } from './account-user-store.js';
+import { writeTextFileAtomic } from './file-store.js';
 
 export type AccountUserActionTokenPurpose =
   | 'invite'
@@ -156,7 +157,7 @@ function loadStore(): AccountUserActionTokenStoreFile {
 function saveStore(store: AccountUserActionTokenStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function isExpired(record: AccountUserActionTokenRecord, now = Date.now()): boolean {

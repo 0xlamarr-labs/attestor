@@ -14,8 +14,9 @@
  */
 
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { writeTextFileAtomic } from './file-store.js';
 
 export type AccountUserRole = 'account_admin' | 'billing_admin' | 'read_only';
 export type AccountUserStatus = 'active' | 'inactive';
@@ -374,7 +375,7 @@ function loadStore(): AccountUserStoreFile {
 function saveStore(store: AccountUserStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function hashPassword(password: string): AccountUserPasswordState {

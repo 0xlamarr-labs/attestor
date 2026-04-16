@@ -46,7 +46,7 @@
  * Integration tests hit it over the network.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { Hono, type Context } from 'hono';
@@ -927,7 +927,7 @@ function currentAdminAuthorized(c: Context): Response | null {
 
   const authHeader = c.req.header('authorization') ?? '';
   const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token || token !== configured) {
+  if (!constantTimeSecretEquals(token, configured)) {
     return c.json({ error: 'Valid admin API key required in Authorization header.' }, 401);
   }
 
@@ -939,13 +939,20 @@ function currentMetricsAuthorized(c: Context): Response | null {
   if (configured) {
     const authHeader = c.req.header('authorization') ?? '';
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (!token || token !== configured) {
+    if (!constantTimeSecretEquals(token, configured)) {
       return c.json({ error: 'Valid metrics API key required in Authorization header.' }, 401);
     }
     return null;
   }
 
   return currentAdminAuthorized(c);
+}
+
+function constantTimeSecretEquals(candidate: string, configured: string): boolean {
+  if (!candidate || !configured) return false;
+  const candidateDigest = createHash('sha256').update(candidate).digest();
+  const configuredDigest = createHash('sha256').update(configured).digest();
+  return timingSafeEqual(candidateDigest, configuredDigest);
 }
 
 function stripeClient(): Stripe {

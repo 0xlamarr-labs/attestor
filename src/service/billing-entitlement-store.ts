@@ -8,8 +8,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { writeTextFileAtomic } from './file-store.js';
 import type {
   HostedAccountRecord,
   HostedAccountStatus,
@@ -134,7 +135,7 @@ function loadStore(): BillingEntitlementStoreFile {
 function saveStore(store: BillingEntitlementStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function hasStripeBinding(account: HostedAccountRecord): boolean {

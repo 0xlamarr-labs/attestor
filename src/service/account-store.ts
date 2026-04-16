@@ -11,8 +11,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { writeTextFileAtomic } from './file-store.js';
 
 export type HostedAccountStatus = 'active' | 'suspended' | 'archived';
 
@@ -238,7 +239,7 @@ function loadStore(): AccountStoreFile {
 function saveStore(store: AccountStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify(store, null, 2)}\n`);
 }
 
 function findRecord(store: AccountStoreFile, id: string): HostedAccountRecord | null {

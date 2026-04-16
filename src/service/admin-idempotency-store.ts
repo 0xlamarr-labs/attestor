@@ -9,8 +9,9 @@
  */
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { withFileLock, writeTextFileAtomic } from './file-store.js';
 import { hashJsonValue, stableJsonStringify } from './json-stable.js';
 
 export interface AdminIdempotencyRecord {
@@ -114,18 +115,21 @@ function loadStore(): AdminIdempotencyStoreFile {
 function saveStore(store: AdminIdempotencyStoreFile): void {
   const path = storePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify({ ...store, records: pruneExpired(store.records) }, null, 2)}\n`, 'utf8');
+  writeTextFileAtomic(path, `${JSON.stringify({ ...store, records: pruneExpired(store.records) }, null, 2)}\n`);
 }
 
 export function readAdminIdempotencySnapshot(): {
   path: string;
   records: AdminIdempotencyRecord[];
 } {
-  const store = loadStore();
-  return {
-    path: storePath(),
-    records: [...store.records],
-  };
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    return {
+      path,
+      records: [...store.records],
+    };
+  });
 }
 
 export function buildAdminIdempotencyRequestHash(routeId: string, payload: unknown): string {
@@ -138,22 +142,24 @@ export function lookupAdminIdempotency(options: {
   requestPayload: unknown;
 }): AdminIdempotencyLookup {
   const requestHash = buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload);
-  const store = loadStore();
-  const existing = store.records.find((record) => record.idempotencyKey === options.idempotencyKey);
-  if (!existing) return { kind: 'miss', requestHash };
-  if (existing.routeId !== options.routeId || existing.requestHash !== requestHash) {
-    return { kind: 'conflict', requestHash, record: existing };
-  }
+  return withFileLock(storePath(), () => {
+    const store = loadStore();
+    const existing = store.records.find((record) => record.idempotencyKey === options.idempotencyKey);
+    if (!existing) return { kind: 'miss', requestHash };
+    if (existing.routeId !== options.routeId || existing.requestHash !== requestHash) {
+      return { kind: 'conflict', requestHash, record: existing };
+    }
 
-  existing.lastReplayedAt = new Date().toISOString();
-  existing.replayCount += 1;
-  saveStore(store);
-  return {
-    kind: 'replay',
-    requestHash,
-    record: existing,
-    response: decryptAdminIdempotencyResponse(existing),
-  };
+    existing.lastReplayedAt = new Date().toISOString();
+    existing.replayCount += 1;
+    saveStore(store);
+    return {
+      kind: 'replay',
+      requestHash,
+      record: existing,
+      response: decryptAdminIdempotencyResponse(existing),
+    };
+  });
 }
 
 export function recordAdminIdempotency(options: {
@@ -163,38 +169,42 @@ export function recordAdminIdempotency(options: {
   statusCode: number;
   response: unknown;
 }): { record: AdminIdempotencyRecord; path: string } {
-  const store = loadStore();
-  const existing = store.records.find((record) => record.idempotencyKey === options.idempotencyKey);
-  if (existing) {
-    if (
-      existing.routeId !== options.routeId ||
-      existing.requestHash !== buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload)
-    ) {
-      throw new Error(`Idempotency-Key '${options.idempotencyKey}' already exists for a different request`);
+  const path = storePath();
+  return withFileLock(path, () => {
+    const store = loadStore();
+    const existing = store.records.find((record) => record.idempotencyKey === options.idempotencyKey);
+    if (existing) {
+      if (
+        existing.routeId !== options.routeId ||
+        existing.requestHash !== buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload)
+      ) {
+        throw new Error(`Idempotency-Key '${options.idempotencyKey}' already exists for a different request`);
+      }
+      return { record: existing, path };
     }
-    return { record: existing, path: storePath() };
-  }
 
-  const encrypted = encryptAdminIdempotencyResponse(options.response);
-  const record: AdminIdempotencyRecord = {
-    id: `idem_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
-    idempotencyKey: options.idempotencyKey,
-    routeId: options.routeId,
-    requestHash: buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload),
-    statusCode: options.statusCode,
-    responseCiphertext: encrypted.ciphertext,
-    responseIv: encrypted.iv,
-    responseAuthTag: encrypted.authTag,
-    createdAt: new Date().toISOString(),
-    lastReplayedAt: null,
-    replayCount: 0,
-  };
-  store.records.push(record);
-  saveStore(store);
-  return { record, path: storePath() };
+    const encrypted = encryptAdminIdempotencyResponse(options.response);
+    const record: AdminIdempotencyRecord = {
+      id: `idem_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+      idempotencyKey: options.idempotencyKey,
+      routeId: options.routeId,
+      requestHash: buildAdminIdempotencyRequestHash(options.routeId, options.requestPayload),
+      statusCode: options.statusCode,
+      responseCiphertext: encrypted.ciphertext,
+      responseIv: encrypted.iv,
+      responseAuthTag: encrypted.authTag,
+      createdAt: new Date().toISOString(),
+      lastReplayedAt: null,
+      replayCount: 0,
+    };
+    store.records.push(record);
+    saveStore(store);
+    return { record, path };
+  });
 }
 
 export function resetAdminIdempotencyStoreForTests(): void {
   const path = storePath();
   if (existsSync(path)) rmSync(path, { force: true });
+  if (existsSync(`${path}.lock`)) rmSync(`${path}.lock`, { recursive: true, force: true });
 }
