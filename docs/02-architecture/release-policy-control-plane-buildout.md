@@ -58,15 +58,15 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 0 |
+| Completed | 1 |
 | In progress | 0 |
-| Not started | 20 |
+| Not started | 19 |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
-| 01 | not_started | Codify the policy control-plane vocabulary | Pending | Freeze the shared nouns for policy packs, policy bundle manifests, activation targets, scopes, stores, and lifecycle states so later work builds on a stable grammar instead of route-local names. |
+| 01 | complete | Codify the policy control-plane vocabulary | `src/release-policy-control-plane/types.ts`, `tests/release-policy-control-plane-types.test.ts` | The control plane now has a stable first-class grammar for policy pack lifecycle states, activation states, discovery modes, store kinds, scope dimensions, mutation actions, bundle references, and normalized activation targets/selectors built on the packaged release-layer consequence/risk vocabulary. |
 | 02 | not_started | Define the versioned policy-pack object model | Pending | Introduce versioned first-class objects for policy packs, bundle manifests, bundle signatures, activation records, and control-plane metadata. |
 | 03 | not_started | Define scoping and precedence rules | Pending | Freeze how account, tenant, consequence-type, wedge, domain, and environment scope interact, including override precedence and fallback behavior. |
 | 04 | not_started | Define the signed policy-bundle format | Pending | Turn policies from in-process factories into portable, hashable, signable bundles with manifest integrity and explicit compatibility metadata. |
@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-Step 01 is next. The goal is to freeze the control-plane vocabulary before policy stores, bundles, or rollout APIs start appearing under inconsistent names.
+Step 02 is next. The goal is to turn this vocabulary into a versioned object model for policy packs, bundle manifests, signatures, and activation records.
