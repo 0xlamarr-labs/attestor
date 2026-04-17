@@ -11,6 +11,8 @@ import {
   RELEASE_LAYER_PLATFORM_SURFACE_SPEC_VERSION,
 } from './index.js';
 
+export { record, communication, action };
+
 export const RELEASE_LAYER_FINANCE_SURFACE_SPEC_VERSION =
   'attestor.release-layer-finance.v1';
 

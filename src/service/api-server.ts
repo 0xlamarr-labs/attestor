@@ -76,48 +76,8 @@ import { xbrlCsvEbaAdapter } from '../filing/xbrl-csv-adapter.js';
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
-import {
-  buildFinanceCommunicationReleaseMaterial,
-  buildFinanceCommunicationReleaseObservation,
-  createFinanceCommunicationReleaseCandidateFromReport,
-} from '../release-kernel/finance-communication-release.js';
-import {
-  buildFinanceActionReleaseMaterial,
-  buildFinanceActionReleaseObservation,
-  createFinanceActionReleaseCandidateFromReport,
-} from '../release-kernel/finance-action-release.js';
-import {
-  buildFinanceFilingReleaseMaterial,
-  createFinanceFilingReleaseCandidateFromReport,
-  FINANCE_FILING_ADAPTER_ID,
-  finalizeFinanceFilingReleaseDecision,
-  buildFinanceFilingReleaseObservation,
-} from '../release-kernel/finance-record-release.js';
-import { createReleaseDecisionEngine } from '../release-kernel/release-decision-engine.js';
-import { createInMemoryReleaseDecisionLogWriter } from '../release-kernel/release-decision-log.js';
-import { createShadowModeReleaseEvaluator } from '../release-kernel/release-shadow-mode.js';
-import {
-  createInMemoryReleaseTokenIntrospectionStore,
-  createReleaseTokenIntrospector,
-} from '../release-kernel/release-introspection.js';
-import {
-  createFinanceReviewerQueueItem,
-  createInMemoryReleaseReviewerQueueStore,
-} from '../release-kernel/reviewer-queue.js';
-import { createReleaseTokenIssuer } from '../release-kernel/release-token.js';
-import {
-  createInMemoryReleaseEvidencePackStore,
-  createReleaseEvidencePackIssuer,
-} from '../release-kernel/release-evidence-pack.js';
-import {
-  createFinanceActionReleasePolicy,
-  createFinanceCommunicationReleasePolicy,
-} from '../release-kernel/release-policy.js';
-import {
-  ReleaseVerificationError,
-  resolveReleaseTokenFromRequest,
-  verifyReleaseAuthorization,
-} from '../release-kernel/release-verification.js';
+import { decision, decisionLog, evidence, introspection, policy, review, shadow, token, verification } from '../release-layer/index.js';
+import { action as financeActionRelease, communication as financeCommunicationRelease, financeReleasePolicies, record as financeRecordRelease } from '../release-layer/finance.js';
 import {
   canEnqueueTenantAsyncJob,
   createPipelineQueue,
@@ -136,6 +96,38 @@ import {
   type AccountAccessContext,
   type TenantContext,
 } from './tenant-isolation.js';
+
+const {
+  buildFinanceCommunicationReleaseMaterial,
+  buildFinanceCommunicationReleaseObservation,
+  createFinanceCommunicationReleaseCandidateFromReport,
+} = financeCommunicationRelease;
+const {
+  buildFinanceActionReleaseMaterial,
+  buildFinanceActionReleaseObservation,
+  createFinanceActionReleaseCandidateFromReport,
+} = financeActionRelease;
+const {
+  buildFinanceFilingReleaseMaterial,
+  createFinanceFilingReleaseCandidateFromReport,
+  FINANCE_FILING_ADAPTER_ID,
+  finalizeFinanceFilingReleaseDecision,
+  buildFinanceFilingReleaseObservation,
+} = financeRecordRelease;
+const { createReleaseDecisionEngine } = decision;
+const { createInMemoryReleaseDecisionLogWriter } = decisionLog;
+const { createShadowModeReleaseEvaluator } = shadow;
+const { createInMemoryReleaseTokenIntrospectionStore, createReleaseTokenIntrospector } =
+  introspection;
+const { createFinanceReviewerQueueItem, createInMemoryReleaseReviewerQueueStore } = review;
+const { createReleaseTokenIssuer } = token;
+const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
+const {
+  createActionReleasePolicy: createFinanceActionReleasePolicy,
+  createCommunicationReleasePolicy: createFinanceCommunicationReleasePolicy,
+} = financeReleasePolicies;
+const { ReleaseVerificationError, resolveReleaseTokenFromRequest, verifyReleaseAuthorization } =
+  verification;
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 import {
   configureTenantRateLimiter,

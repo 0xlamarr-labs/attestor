@@ -16,6 +16,29 @@ import * as introspection from '../release-kernel/release-introspection.js';
 import * as evidence from '../release-kernel/release-evidence-pack.js';
 import * as review from '../release-kernel/reviewer-queue.js';
 
+export {
+  vocabulary,
+  model,
+  consequences,
+  risk,
+  wedge,
+  policyRollout,
+  policy,
+  decision,
+  decisionLog,
+  deterministicChecks,
+  shadow,
+  canonicalization,
+  token,
+  verification,
+  introspection,
+  evidence,
+  review,
+};
+
+export type ReleaseReviewerQueueDetail = review.ReleaseReviewerQueueDetail;
+export type ReleaseReviewerQueueListResult = review.ReleaseReviewerQueueListResult;
+
 /**
  * Curated public platform surface for the Attestor release layer.
  *

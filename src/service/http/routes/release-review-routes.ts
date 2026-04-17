@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Hono } from 'hono';
-import {
+import { review } from '../../../release-layer/index.js';
+
+const {
   ReleaseReviewerQueueError,
   applyBreakGlassOverride,
   applyReviewerDecision,
   attachIssuedTokenToReviewerQueueRecord,
-} from '../../../release-kernel/reviewer-queue.js';
+} = review;
 
 type RouteDeps = Record<string, any>;
 

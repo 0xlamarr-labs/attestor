@@ -1,7 +1,7 @@
 import type {
   ReleaseReviewerQueueDetail,
   ReleaseReviewerQueueListResult,
-} from '../release-kernel/reviewer-queue.js';
+} from '../release-layer/index.js';
 
 function escapeHtml(value: string): string {
   return value
