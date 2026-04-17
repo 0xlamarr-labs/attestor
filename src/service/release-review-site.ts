@@ -40,6 +40,7 @@ function renderInboxItems(items: readonly ReleaseReviewerQueueListResult['items'
             <div><dt>Requester</dt><dd>${escapeHtml(item.requesterLabel)}</dd></div>
             <div><dt>Target</dt><dd>${escapeHtml(item.targetDisplayName)}</dd></div>
             <div><dt>Authority</dt><dd>${escapeHtml(item.authorityMode)} / ${item.minimumReviewerCount}</dd></div>
+            <div><dt>Approvals</dt><dd>${item.approvalsRecorded} / ${item.minimumReviewerCount}</dd></div>
             <div><dt>Decision</dt><dd>${escapeHtml(item.decisionId)}</dd></div>
           </dl>
           <p class="finding"><strong>Why it is waiting:</strong> ${escapeHtml(item.findingSummary)}</p>
@@ -257,6 +258,19 @@ function renderChecklist(detail: ReleaseReviewerQueueDetail): string {
     .join('');
 }
 
+function renderReviewerDecisions(detail: ReleaseReviewerQueueDetail): string {
+  if (detail.reviewerDecisions.length === 0) {
+    return '<li>No named reviewer decisions recorded yet.</li>';
+  }
+
+  return detail.reviewerDecisions
+    .map(
+      (entry) =>
+        `<li><strong>${escapeHtml(entry.reviewerName)}</strong> (${escapeHtml(entry.reviewerRole)}) Â· ${escapeHtml(entry.outcome)} at ${escapeHtml(entry.decidedAt)}${entry.note ? ` Â· ${escapeHtml(entry.note)}` : ''}</li>`,
+    )
+    .join('');
+}
+
 function renderRowPreview(detail: ReleaseReviewerQueueDetail): string {
   if (detail.candidate.previewRows.length === 0) {
     return '<p class="mono">No row preview available.</p>';
@@ -388,6 +402,8 @@ export function renderReleaseReviewerQueueDetailPage(
             <div><dt>Receipt</dt><dd>${escapeHtml(detail.candidate.receiptStatus ?? 'none')}</dd></div>
             <div><dt>Oversight</dt><dd>${escapeHtml(detail.candidate.oversightStatus ?? 'unknown')}</dd></div>
             <div><dt>Rows</dt><dd>${detail.candidate.rowCount}</dd></div>
+            <div><dt>Authority state</dt><dd>${escapeHtml(detail.authorityState)}</dd></div>
+            <div><dt>Approvals</dt><dd>${detail.approvalsRecorded} / ${detail.minimumReviewerCount}</dd></div>
           </dl>
           ${renderRowPreview(detail)}
         </article>
@@ -398,6 +414,10 @@ export function renderReleaseReviewerQueueDetailPage(
         <article class="panel">
           <h2>Decision findings</h2>
           <ul>${renderFindingList(detail)}</ul>
+        </article>
+        <article class="panel">
+          <h2>Reviewer decisions</h2>
+          <ul>${renderReviewerDecisions(detail)}</ul>
         </article>
         <article class="panel">
           <h2>Decision timeline</h2>

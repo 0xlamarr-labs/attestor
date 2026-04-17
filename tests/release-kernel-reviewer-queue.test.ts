@@ -8,8 +8,10 @@ import {
 import { createReleaseDecisionEngine } from '../src/release-kernel/release-decision-engine.js';
 import { createInMemoryReleaseDecisionLogWriter } from '../src/release-kernel/release-decision-log.js';
 import {
+  applyReviewerDecision,
   createFinanceReviewerQueueItem,
   createInMemoryReleaseReviewerQueueStore,
+  ReleaseReviewerQueueError,
 } from '../src/release-kernel/reviewer-queue.js';
 
 let passed = 0;
@@ -111,13 +113,13 @@ async function main(): Promise<void> {
     logEntries: decisionLog.entries(),
   });
 
-  equal(item.kind, 'finance.filing-export', 'Reviewer queue: queue item kind is finance filing export');
-  equal(item.riskClass, 'R4', 'Reviewer queue: risk class is preserved on the queue item');
-  ok(item.summary.includes('paused before consequence'), 'Reviewer queue: summary is reviewer-oriented');
-  ok(item.findings.length > 0, 'Reviewer queue: findings are preserved for the reviewer packet');
-  equal(item.candidate.rowCount, 2, 'Reviewer queue: row count preview is included');
-  ok(item.timeline.length >= 2, 'Reviewer queue: policy and deterministic phases are preserved in the review timeline');
-  ok(item.checklist.length >= 4, 'Reviewer queue: reviewer checklist is present');
+  equal(item.detail.kind, 'finance.filing-export', 'Reviewer queue: queue item kind is finance filing export');
+  equal(item.detail.riskClass, 'R4', 'Reviewer queue: risk class is preserved on the queue item');
+  ok(item.detail.summary.includes('paused before consequence'), 'Reviewer queue: summary is reviewer-oriented');
+  ok(item.detail.findings.length > 0, 'Reviewer queue: findings are preserved for the reviewer packet');
+  equal(item.detail.candidate.rowCount, 2, 'Reviewer queue: row count preview is included');
+  ok(item.detail.timeline.length >= 2, 'Reviewer queue: policy and deterministic phases are preserved in the review timeline');
+  ok(item.detail.checklist.length >= 4, 'Reviewer queue: reviewer checklist is present');
 
   const store = createInMemoryReleaseReviewerQueueStore();
   store.upsert(item);
@@ -125,12 +127,68 @@ async function main(): Promise<void> {
   const list = store.listPending();
   equal(list.totalPending, 1, 'Reviewer queue: pending count increments after enqueue');
   equal(list.countsByRiskClass.R4, 1, 'Reviewer queue: risk counts reflect the review item');
-  equal(list.items[0]?.id, item.id, 'Reviewer queue: list returns the enqueued review item');
+  equal(list.items[0]?.id, item.detail.id, 'Reviewer queue: list returns the enqueued review item');
 
-  const detail = store.get(item.id);
+  const detail = store.get(item.detail.id);
   ok(detail !== null, 'Reviewer queue: detail lookup resolves the queue item');
   equal(detail?.candidate.previewRows.length, 2, 'Reviewer queue: preview rows remain available on detail lookup');
   equal(detail?.timeline[0]?.phase, 'policy-resolution', 'Reviewer queue: timeline begins with policy resolution');
+
+  const afterFirstApproval = applyReviewerDecision({
+    record: store.getRecord(item.detail.id)!,
+    outcome: 'approved',
+    reviewerId: 'reviewer.alpha',
+    reviewerName: 'Alpha Reviewer',
+    reviewerRole: 'financial_reporting_manager',
+    decidedAt: '2026-04-17T23:11:00.000Z',
+    note: 'Numbers and target binding look correct.',
+  });
+  equal(afterFirstApproval.record.detail.status, 'pending-review', 'Reviewer queue: first approval does not close an R4 dual-approval path');
+  equal(afterFirstApproval.record.detail.approvalsRecorded, 1, 'Reviewer queue: first approval increments approval count');
+  equal(afterFirstApproval.record.detail.approvalsRemaining, 1, 'Reviewer queue: one more approval remains after the first reviewer');
+  ok(afterFirstApproval.record.detail.reviewerDecisions.length === 1, 'Reviewer queue: first reviewer decision is recorded');
+
+  let duplicateReviewerError: ReleaseReviewerQueueError | null = null;
+  try {
+    applyReviewerDecision({
+      record: afterFirstApproval.record,
+      outcome: 'approved',
+      reviewerId: 'reviewer.alpha',
+      reviewerName: 'Alpha Reviewer',
+      reviewerRole: 'financial_reporting_manager',
+      decidedAt: '2026-04-17T23:11:30.000Z',
+    });
+  } catch (error) {
+    duplicateReviewerError = error as ReleaseReviewerQueueError;
+  }
+  equal(duplicateReviewerError?.code, 'duplicate_reviewer', 'Reviewer queue: the same reviewer cannot satisfy both sides of dual approval');
+
+  const afterSecondApproval = applyReviewerDecision({
+    record: afterFirstApproval.record,
+    outcome: 'approved',
+    reviewerId: 'reviewer.beta',
+    reviewerName: 'Beta Reviewer',
+    reviewerRole: 'financial_reporting_manager',
+    decidedAt: '2026-04-17T23:12:00.000Z',
+    note: 'Second pair of eyes agrees to consequence release.',
+  });
+  equal(afterSecondApproval.record.detail.status, 'approved', 'Reviewer queue: the second distinct approval closes the dual-approval path');
+  equal(afterSecondApproval.record.detail.authorityState, 'approved', 'Reviewer queue: authority state becomes approved');
+  equal(afterSecondApproval.record.releaseDecision.status, 'accepted', 'Reviewer queue: final review closure upgrades the release decision to accepted');
+  ok(afterSecondApproval.record.detail.timeline.some((entry) => entry.phase === 'terminal-accept'), 'Reviewer queue: accepted review closure is reflected in the review timeline');
+
+  const rejected = applyReviewerDecision({
+    record: item,
+    outcome: 'rejected',
+    reviewerId: 'reviewer.gamma',
+    reviewerName: 'Gamma Reviewer',
+    reviewerRole: 'financial_reporting_manager',
+    decidedAt: '2026-04-17T23:13:00.000Z',
+    note: 'Counterparty exposure requires escalation.',
+  });
+  equal(rejected.record.detail.status, 'rejected', 'Reviewer queue: explicit rejection closes the queue item');
+  equal(rejected.record.releaseDecision.status, 'denied', 'Reviewer queue: explicit rejection denies consequence release');
+  ok(rejected.record.detail.timeline.some((entry) => entry.phase === 'terminal-deny'), 'Reviewer queue: rejected review closure is reflected in the review timeline');
 
   console.log(`\nRelease kernel reviewer-queue tests: ${passed} passed, 0 failed`);
 }

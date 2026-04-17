@@ -1,4 +1,9 @@
 import type { Hono } from 'hono';
+import {
+  ReleaseReviewerQueueError,
+  applyReviewerDecision,
+  attachIssuedTokenToReviewerQueueRecord,
+} from '../../../release-kernel/reviewer-queue.js';
 
 type RouteDeps = Record<string, any>;
 
@@ -8,12 +13,82 @@ function parsePositiveLimit(value: string | undefined): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function readReviewField(
+  body: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = body[key];
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function parseReviewActionBody(c: any): Promise<Record<string, unknown>> {
+  const contentType = c.req.header('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return await c.req.json();
+  }
+
+  const parsed = await c.req.parseBody();
+  return Object.fromEntries(
+    Object.entries(parsed).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
+  );
+}
+
+function buildReviewActionResponse(
+  review: any,
+  releaseToken: any,
+): Record<string, unknown> {
+  return {
+    review,
+    authority: {
+      state: review.authorityState,
+      approvalsRequired: review.minimumReviewerCount,
+      approvalsRecorded: review.approvalsRecorded,
+      approvalsRemaining: review.approvalsRemaining,
+      finalized: review.authorityState !== 'pending',
+    },
+    releaseToken,
+  };
+}
+
+function appendReviewerTimelineToDecisionLog(
+  writer: any,
+  decision: any,
+  occurredAt: string,
+  requestId: string,
+  phase: 'review' | 'terminal-accept' | 'terminal-deny',
+): void {
+  writer.append({
+    occurredAt,
+    requestId,
+    phase,
+    matchedPolicyId: decision.policyVersion,
+    decision,
+    metadata: {
+      policyMatched: true,
+      pendingChecks: [],
+      pendingEvidenceKinds: [],
+      requiresReview: decision.status === 'hold' || decision.status === 'review-required',
+      deterministicChecksCompleted: true,
+    },
+  });
+}
+
 export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
   const {
     currentAdminAuthorized,
     apiReleaseReviewerQueueStore,
     renderReleaseReviewerQueueInboxPage,
     renderReleaseReviewerQueueDetailPage,
+    financeReleaseDecisionLog,
+    apiReleaseTokenIssuer,
+    apiReleaseIntrospectionStore,
+    adminMutationRequest,
+    finalizeAdminMutation,
   } = deps;
 
   app.get('/api/v1/admin/release-reviews', (c) => {
@@ -85,5 +160,195 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
     c.header('content-type', 'text/html; charset=utf-8');
     c.header('cache-control', 'no-store');
     return c.body(renderReleaseReviewerQueueDetailPage(item));
+  });
+
+  app.post('/api/v1/admin/release-reviews/:id/approve', async (c) => {
+    const unauthorized = currentAdminAuthorized(c);
+    if (unauthorized) return unauthorized;
+
+    const body = await parseReviewActionBody(c);
+    const routeId = 'admin.release_review.approve';
+    const mutation = await adminMutationRequest(c, routeId, body);
+    if (mutation instanceof Response) {
+      return mutation;
+    }
+
+    const record = apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
+    if (!record) {
+      return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
+    }
+
+    try {
+      const decidedAt = new Date().toISOString();
+      const transition = applyReviewerDecision({
+        record,
+        outcome: 'approved',
+        reviewerId: readReviewField(body, 'reviewerId') ?? '',
+        reviewerName: readReviewField(body, 'reviewerName') ?? '',
+        reviewerRole: readReviewField(body, 'reviewerRole') ?? '',
+        note: readReviewField(body, 'note'),
+        decidedAt,
+      });
+
+      appendReviewerTimelineToDecisionLog(
+        financeReleaseDecisionLog,
+        transition.record.releaseDecision,
+        decidedAt,
+        `review:${transition.record.detail.id}:approve`,
+        'review',
+      );
+
+      let finalRecord = transition.record;
+      let responseToken: Record<string, unknown> | null = null;
+      if (transition.record.detail.authorityState === 'approved') {
+        appendReviewerTimelineToDecisionLog(
+          financeReleaseDecisionLog,
+          transition.record.releaseDecision,
+          decidedAt,
+          `review:${transition.record.detail.id}:terminal-accept`,
+          'terminal-accept',
+        );
+        const issuedToken = await apiReleaseTokenIssuer.issue({
+          decision: transition.record.releaseDecision,
+          issuedAt: decidedAt,
+        });
+        apiReleaseIntrospectionStore.registerIssuedToken({
+          issuedToken,
+          decision: transition.record.releaseDecision,
+        });
+        finalRecord = attachIssuedTokenToReviewerQueueRecord({
+          record: transition.record,
+          issuedToken,
+        });
+        responseToken = {
+          tokenId: issuedToken.tokenId,
+          token: issuedToken.token,
+          expiresAt: issuedToken.expiresAt,
+          targetId: issuedToken.claims.aud,
+          decisionId: issuedToken.claims.decision_id,
+        };
+      }
+
+      const stored = apiReleaseReviewerQueueStore.upsert(finalRecord);
+      c.header('cache-control', 'no-store');
+      return c.json(
+        await finalizeAdminMutation({
+          idempotencyKey: mutation.idempotencyKey,
+          routeId,
+          requestPayload: body,
+          statusCode: 200,
+          responseBody: buildReviewActionResponse(stored, responseToken),
+          audit: {
+            action: 'release_review.approved',
+            requestHash: mutation.requestHash,
+            metadata: {
+              reviewId: stored.id,
+              decisionId: stored.decisionId,
+              reviewerId: readReviewField(body, 'reviewerId'),
+              reviewerRole: readReviewField(body, 'reviewerRole'),
+              authorityState: stored.authorityState,
+              approvalsRecorded: stored.approvalsRecorded,
+              releaseTokenId: responseToken?.tokenId ?? null,
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      if (error instanceof ReleaseReviewerQueueError) {
+        const status =
+          error.code === 'already_finalized'
+            ? 409
+            : error.code === 'duplicate_reviewer'
+              ? 409
+              : error.code === 'reviewer_not_allowed' || error.code === 'reviewer_role_not_allowed'
+                ? 403
+                : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    }
+  });
+
+  app.post('/api/v1/admin/release-reviews/:id/reject', async (c) => {
+    const unauthorized = currentAdminAuthorized(c);
+    if (unauthorized) return unauthorized;
+
+    const body = await parseReviewActionBody(c);
+    const routeId = 'admin.release_review.reject';
+    const mutation = await adminMutationRequest(c, routeId, body);
+    if (mutation instanceof Response) {
+      return mutation;
+    }
+
+    const record = apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
+    if (!record) {
+      return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
+    }
+
+    try {
+      const decidedAt = new Date().toISOString();
+      const transition = applyReviewerDecision({
+        record,
+        outcome: 'rejected',
+        reviewerId: readReviewField(body, 'reviewerId') ?? '',
+        reviewerName: readReviewField(body, 'reviewerName') ?? '',
+        reviewerRole: readReviewField(body, 'reviewerRole') ?? '',
+        note: readReviewField(body, 'note'),
+        decidedAt,
+      });
+
+      appendReviewerTimelineToDecisionLog(
+        financeReleaseDecisionLog,
+        transition.record.releaseDecision,
+        decidedAt,
+        `review:${transition.record.detail.id}:reject`,
+        'review',
+      );
+      appendReviewerTimelineToDecisionLog(
+        financeReleaseDecisionLog,
+        transition.record.releaseDecision,
+        decidedAt,
+        `review:${transition.record.detail.id}:terminal-deny`,
+        'terminal-deny',
+      );
+
+      const stored = apiReleaseReviewerQueueStore.upsert(transition.record);
+      c.header('cache-control', 'no-store');
+      return c.json(
+        await finalizeAdminMutation({
+          idempotencyKey: mutation.idempotencyKey,
+          routeId,
+          requestPayload: body,
+          statusCode: 200,
+          responseBody: buildReviewActionResponse(stored, null),
+          audit: {
+            action: 'release_review.rejected',
+            requestHash: mutation.requestHash,
+            metadata: {
+              reviewId: stored.id,
+              decisionId: stored.decisionId,
+              reviewerId: readReviewField(body, 'reviewerId'),
+              reviewerRole: readReviewField(body, 'reviewerRole'),
+              authorityState: stored.authorityState,
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      if (error instanceof ReleaseReviewerQueueError) {
+        const status =
+          error.code === 'already_finalized'
+            ? 409
+            : error.code === 'duplicate_reviewer'
+              ? 409
+              : error.code === 'reviewer_not_allowed' || error.code === 'reviewer_role_not_allowed'
+                ? 403
+                : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    }
   });
 }

@@ -1,17 +1,21 @@
+import { randomUUID } from 'node:crypto';
 import type {
   FinanceFilingReleaseCandidate,
   FinanceFilingReleaseReportLike,
   FinanceFilingRow,
 } from './finance-record-release.js';
 import type { ReleaseDecision, ReleaseFinding } from './object-model.js';
+import type { IssuedReleaseToken } from './release-token.js';
 import type { ReleaseDecisionLogEntry } from './release-decision-log.js';
 import type { RiskClass } from './types.js';
 import { consequenceTypeLabel, RISK_CLASS_PROFILES } from './types.js';
 
-export const RELEASE_REVIEWER_QUEUE_SPEC_VERSION = 'attestor.release-reviewer-queue.v1';
+export const RELEASE_REVIEWER_QUEUE_SPEC_VERSION = 'attestor.release-reviewer-queue.v2';
 
 export type ReleaseReviewerQueueItemKind = 'finance.filing-export';
-export type ReleaseReviewerQueueStatus = 'pending-review';
+export type ReleaseReviewerQueueStatus = 'pending-review' | 'approved' | 'rejected';
+export type ReleaseReviewerAuthorityState = 'pending' | 'approved' | 'rejected';
+export type ReleaseReviewerDecisionOutcome = 'approved' | 'rejected';
 
 export interface ReleaseReviewerTimelineEntry {
   readonly occurredAt: string;
@@ -19,6 +23,7 @@ export interface ReleaseReviewerTimelineEntry {
   readonly decisionStatus: ReleaseDecision['status'];
   readonly requiresReview: boolean;
   readonly deterministicChecksCompleted: boolean;
+  readonly reviewerLabel?: string;
 }
 
 export interface ReleaseReviewerChecklistItem {
@@ -41,14 +46,35 @@ export interface FinanceReviewerCandidatePreview {
   readonly oversightStatus: string | null;
 }
 
+export interface ReleaseReviewerIdentity {
+  readonly reviewerId: string;
+  readonly reviewerName: string;
+  readonly reviewerRole: string;
+}
+
+export interface ReleaseReviewerDecisionRecord extends ReleaseReviewerIdentity {
+  readonly id: string;
+  readonly outcome: ReleaseReviewerDecisionOutcome;
+  readonly decidedAt: string;
+  readonly note: string | null;
+}
+
+export interface ReleaseReviewerIssuedTokenSummary {
+  readonly tokenId: string;
+  readonly expiresAt: string;
+  readonly audience: string;
+}
+
 export interface ReleaseReviewerQueueSummary {
   readonly version: typeof RELEASE_REVIEWER_QUEUE_SPEC_VERSION;
   readonly id: string;
   readonly kind: ReleaseReviewerQueueItemKind;
   readonly status: ReleaseReviewerQueueStatus;
+  readonly authorityState: ReleaseReviewerAuthorityState;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly decisionId: string;
+  readonly releaseDecisionStatus: ReleaseDecision['status'];
   readonly policyVersion: string;
   readonly consequenceType: ReleaseDecision['consequenceType'];
   readonly consequenceLabel: string;
@@ -59,6 +85,8 @@ export interface ReleaseReviewerQueueSummary {
   readonly targetDisplayName: string;
   readonly authorityMode: ReleaseDecision['reviewAuthority']['mode'];
   readonly minimumReviewerCount: number;
+  readonly approvalsRecorded: number;
+  readonly approvalsRemaining: number;
   readonly headline: string;
   readonly summary: string;
   readonly findingSummary: string;
@@ -73,6 +101,13 @@ export interface ReleaseReviewerQueueDetail extends ReleaseReviewerQueueSummary 
   readonly candidate: FinanceReviewerCandidatePreview;
   readonly checklist: readonly ReleaseReviewerChecklistItem[];
   readonly timeline: readonly ReleaseReviewerTimelineEntry[];
+  readonly reviewerDecisions: readonly ReleaseReviewerDecisionRecord[];
+  readonly issuedReleaseToken: ReleaseReviewerIssuedTokenSummary | null;
+}
+
+export interface ReleaseReviewerQueueRecord {
+  readonly detail: ReleaseReviewerQueueDetail;
+  readonly releaseDecision: ReleaseDecision;
 }
 
 export interface ReleaseReviewerQueueListOptions {
@@ -89,8 +124,9 @@ export interface ReleaseReviewerQueueListResult {
 }
 
 export interface ReleaseReviewerQueueStore {
-  upsert(item: ReleaseReviewerQueueDetail): ReleaseReviewerQueueDetail;
+  upsert(record: ReleaseReviewerQueueRecord): ReleaseReviewerQueueDetail;
   get(id: string): ReleaseReviewerQueueDetail | null;
+  getRecord(id: string): ReleaseReviewerQueueRecord | null;
   listPending(options?: ReleaseReviewerQueueListOptions): ReleaseReviewerQueueListResult;
 }
 
@@ -99,6 +135,49 @@ export interface CreateFinanceReviewerQueueItemInput {
   readonly candidate: FinanceFilingReleaseCandidate;
   readonly report: FinanceFilingReleaseReportLike;
   readonly logEntries: readonly ReleaseDecisionLogEntry[];
+}
+
+export interface ApplyReviewerDecisionInput {
+  readonly record: ReleaseReviewerQueueRecord;
+  readonly outcome: ReleaseReviewerDecisionOutcome;
+  readonly reviewerId: string;
+  readonly reviewerName: string;
+  readonly reviewerRole: string;
+  readonly decidedAt: string;
+  readonly note?: string | null;
+}
+
+export interface ApplyReviewerDecisionResult {
+  readonly record: ReleaseReviewerQueueRecord;
+  readonly finalDecisionReached: boolean;
+}
+
+export interface AttachIssuedTokenInput {
+  readonly record: ReleaseReviewerQueueRecord;
+  readonly issuedToken: IssuedReleaseToken;
+}
+
+export class ReleaseReviewerQueueError extends Error {
+  readonly code:
+    | 'missing_reviewer'
+    | 'reviewer_not_allowed'
+    | 'reviewer_role_not_allowed'
+    | 'duplicate_reviewer'
+    | 'already_finalized';
+
+  constructor(
+    code:
+      | 'missing_reviewer'
+      | 'reviewer_not_allowed'
+      | 'reviewer_role_not_allowed'
+      | 'duplicate_reviewer'
+      | 'already_finalized',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ReleaseReviewerQueueError';
+    this.code = code;
+  }
 }
 
 function riskRank(riskClass: RiskClass): number {
@@ -227,9 +306,226 @@ function buildTimeline(
   );
 }
 
+function ensureNamedReviewerRequirements(
+  decision: ReleaseDecision,
+  input: ApplyReviewerDecisionInput,
+): void {
+  if (!input.reviewerId.trim() || !input.reviewerName.trim() || !input.reviewerRole.trim()) {
+    throw new ReleaseReviewerQueueError(
+      'missing_reviewer',
+      'Named review requires reviewerId, reviewerName, and reviewerRole.',
+    );
+  }
+
+  if (
+    decision.reviewAuthority.requiredReviewerIds.length > 0 &&
+    !decision.reviewAuthority.requiredReviewerIds.includes(input.reviewerId.trim())
+  ) {
+    throw new ReleaseReviewerQueueError(
+      'reviewer_not_allowed',
+      `Reviewer '${input.reviewerId}' is not authorized for this release decision.`,
+    );
+  }
+
+  if (
+    decision.reviewAuthority.requiredRoles.length > 0 &&
+    !decision.reviewAuthority.requiredRoles.includes(input.reviewerRole.trim())
+  ) {
+    throw new ReleaseReviewerQueueError(
+      'reviewer_role_not_allowed',
+      `Reviewer role '${input.reviewerRole}' is not allowed for this release decision.`,
+    );
+  }
+}
+
+function reviewerDecisionRecord(
+  input: ApplyReviewerDecisionInput,
+): ReleaseReviewerDecisionRecord {
+  return Object.freeze({
+    id: `rrd_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+    reviewerId: input.reviewerId.trim(),
+    reviewerName: input.reviewerName.trim(),
+    reviewerRole: input.reviewerRole.trim(),
+    outcome: input.outcome,
+    decidedAt: input.decidedAt,
+    note: input.note?.trim() ? input.note.trim() : null,
+  });
+}
+
+function updateReviewSummary(
+  decision: ReleaseDecision,
+  reviewerDecisions: readonly ReleaseReviewerDecisionRecord[],
+): Pick<
+  ReleaseReviewerQueueSummary,
+  | 'status'
+  | 'authorityState'
+  | 'releaseDecisionStatus'
+  | 'approvalsRecorded'
+  | 'approvalsRemaining'
+  | 'summary'
+  | 'findingSummary'
+> {
+  const approvalsRecorded = reviewerDecisions.filter((entry) => entry.outcome === 'approved').length;
+  const rejection = reviewerDecisions.find((entry) => entry.outcome === 'rejected') ?? null;
+  const approvalsRemaining = Math.max(
+    decision.reviewAuthority.minimumReviewerCount - approvalsRecorded,
+    0,
+  );
+
+  if (rejection) {
+    return {
+      status: 'rejected',
+      authorityState: 'rejected',
+      releaseDecisionStatus: 'denied',
+      approvalsRecorded,
+      approvalsRemaining,
+      summary: `Reviewer authority denied consequence after ${rejection.reviewerName} rejected the release candidate.`,
+      findingSummary: `Rejected by ${rejection.reviewerName}; no release token may be issued for this candidate.`,
+    };
+  }
+
+  if (approvalsRemaining === 0) {
+    return {
+      status: 'approved',
+      authorityState: 'approved',
+      releaseDecisionStatus: 'accepted',
+      approvalsRecorded,
+      approvalsRemaining,
+      summary: `Reviewer authority is complete. ${approvalsRecorded} reviewer approval(s) authorized release to ${targetDisplayName(decision)}.`,
+      findingSummary: 'Human authority completed the release decision; token issuance may proceed.',
+    };
+  }
+
+  return {
+    status: 'pending-review',
+    authorityState: 'pending',
+    releaseDecisionStatus: decision.status,
+    approvalsRecorded,
+    approvalsRemaining,
+    summary: `${approvalsRecorded} of ${decision.reviewAuthority.minimumReviewerCount} required reviewer approval(s) recorded before consequence may proceed.`,
+    findingSummary: approvalsRecorded > 0
+      ? 'Additional named reviewer approval is still required before token issuance.'
+      : summarizeFindings(decision.findings),
+  };
+}
+
+function addReviewFinding(
+  decision: ReleaseDecision,
+  input: ApplyReviewerDecisionInput,
+  approvalsRecorded: number,
+): ReleaseFinding {
+  if (input.outcome === 'rejected') {
+    return {
+      code: 'release_reviewer_rejected',
+      result: 'fail',
+      message: `${input.reviewerName.trim()} rejected the release candidate before consequence.`,
+      source: 'review',
+    };
+  }
+
+  return {
+    code:
+      decision.reviewAuthority.minimumReviewerCount > 1
+        ? approvalsRecorded >= decision.reviewAuthority.minimumReviewerCount
+          ? 'release_dual_approval_completed'
+          : 'release_dual_approval_partial'
+        : 'release_named_review_approved',
+    result: approvalsRecorded >= decision.reviewAuthority.minimumReviewerCount ? 'pass' : 'info',
+    message:
+      approvalsRecorded >= decision.reviewAuthority.minimumReviewerCount
+        ? `${input.reviewerName.trim()} completed the required reviewer authority for consequence release.`
+        : `${input.reviewerName.trim()} recorded approval ${approvalsRecorded} of ${decision.reviewAuthority.minimumReviewerCount}.`,
+    source: 'review',
+  };
+}
+
+function cloneDecisionWithReviewOutcome(
+  decision: ReleaseDecision,
+  input: ApplyReviewerDecisionInput,
+  reviewerDecisions: readonly ReleaseReviewerDecisionRecord[],
+): ReleaseDecision {
+  const approvalsRecorded = reviewerDecisions.filter((entry) => entry.outcome === 'approved').length;
+  const nextStatus =
+    input.outcome === 'rejected'
+      ? 'denied'
+      : approvalsRecorded >= decision.reviewAuthority.minimumReviewerCount
+        ? 'accepted'
+        : decision.status;
+
+  return Object.freeze({
+    ...decision,
+    status: nextStatus,
+    findings: Object.freeze([...decision.findings, addReviewFinding(decision, input, approvalsRecorded)]),
+  });
+}
+
+function reviewerTimelineEntry(
+  occurredAt: string,
+  phase: ReleaseReviewerTimelineEntry['phase'],
+  decisionStatus: ReleaseDecision['status'],
+  reviewerLabel: string,
+): ReleaseReviewerTimelineEntry {
+  return Object.freeze({
+    occurredAt,
+    phase,
+    decisionStatus,
+    requiresReview: decisionStatus === 'review-required' || decisionStatus === 'hold',
+    deterministicChecksCompleted: true,
+    reviewerLabel,
+  });
+}
+
+function freezeReviewerDecisions(
+  decisions: readonly ReleaseReviewerDecisionRecord[],
+): readonly ReleaseReviewerDecisionRecord[] {
+  return Object.freeze(decisions.map((entry) => Object.freeze({ ...entry })));
+}
+
+function freezeTimeline(
+  timeline: readonly ReleaseReviewerTimelineEntry[],
+): readonly ReleaseReviewerTimelineEntry[] {
+  return Object.freeze(timeline.map((entry) => Object.freeze({ ...entry })));
+}
+
+function freezeDetail(detail: ReleaseReviewerQueueDetail): ReleaseReviewerQueueDetail {
+  return Object.freeze({
+    ...detail,
+    findings: Object.freeze(detail.findings.map((finding) => Object.freeze({ ...finding }))),
+    checklist: Object.freeze(detail.checklist.map((entry) => Object.freeze({ ...entry }))),
+    timeline: freezeTimeline(detail.timeline),
+    reviewerDecisions: freezeReviewerDecisions(detail.reviewerDecisions),
+    candidate: Object.freeze({
+      ...detail.candidate,
+      rowKeys: Object.freeze([...detail.candidate.rowKeys]),
+      previewRows: Object.freeze(detail.candidate.previewRows.map((row) => Object.freeze({ ...row }))),
+    }),
+    issuedReleaseToken: detail.issuedReleaseToken
+      ? Object.freeze({ ...detail.issuedReleaseToken })
+      : null,
+  });
+}
+
+function freezeRecord(record: ReleaseReviewerQueueRecord): ReleaseReviewerQueueRecord {
+  return Object.freeze({
+    detail: freezeDetail(record.detail),
+    releaseDecision: Object.freeze({
+      ...record.releaseDecision,
+      findings: Object.freeze(record.releaseDecision.findings.map((finding) => Object.freeze({ ...finding }))),
+      reviewAuthority: Object.freeze({
+        ...record.releaseDecision.reviewAuthority,
+        requiredRoles: Object.freeze([...record.releaseDecision.reviewAuthority.requiredRoles]),
+        requiredReviewerIds: Object.freeze([...record.releaseDecision.reviewAuthority.requiredReviewerIds]),
+      }),
+      releaseConditions: Object.freeze({
+        items: Object.freeze(record.releaseDecision.releaseConditions.items.map((item) => Object.freeze({ ...item }))),
+      }),
+    }),
+  });
+}
+
 export function createFinanceReviewerQueueItem(
   input: CreateFinanceReviewerQueueItemInput,
-): ReleaseReviewerQueueDetail {
+): ReleaseReviewerQueueRecord {
   const { decision, candidate, report, logEntries } = input;
   const checklist = buildChecklist(decision, candidate);
   const candidatePreview = buildCandidatePreview(candidate, report);
@@ -239,63 +535,158 @@ export function createFinanceReviewerQueueItem(
   const headline = `${candidate.adapterId} filing export waiting for release review`;
   const summary = `${candidate.runId} is paused before consequence because ${decision.reviewAuthority.minimumReviewerCount === 1 ? 'a reviewer' : `${decision.reviewAuthority.minimumReviewerCount} reviewers`} must authorize release to ${targetDisplayName(decision)}.`;
 
-  return Object.freeze({
-    version: RELEASE_REVIEWER_QUEUE_SPEC_VERSION,
-    id: `review_${decision.id}`,
-    kind: 'finance.filing-export',
-    status: 'pending-review',
-    createdAt,
-    updatedAt: createdAt,
-    decisionId: decision.id,
-    policyVersion: decision.policyVersion,
-    consequenceType: decision.consequenceType,
-    consequenceLabel: consequenceTypeLabel(decision.consequenceType),
-    riskClass: decision.riskClass,
-    riskLabel: riskProfile.label,
-    requesterLabel: requesterLabel(decision),
-    targetId: decision.target.id,
-    targetDisplayName: targetDisplayName(decision),
-    authorityMode: decision.reviewAuthority.mode,
-    minimumReviewerCount: decision.reviewAuthority.minimumReviewerCount,
-    headline,
-    summary,
-    findingSummary: summarizeFindings(decision.findings),
-    checklistSummary: checklist[0]?.label ?? 'Review required before consequence.',
-    outputHash: decision.outputHash,
-    consequenceHash: decision.consequenceHash,
-    evidencePackId: decision.evidencePackId,
-    findings: Object.freeze(decision.findings.map((finding) => Object.freeze({ ...finding }))),
-    candidate: candidatePreview,
-    checklist,
-    timeline,
+  return freezeRecord({
+    detail: {
+      version: RELEASE_REVIEWER_QUEUE_SPEC_VERSION,
+      id: `review_${decision.id}`,
+      kind: 'finance.filing-export',
+      status: 'pending-review',
+      authorityState: 'pending',
+      createdAt,
+      updatedAt: createdAt,
+      decisionId: decision.id,
+      releaseDecisionStatus: decision.status,
+      policyVersion: decision.policyVersion,
+      consequenceType: decision.consequenceType,
+      consequenceLabel: consequenceTypeLabel(decision.consequenceType),
+      riskClass: decision.riskClass,
+      riskLabel: riskProfile.label,
+      requesterLabel: requesterLabel(decision),
+      targetId: decision.target.id,
+      targetDisplayName: targetDisplayName(decision),
+      authorityMode: decision.reviewAuthority.mode,
+      minimumReviewerCount: decision.reviewAuthority.minimumReviewerCount,
+      approvalsRecorded: 0,
+      approvalsRemaining: decision.reviewAuthority.minimumReviewerCount,
+      headline,
+      summary,
+      findingSummary: summarizeFindings(decision.findings),
+      checklistSummary: checklist[0]?.label ?? 'Review required before consequence.',
+      outputHash: decision.outputHash,
+      consequenceHash: decision.consequenceHash,
+      evidencePackId: decision.evidencePackId,
+      findings: Object.freeze(decision.findings.map((finding) => Object.freeze({ ...finding }))),
+      candidate: candidatePreview,
+      checklist,
+      timeline,
+      reviewerDecisions: Object.freeze([]),
+      issuedReleaseToken: null,
+    },
+    releaseDecision: Object.freeze({
+      ...decision,
+      findings: Object.freeze(decision.findings.map((finding) => Object.freeze({ ...finding }))),
+    }),
+  });
+}
+
+export function applyReviewerDecision(
+  input: ApplyReviewerDecisionInput,
+): ApplyReviewerDecisionResult {
+  const { record } = input;
+  if (record.detail.status !== 'pending-review') {
+    throw new ReleaseReviewerQueueError(
+      'already_finalized',
+      `Release review '${record.detail.id}' is already ${record.detail.status}.`,
+    );
+  }
+
+  ensureNamedReviewerRequirements(record.releaseDecision, input);
+
+  if (
+    record.detail.reviewerDecisions.some(
+      (entry) => entry.reviewerId === input.reviewerId.trim(),
+    )
+  ) {
+    throw new ReleaseReviewerQueueError(
+      'duplicate_reviewer',
+      `Reviewer '${input.reviewerId}' has already acted on this release decision.`,
+    );
+  }
+
+  const reviewEntry = reviewerDecisionRecord(input);
+  const reviewerDecisions = freezeReviewerDecisions([
+    ...record.detail.reviewerDecisions,
+    reviewEntry,
+  ]);
+  const nextDecision = cloneDecisionWithReviewOutcome(record.releaseDecision, input, reviewerDecisions);
+  const summary = updateReviewSummary(nextDecision, reviewerDecisions);
+  const timeline = freezeTimeline([
+    ...record.detail.timeline,
+    reviewerTimelineEntry(
+      input.decidedAt,
+      'review',
+      nextDecision.status,
+      reviewEntry.reviewerName,
+    ),
+    ...(summary.authorityState === 'approved'
+      ? [reviewerTimelineEntry(input.decidedAt, 'terminal-accept', 'accepted', reviewEntry.reviewerName)]
+      : summary.authorityState === 'rejected'
+        ? [reviewerTimelineEntry(input.decidedAt, 'terminal-deny', 'denied', reviewEntry.reviewerName)]
+        : []),
+  ]);
+
+  return {
+    record: freezeRecord({
+      detail: {
+        ...record.detail,
+        status: summary.status,
+        authorityState: summary.authorityState,
+        updatedAt: input.decidedAt,
+        releaseDecisionStatus: summary.releaseDecisionStatus,
+        approvalsRecorded: summary.approvalsRecorded,
+        approvalsRemaining: summary.approvalsRemaining,
+        summary: summary.summary,
+        findingSummary: summary.findingSummary,
+        findings: Object.freeze(nextDecision.findings.map((finding) => Object.freeze({ ...finding }))),
+        timeline,
+        reviewerDecisions,
+      },
+      releaseDecision: nextDecision,
+    }),
+    finalDecisionReached:
+      summary.authorityState === 'approved' || summary.authorityState === 'rejected',
+  };
+}
+
+export function attachIssuedTokenToReviewerQueueRecord(
+  input: AttachIssuedTokenInput,
+): ReleaseReviewerQueueRecord {
+  return freezeRecord({
+    detail: {
+      ...input.record.detail,
+      updatedAt: input.issuedToken.issuedAt,
+      issuedReleaseToken: {
+        tokenId: input.issuedToken.tokenId,
+        expiresAt: input.issuedToken.expiresAt,
+        audience: input.issuedToken.claims.aud,
+      },
+    },
+    releaseDecision: {
+      ...input.record.releaseDecision,
+      releaseTokenId: input.issuedToken.tokenId,
+    },
   });
 }
 
 export function createInMemoryReleaseReviewerQueueStore(): ReleaseReviewerQueueStore {
-  const items = new Map<string, ReleaseReviewerQueueDetail>();
+  const items = new Map<string, ReleaseReviewerQueueRecord>();
 
   return {
-    upsert(item: ReleaseReviewerQueueDetail): ReleaseReviewerQueueDetail {
-      const stored: ReleaseReviewerQueueDetail = Object.freeze({
-        ...item,
-        findings: Object.freeze(item.findings.map((finding) => Object.freeze({ ...finding }))),
-        checklist: Object.freeze(item.checklist.map((entry) => Object.freeze({ ...entry }))),
-        timeline: Object.freeze(item.timeline.map((entry) => Object.freeze({ ...entry }))),
-        candidate: Object.freeze({
-          ...item.candidate,
-          rowKeys: Object.freeze([...item.candidate.rowKeys]),
-          previewRows: Object.freeze(item.candidate.previewRows.map((row) => Object.freeze({ ...row }))),
-        }),
-      });
-      items.set(stored.id, stored);
-      return stored;
+    upsert(record: ReleaseReviewerQueueRecord): ReleaseReviewerQueueDetail {
+      const stored = freezeRecord(record);
+      items.set(stored.detail.id, stored);
+      return stored.detail;
     },
     get(id: string): ReleaseReviewerQueueDetail | null {
+      return items.get(id)?.detail ?? null;
+    },
+    getRecord(id: string): ReleaseReviewerQueueRecord | null {
       return items.get(id) ?? null;
     },
     listPending(options: ReleaseReviewerQueueListOptions = {}): ReleaseReviewerQueueListResult {
       const generatedAt = new Date().toISOString();
       const filtered = [...items.values()]
+        .map((record) => record.detail)
         .filter((item) => item.status === 'pending-review')
         .filter((item) => !options.riskClass || item.riskClass === options.riskClass)
         .filter((item) => !options.consequenceType || item.consequenceType === options.consequenceType)

@@ -255,7 +255,9 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
     let fullCert: any = null;
     let savedPubKey: string = '';
     let filingRelease: any = null;
+    let reviewRequiredFilingRelease: any = null;
     let reviewQueueId: string | null = null;
+    let approvedReleaseToken: string | null = null;
     {
       const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
@@ -329,6 +331,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(body.release.filingExport.token === null, 'Pipeline(review queue): no release token issued yet');
       ok(typeof body.release.filingExport.reviewQueueId === 'string', 'Pipeline(review queue): reviewer queue id present');
       ok(typeof body.release.filingExport.reviewQueuePath === 'string', 'Pipeline(review queue): reviewer queue path present');
+      reviewRequiredFilingRelease = body.release.filingExport;
       reviewQueueId = body.release.filingExport.reviewQueueId;
       console.log(`    reviewQueue=${reviewQueueId}, releaseDecision=${body.release.filingExport.decisionId}`);
     }
@@ -373,6 +376,57 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(detailHtml.includes('Release review packet'), 'Reviewer inbox(detail html): detail packet headline rendered');
       ok(detailHtml.includes('Candidate preview'), 'Reviewer inbox(detail html): candidate preview section rendered');
       console.log(`    pending=${listBody.totalPending}, review=${reviewQueueId}`);
+    }
+
+    // ═══ REVIEWER QUEUE — named review and dual approval ═══
+    console.log('\n  [POST /api/v1/admin/release-reviews/:id/approve — named review + dual approval]');
+    {
+      const firstApprovalRes = await fetch(`${BASE}/api/v1/admin/release-reviews/${reviewQueueId}/approve`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reviewerId: 'reviewer.alpha',
+          reviewerName: 'Alpha Reviewer',
+          reviewerRole: 'financial_reporting_manager',
+          note: 'Finance target binding and row preview look correct.',
+        }),
+      });
+      ok(firstApprovalRes.status === 200, 'Reviewer approve(first): status 200');
+      const firstApprovalBody = await firstApprovalRes.json() as any;
+      ok(firstApprovalBody.review.status === 'pending-review', 'Reviewer approve(first): R4 item remains pending after first approval');
+      ok(firstApprovalBody.review.approvalsRecorded === 1, 'Reviewer approve(first): first approval is counted');
+      ok(firstApprovalBody.releaseToken === null, 'Reviewer approve(first): no token issued before dual approval closes');
+
+      const secondApprovalRes = await fetch(`${BASE}/api/v1/admin/release-reviews/${reviewQueueId}/approve`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reviewerId: 'reviewer.beta',
+          reviewerName: 'Beta Reviewer',
+          reviewerRole: 'financial_reporting_manager',
+          note: 'Second approval closes the regulated release authority path.',
+        }),
+      });
+      ok(secondApprovalRes.status === 200, 'Reviewer approve(second): status 200');
+      const secondApprovalBody = await secondApprovalRes.json() as any;
+      ok(secondApprovalBody.review.status === 'approved', 'Reviewer approve(second): review queue item closes as approved');
+      ok(secondApprovalBody.review.authorityState === 'approved', 'Reviewer approve(second): authority state becomes approved');
+      ok(typeof secondApprovalBody.releaseToken?.token === 'string', 'Reviewer approve(second): release token is issued after dual approval');
+      approvedReleaseToken = secondApprovalBody.releaseToken.token;
+
+      const listAfterApprovalRes = await fetch(`${BASE}/api/v1/admin/release-reviews`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(listAfterApprovalRes.status === 200, 'Reviewer inbox(after approval): status 200');
+      const listAfterApprovalBody = await listAfterApprovalRes.json() as any;
+      ok(!listAfterApprovalBody.items.some((item: any) => item.id === reviewQueueId), 'Reviewer inbox(after approval): approved item no longer appears in pending inbox');
+      console.log(`    approvals=2/2, token=${secondApprovalBody.releaseToken.tokenId}`);
     }
 
     // ═══ VERIFY ENDPOINT — PKI mandatory: flat Ed25519 rejected with 422 ═══
@@ -440,6 +494,25 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       const body = await res.json() as any;
       ok(body.error === 'insufficient_scope', 'Filing(tampered): binding mismatch rejected as insufficient scope');
       console.log('    tampered payload blocked by output/consequence hash binding');
+    }
+
+    // ═══ FILING EXPORT — approved reviewer token ═══
+    console.log('\n  [POST /api/v1/filing/export — approved dual-review token]');
+    {
+      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${approvedReleaseToken}`,
+        },
+        body: JSON.stringify(reviewRequiredFilingRelease.candidate),
+      });
+      ok(res.status === 200, 'Filing(approved dual-review token): status 200');
+      const body = await res.json() as any;
+      ok(body.release?.authorized === true, 'Filing(approved dual-review token): release authorization is attached');
+      ok(body.release?.introspectionVerified === true, 'Filing(approved dual-review token): high-risk introspection is confirmed');
+      ok(body.package?.content?.facts?.length > 0, 'Filing(approved dual-review token): filing package is still produced after human authority closes');
+      console.log(`    approved review release decision=${body.release.decisionId}, token=${body.release.tokenId}`);
     }
 
     // ═══ FILING EXPORT — authorized XBRL ═══
