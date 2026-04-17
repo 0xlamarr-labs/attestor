@@ -19,9 +19,12 @@ export function registerPipelineRoutes(app: Hono, deps: RouteDeps): void {
     FINANCE_FILING_ADAPTER_ID,
     buildFinanceFilingReleaseMaterial,
     financeReleaseDecisionEngine,
+    financeReleaseDecisionLog,
     buildFinanceFilingReleaseObservation,
     currentReleaseRequester,
     finalizeFinanceFilingReleaseDecision,
+    createFinanceReviewerQueueItem,
+    apiReleaseReviewerQueueStore,
     apiReleaseTokenIssuer,
     apiReleaseIntrospectionStore,
     consumePipelineRunState,
@@ -201,6 +204,8 @@ app.post('/api/v1/pipeline/run', async (c) => {
       tokenId: string | null;
       token: string | null;
       expiresAt: string | null;
+      reviewQueueId: string | null;
+      reviewQueuePath: string | null;
       candidate: {
         adapterId: string;
         runId: string;
@@ -242,6 +247,18 @@ app.post('/api/v1/pipeline/run', async (c) => {
           evaluation.decision,
           report,
         );
+        const reviewQueueItem =
+          releaseDecision.reviewAuthority.minimumReviewerCount > 0 &&
+          (releaseDecision.status === 'review-required' || releaseDecision.status === 'hold')
+            ? apiReleaseReviewerQueueStore.upsert(
+                createFinanceReviewerQueueItem({
+                  decision: releaseDecision,
+                  candidate: filingCandidate,
+                  report,
+                  logEntries: financeReleaseDecisionLog.entries(),
+                }),
+              )
+            : null;
         const issuedReleaseToken =
           releaseDecision.status === 'accepted'
             ? await apiReleaseTokenIssuer.issue({
@@ -271,6 +288,10 @@ app.post('/api/v1/pipeline/run', async (c) => {
           tokenId: issuedReleaseToken?.tokenId ?? null,
           token: issuedReleaseToken?.token ?? null,
           expiresAt: issuedReleaseToken?.expiresAt ?? null,
+          reviewQueueId: reviewQueueItem?.id ?? null,
+          reviewQueuePath: reviewQueueItem
+            ? `/api/v1/admin/release-reviews/${reviewQueueItem.id}`
+            : null,
           candidate: filingCandidate,
         };
       }

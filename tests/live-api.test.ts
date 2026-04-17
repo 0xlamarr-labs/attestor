@@ -255,6 +255,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
     let fullCert: any = null;
     let savedPubKey: string = '';
     let filingRelease: any = null;
+    let reviewQueueId: string | null = null;
     {
       const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
@@ -299,6 +300,79 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(Array.isArray(body.release.filingExport.candidate.rows), 'Pipeline(signed): filing release candidate rows present');
       filingRelease = body.release.filingExport;
       console.log(`    cert=${fullCert.certificateId}, chain: CA=${body.trustChain.ca.name}, leaf=${body.trustChain.leaf.subject}`);
+    }
+
+    // ═══ PIPELINE RUN — review-required candidate ═══
+    console.log('\n  [POST /api/v1/pipeline/run — review-required release candidate]');
+    {
+      const reviewRequiredIntent = {
+        ...COUNTERPARTY_INTENT,
+        materialityTier: 'high',
+      };
+      const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: reviewRequiredIntent,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: true,
+        }),
+      });
+      ok(res.status === 200, 'Pipeline(review queue): status 200');
+      const body = await res.json() as any;
+      ok(body.decision === 'pending_approval', 'Pipeline(review queue): finance decision is pending approval');
+      ok(body.release?.filingExport !== null, 'Pipeline(review queue): filing release artifact present');
+      ok(body.release.filingExport.decisionStatus === 'hold', 'Pipeline(review queue): release decision is held pending reviewer authority');
+      ok(body.release.filingExport.token === null, 'Pipeline(review queue): no release token issued yet');
+      ok(typeof body.release.filingExport.reviewQueueId === 'string', 'Pipeline(review queue): reviewer queue id present');
+      ok(typeof body.release.filingExport.reviewQueuePath === 'string', 'Pipeline(review queue): reviewer queue path present');
+      reviewQueueId = body.release.filingExport.reviewQueueId;
+      console.log(`    reviewQueue=${reviewQueueId}, releaseDecision=${body.release.filingExport.decisionId}`);
+    }
+
+    // ═══ REVIEWER QUEUE — list/detail/inbox ═══
+    console.log('\n  [GET /api/v1/admin/release-reviews — reviewer inbox]');
+    {
+      const listRes = await fetch(`${BASE}/api/v1/admin/release-reviews`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(listRes.status === 200, 'Reviewer inbox(list): status 200');
+      const listBody = await listRes.json() as any;
+      ok(listBody.totalPending >= 1, 'Reviewer inbox(list): at least one pending review is listed');
+      ok(Array.isArray(listBody.items), 'Reviewer inbox(list): items array present');
+      const listedItem = listBody.items.find((item: any) => item.id === reviewQueueId);
+      ok(Boolean(listedItem), 'Reviewer inbox(list): newly queued review is discoverable');
+      ok(listedItem.riskClass === 'R4', 'Reviewer inbox(list): queued review keeps R4 risk');
+
+      const detailRes = await fetch(`${BASE}/api/v1/admin/release-reviews/${reviewQueueId}`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(detailRes.status === 200, 'Reviewer inbox(detail): status 200');
+      const detailBody = await detailRes.json() as any;
+      ok(detailBody.review.id === reviewQueueId, 'Reviewer inbox(detail): requested queue item returned');
+      ok(detailBody.review.candidate.rowCount > 0, 'Reviewer inbox(detail): candidate preview present');
+      ok(Array.isArray(detailBody.review.timeline) && detailBody.review.timeline.length >= 2, 'Reviewer inbox(detail): timeline included');
+
+      const inboxHtmlRes = await fetch(`${BASE}/api/v1/admin/release-reviews/inbox`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(inboxHtmlRes.status === 200, 'Reviewer inbox(html): status 200');
+      ok((inboxHtmlRes.headers.get('content-type') ?? '').includes('text/html'), 'Reviewer inbox(html): text/html content type');
+      const inboxHtml = await inboxHtmlRes.text();
+      ok(inboxHtml.includes('Human authority before consequence.'), 'Reviewer inbox(html): reviewer inbox headline rendered');
+      ok(inboxHtml.includes(String(reviewQueueId)), 'Reviewer inbox(html): queued review is rendered into the inbox view');
+
+      const detailHtmlRes = await fetch(`${BASE}/api/v1/admin/release-reviews/${reviewQueueId}/view`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(detailHtmlRes.status === 200, 'Reviewer inbox(detail html): status 200');
+      const detailHtml = await detailHtmlRes.text();
+      ok(detailHtml.includes('Release review packet'), 'Reviewer inbox(detail html): detail packet headline rendered');
+      ok(detailHtml.includes('Candidate preview'), 'Reviewer inbox(detail html): candidate preview section rendered');
+      console.log(`    pending=${listBody.totalPending}, review=${reviewQueueId}`);
     }
 
     // ═══ VERIFY ENDPOINT — PKI mandatory: flat Ed25519 rejected with 422 ═══

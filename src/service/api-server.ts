@@ -89,6 +89,10 @@ import {
   createInMemoryReleaseTokenIntrospectionStore,
   createReleaseTokenIntrospector,
 } from '../release-kernel/release-introspection.js';
+import {
+  createFinanceReviewerQueueItem,
+  createInMemoryReleaseReviewerQueueStore,
+} from '../release-kernel/reviewer-queue.js';
 import { createReleaseTokenIssuer } from '../release-kernel/release-token.js';
 import {
   ReleaseVerificationError,
@@ -350,11 +354,16 @@ import {
   renderFinancialReportingProofPage,
   renderHostedReturnPage,
 } from './site.js';
+import {
+  renderReleaseReviewerQueueDetailPage,
+  renderReleaseReviewerQueueInboxPage,
+} from './release-review-site.js';
 import { registerCoreRoutes } from './http/routes/core-routes.js';
 import { registerAdminRoutes } from './http/routes/admin-routes.js';
 import { registerAccountRoutes } from './http/routes/account-routes.js';
 import { registerPipelineRoutes } from './http/routes/pipeline-routes.js';
 import { registerPublicSiteRoutes } from './http/routes/public-site-routes.js';
+import { registerReleaseReviewRoutes } from './http/routes/release-review-routes.js';
 import { registerWebhookRoutes } from './http/routes/webhook-routes.js';
 
 // Register domain packs
@@ -518,6 +527,7 @@ const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
 const financeReleaseDecisionEngine = createReleaseDecisionEngine({
   decisionLog: financeReleaseDecisionLog,
 });
+const apiReleaseReviewerQueueStore = createInMemoryReleaseReviewerQueueStore();
 const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
 const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
 const apiReleaseTokenIssuer = createReleaseTokenIssuer({
@@ -1742,6 +1752,8 @@ const routeDeps = {
   buildHostedBillingExport,
   renderHostedBillingExportCsv,
   buildHostedBillingReconciliation,
+  renderReleaseReviewerQueueInboxPage,
+  renderReleaseReviewerQueueDetailPage,
   currentAdminAuthorized,
   adminTenantKeyView,
   listHostedAccountsState,
@@ -1794,9 +1806,12 @@ const routeDeps = {
   FINANCE_FILING_ADAPTER_ID,
   buildFinanceFilingReleaseMaterial,
   financeReleaseDecisionEngine,
+  financeReleaseDecisionLog,
   buildFinanceFilingReleaseObservation,
   currentReleaseRequester,
   finalizeFinanceFilingReleaseDecision,
+  createFinanceReviewerQueueItem,
+  apiReleaseReviewerQueueStore,
   apiReleaseTokenIssuer,
   apiReleaseIntrospectionStore,
   consumePipelineRunState,
@@ -1878,6 +1893,7 @@ registerPublicSiteRoutes(app, routeDeps);
 registerCoreRoutes(app, routeDeps);
 registerAccountRoutes(app, routeDeps);
 registerAdminRoutes(app, routeDeps);
+registerReleaseReviewRoutes(app, routeDeps);
 registerWebhookRoutes(app, routeDeps);
 registerPipelineRoutes(app, routeDeps);
 

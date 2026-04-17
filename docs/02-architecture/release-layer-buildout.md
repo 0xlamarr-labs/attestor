@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 17 |
+| Completed | 18 |
 | In progress | 0 |
-| Not started | 7 |
+| Not started | 6 |
 
 ## Frozen Step List
 
@@ -62,7 +62,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 15 | complete | Add token introspection for high-risk paths | `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/api-server.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/live-api.test.ts` | High-risk release tokens now require active-status introspection in addition to cryptographic verification: the release authority plane registers issued tokens, the verifier checks active state for `R3/R4`, and the finance filing export path now proves this on the first hard gateway wedge using RFC 7662-style active/inactive semantics adapted to the release layer. |
 | 16 | complete | Add token revocation and expiry handling | `src/release-kernel/release-token.ts`, `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/http/routes/admin-routes.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/live-api.test.ts` | Release tokens now distinguish natural expiry from explicit revocation: JOSE verification surfaces expiry clearly, the release registry persists `issued`/`expired`/`revoked` lifecycle state, admin operators can revoke issued release tokens explicitly on the first finance hard-gateway wedge, and downstream verification now blocks revoked tokens with a reason-specific fail-closed response aligned with current RFC 7009 / RFC 7662 lifecycle expectations. |
 | 17 | complete | Add replay protection ledger | `src/release-kernel/object-model.ts`, `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/http/routes/pipeline-routes.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/live-api.test.ts` | Release tokens now carry real usage-limit enforcement instead of advisory intent: the release authority plane persists token use counts, single-use finance filing-export tokens become consumed after the first successful consequence admission, replay attempts fail closed with an explicit consumed-token lifecycle reason, and the first hard finance gateway path now proves `jti`-bound consequence authorization rather than reusable bearer reuse. |
-| 18 | not_started | Build the reviewer queue UX | Pending | Reviewer decision needs to be fast and legible. |
+| 18 | complete | Build the reviewer queue UX | `src/release-kernel/reviewer-queue.ts`, `src/service/release-review-site.ts`, `src/service/http/routes/release-review-routes.ts`, `src/service/http/routes/pipeline-routes.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/live-api.test.ts` | Higher-risk release candidates now land in a real reviewer inbox instead of disappearing into `hold`: the release layer persists reviewer-facing queue packets with candidate preview, finding summary, checklist, and decision-log timeline; the finance-first proving path now enqueues held R4 filing candidates into that inbox; and operators get both JSON and legible HTML inbox/detail surfaces without collapsing the release layer back into a manual black box. |
 | 19 | not_started | Add named review and dual approval | Pending | Default authority model for R3/R4. |
 | 20 | not_started | Add override and break-glass path | Pending | Emergency release with stronger audit and shorter validity. |
 | 21 | not_started | Sign and export the durable evidence pack | Pending | Longer-lived proof separate from the short-lived release token. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 18 is next. The goal is to build the reviewer queue UX so higher-risk releases can move through human authority quickly without turning the release layer into a manual bottleneck.
+Step 19 is next. The goal is to add named review and dual approval so the reviewer inbox can move from passive visibility into explicit authority closure for `R3/R4`.
