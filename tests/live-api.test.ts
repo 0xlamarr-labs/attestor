@@ -254,6 +254,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
     console.log('\n  [POST /api/v1/pipeline/run — signed]');
     let fullCert: any = null;
     let savedPubKey: string = '';
+    let filingRelease: any = null;
     {
       const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
@@ -288,6 +289,14 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(body.filingPackage.adapterId === 'xbrl-us-gaap-2024', 'Pipeline(signed): filing package adapter');
       ok(body.filingPackage.issuedPackage.fileExtension === '.xbr', 'Pipeline(signed): filing package uses .xbr');
       ok(body.filingPackage.issuedPackage.archive.base64.length > 0, 'Pipeline(signed): filing archive base64 present');
+      ok(body.release?.filingExport !== null, 'Pipeline(signed): filing release artifact present');
+      ok(body.release.filingExport.targetId === 'sec.edgar.filing.prepare', 'Pipeline(signed): filing release target bound');
+      ok(typeof body.release.filingExport.token === 'string', 'Pipeline(signed): filing release token present');
+      ok(typeof body.release.filingExport.outputHash === 'string', 'Pipeline(signed): filing release output hash present');
+      ok(typeof body.release.filingExport.consequenceHash === 'string', 'Pipeline(signed): filing release consequence hash present');
+      ok(body.release.filingExport.candidate.adapterId === 'xbrl-us-gaap-2024', 'Pipeline(signed): filing release candidate adapter');
+      ok(Array.isArray(body.release.filingExport.candidate.rows), 'Pipeline(signed): filing release candidate rows present');
+      filingRelease = body.release.filingExport;
       console.log(`    cert=${fullCert.certificateId}, chain: CA=${body.trustChain.ca.name}, leaf=${body.trustChain.leaf.subject}`);
     }
 
@@ -320,25 +329,31 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       console.log(`    bad input rejected: ${(await badRes.json() as any).error}`);
     }
 
-    // ═══ FILING EXPORT ═══
-    console.log('\n  [POST /api/v1/filing/export — XBRL]');
+    // ═══ FILING EXPORT — missing release token ═══
+    console.log('\n  [POST /api/v1/filing/export — missing release token]');
     {
-      const rows = [
-        { counterparty_name: 'Bank of Nova Scotia', exposure_usd: 250000000, credit_rating: 'AA-', sector: 'Banking' },
-        { counterparty_name: 'Deutsche Bank AG', exposure_usd: 200000000, credit_rating: 'A-', sector: 'Banking' },
-      ];
       const res = await fetch(`${BASE}/api/v1/filing/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adapterId: 'xbrl-us-gaap-2024',
-          runId: 'filing-test-1',
-          decision: 'pass',
-          certificateId: 'cert_test123',
-          evidenceChainTerminal: 'abc123',
-          rows,
-          proofMode: 'live_runtime',
-        }),
+        body: JSON.stringify(filingRelease.candidate),
+      });
+      ok(res.status === 401, 'Filing(no token): status 401');
+      ok((res.headers.get('WWW-Authenticate') ?? '').includes('invalid_token'), 'Filing(no token): RFC6750 challenge present');
+      const body = await res.json() as any;
+      ok(body.error === 'missing_token' || body.error === 'invalid_token', 'Filing(no token): bearer failure body returned');
+      console.log('    release token required before export');
+    }
+
+    // ═══ FILING EXPORT — authorized XBRL ═══
+    console.log('\n  [POST /api/v1/filing/export — authorized XBRL]');
+    {
+      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${filingRelease.token}`,
+        },
+        body: JSON.stringify(filingRelease.candidate),
       });
       ok(res.status === 200, 'Filing: status 200');
       const body = await res.json() as any;
@@ -348,14 +363,39 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(body.mapping.mappedCount > 0, 'Filing: has mapped fields');
       ok(body.mapping.coveragePercent > 50, 'Filing: coverage > 50%');
       ok(body.package.content.facts.length > 0, 'Filing: package has facts');
-      ok(body.package.evidenceLink.runId === 'filing-test-1', 'Filing: evidence link runId');
-      ok(body.package.evidenceLink.certificateId === 'cert_test123', 'Filing: evidence link certId');
+      ok(body.package.evidenceLink.runId === filingRelease.candidate.runId, 'Filing: evidence link runId');
+      ok(body.package.evidenceLink.certificateId === filingRelease.candidate.certificateId, 'Filing: evidence link certId');
+      ok(body.release?.authorized === true, 'Filing: release summary reports authorized');
+      ok(body.release?.decisionId === filingRelease.decisionId, 'Filing: release summary preserves decision id');
       ok(body.package.issuedPackage.fileExtension === '.xbr', 'Filing: report package uses .xbr');
       ok(body.package.issuedPackage.files.some((f: any) => f.path === 'META-INF/reportPackage.json'), 'Filing: includes reportPackage.json');
       const zip = await JSZip.loadAsync(Buffer.from(body.package.issuedPackage.archive.base64, 'base64'));
       ok(zip.file(`${body.package.issuedPackage.topLevelDirectory}/META-INF/reportPackage.json`) !== null, 'Filing: zip metadata exists');
       ok(zip.file(`${body.package.issuedPackage.topLevelDirectory}/${body.package.issuedPackage.reportPath}`) !== null, 'Filing: zip report exists');
       console.log(`    mapped=${body.mapping.mappedCount}, coverage=${body.mapping.coveragePercent}%, facts=${body.package.content.facts.length}`);
+    }
+
+    // ═══ FILING EXPORT — tampered payload ═══
+    console.log('\n  [POST /api/v1/filing/export — tampered payload]');
+    {
+      const tampered = {
+        ...filingRelease.candidate,
+        rows: filingRelease.candidate.rows.map((row: Record<string, unknown>) => ({ ...row })),
+      };
+      (tampered.rows[0] as any).exposure_usd = Number((tampered.rows[0] as any).exposure_usd ?? 0) + 1;
+
+      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${filingRelease.token}`,
+        },
+        body: JSON.stringify(tampered),
+      });
+      ok(res.status === 403, 'Filing(tampered): status 403');
+      const body = await res.json() as any;
+      ok(body.error === 'insufficient_scope', 'Filing(tampered): binding mismatch rejected as insufficient scope');
+      console.log('    tampered payload blocked by output/consequence hash binding');
     }
 
     // ═══ FILING EXPORT — bad adapter ═══

@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 13 |
+| Completed | 14 |
 | In progress | 0 |
-| Not started | 11 |
+| Not started | 10 |
 
 ## Frozen Step List
 
@@ -58,7 +58,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 11 | complete | Canonicalize and hash releasable outputs | `src/release-kernel/release-canonicalization.ts`, `tests/release-kernel-release-canonicalization.test.ts` | Stable canonical JSON envelopes and SHA-256 release hashes now bind the output artifact contract and the downstream consequence candidate, aligned with current RFC 8785 JSON canonicalization practice, current NIST SHA-256 guidance, and current structured-output contract discipline. |
 | 12 | complete | Implement signed release token issuance | `src/release-kernel/release-token.ts`, `tests/release-kernel-release-token.test.ts` | Accepted and overridden release decisions can now issue short-lived EdDSA-signed JWT release tokens with stable `kid`, bounded expiry, and exported verification-key material, aligned with current RFC 7515/7519 JOSE patterns and current JOSE library practice. |
 | 13 | complete | Implement downstream verification SDK/middleware | `src/release-kernel/release-verification.ts`, `tests/release-kernel-release-verification.test.ts` | Downstream services now have a verifier core, RFC6750-style token transport/error contract, binding checks for output/consequence/target, and a Hono middleware path that makes `no token -> no release` straightforward to adopt on the first hard gateway wedge. |
-| 14 | not_started | Enforce one finance record path end to end | Pending | First fail-closed gateway path. |
+| 14 | complete | Enforce one finance record path end to end | `src/release-kernel/finance-record-release.ts`, `src/service/api-server.ts`, `tests/release-kernel-finance-record-release.test.ts`, `tests/live-api.test.ts` | The first real fail-closed gateway path now exists on the finance filing export surface: signed pipeline runs mint a hash-bound filing release artifact, and `POST /api/v1/filing/export` rejects missing or tampered release authorization before export. |
 | 15 | not_started | Add token introspection for high-risk paths | Pending | Required for R3/R4 consequence release. |
 | 16 | not_started | Add token revocation and expiry handling | Pending | Explicit invalidation semantics. |
 | 17 | not_started | Add replay protection ledger | Pending | `jti`-bound or single-use issuance support. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 14 is next. The goal is to enforce one finance record path end to end so the first hard gateway wedge becomes a real fail-closed product path, not just a release-kernel capability.
+Step 15 is next. The goal is to add explicit token introspection for the high-risk R3/R4 release paths so the first hard gateway wedge can move from cryptographic verification alone to active-status verification as well.

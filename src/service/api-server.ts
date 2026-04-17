@@ -77,6 +77,21 @@ import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js'
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import {
+  buildFinanceFilingReleaseMaterial,
+  createFinanceFilingReleaseCandidateFromReport,
+  FINANCE_FILING_ADAPTER_ID,
+  finalizeFinanceFilingReleaseDecision,
+  buildFinanceFilingReleaseObservation,
+} from '../release-kernel/finance-record-release.js';
+import { createReleaseDecisionEngine } from '../release-kernel/release-decision-engine.js';
+import { createInMemoryReleaseDecisionLogWriter } from '../release-kernel/release-decision-log.js';
+import { createReleaseTokenIssuer } from '../release-kernel/release-token.js';
+import {
+  ReleaseVerificationError,
+  resolveReleaseTokenFromRequest,
+  verifyReleaseAuthorization,
+} from '../release-kernel/release-verification.js';
+import {
   canEnqueueTenantAsyncJob,
   createPipelineQueue,
   createPipelineWorker,
@@ -569,6 +584,16 @@ app.use('/api/*', tenantMiddleware());
 // PKI hierarchy (startup-time, for health/metadata)
 const pki = generatePkiHierarchy('Attestor Keyless CA', 'API Runtime Signer', 'API Reviewer');
 const pkiReady = true;
+const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
+const financeReleaseDecisionEngine = createReleaseDecisionEngine({
+  decisionLog: financeReleaseDecisionLog,
+});
+const apiReleaseTokenIssuer = createReleaseTokenIssuer({
+  issuer: 'attestor.api.release.local',
+  privateKeyPem: pki.signer.keyPair.privateKeyPem,
+  publicKeyPem: pki.signer.keyPair.publicKeyPem,
+});
+const apiReleaseVerificationKeyPromise = apiReleaseTokenIssuer.exportVerificationKey();
 
 // Keyless signer: per-request ephemeral keys with CA-issued short-lived certs (Sigstore pattern)
 function createRequestSigners(identitySource: string, reviewerName?: string) {
@@ -580,6 +605,28 @@ function createRequestSigners(identitySource: string, reviewerName?: string) {
 
 function currentTenant(c: Context): TenantContext {
   return getTenantContextFromHeaders(c.req.raw.headers);
+}
+
+function currentReleaseRequester(
+  c: Context,
+  reviewerIdentity?: ReviewerIdentity,
+) {
+  if (reviewerIdentity) {
+    return {
+      id: `reviewer:${reviewerIdentity.identifier}`,
+      type: 'user' as const,
+      displayName: reviewerIdentity.name,
+      role: reviewerIdentity.role,
+    };
+  }
+
+  const tenant = currentTenant(c);
+  return {
+    id: tenant.tenantId === 'default' ? 'svc.attestor.api' : `tenant:${tenant.tenantId}`,
+    type: 'service' as const,
+    displayName: tenant.tenantId === 'default' ? 'Attestor API Runtime' : tenant.tenantId,
+    role: tenant.planId ?? 'service',
+  };
 }
 
 function currentAccountAccess(c: Context): AccountAccessContext | null {
@@ -6213,6 +6260,26 @@ app.post('/api/v1/pipeline/run', async (c) => {
     };
 
     const report = runFinancialPipeline(input);
+    let financeFilingRelease: {
+      targetId: string;
+      decisionId: string;
+      decisionStatus: string;
+      policyVersion: string;
+      outputHash: string;
+      consequenceHash: string;
+      tokenId: string | null;
+      token: string | null;
+      expiresAt: string | null;
+      candidate: {
+        adapterId: string;
+        runId: string;
+        decision: string;
+        certificateId: string | null;
+        evidenceChainTerminal: string;
+        rows: readonly Record<string, unknown>[];
+        proofMode: string;
+      };
+    } | null = null;
 
     let kit = null;
     if (keyPair && report.certificate) {
@@ -6221,6 +6288,50 @@ app.post('/api/v1/pipeline/run', async (c) => {
         keylessPair?.signer.trustChain ?? null,
         keylessPair?.signer.caPublicKeyPem ?? null,
       );
+    }
+
+    if (sign && report.certificate) {
+      const filingCandidate = createFinanceFilingReleaseCandidateFromReport(report);
+      if (filingCandidate?.adapterId === FINANCE_FILING_ADAPTER_ID) {
+        const material = buildFinanceFilingReleaseMaterial(filingCandidate);
+        const evaluation = financeReleaseDecisionEngine.evaluateWithDeterministicChecks(
+          {
+            id: `release_${randomUUID()}`,
+            createdAt: report.timestamp,
+            outputHash: material.hashBundle.outputHash,
+            consequenceHash: material.hashBundle.consequenceHash,
+            outputContract: material.outputContract,
+            capabilityBoundary: material.capabilityBoundary,
+            requester: currentReleaseRequester(c, reviewerIdentity),
+            target: material.target,
+          },
+          buildFinanceFilingReleaseObservation(material, report),
+        );
+        const releaseDecision = finalizeFinanceFilingReleaseDecision(
+          evaluation.decision,
+          report,
+        );
+        const issuedReleaseToken =
+          releaseDecision.status === 'accepted'
+            ? await apiReleaseTokenIssuer.issue({
+                decision: releaseDecision,
+                issuedAt: report.timestamp,
+              })
+            : null;
+
+        financeFilingRelease = {
+          targetId: material.target.id,
+          decisionId: releaseDecision.id,
+          decisionStatus: releaseDecision.status,
+          policyVersion: releaseDecision.policyVersion,
+          outputHash: material.hashBundle.outputHash,
+          consequenceHash: material.hashBundle.consequenceHash,
+          tokenId: issuedReleaseToken?.tokenId ?? null,
+          token: issuedReleaseToken?.token ?? null,
+          expiresAt: issuedReleaseToken?.expiresAt ?? null,
+          candidate: filingCandidate,
+        };
+      }
     }
 
     const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
@@ -6259,6 +6370,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
       rateLimit,
       identitySource,
       reviewerName: reviewerIdentity?.name ?? null,
+      release: {
+        filingExport: financeFilingRelease,
+      },
       // Auto-filing: when sign=true and filing adapter is available, include XBRL summary + issued report package
       ...(await (async () => {
         if (!sign || !report.certificate) {
@@ -6406,6 +6520,51 @@ app.post('/api/v1/filing/export', async (c) => {
       return c.json({ error: `Filing adapter '${adapterId}' not registered. Available: ${filingRegistry.list().map(a => a.id).join(', ')}` }, 404);
     }
 
+    let verifiedRelease: Awaited<ReturnType<typeof verifyReleaseAuthorization>> | null = null;
+    if (adapterId === FINANCE_FILING_ADAPTER_ID) {
+      const material = buildFinanceFilingReleaseMaterial({
+        adapterId,
+        runId,
+        decision: decision ?? 'unknown',
+        certificateId: certificateId ?? null,
+        evidenceChainTerminal: evidenceChainTerminal ?? '',
+        rows,
+        proofMode: proofMode ?? 'unknown',
+      });
+
+      try {
+        const verificationKey = await apiReleaseVerificationKeyPromise;
+        const token = resolveReleaseTokenFromRequest(c.req.raw);
+        verifiedRelease = await verifyReleaseAuthorization({
+          token,
+          verificationKey,
+          audience: material.target.id,
+          expectedTargetId: material.target.id,
+          expectedOutputHash: material.hashBundle.outputHash,
+          expectedConsequenceHash: material.hashBundle.consequenceHash,
+        });
+      } catch (error) {
+        if (error instanceof ReleaseVerificationError) {
+          c.header('WWW-Authenticate', error.challenge);
+          return c.json(error.toResponseBody(), error.status);
+        }
+
+        const description =
+          error instanceof Error ? error.message : 'Release verification failed unexpectedly.';
+        c.header(
+          'WWW-Authenticate',
+          `Bearer realm="attestor-release", error="invalid_token", error_description="${description.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`,
+        );
+        return c.json(
+          {
+            error: 'invalid_token',
+            error_description: description,
+          },
+          401,
+        );
+      }
+    }
+
     // Build decision envelope from provided data
     const { buildCounterpartyEnvelope } = await import('../filing/xbrl-adapter.js');
     const envelope = buildCounterpartyEnvelope(
@@ -6429,6 +6588,14 @@ app.post('/api/v1/filing/export', async (c) => {
         coveragePercent: mapping.coveragePercent,
       },
       package: pkg,
+      release: verifiedRelease
+        ? {
+            authorized: true,
+            decisionId: verifiedRelease.verification.claims.decision_id,
+            tokenId: verifiedRelease.verification.claims.jti,
+            targetId: verifiedRelease.verification.claims.aud,
+          }
+        : null,
     });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
