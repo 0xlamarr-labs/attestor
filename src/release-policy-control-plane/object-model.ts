@@ -19,6 +19,7 @@ import {
   type ReleaseActorReference,
   type ReleasePolicyDefinition,
   type ReleasePolicyRolloutDefinition,
+  type ReleasePolicyRolloutMode,
 } from '../release-layer/index.js';
 
 export const POLICY_PACK_SPEC_VERSION = 'attestor.policy-pack.v1';
@@ -33,6 +34,10 @@ export const POLICY_CONTROL_METADATA_SPEC_VERSION =
 
 export type PolicyBundleSignatureEnvelopeType = 'dsse' | 'jws';
 export type PolicyBundleSignatureAlgorithm = 'EdDSA' | 'ES256';
+export type PolicyActivationOperationType =
+  | 'activate-bundle'
+  | 'rollback-activation'
+  | 'freeze-scope';
 
 export interface PolicySchemaReference {
   readonly id: string;
@@ -98,14 +103,18 @@ export interface PolicyActivationRecord {
   readonly version: typeof POLICY_ACTIVATION_RECORD_SPEC_VERSION;
   readonly id: string;
   readonly state: PolicyActivationState;
+  readonly operationType: PolicyActivationOperationType;
   readonly target: PolicyActivationTarget;
   readonly selector: PolicyScopeSelector;
   readonly targetLabel: string;
   readonly bundle: PolicyBundleReference;
   readonly activatedBy: ReleaseActorReference;
   readonly activatedAt: string;
+  readonly rolloutMode: ReleasePolicyRolloutMode;
+  readonly reasonCode: string;
   readonly rationale: string;
   readonly previousActivationId: string | null;
+  readonly supersededByActivationId: string | null;
   readonly rollbackOfActivationId: string | null;
   readonly freezeReason: string | null;
   readonly compatibility: PolicyCompatibilityDescriptor;
@@ -163,12 +172,16 @@ export interface CreatePolicyBundleSignatureRecordInput {
 export interface CreatePolicyActivationRecordInput {
   readonly id: string;
   readonly state?: PolicyActivationState;
+  readonly operationType?: PolicyActivationOperationType;
   readonly target: PolicyActivationTarget;
   readonly bundle: PolicyBundleReference;
   readonly activatedBy: ReleaseActorReference;
   readonly activatedAt: string;
+  readonly rolloutMode?: ReleasePolicyRolloutMode;
+  readonly reasonCode?: string;
   readonly rationale: string;
   readonly previousActivationId?: string | null;
+  readonly supersededByActivationId?: string | null;
   readonly rollbackOfActivationId?: string | null;
   readonly freezeReason?: string | null;
 }
@@ -318,24 +331,57 @@ export function createPolicyActivationRecord(
     throw new Error(`Unsupported policy activation state '${state}'.`);
   }
 
+  const operationType =
+    input.operationType ??
+    (state === 'frozen'
+      ? 'freeze-scope'
+      : input.rollbackOfActivationId
+        ? 'rollback-activation'
+        : 'activate-bundle');
+  const rolloutMode =
+    input.rolloutMode ??
+    (operationType === 'rollback-activation' ? 'rolled-back' : 'enforce');
+  const reasonCode = normalizeIdentifier(
+    input.reasonCode ??
+      (operationType === 'freeze-scope'
+        ? 'freeze'
+        : operationType === 'rollback-activation'
+          ? 'rollback'
+          : 'promotion'),
+    'policy activation reasonCode',
+  );
   const rationale = normalizeIdentifier(input.rationale, 'policy activation rationale');
   const freezeReason = normalizeOptionalText(input.freezeReason);
+  const supersededByActivationId = normalizeOptionalText(input.supersededByActivationId);
   if (state === 'frozen' && !freezeReason) {
     throw new Error('Frozen policy activation records require a freeze reason.');
+  }
+  if (operationType === 'rollback-activation' && !input.rollbackOfActivationId) {
+    throw new Error('Rollback policy activation records require a rollback target activation id.');
+  }
+  if (state === 'superseded' && !supersededByActivationId) {
+    throw new Error('Superseded policy activation records require a superseding activation id.');
+  }
+  if (state === 'rolled-back' && !supersededByActivationId) {
+    throw new Error('Rolled-back policy activation records require a replacement activation id.');
   }
 
   return Object.freeze({
     version: POLICY_ACTIVATION_RECORD_SPEC_VERSION,
     id: normalizeIdentifier(input.id, 'policy activation id'),
     state,
+    operationType,
     target: input.target,
     selector: createPolicyScopeSelector(input.target),
     targetLabel: policyActivationTargetLabel(input.target),
     bundle: input.bundle,
     activatedBy: input.activatedBy,
     activatedAt: normalizeIsoTimestamp(input.activatedAt, 'activatedAt'),
+    rolloutMode,
+    reasonCode,
     rationale,
     previousActivationId: normalizeOptionalText(input.previousActivationId),
+    supersededByActivationId,
     rollbackOfActivationId: normalizeOptionalText(input.rollbackOfActivationId),
     freezeReason,
     compatibility: defaultPolicyCompatibilityDescriptor(),

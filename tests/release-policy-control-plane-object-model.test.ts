@@ -130,12 +130,17 @@ function testPolicyActivationRecord(): void {
       role: 'policy-admin',
     },
     activatedAt: '2026-04-17T10:10:00.000Z',
+    rolloutMode: 'canary',
+    reasonCode: 'promote-bundle',
     rationale: 'Promote validated finance record policy bundle.',
     previousActivationId: 'activation_finance_old',
   });
 
   assert.equal(activation.version, POLICY_ACTIVATION_RECORD_SPEC_VERSION);
   assert.equal(activation.state, 'active');
+  assert.equal(activation.operationType, 'activate-bundle');
+  assert.equal(activation.rolloutMode, 'canary');
+  assert.equal(activation.reasonCode, 'promote-bundle');
   assert.equal(
     activation.targetLabel,
     'env:prod-eu / tenant:tenant-finance / domain:finance / wedge:finance.record.release / consequence:record / risk:R4',
@@ -150,6 +155,7 @@ function testFrozenActivationRequiresReason(): void {
       createPolicyActivationRecord({
         id: 'activation_frozen',
         state: 'frozen',
+        operationType: 'freeze-scope',
         target: createPolicyActivationTarget({
           environment: 'prod-eu',
           consequenceType: 'record',
@@ -157,9 +163,32 @@ function testFrozenActivationRequiresReason(): void {
         bundle: sampleBundleReference(),
         activatedBy: { id: 'system', type: 'system' },
         activatedAt: '2026-04-17T10:12:00.000Z',
+        rolloutMode: 'rolled-back',
+        reasonCode: 'freeze',
         rationale: 'Emergency freeze.',
       }),
     /freeze reason/i,
+  );
+}
+
+function testHistoricalActivationRequiresSupersessionLink(): void {
+  assert.throws(
+    () =>
+      createPolicyActivationRecord({
+        id: 'activation_superseded_missing_link',
+        state: 'superseded',
+        target: createPolicyActivationTarget({
+          environment: 'prod-eu',
+          consequenceType: 'record',
+        }),
+        bundle: sampleBundleReference(),
+        activatedBy: { id: 'system', type: 'system' },
+        activatedAt: '2026-04-17T10:13:00.000Z',
+        rolloutMode: 'enforce',
+        reasonCode: 'promote-bundle',
+        rationale: 'Superseded without successor.',
+      }),
+    /superseding activation id/i,
   );
 }
 
@@ -190,6 +219,7 @@ testPolicyBundleManifestAndEntry();
 testPolicyBundleSignatureRecord();
 testPolicyActivationRecord();
 testFrozenActivationRequiresReason();
+testHistoricalActivationRequiresSupersessionLink();
 testControlPlaneMetadataAndCompatibility();
 
-console.log('Release policy control-plane object-model tests: 26 passed, 0 failed');
+console.log('Release policy control-plane object-model tests: 31 passed, 0 failed');
