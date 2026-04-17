@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 5 |
+| Completed | 6 |
 | In progress | 0 |
-| Not started | 19 |
+| Not started | 18 |
 
 ## Frozen Step List
 
@@ -50,7 +50,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 03 | complete | Define the consequence taxonomy rollout rules | `src/release-kernel/consequence-rollout.ts`, `tests/release-kernel-consequence-rollout.test.ts` | Consequence rollout order, enforcement posture, and contract/evidence expectations are now explicit for `communication`, `record`, `action`, and `decision-support`. |
 | 04 | complete | Define the risk-to-control matrix | `src/release-kernel/risk-controls.ts`, `tests/release-kernel-risk-controls.test.ts` | R0-R4 now map to concrete deterministic checks, review posture, retention class, and token enforcement, aligned to current NIST AI RMF GenAI guidance, current AWS detect-only verification patterns, current OpenAI trace/evals guidance, and EU AI Act oversight/logging expectations. |
 | 05 | complete | Choose the first hard gateway wedge | `src/release-kernel/first-hard-gateway-wedge.ts`, `tests/release-kernel-first-hard-gateway-wedge.test.ts` | The first enforceable path is now frozen as `AI output -> structured financial record release`, with explicit in-scope, out-of-scope, and fail-closed success criteria anchored to current SEC/ESMA/EBA structured reporting surfaces. |
-| 06 | not_started | Build the release policy language v1 | Pending | Output contract, capability boundary, and acceptance policy. |
+| 06 | complete | Build the release policy language v1 | `src/release-kernel/release-policy.ts`, `tests/release-kernel-release-policy.test.ts` | Versioned release policies now express scope, output contract, capability boundary, acceptance rules, and release requirements in a declarative grammar aligned with current OPA/Cedar/validated-policy design patterns. |
 | 07 | not_started | Build the release decision engine skeleton | Pending | A first-class PDP for release evaluation. |
 | 08 | not_started | Implement deterministic release checks | Pending | Schema checks, capability checks, consequence-target checks. |
 | 09 | not_started | Implement immutable release decision logging | Pending | Structured audit trail for every release evaluation. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 06 is next. The goal is to build the first release policy language so the frozen wedge can move from architecture choice into executable release rules.
+Step 07 is next. The goal is to build the release decision engine skeleton so the new policy language can be evaluated as a real PDP instead of staying passive schema.
