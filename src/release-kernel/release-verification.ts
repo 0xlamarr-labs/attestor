@@ -1,0 +1,294 @@
+import type { Context, MiddlewareHandler } from 'hono';
+import type {
+  ReleaseTokenVerificationKey,
+  ReleaseTokenVerificationResult,
+  VerifyReleaseTokenInput,
+} from './release-token.js';
+import { verifyIssuedReleaseToken } from './release-token.js';
+
+/**
+ * Downstream release-token verification SDK and middleware.
+ *
+ * This is the first consumer-side contract for "no token -> no release". It
+ * verifies the token cryptographically, then verifies that the token still
+ * matches the concrete output/consequence/target binding the downstream path
+ * is about to admit.
+ */
+
+export const RELEASE_VERIFICATION_SPEC_VERSION = 'attestor.release-verification.v1';
+export const DEFAULT_RELEASE_CONTEXT_KEY = 'attestor.release';
+export const DEFAULT_RELEASE_TOKEN_HEADER = 'x-attestor-release-token';
+
+export type ReleaseVerificationErrorCode =
+  | 'missing_token'
+  | 'invalid_request'
+  | 'invalid_token'
+  | 'insufficient_scope';
+
+export interface ReleaseVerificationErrorShape {
+  readonly error: ReleaseVerificationErrorCode;
+  readonly error_description: string;
+}
+
+export interface ReleaseVerificationInput extends VerifyReleaseTokenInput {
+  readonly expectedTargetId?: string;
+  readonly expectedOutputHash?: string;
+  readonly expectedConsequenceHash?: string;
+}
+
+export interface ReleaseVerificationContext {
+  readonly version: typeof RELEASE_VERIFICATION_SPEC_VERSION;
+  readonly token: string;
+  readonly verification: ReleaseTokenVerificationResult;
+  readonly audience: string | undefined;
+  readonly expectedTargetId: string | undefined;
+  readonly expectedOutputHash: string | undefined;
+  readonly expectedConsequenceHash: string | undefined;
+}
+
+export class ReleaseVerificationError extends Error {
+  readonly status: 401 | 403;
+  readonly code: ReleaseVerificationErrorCode;
+  readonly challenge: string;
+
+  constructor(
+    status: 401 | 403,
+    code: ReleaseVerificationErrorCode,
+    description: string,
+    challenge: string,
+  ) {
+    super(description);
+    this.name = 'ReleaseVerificationError';
+    this.status = status;
+    this.code = code;
+    this.challenge = challenge;
+  }
+
+  toResponseBody(): ReleaseVerificationErrorShape {
+    return {
+      error: this.code,
+      error_description: this.message,
+    };
+  }
+}
+
+type ResolveMaybe<T> = T | ((context: Context) => T | Promise<T>);
+
+export interface CreateReleaseVerificationMiddlewareInput {
+  readonly verificationKey:
+    | ReleaseTokenVerificationKey
+    | ((context: Context) => ReleaseTokenVerificationKey | Promise<ReleaseTokenVerificationKey>);
+  readonly audience?: ResolveMaybe<string | undefined>;
+  readonly expectedTargetId?: ResolveMaybe<string | undefined>;
+  readonly expectedOutputHash?: ResolveMaybe<string | undefined>;
+  readonly expectedConsequenceHash?: ResolveMaybe<string | undefined>;
+  readonly currentDate?: ResolveMaybe<string | undefined>;
+  readonly tokenHeaderName?: string;
+  readonly contextKey?: string;
+}
+
+function escapeChallengeValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildBearerChallenge(
+  error: ReleaseVerificationErrorCode,
+  description: string,
+): string {
+  return `Bearer realm="attestor-release", error="${error}", error_description="${escapeChallengeValue(description)}"`;
+}
+
+function resolveTokenFromHeaders(
+  headers: Headers,
+  tokenHeaderName: string,
+): string | null {
+  const authorization = headers.get('authorization');
+  if (authorization) {
+    const match = authorization.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]) {
+      return match[1].trim();
+    }
+
+    throw new ReleaseVerificationError(
+      401,
+      'invalid_request',
+      'Authorization header must use Bearer token syntax.',
+      buildBearerChallenge('invalid_request', 'Authorization header must use Bearer token syntax.'),
+    );
+  }
+
+  const dedicatedHeader = headers.get(tokenHeaderName);
+  if (dedicatedHeader) {
+    return dedicatedHeader.trim();
+  }
+
+  return null;
+}
+
+async function resolveValue<T>(
+  candidate: ResolveMaybe<T> | undefined,
+  context: Context,
+): Promise<T | undefined> {
+  if (candidate === undefined) {
+    return undefined;
+  }
+
+  return typeof candidate === 'function'
+    ? await (candidate as (context: Context) => T | Promise<T>)(context)
+    : candidate;
+}
+
+export function resolveReleaseTokenFromRequest(
+  request: Request,
+  tokenHeaderName = DEFAULT_RELEASE_TOKEN_HEADER,
+): string {
+  const token = resolveTokenFromHeaders(request.headers, tokenHeaderName);
+  if (!token) {
+    throw new ReleaseVerificationError(
+      401,
+      'missing_token',
+      'A release token is required before this consequence path may proceed.',
+      buildBearerChallenge(
+        'invalid_token',
+        'A release token is required before this consequence path may proceed.',
+      ),
+    );
+  }
+
+  return token;
+}
+
+function assertVerifiedBinding(
+  verification: ReleaseTokenVerificationResult,
+  input: ReleaseVerificationInput,
+): void {
+  if (
+    input.expectedTargetId !== undefined &&
+    verification.claims.aud !== input.expectedTargetId
+  ) {
+    throw new ReleaseVerificationError(
+      403,
+      'insufficient_scope',
+      'Release token audience does not match the downstream target.',
+      buildBearerChallenge(
+        'insufficient_scope',
+        'Release token audience does not match the downstream target.',
+      ),
+    );
+  }
+
+  if (
+    input.expectedOutputHash !== undefined &&
+    verification.claims.output_hash !== input.expectedOutputHash
+  ) {
+    throw new ReleaseVerificationError(
+      403,
+      'insufficient_scope',
+      'Release token output hash does not match the downstream release candidate.',
+      buildBearerChallenge(
+        'insufficient_scope',
+        'Release token output hash does not match the downstream release candidate.',
+      ),
+    );
+  }
+
+  if (
+    input.expectedConsequenceHash !== undefined &&
+    verification.claims.consequence_hash !== input.expectedConsequenceHash
+  ) {
+    throw new ReleaseVerificationError(
+      403,
+      'insufficient_scope',
+      'Release token consequence hash does not match the downstream consequence candidate.',
+      buildBearerChallenge(
+        'insufficient_scope',
+        'Release token consequence hash does not match the downstream consequence candidate.',
+      ),
+    );
+  }
+}
+
+export async function verifyReleaseAuthorization(
+  input: ReleaseVerificationInput,
+): Promise<ReleaseVerificationContext> {
+  let verification: ReleaseTokenVerificationResult;
+
+  try {
+    verification = await verifyIssuedReleaseToken(input);
+  } catch (error) {
+    const description =
+      error instanceof Error ? error.message : 'Release token verification failed.';
+    throw new ReleaseVerificationError(
+      401,
+      'invalid_token',
+      description,
+      buildBearerChallenge('invalid_token', description),
+    );
+  }
+
+  assertVerifiedBinding(verification, input);
+
+  return Object.freeze({
+    version: RELEASE_VERIFICATION_SPEC_VERSION,
+    token: input.token,
+    verification,
+    audience: input.audience,
+    expectedTargetId: input.expectedTargetId,
+    expectedOutputHash: input.expectedOutputHash,
+    expectedConsequenceHash: input.expectedConsequenceHash,
+  });
+}
+
+export function createReleaseVerificationMiddleware(
+  input: CreateReleaseVerificationMiddlewareInput,
+): MiddlewareHandler {
+  const tokenHeaderName = input.tokenHeaderName ?? DEFAULT_RELEASE_TOKEN_HEADER;
+  const contextKey = input.contextKey ?? DEFAULT_RELEASE_CONTEXT_KEY;
+
+  return async (context, next) => {
+    try {
+      const token = resolveReleaseTokenFromRequest(context.req.raw, tokenHeaderName);
+      const verificationKey =
+        typeof input.verificationKey === 'function'
+          ? await input.verificationKey(context)
+          : input.verificationKey;
+      const audience = await resolveValue(input.audience, context);
+      const expectedTargetId = await resolveValue(input.expectedTargetId, context);
+      const expectedOutputHash = await resolveValue(input.expectedOutputHash, context);
+      const expectedConsequenceHash = await resolveValue(
+        input.expectedConsequenceHash,
+        context,
+      );
+      const currentDate = await resolveValue(input.currentDate, context);
+
+      const verified = await verifyReleaseAuthorization({
+        token,
+        verificationKey,
+        audience,
+        expectedTargetId,
+        expectedOutputHash,
+        expectedConsequenceHash,
+        currentDate,
+      });
+
+      context.set(contextKey, verified);
+      await next();
+    } catch (error) {
+      if (error instanceof ReleaseVerificationError) {
+        context.header('WWW-Authenticate', error.challenge);
+        return context.json(error.toResponseBody(), error.status);
+      }
+
+      const description =
+        error instanceof Error ? error.message : 'Release verification failed unexpectedly.';
+      const failure = new ReleaseVerificationError(
+        401,
+        'invalid_token',
+        description,
+        buildBearerChallenge('invalid_token', description),
+      );
+      context.header('WWW-Authenticate', failure.challenge);
+      return context.json(failure.toResponseBody(), failure.status);
+    }
+  };
+}

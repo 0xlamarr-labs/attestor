@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 12 |
+| Completed | 13 |
 | In progress | 0 |
-| Not started | 12 |
+| Not started | 11 |
 
 ## Frozen Step List
 
@@ -57,7 +57,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 10 | complete | Add shadow-mode release evaluation | `src/release-kernel/release-shadow-mode.ts`, `tests/release-kernel-release-shadow-mode.test.ts` | Shadow-mode evaluation now computes the full would-decision, emits pass-through-with-warning semantics, and annotates what hard enforcement would have required, following current warn/audit-first policy rollout patterns from current Kubernetes admission policy guidance and current proxy/authz dry-run practices. |
 | 11 | complete | Canonicalize and hash releasable outputs | `src/release-kernel/release-canonicalization.ts`, `tests/release-kernel-release-canonicalization.test.ts` | Stable canonical JSON envelopes and SHA-256 release hashes now bind the output artifact contract and the downstream consequence candidate, aligned with current RFC 8785 JSON canonicalization practice, current NIST SHA-256 guidance, and current structured-output contract discipline. |
 | 12 | complete | Implement signed release token issuance | `src/release-kernel/release-token.ts`, `tests/release-kernel-release-token.test.ts` | Accepted and overridden release decisions can now issue short-lived EdDSA-signed JWT release tokens with stable `kid`, bounded expiry, and exported verification-key material, aligned with current RFC 7515/7519 JOSE patterns and current JOSE library practice. |
-| 13 | not_started | Implement downstream verification SDK/middleware | Pending | `no token -> no release` must be easy to adopt. |
+| 13 | complete | Implement downstream verification SDK/middleware | `src/release-kernel/release-verification.ts`, `tests/release-kernel-release-verification.test.ts` | Downstream services now have a verifier core, RFC6750-style token transport/error contract, binding checks for output/consequence/target, and a Hono middleware path that makes `no token -> no release` straightforward to adopt on the first hard gateway wedge. |
 | 14 | not_started | Enforce one finance record path end to end | Pending | First fail-closed gateway path. |
 | 15 | not_started | Add token introspection for high-risk paths | Pending | Required for R3/R4 consequence release. |
 | 16 | not_started | Add token revocation and expiry handling | Pending | Explicit invalidation semantics. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 13 is next. The goal is to implement downstream verification SDK and middleware so `no token -> no release` becomes straightforward to adopt on the first hard gateway path.
+Step 14 is next. The goal is to enforce one finance record path end to end so the first hard gateway wedge becomes a real fail-closed product path, not just a release-kernel capability.
