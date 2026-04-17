@@ -178,9 +178,11 @@ export interface CapabilityBoundaryDescriptor {
   readonly allowedDataDomains: readonly string[];
 }
 
+export type EvidenceRetentionClass = 'ephemeral' | 'standard' | 'regulated';
+
 export interface EvidencePackDescriptor {
   readonly minimumRequiredEvidence: readonly string[];
-  readonly retentionClass: 'ephemeral' | 'standard' | 'regulated';
+  readonly retentionClass: EvidenceRetentionClass;
 }
 
 export function isConsequenceType(value: string): value is ConsequenceType {

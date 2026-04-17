@@ -37,39 +37,39 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 1 |
+| Completed | 2 |
 | In progress | 0 |
-| Not started | 23 |
+| Not started | 22 |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
 | 01 | complete | Codify the shared release-kernel vocabulary | `src/release-kernel/types.ts`, `tests/release-kernel-types.test.ts` | Consequence types, risk classes, review authority defaults, and release decision status grammar are now first-class. |
-| 02 | not_started | Define the versioned core object model | Pending | `releaseDecision`, `releaseToken`, `releaseConditions`, `reviewAuthority`, `evidencePack` |
-| 03 | not_started | Define the consequence taxonomy rollout rules | Pending | `communication`, `record`, `action`, `decision-support` need consequence-specific contract guidance |
-| 04 | not_started | Define the risk-to-control matrix | Pending | R0–R4 must map to deterministic checks, review mode, retention, and token enforcement |
-| 05 | not_started | Choose the first hard gateway wedge | Pending | First enforceable flow should remain `AI output -> structured record` |
-| 06 | not_started | Build the release policy language v1 | Pending | Output contract, capability boundary, and acceptance policy |
-| 07 | not_started | Build the release decision engine skeleton | Pending | A first-class PDP for release evaluation |
-| 08 | not_started | Implement deterministic release checks | Pending | Schema checks, capability checks, consequence-target checks |
-| 09 | not_started | Implement immutable release decision logging | Pending | Structured audit trail for every release evaluation |
-| 10 | not_started | Add shadow-mode release evaluation | Pending | Observe without blocking the downstream path |
-| 11 | not_started | Canonicalize and hash releasable outputs | Pending | Stable `outputHash` and `consequenceHash` generation |
-| 12 | not_started | Implement signed release token issuance | Pending | Short-lived authorization artifact |
-| 13 | not_started | Implement downstream verification SDK/middleware | Pending | `no token -> no release` must be easy to adopt |
-| 14 | not_started | Enforce one finance record path end to end | Pending | First fail-closed gateway path |
-| 15 | not_started | Add token introspection for high-risk paths | Pending | Required for R3/R4 consequence release |
-| 16 | not_started | Add token revocation and expiry handling | Pending | Explicit invalidation semantics |
-| 17 | not_started | Add replay protection ledger | Pending | `jti`-bound or single-use issuance support |
-| 18 | not_started | Build the reviewer queue UX | Pending | Reviewer decision needs to be fast and legible |
-| 19 | not_started | Add named review and dual approval | Pending | Default authority model for R3/R4 |
-| 20 | not_started | Add override and break-glass path | Pending | Emergency release with stronger audit and shorter validity |
-| 21 | not_started | Sign and export the durable evidence pack | Pending | Longer-lived proof separate from the short-lived release token |
-| 22 | not_started | Add policy rollout controls | Pending | Dry-run, canary, enforce, rollback |
-| 23 | not_started | Launch the second and third canonical flows | Pending | `communication` then `action`, after `record` works |
-| 24 | not_started | Package the release layer as a reusable platform surface | Pending | Stable SDKs, docs, and extraction criteria ready |
+| 02 | complete | Define the versioned core object model | `src/release-kernel/object-model.ts`, `tests/release-kernel-object-model.test.ts` | `releaseDecision`, `releaseToken`, `releaseConditions`, `reviewAuthority`, and `evidencePack` are now versioned first-class objects with stable defaults. |
+| 03 | not_started | Define the consequence taxonomy rollout rules | Pending | `communication`, `record`, `action`, `decision-support` need consequence-specific contract guidance. |
+| 04 | not_started | Define the risk-to-control matrix | Pending | R0-R4 must map to deterministic checks, review mode, retention, and token enforcement. |
+| 05 | not_started | Choose the first hard gateway wedge | Pending | First enforceable flow should remain `AI output -> structured record`. |
+| 06 | not_started | Build the release policy language v1 | Pending | Output contract, capability boundary, and acceptance policy. |
+| 07 | not_started | Build the release decision engine skeleton | Pending | A first-class PDP for release evaluation. |
+| 08 | not_started | Implement deterministic release checks | Pending | Schema checks, capability checks, consequence-target checks. |
+| 09 | not_started | Implement immutable release decision logging | Pending | Structured audit trail for every release evaluation. |
+| 10 | not_started | Add shadow-mode release evaluation | Pending | Observe without blocking the downstream path. |
+| 11 | not_started | Canonicalize and hash releasable outputs | Pending | Stable `outputHash` and `consequenceHash` generation. |
+| 12 | not_started | Implement signed release token issuance | Pending | Short-lived authorization artifact. |
+| 13 | not_started | Implement downstream verification SDK/middleware | Pending | `no token -> no release` must be easy to adopt. |
+| 14 | not_started | Enforce one finance record path end to end | Pending | First fail-closed gateway path. |
+| 15 | not_started | Add token introspection for high-risk paths | Pending | Required for R3/R4 consequence release. |
+| 16 | not_started | Add token revocation and expiry handling | Pending | Explicit invalidation semantics. |
+| 17 | not_started | Add replay protection ledger | Pending | `jti`-bound or single-use issuance support. |
+| 18 | not_started | Build the reviewer queue UX | Pending | Reviewer decision needs to be fast and legible. |
+| 19 | not_started | Add named review and dual approval | Pending | Default authority model for R3/R4. |
+| 20 | not_started | Add override and break-glass path | Pending | Emergency release with stronger audit and shorter validity. |
+| 21 | not_started | Sign and export the durable evidence pack | Pending | Longer-lived proof separate from the short-lived release token. |
+| 22 | not_started | Add policy rollout controls | Pending | Dry-run, canary, enforce, rollback. |
+| 23 | not_started | Launch the second and third canonical flows | Pending | `communication` then `action`, after `record` works. |
+| 24 | not_started | Package the release layer as a reusable platform surface | Pending | Stable SDKs, docs, and extraction criteria ready. |
 
 ## Immediate Next Step
 
-Step 02 is next. The goal is to define a versioned object model that every later API, token, evidence pack, and downstream verifier can share without ambiguity.
+Step 03 is next. The goal is to define consequence-specific rollout rules so the common release-kernel objects can be applied consistently across `communication`, `record`, `action`, and `decision-support`.
