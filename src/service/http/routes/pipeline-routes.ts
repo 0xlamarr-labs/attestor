@@ -485,6 +485,8 @@ app.post('/api/v1/filing/export', async (c) => {
           expectedOutputHash: material.hashBundle.outputHash,
           expectedConsequenceHash: material.hashBundle.consequenceHash,
           introspector: apiReleaseIntrospector,
+          usageStore: apiReleaseIntrospectionStore,
+          consumeOnSuccess: true,
           tokenTypeHint: 'attestor_release_token',
           resourceServerId: 'attestor.api.finance.filing-export',
         });

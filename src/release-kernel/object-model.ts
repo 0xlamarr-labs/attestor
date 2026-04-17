@@ -322,6 +322,14 @@ export function releaseDecisionExpiresAt(decision: ReleaseDecision): string | nu
   return expiry?.expiresAt ?? null;
 }
 
+export function releaseDecisionMaxUses(decision: ReleaseDecision): number | null {
+  const usageLimit = decision.releaseConditions.items.find(
+    (item): item is Extract<ReleaseCondition, { kind: 'usage-limit' }> =>
+      item.kind === 'usage-limit',
+  );
+  return usageLimit?.maxUses ?? null;
+}
+
 export function buildReleaseTokenClaims(input: BuildReleaseTokenClaimsInput): ReleaseTokenClaims {
   return {
     version: RELEASE_TOKEN_SPEC_VERSION,

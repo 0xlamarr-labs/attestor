@@ -1,4 +1,5 @@
 import type { ReleaseDecision, ReleaseTokenClaims } from './object-model.js';
+import { releaseDecisionMaxUses } from './object-model.js';
 import type {
   IssuedReleaseToken,
   ReleaseTokenVerificationFailure,
@@ -33,14 +34,15 @@ export type SupportedReleaseTokenTypeHint =
   | typeof DEFAULT_RELEASE_TOKEN_TYPE_HINT
   | 'access_token';
 
-export type ReleaseTokenRegistryStatus = 'issued' | 'revoked' | 'expired';
+export type ReleaseTokenRegistryStatus = 'issued' | 'revoked' | 'expired' | 'consumed';
 export type ReleaseTokenInactiveReason =
   | 'invalid'
   | 'unknown'
   | 'unsupported_token_type'
   | 'claim_mismatch'
   | 'revoked'
-  | 'expired';
+  | 'expired'
+  | 'usage_exhausted';
 
 export interface RegisteredReleaseToken {
   readonly version: typeof RELEASE_TOKEN_REGISTRY_SPEC_VERSION;
@@ -65,6 +67,11 @@ export interface RegisteredReleaseToken {
   readonly authorityMode: ReleaseDecision['reviewAuthority']['mode'];
   readonly keyId: string;
   readonly publicKeyFingerprint: string;
+  readonly maxUses: number;
+  readonly useCount: number;
+  readonly firstUsedAt: string | null;
+  readonly lastUsedAt: string | null;
+  readonly lastUsedByResourceServerId: string | null;
   readonly revokedAt: string | null;
   readonly revocationReason: string | null;
   readonly revokedBy: string | null;
@@ -83,11 +90,24 @@ export interface RevokeReleaseTokenInput {
   readonly revokedBy?: string;
 }
 
+export interface RecordReleaseTokenUseInput {
+  readonly tokenId: string;
+  readonly usedAt?: string;
+  readonly resourceServerId?: string;
+}
+
+export interface RecordedReleaseTokenUseResult {
+  readonly accepted: boolean;
+  readonly inactiveReason: ReleaseTokenInactiveReason | null;
+  readonly record: RegisteredReleaseToken | null;
+}
+
 export interface ReleaseTokenIntrospectionStore {
   registerIssuedToken(input: RegisterIssuedReleaseTokenInput): RegisteredReleaseToken;
   findToken(tokenId: string): RegisteredReleaseToken | null;
   revokeToken(input: RevokeReleaseTokenInput): RegisteredReleaseToken | null;
   syncLifecycle(currentDate?: string): readonly RegisteredReleaseToken[];
+  recordTokenUse(input: RecordReleaseTokenUseInput): RecordedReleaseTokenUseResult;
 }
 
 export interface ReleaseTokenIntrospectionInput
@@ -214,6 +234,22 @@ function registeredReleaseTokenIsActive(
   return record.status === 'issued';
 }
 
+function inactiveReasonForRegisteredReleaseToken(
+  record: RegisteredReleaseToken,
+): ReleaseTokenInactiveReason {
+  switch (record.status) {
+    case 'revoked':
+      return 'revoked';
+    case 'expired':
+      return 'expired';
+    case 'consumed':
+      return 'usage_exhausted';
+    case 'issued':
+    default:
+      return 'invalid';
+  }
+}
+
 function buildRegisteredReleaseToken(
   input: RegisterIssuedReleaseTokenInput,
 ): RegisteredReleaseToken {
@@ -241,6 +277,11 @@ function buildRegisteredReleaseToken(
     authorityMode: decision.reviewAuthority.mode,
     keyId: issuedToken.keyId,
     publicKeyFingerprint: issuedToken.publicKeyFingerprint,
+    maxUses: Math.max(1, releaseDecisionMaxUses(decision) ?? 1),
+    useCount: 0,
+    firstUsedAt: null,
+    lastUsedAt: null,
+    lastUsedByResourceServerId: null,
     revokedAt: null,
     revocationReason: null,
     revokedBy: null,
@@ -297,6 +338,25 @@ function revokeRegisteredReleaseToken(
   });
 }
 
+function consumeRegisteredReleaseToken(
+  record: RegisteredReleaseToken,
+  input: RecordReleaseTokenUseInput,
+): RegisteredReleaseToken {
+  const usedAt = normalizeLifecycleTimestamp('usedAt', input.usedAt);
+  const nextUseCount = record.useCount + 1;
+  const exhausted = nextUseCount >= record.maxUses;
+
+  return Object.freeze({
+    ...record,
+    status: exhausted ? 'consumed' : record.status,
+    statusChangedAt: exhausted ? usedAt : record.statusChangedAt,
+    useCount: nextUseCount,
+    firstUsedAt: record.firstUsedAt ?? usedAt,
+    lastUsedAt: usedAt,
+    lastUsedByResourceServerId: input.resourceServerId ?? null,
+  });
+}
+
 export function createInMemoryReleaseTokenIntrospectionStore(): ReleaseTokenIntrospectionStore {
   const records = new Map<string, RegisteredReleaseToken>();
 
@@ -335,6 +395,36 @@ export function createInMemoryReleaseTokenIntrospectionStore(): ReleaseTokenIntr
       }
 
       return Object.freeze(expired);
+    },
+
+    recordTokenUse(input: RecordReleaseTokenUseInput): RecordedReleaseTokenUseResult {
+      const expired = this.syncLifecycle(input.usedAt);
+      const existing = records.get(input.tokenId)
+        ?? expired.find((record) => record.tokenId === input.tokenId)
+        ?? null;
+      if (!existing) {
+        return Object.freeze({
+          accepted: false,
+          inactiveReason: 'unknown',
+          record: null,
+        });
+      }
+
+      if (existing.status !== 'issued') {
+        return Object.freeze({
+          accepted: false,
+          inactiveReason: inactiveReasonForRegisteredReleaseToken(existing),
+          record: existing,
+        });
+      }
+
+      const consumed = consumeRegisteredReleaseToken(existing, input);
+      records.set(consumed.tokenId, consumed);
+      return Object.freeze({
+        accepted: true,
+        inactiveReason: null,
+        record: consumed,
+      });
     },
   };
 }
@@ -401,7 +491,7 @@ export async function introspectReleaseToken(
 
   if (!registeredReleaseTokenIsActive(record)) {
     return inactiveReleaseTokenIntrospection(
-      record.status === 'revoked' ? 'revoked' : 'expired',
+      inactiveReasonForRegisteredReleaseToken(record),
       input.currentDate,
       input.resourceServerId,
     );

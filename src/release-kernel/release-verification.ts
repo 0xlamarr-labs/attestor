@@ -12,6 +12,7 @@ import type {
   ActiveReleaseTokenIntrospectionResult,
   ReleaseTokenIntrospectionResult,
   ReleaseTokenIntrospector,
+  ReleaseTokenIntrospectionStore,
 } from './release-introspection.js';
 
 /**
@@ -43,6 +44,8 @@ export interface ReleaseVerificationInput extends VerifyReleaseTokenInput {
   readonly expectedOutputHash?: string;
   readonly expectedConsequenceHash?: string;
   readonly introspector?: ReleaseTokenIntrospector;
+  readonly usageStore?: ReleaseTokenIntrospectionStore;
+  readonly consumeOnSuccess?: boolean;
   readonly tokenTypeHint?: string;
   readonly resourceServerId?: string;
 }
@@ -56,6 +59,11 @@ export interface ReleaseVerificationContext {
   readonly expectedOutputHash: string | undefined;
   readonly expectedConsequenceHash: string | undefined;
   readonly introspection: ReleaseTokenIntrospectionResult | null;
+  readonly usage: {
+    readonly consumed: boolean;
+    readonly useCount: number | null;
+    readonly maxUses: number | null;
+  } | null;
 }
 
 export class ReleaseVerificationError extends Error {
@@ -98,6 +106,10 @@ export interface CreateReleaseVerificationMiddlewareInput {
   readonly introspector?:
     | ReleaseTokenIntrospector
     | ((context: Context) => ReleaseTokenIntrospector | Promise<ReleaseTokenIntrospector>);
+  readonly usageStore?:
+    | ReleaseTokenIntrospectionStore
+    | ((context: Context) => ReleaseTokenIntrospectionStore | Promise<ReleaseTokenIntrospectionStore>);
+  readonly consumeOnSuccess?: ResolveMaybe<boolean | undefined>;
   readonly tokenTypeHint?: ResolveMaybe<string | undefined>;
   readonly resourceServerId?: ResolveMaybe<string | undefined>;
   readonly tokenHeaderName?: string;
@@ -259,6 +271,8 @@ function introspectionInactiveDescription(
       return 'Release token was revoked by the Attestor release authority.';
     case 'expired':
       return 'Release token has expired.';
+    case 'usage_exhausted':
+      return 'Release token has already been consumed and cannot be replayed.';
     case 'claim_mismatch':
       return 'Release token registry state does not match the verified token claims.';
     case 'unsupported_token_type':
@@ -334,6 +348,44 @@ export async function verifyReleaseAuthorization(
     assertActiveIntrospectionConsistency(verification, introspection);
   }
 
+  let usage: ReleaseVerificationContext['usage'] = null;
+  if (input.consumeOnSuccess) {
+    if (!input.usageStore) {
+      throw new ReleaseVerificationError(
+        401,
+        'invalid_token',
+        'Release token consumption requires a replay-protection ledger.',
+        buildBearerChallenge(
+          'invalid_token',
+          'Release token consumption requires a replay-protection ledger.',
+        ),
+      );
+    }
+
+    const consumed = input.usageStore.recordTokenUse({
+      tokenId: verification.claims.jti,
+      usedAt: input.currentDate,
+      resourceServerId: input.resourceServerId,
+    });
+    if (!consumed.accepted || !consumed.record) {
+      const description = introspectionInactiveDescription(
+        consumed.inactiveReason ?? 'invalid',
+      );
+      throw new ReleaseVerificationError(
+        401,
+        'invalid_token',
+        description,
+        buildBearerChallenge('invalid_token', description),
+      );
+    }
+
+    usage = Object.freeze({
+      consumed: true,
+      useCount: consumed.record.useCount,
+      maxUses: consumed.record.maxUses,
+    });
+  }
+
   return Object.freeze({
     version: RELEASE_VERIFICATION_SPEC_VERSION,
     token: input.token,
@@ -343,6 +395,7 @@ export async function verifyReleaseAuthorization(
     expectedOutputHash: input.expectedOutputHash,
     expectedConsequenceHash: input.expectedConsequenceHash,
     introspection,
+    usage,
   });
 }
 
@@ -368,6 +421,8 @@ export function createReleaseVerificationMiddleware(
       );
       const currentDate = await resolveValue(input.currentDate, context);
       const introspector = await resolveValue(input.introspector, context);
+      const usageStore = await resolveValue(input.usageStore, context);
+      const consumeOnSuccess = await resolveValue(input.consumeOnSuccess, context);
       const tokenTypeHint = await resolveValue(input.tokenTypeHint, context);
       const resourceServerId = await resolveValue(input.resourceServerId, context);
 
@@ -380,6 +435,8 @@ export function createReleaseVerificationMiddleware(
         expectedConsequenceHash,
         currentDate,
         introspector,
+        usageStore,
+        consumeOnSuccess,
         tokenTypeHint,
         resourceServerId,
       });

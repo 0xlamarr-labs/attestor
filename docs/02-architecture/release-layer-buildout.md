@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 16 |
+| Completed | 17 |
 | In progress | 0 |
-| Not started | 8 |
+| Not started | 7 |
 
 ## Frozen Step List
 
@@ -61,7 +61,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 14 | complete | Enforce one finance record path end to end | `src/release-kernel/finance-record-release.ts`, `src/service/api-server.ts`, `tests/release-kernel-finance-record-release.test.ts`, `tests/live-api.test.ts` | The first real fail-closed gateway path now exists on the finance filing export surface: signed pipeline runs mint a hash-bound filing release artifact, and `POST /api/v1/filing/export` rejects missing or tampered release authorization before export. |
 | 15 | complete | Add token introspection for high-risk paths | `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/api-server.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/live-api.test.ts` | High-risk release tokens now require active-status introspection in addition to cryptographic verification: the release authority plane registers issued tokens, the verifier checks active state for `R3/R4`, and the finance filing export path now proves this on the first hard gateway wedge using RFC 7662-style active/inactive semantics adapted to the release layer. |
 | 16 | complete | Add token revocation and expiry handling | `src/release-kernel/release-token.ts`, `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/http/routes/admin-routes.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/live-api.test.ts` | Release tokens now distinguish natural expiry from explicit revocation: JOSE verification surfaces expiry clearly, the release registry persists `issued`/`expired`/`revoked` lifecycle state, admin operators can revoke issued release tokens explicitly on the first finance hard-gateway wedge, and downstream verification now blocks revoked tokens with a reason-specific fail-closed response aligned with current RFC 7009 / RFC 7662 lifecycle expectations. |
-| 17 | not_started | Add replay protection ledger | Pending | `jti`-bound or single-use issuance support. |
+| 17 | complete | Add replay protection ledger | `src/release-kernel/object-model.ts`, `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/http/routes/pipeline-routes.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/live-api.test.ts` | Release tokens now carry real usage-limit enforcement instead of advisory intent: the release authority plane persists token use counts, single-use finance filing-export tokens become consumed after the first successful consequence admission, replay attempts fail closed with an explicit consumed-token lifecycle reason, and the first hard finance gateway path now proves `jti`-bound consequence authorization rather than reusable bearer reuse. |
 | 18 | not_started | Build the reviewer queue UX | Pending | Reviewer decision needs to be fast and legible. |
 | 19 | not_started | Add named review and dual approval | Pending | Default authority model for R3/R4. |
 | 20 | not_started | Add override and break-glass path | Pending | Emergency release with stronger audit and shorter validity. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 17 is next. The goal is to add a replay-protection ledger so issued release authorization can become intentionally one-shot or bounded-use rather than reusable while still active.
+Step 18 is next. The goal is to build the reviewer queue UX so higher-risk releases can move through human authority quickly without turning the release layer into a manual bottleneck.

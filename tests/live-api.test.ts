@@ -345,6 +345,29 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       console.log('    release token required before export');
     }
 
+    // ═══ FILING EXPORT — tampered payload ═══
+    console.log('\n  [POST /api/v1/filing/export — tampered payload]');
+    {
+      const tampered = {
+        ...filingRelease.candidate,
+        rows: filingRelease.candidate.rows.map((row: Record<string, unknown>) => ({ ...row })),
+      };
+      (tampered.rows[0] as any).exposure_usd = Number((tampered.rows[0] as any).exposure_usd ?? 0) + 1;
+
+      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${filingRelease.token}`,
+        },
+        body: JSON.stringify(tampered),
+      });
+      ok(res.status === 403, 'Filing(tampered): status 403');
+      const body = await res.json() as any;
+      ok(body.error === 'insufficient_scope', 'Filing(tampered): binding mismatch rejected as insufficient scope');
+      console.log('    tampered payload blocked by output/consequence hash binding');
+    }
+
     // ═══ FILING EXPORT — authorized XBRL ═══
     console.log('\n  [POST /api/v1/filing/export — authorized XBRL]');
     {
@@ -369,6 +392,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(body.release?.authorized === true, 'Filing: release summary reports authorized');
       ok(body.release?.decisionId === filingRelease.decisionId, 'Filing: release summary preserves decision id');
       ok(body.release?.introspectionVerified === true, 'Filing: release summary reports active introspection verification');
+      ok(body.release?.tokenId === filingRelease.tokenId, 'Filing: release summary preserves token id');
       ok(body.package.issuedPackage.fileExtension === '.xbr', 'Filing: report package uses .xbr');
       ok(body.package.issuedPackage.files.some((f: any) => f.path === 'META-INF/reportPackage.json'), 'Filing: includes reportPackage.json');
       const zip = await JSZip.loadAsync(Buffer.from(body.package.issuedPackage.archive.base64, 'base64'));
@@ -377,33 +401,48 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       console.log(`    mapped=${body.mapping.mappedCount}, coverage=${body.mapping.coveragePercent}%, facts=${body.package.content.facts.length}`);
     }
 
-    // ═══ FILING EXPORT — tampered payload ═══
-    console.log('\n  [POST /api/v1/filing/export — tampered payload]');
+    // ═══ FILING EXPORT — replayed release token ═══
+    console.log('\n  [POST /api/v1/filing/export — replayed release token]');
     {
-      const tampered = {
-        ...filingRelease.candidate,
-        rows: filingRelease.candidate.rows.map((row: Record<string, unknown>) => ({ ...row })),
-      };
-      (tampered.rows[0] as any).exposure_usd = Number((tampered.rows[0] as any).exposure_usd ?? 0) + 1;
-
-      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+      const replayRes = await fetch(`${BASE}/api/v1/filing/export`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${filingRelease.token}`,
         },
-        body: JSON.stringify(tampered),
+        body: JSON.stringify(filingRelease.candidate),
       });
-      ok(res.status === 403, 'Filing(tampered): status 403');
-      const body = await res.json() as any;
-      ok(body.error === 'insufficient_scope', 'Filing(tampered): binding mismatch rejected as insufficient scope');
-      console.log('    tampered payload blocked by output/consequence hash binding');
+      ok(replayRes.status === 401, 'Filing(replay): consumed token no longer authorizes export');
+      const replayBody = await replayRes.json() as any;
+      ok(replayBody.error === 'invalid_token', 'Filing(replay): replay is surfaced as invalid_token');
+      ok(
+        String(replayBody.error_description ?? '').includes('consumed'),
+        'Filing(replay): downstream verifier explains consumed-token replay rejection',
+      );
+      console.log('    replayed release token blocked after first successful use');
     }
 
     // ═══ FILING EXPORT — revoked release token ═══
     console.log('\n  [POST /api/v1/filing/export — revoked release token]');
     {
-      const revokeRes = await fetch(`${BASE}/api/v1/admin/release-tokens/${filingRelease.tokenId}/revoke`, {
+      const revokeRun = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: COUNTERPARTY_INTENT,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: true,
+        }),
+      });
+      ok(revokeRun.status === 200, 'Filing(revoked): fresh signed pipeline run status 200');
+      const revokeRunBody = await revokeRun.json() as any;
+      const revokedRelease = revokeRunBody.release?.filingExport;
+      ok(typeof revokedRelease?.tokenId === 'string', 'Filing(revoked): fresh release token id present');
+
+      const revokeRes = await fetch(`${BASE}/api/v1/admin/release-tokens/${revokedRelease.tokenId}/revoke`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -423,9 +462,9 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${filingRelease.token}`,
+          Authorization: `Bearer ${revokedRelease.token}`,
         },
-        body: JSON.stringify(filingRelease.candidate),
+        body: JSON.stringify(revokedRelease.candidate),
       });
       ok(revokedExportRes.status === 401, 'Filing(revoked): revoked token no longer authorizes export');
       const revokedExportBody = await revokedExportRes.json() as any;

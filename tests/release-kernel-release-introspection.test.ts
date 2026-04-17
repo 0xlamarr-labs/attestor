@@ -120,6 +120,62 @@ async function main(): Promise<void> {
     'Release introspection: cryptographically valid but unknown tokens are inactive',
   );
 
+  const singleUseIssued = await issuer.issue({
+    decision,
+    issuedAt: '2026-04-17T23:00:00.000Z',
+    tokenId: 'rt_single_use_introspection',
+  });
+  store.registerIssuedToken({
+    issuedToken: singleUseIssued,
+    decision,
+  });
+  const firstUse = store.recordTokenUse({
+    tokenId: singleUseIssued.tokenId,
+    usedAt: '2026-04-17T23:01:30.000Z',
+    resourceServerId: 'attestor.tests.release-introspection',
+  });
+  ok(
+    firstUse.accepted === true,
+    'Release introspection: first token use is accepted into the replay ledger',
+  );
+  equal(
+    firstUse.record?.status ?? null,
+    'consumed',
+    'Release introspection: single-use tokens become consumed after the first successful use',
+  );
+  const secondUse = store.recordTokenUse({
+    tokenId: singleUseIssued.tokenId,
+    usedAt: '2026-04-17T23:01:40.000Z',
+    resourceServerId: 'attestor.tests.release-introspection',
+  });
+  ok(
+    secondUse.accepted === false,
+    'Release introspection: second use is rejected as replay instead of silently reauthorizing consequence',
+  );
+  equal(
+    secondUse.inactiveReason,
+    'usage_exhausted',
+    'Release introspection: replay ledger reports usage exhaustion for already-consumed tokens',
+  );
+  const inactiveConsumed = await introspector.introspect({
+    token: singleUseIssued.token,
+    verificationKey,
+    audience: 'finance.reporting.record-store',
+    currentDate: '2026-04-17T23:01:45.000Z',
+    resourceServerId: 'attestor.tests.release-introspection',
+  });
+  ok(
+    inactiveConsumed.active === false,
+    'Release introspection: already-consumed tokens are inactive before expiry',
+  );
+  if (!inactiveConsumed.active) {
+    equal(
+      inactiveConsumed.inactive_reason,
+      'usage_exhausted',
+      'Release introspection: consumed tokens report usage exhaustion as the inactive reason',
+    );
+  }
+
   const inactiveExpired = await introspector.introspect({
     token: issued.token,
     verificationKey,

@@ -118,6 +118,57 @@ async function main(): Promise<void> {
     'Release introspection: audience-mismatched high-risk tokens are reported inactive instead of being treated as reusable authorization',
   );
 
+  const singleUseIssued = await issuer.issue({
+    decision,
+    issuedAt: '2026-04-17T21:00:00.000Z',
+    tokenId: 'rt_single_use_verification',
+  });
+  introspectionStore.registerIssuedToken({
+    issuedToken: singleUseIssued,
+    decision,
+  });
+  const consumedVerification = await verifyReleaseAuthorization({
+    token: singleUseIssued.token,
+    verificationKey,
+    audience: 'finance.reporting.record-store',
+    expectedTargetId: 'finance.reporting.record-store',
+    expectedOutputHash: 'sha256:output',
+    expectedConsequenceHash: 'sha256:consequence',
+    currentDate: '2026-04-17T21:01:00.000Z',
+    introspector,
+    usageStore: introspectionStore,
+    consumeOnSuccess: true,
+    resourceServerId: 'attestor.tests.release-verification',
+  });
+  ok(
+    consumedVerification.usage?.consumed === true,
+    'Release verification: successful consequence admission records a token use in the replay ledger',
+  );
+  equal(
+    consumedVerification.usage?.useCount ?? null,
+    1,
+    'Release verification: first successful admission increments the replay ledger use count',
+  );
+  await assert.rejects(
+    () =>
+      verifyReleaseAuthorization({
+        token: singleUseIssued.token,
+        verificationKey,
+        audience: 'finance.reporting.record-store',
+        expectedTargetId: 'finance.reporting.record-store',
+        expectedOutputHash: 'sha256:output',
+        expectedConsequenceHash: 'sha256:consequence',
+        currentDate: '2026-04-17T21:01:30.000Z',
+        introspector,
+        usageStore: introspectionStore,
+        consumeOnSuccess: true,
+        resourceServerId: 'attestor.tests.release-verification',
+      }),
+    /already been consumed and cannot be replayed/,
+    'Release verification: second use of a single-use token is rejected as replay',
+  );
+  passed += 1;
+
   await assert.rejects(
     () =>
       verifyReleaseAuthorization({
@@ -253,6 +304,7 @@ async function main(): Promise<void> {
       ok: true,
       decisionId: verificationContext.verification.claims.decision_id,
       introspectionActive: verificationContext.introspection?.active ?? false,
+      consumed: verificationContext.usage?.consumed ?? false,
     });
   });
 
@@ -276,6 +328,10 @@ async function main(): Promise<void> {
   ok(
     successBody.introspectionActive === true,
     'Release verification middleware: downstream handlers can see that high-risk introspection succeeded',
+  );
+  ok(
+    successBody.consumed === false,
+    'Release verification middleware: non-consuming verification remains available for read-only verification paths',
   );
 
   const missingTokenResponse = await app.request('https://attestor.local/release', {
@@ -316,6 +372,62 @@ async function main(): Promise<void> {
     mismatchResponse.status,
     403,
     'Release verification middleware: binding mismatches fail with insufficient scope rather than allowing unintended release',
+  );
+
+  const middlewareSingleUseIssued = await issuer.issue({
+    decision,
+    issuedAt: '2026-04-17T21:00:00.000Z',
+    tokenId: 'rt_single_use_middleware',
+  });
+  introspectionStore.registerIssuedToken({
+    issuedToken: middlewareSingleUseIssued,
+    decision,
+  });
+  const consumingApp = new Hono();
+  consumingApp.use(
+    '/release',
+    createReleaseVerificationMiddleware({
+      verificationKey,
+      audience: 'finance.reporting.record-store',
+      expectedTargetId: 'finance.reporting.record-store',
+      expectedOutputHash: 'sha256:output',
+      expectedConsequenceHash: 'sha256:consequence',
+      currentDate: '2026-04-17T21:01:00.000Z',
+      introspector,
+      usageStore: introspectionStore,
+      consumeOnSuccess: true,
+      resourceServerId: 'attestor.tests.release-verification',
+    }),
+  );
+  consumingApp.post('/release', (context) => context.json({ ok: true }));
+
+  const consumingSuccess = await consumingApp.request('https://attestor.local/release', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${middlewareSingleUseIssued.token}`,
+    },
+  });
+  equal(
+    consumingSuccess.status,
+    200,
+    'Release verification middleware: first single-use token admission succeeds',
+  );
+
+  const consumingReplay = await consumingApp.request('https://attestor.local/release', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${middlewareSingleUseIssued.token}`,
+    },
+  });
+  equal(
+    consumingReplay.status,
+    401,
+    'Release verification middleware: replayed single-use tokens fail closed',
+  );
+  const consumingReplayBody = await consumingReplay.json();
+  ok(
+    String(consumingReplayBody.error_description ?? '').includes('consumed'),
+    'Release verification middleware: replay failures surface explicit consumed-token semantics',
   );
 
   console.log(`\nRelease kernel release-verification tests: ${passed} passed, 0 failed`);
