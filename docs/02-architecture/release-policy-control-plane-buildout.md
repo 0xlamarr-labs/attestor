@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 5 |
+| Completed | 6 |
 | In progress | 0 |
-| Not started | 15 |
+| Not started | 14 |
 
 ## Frozen Step List
 
@@ -71,7 +71,7 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | 03 | complete | Define scoping and precedence rules | `src/release-policy-control-plane/scoping.ts`, `tests/release-policy-control-plane-scoping.test.ts` | Scope resolution is now deterministic: environment is a hard exact boundary, null dimensions act as wildcards, account outranks tenant, wedge outranks domain, risk-class outranks consequence-type, plan is the lowest optional discriminator, and top-level precedence ties are treated as explicit control-plane conflicts instead of implicit winner-picking. |
 | 04 | complete | Define the signed policy-bundle format | `src/release-policy-control-plane/bundle-format.ts`, `tests/release-policy-control-plane-bundle-format.test.ts` | Policy packs now freeze into deterministic, DSSE-ready bundle artifacts with canonical payloads, subject digests for pack/manifest/entries/schemas, manifest integrity checks, and explicit rejection of mismatched entry hashes. |
 | 05 | complete | Implement policy-bundle signing and verification | `src/release-policy-control-plane/bundle-signing.ts`, `tests/release-policy-control-plane-bundle-signing.test.ts` | Policy bundles now have real DSSE-style signing and verification with explicit verification-key exports, signature-record coherence checks, wrong-key failure, payload-tamper rejection, and bundle-reference binding enforcement. |
-| 06 | not_started | Build the policy store abstraction | Pending | Add a first-class store/repository layer for policy packs, bundle versions, activation state, and version history rather than scattering policy state across route wiring. |
+| 06 | complete | Build the policy store abstraction | `src/release-policy-control-plane/store.ts`, `tests/release-policy-control-plane-store.test.ts` | The control plane now has an explicit repository contract for pack metadata, bundle history, signed bundle records, activation history, and metadata snapshots, with both in-memory and file-backed first-slice implementations. |
 | 07 | not_started | Build activation and rollback records | Pending | Model policy activation as an auditable resource with staged rollout, supersession, rollback target, actor, and reason fields. |
 | 08 | not_started | Add discovery and bundle-resolution surface | Pending | Introduce a discovery contract that tells consumers which bundle to load and under what labels/scope, aligned with modern policy-distribution practice. |
 | 09 | not_started | Build the active policy resolver | Pending | Replace direct policy-factory selection with a control-plane-backed resolver that returns the effective active policy bundle for a request scope. |
@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-Step 06 is next. The goal is to introduce a first-class policy store abstraction for packs, bundle versions, signatures, and activation state.
+Step 07 is next. The goal is to make activation and rollback records a richer first-class operational resource on top of the new store layer.
