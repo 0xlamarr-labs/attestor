@@ -271,6 +271,22 @@ function renderReviewerDecisions(detail: ReleaseReviewerQueueDetail): string {
     .join('');
 }
 
+function renderIssuedToken(detail: ReleaseReviewerQueueDetail): string {
+  if (!detail.issuedReleaseToken) {
+    return '<p class="token">No release token has been issued yet.</p>';
+  }
+
+  return `<p class="token"><strong>${escapeHtml(detail.issuedReleaseToken.tokenId)}</strong> Â· audience ${escapeHtml(detail.issuedReleaseToken.audience)} Â· expires ${escapeHtml(detail.issuedReleaseToken.expiresAt)}</p>`;
+}
+
+function renderOverride(detail: ReleaseReviewerQueueDetail): string {
+  if (!detail.overrideGrant) {
+    return '<p class="token">No break-glass override has been recorded for this release candidate.</p>';
+  }
+
+  return `<p class="token"><strong>${escapeHtml(detail.overrideGrant.reasonCode)}</strong>${detail.overrideGrant.ticketId ? ` Â· ticket ${escapeHtml(detail.overrideGrant.ticketId)}` : ''} Â· requested by ${escapeHtml(detail.overrideGrant.requestedByLabel)}${detail.overrideGrant.requestedByRole ? ` (${escapeHtml(detail.overrideGrant.requestedByRole)})` : ''}</p>`;
+}
+
 function renderRowPreview(detail: ReleaseReviewerQueueDetail): string {
   if (detail.candidate.previewRows.length === 0) {
     return '<p class="mono">No row preview available.</p>';
@@ -380,6 +396,11 @@ export function renderReleaseReviewerQueueDetailPage(
         font-size: 13px;
         line-height: 1.55;
       }
+      .token {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
       @media (max-width: 920px) {
         .grid {
           grid-template-columns: 1fr;
@@ -418,6 +439,14 @@ export function renderReleaseReviewerQueueDetailPage(
         <article class="panel">
           <h2>Reviewer decisions</h2>
           <ul>${renderReviewerDecisions(detail)}</ul>
+        </article>
+        <article class="panel">
+          <h2>Issued release token</h2>
+          ${renderIssuedToken(detail)}
+        </article>
+        <article class="panel">
+          <h2>Break-glass override</h2>
+          ${renderOverride(detail)}
         </article>
         <article class="panel">
           <h2>Decision timeline</h2>

@@ -14,6 +14,7 @@ export type ReleaseDecisionLogPhase =
   | 'policy-resolution'
   | 'deterministic-checks'
   | 'review'
+  | 'override'
   | 'terminal-accept'
   | 'terminal-deny';
 

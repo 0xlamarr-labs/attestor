@@ -1,6 +1,7 @@
 import type { Hono } from 'hono';
 import {
   ReleaseReviewerQueueError,
+  applyBreakGlassOverride,
   applyReviewerDecision,
   attachIssuedTokenToReviewerQueueRecord,
 } from '../../../release-kernel/reviewer-queue.js';
@@ -55,12 +56,26 @@ function buildReviewActionResponse(
   };
 }
 
+function buildIssuedReleaseTokenResponse(
+  issuedToken: any,
+): Record<string, unknown> {
+  return {
+    tokenId: issuedToken.tokenId,
+    token: issuedToken.token,
+    expiresAt: issuedToken.expiresAt,
+    targetId: issuedToken.claims.aud,
+    decisionId: issuedToken.claims.decision_id,
+    ttlSeconds: issuedToken.claims.exp - issuedToken.claims.iat,
+    override: issuedToken.claims.override,
+  };
+}
+
 function appendReviewerTimelineToDecisionLog(
   writer: any,
   decision: any,
   occurredAt: string,
   requestId: string,
-  phase: 'review' | 'terminal-accept' | 'terminal-deny',
+  phase: 'review' | 'override' | 'terminal-accept' | 'terminal-deny',
 ): void {
   writer.append({
     occurredAt,
@@ -220,13 +235,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
           record: transition.record,
           issuedToken,
         });
-        responseToken = {
-          tokenId: issuedToken.tokenId,
-          token: issuedToken.token,
-          expiresAt: issuedToken.expiresAt,
-          targetId: issuedToken.claims.aud,
-          decisionId: issuedToken.claims.decision_id,
-        };
+        responseToken = buildIssuedReleaseTokenResponse(issuedToken);
       }
 
       const stored = apiReleaseReviewerQueueStore.upsert(finalRecord);
@@ -345,6 +354,107 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
               : error.code === 'reviewer_not_allowed' || error.code === 'reviewer_role_not_allowed'
                 ? 403
                 : 400;
+        return c.json({ error: error.message, code: error.code }, status);
+      }
+
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    }
+  });
+
+  app.post('/api/v1/admin/release-reviews/:id/override', async (c) => {
+    const unauthorized = currentAdminAuthorized(c);
+    if (unauthorized) return unauthorized;
+
+    const body = await parseReviewActionBody(c);
+    const routeId = 'admin.release_review.override';
+    const mutation = await adminMutationRequest(c, routeId, body);
+    if (mutation instanceof Response) {
+      return mutation;
+    }
+
+    const record = apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
+    if (!record) {
+      return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
+    }
+
+    try {
+      const decidedAt = new Date().toISOString();
+      const overriddenRecord = applyBreakGlassOverride({
+        record,
+        reasonCode: readReviewField(body, 'reasonCode') ?? '',
+        ticketId: readReviewField(body, 'ticketId'),
+        requestedById: readReviewField(body, 'requestedById') ?? '',
+        requestedByName: readReviewField(body, 'requestedByName') ?? '',
+        requestedByRole: readReviewField(body, 'requestedByRole'),
+        note: readReviewField(body, 'note'),
+        decidedAt,
+      });
+
+      appendReviewerTimelineToDecisionLog(
+        financeReleaseDecisionLog,
+        overriddenRecord.releaseDecision,
+        decidedAt,
+        `review:${overriddenRecord.detail.id}:override`,
+        'override',
+      );
+      appendReviewerTimelineToDecisionLog(
+        financeReleaseDecisionLog,
+        overriddenRecord.releaseDecision,
+        decidedAt,
+        `review:${overriddenRecord.detail.id}:terminal-accept`,
+        'terminal-accept',
+      );
+
+      const issuedToken = await apiReleaseTokenIssuer.issue({
+        decision: overriddenRecord.releaseDecision,
+        issuedAt: decidedAt,
+        ttlSeconds: 60,
+      });
+      apiReleaseIntrospectionStore.registerIssuedToken({
+        issuedToken,
+        decision: overriddenRecord.releaseDecision,
+      });
+
+      const finalRecord = attachIssuedTokenToReviewerQueueRecord({
+        record: overriddenRecord,
+        issuedToken,
+      });
+
+      const stored = apiReleaseReviewerQueueStore.upsert(finalRecord);
+      const responseToken = buildIssuedReleaseTokenResponse(issuedToken);
+      c.header('cache-control', 'no-store');
+      return c.json(
+        await finalizeAdminMutation({
+          idempotencyKey: mutation.idempotencyKey,
+          routeId,
+          requestPayload: body,
+          statusCode: 200,
+          responseBody: buildReviewActionResponse(stored, responseToken),
+          audit: {
+            action: 'release_break_glass.issued',
+            requestHash: mutation.requestHash,
+            metadata: {
+              reviewId: stored.id,
+              decisionId: stored.decisionId,
+              reasonCode: stored.overrideGrant?.reasonCode ?? null,
+              ticketId: stored.overrideGrant?.ticketId ?? null,
+              requestedById: stored.overrideGrant?.requestedById ?? null,
+              requestedByRole: stored.overrideGrant?.requestedByRole ?? null,
+              authorityState: stored.authorityState,
+              releaseTokenId: responseToken.tokenId,
+              ttlSeconds: responseToken.ttlSeconds,
+            },
+          },
+        }),
+      );
+    } catch (error) {
+      if (error instanceof ReleaseReviewerQueueError) {
+        const status =
+          error.code === 'already_finalized'
+            ? 409
+            : error.code === 'missing_override_reason' || error.code === 'missing_override_requester'
+              ? 400
+              : 409;
         return c.json({ error: error.message, code: error.code }, status);
       }
 

@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 19 |
+| Completed | 20 |
 | In progress | 0 |
-| Not started | 5 |
+| Not started | 4 |
 
 ## Frozen Step List
 
@@ -64,7 +64,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 17 | complete | Add replay protection ledger | `src/release-kernel/object-model.ts`, `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/http/routes/pipeline-routes.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/live-api.test.ts` | Release tokens now carry real usage-limit enforcement instead of advisory intent: the release authority plane persists token use counts, single-use finance filing-export tokens become consumed after the first successful consequence admission, replay attempts fail closed with an explicit consumed-token lifecycle reason, and the first hard finance gateway path now proves `jti`-bound consequence authorization rather than reusable bearer reuse. |
 | 18 | complete | Build the reviewer queue UX | `src/release-kernel/reviewer-queue.ts`, `src/service/release-review-site.ts`, `src/service/http/routes/release-review-routes.ts`, `src/service/http/routes/pipeline-routes.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/live-api.test.ts` | Higher-risk release candidates now land in a real reviewer inbox instead of disappearing into `hold`: the release layer persists reviewer-facing queue packets with candidate preview, finding summary, checklist, and decision-log timeline; the finance-first proving path now enqueues held R4 filing candidates into that inbox; and operators get both JSON and legible HTML inbox/detail surfaces without collapsing the release layer back into a manual black box. |
 | 19 | complete | Add named review and dual approval | `src/release-kernel/reviewer-queue.ts`, `src/service/http/routes/release-review-routes.ts`, `src/service/release-review-site.ts`, `src/service/admin-audit-log.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/live-api.test.ts` | Reviewer authority is now real rather than implied: named reviewers are required for high-consequence review actions, R4 candidates require two distinct approvals before token issuance, duplicate reviewer reuse is blocked, approval/rejection decisions are captured in the reviewer packet and admin audit log, and the finance proving path now mints a release token only after explicit human authority closure. |
-| 20 | not_started | Add override and break-glass path | Pending | Emergency release with stronger audit and shorter validity. |
+| 20 | complete | Add override and break-glass path | `src/release-kernel/reviewer-queue.ts`, `src/release-kernel/release-decision-log.ts`, `src/service/http/routes/release-review-routes.ts`, `src/service/release-review-site.ts`, `src/service/admin-audit-log.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/live-api.test.ts` | Emergency release is now explicit instead of becoming a hidden bypass: held release reviews can be closed through a named break-glass override with reason code, requester identity, incident/ticket context, distinct override timeline/audit events, and a short-lived override-marked release token that the finance hard-gateway path can consume under the same fail-closed release discipline. |
 | 21 | not_started | Sign and export the durable evidence pack | Pending | Longer-lived proof separate from the short-lived release token. |
 | 22 | not_started | Add policy rollout controls | Pending | Dry-run, canary, enforce, rollback. |
 | 23 | not_started | Launch the second and third canonical flows | Pending | `communication` then `action`, after `record` works. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 20 is next. The goal is to add an explicit override and break-glass path so emergency release can happen without collapsing the release layer into an untracked bypass.
+Step 21 is next. The goal is to sign and export the durable evidence pack so short-lived release authorization and longer-lived portable proof are separated cleanly.

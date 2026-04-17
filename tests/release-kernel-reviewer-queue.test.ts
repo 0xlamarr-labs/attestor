@@ -8,6 +8,7 @@ import {
 import { createReleaseDecisionEngine } from '../src/release-kernel/release-decision-engine.js';
 import { createInMemoryReleaseDecisionLogWriter } from '../src/release-kernel/release-decision-log.js';
 import {
+  applyBreakGlassOverride,
   applyReviewerDecision,
   createFinanceReviewerQueueItem,
   createInMemoryReleaseReviewerQueueStore,
@@ -189,6 +190,22 @@ async function main(): Promise<void> {
   equal(rejected.record.detail.status, 'rejected', 'Reviewer queue: explicit rejection closes the queue item');
   equal(rejected.record.releaseDecision.status, 'denied', 'Reviewer queue: explicit rejection denies consequence release');
   ok(rejected.record.detail.timeline.some((entry) => entry.phase === 'terminal-deny'), 'Reviewer queue: rejected review closure is reflected in the review timeline');
+
+  const overridden = applyBreakGlassOverride({
+    record: item,
+    reasonCode: 'regulatory_deadline',
+    ticketId: 'INC-2048',
+    requestedById: 'ops.breakglass',
+    requestedByName: 'Operations Override',
+    requestedByRole: 'incident_commander',
+    note: 'Emergency filing preparation required before market open.',
+    decidedAt: '2026-04-17T23:14:00.000Z',
+  });
+  equal(overridden.detail.status, 'overridden', 'Reviewer queue: break-glass override closes the queue item with a distinct overridden status');
+  equal(overridden.detail.authorityState, 'overridden', 'Reviewer queue: authority state becomes overridden under break-glass');
+  equal(overridden.releaseDecision.status, 'overridden', 'Reviewer queue: release decision enters overridden state');
+  equal(overridden.detail.overrideGrant?.reasonCode, 'regulatory_deadline', 'Reviewer queue: override summary preserves the reason code');
+  ok(overridden.detail.timeline.some((entry) => entry.phase === 'override'), 'Reviewer queue: override phase is appended to the timeline');
 
   console.log(`\nRelease kernel reviewer-queue tests: ${passed} passed, 0 failed`);
 }

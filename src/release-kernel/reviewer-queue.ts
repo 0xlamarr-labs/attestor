@@ -13,8 +13,8 @@ import { consequenceTypeLabel, RISK_CLASS_PROFILES } from './types.js';
 export const RELEASE_REVIEWER_QUEUE_SPEC_VERSION = 'attestor.release-reviewer-queue.v2';
 
 export type ReleaseReviewerQueueItemKind = 'finance.filing-export';
-export type ReleaseReviewerQueueStatus = 'pending-review' | 'approved' | 'rejected';
-export type ReleaseReviewerAuthorityState = 'pending' | 'approved' | 'rejected';
+export type ReleaseReviewerQueueStatus = 'pending-review' | 'approved' | 'rejected' | 'overridden';
+export type ReleaseReviewerAuthorityState = 'pending' | 'approved' | 'rejected' | 'overridden';
 export type ReleaseReviewerDecisionOutcome = 'approved' | 'rejected';
 
 export interface ReleaseReviewerTimelineEntry {
@@ -65,6 +65,14 @@ export interface ReleaseReviewerIssuedTokenSummary {
   readonly audience: string;
 }
 
+export interface ReleaseReviewerOverrideSummary {
+  readonly reasonCode: string;
+  readonly ticketId: string | null;
+  readonly requestedById: string;
+  readonly requestedByLabel: string;
+  readonly requestedByRole: string | null;
+}
+
 export interface ReleaseReviewerQueueSummary {
   readonly version: typeof RELEASE_REVIEWER_QUEUE_SPEC_VERSION;
   readonly id: string;
@@ -103,6 +111,7 @@ export interface ReleaseReviewerQueueDetail extends ReleaseReviewerQueueSummary 
   readonly timeline: readonly ReleaseReviewerTimelineEntry[];
   readonly reviewerDecisions: readonly ReleaseReviewerDecisionRecord[];
   readonly issuedReleaseToken: ReleaseReviewerIssuedTokenSummary | null;
+  readonly overrideGrant: ReleaseReviewerOverrideSummary | null;
 }
 
 export interface ReleaseReviewerQueueRecord {
@@ -157,13 +166,26 @@ export interface AttachIssuedTokenInput {
   readonly issuedToken: IssuedReleaseToken;
 }
 
+export interface ApplyBreakGlassOverrideInput {
+  readonly record: ReleaseReviewerQueueRecord;
+  readonly reasonCode: string;
+  readonly ticketId?: string | null;
+  readonly requestedById: string;
+  readonly requestedByName: string;
+  readonly requestedByRole?: string | null;
+  readonly note?: string | null;
+  readonly decidedAt: string;
+}
+
 export class ReleaseReviewerQueueError extends Error {
   readonly code:
     | 'missing_reviewer'
     | 'reviewer_not_allowed'
     | 'reviewer_role_not_allowed'
     | 'duplicate_reviewer'
-    | 'already_finalized';
+    | 'already_finalized'
+    | 'missing_override_reason'
+    | 'missing_override_requester';
 
   constructor(
     code:
@@ -171,13 +193,20 @@ export class ReleaseReviewerQueueError extends Error {
       | 'reviewer_not_allowed'
       | 'reviewer_role_not_allowed'
       | 'duplicate_reviewer'
-      | 'already_finalized',
+      | 'already_finalized'
+      | 'missing_override_reason'
+      | 'missing_override_requester',
     message: string,
   ) {
     super(message);
     this.name = 'ReleaseReviewerQueueError';
     this.code = code;
   }
+}
+
+function normalizeOptionalRole(value?: string | null): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function riskRank(riskClass: RiskClass): number {
@@ -352,6 +381,21 @@ function reviewerDecisionRecord(
   });
 }
 
+function overrideSummaryFromDecision(decision: ReleaseDecision): ReleaseReviewerOverrideSummary | null {
+  if (!decision.override) {
+    return null;
+  }
+
+  return Object.freeze({
+    reasonCode: decision.override.reasonCode,
+    ticketId: decision.override.ticketId ?? null,
+    requestedById: decision.override.requestedBy.id,
+    requestedByLabel:
+      decision.override.requestedBy.displayName?.trim() || decision.override.requestedBy.id,
+    requestedByRole: normalizeOptionalRole(decision.override.requestedBy.role),
+  });
+}
+
 function updateReviewSummary(
   decision: ReleaseDecision,
   reviewerDecisions: readonly ReleaseReviewerDecisionRecord[],
@@ -409,6 +453,30 @@ function updateReviewSummary(
   };
 }
 
+function buildBreakGlassSummary(
+  decision: ReleaseDecision,
+): Pick<
+  ReleaseReviewerQueueSummary,
+  | 'status'
+  | 'authorityState'
+  | 'releaseDecisionStatus'
+  | 'approvalsRecorded'
+  | 'approvalsRemaining'
+  | 'summary'
+  | 'findingSummary'
+> {
+  const approvalsRecorded = decision.override ? 1 : 0;
+  return {
+    status: 'overridden',
+    authorityState: 'overridden',
+    releaseDecisionStatus: 'overridden',
+    approvalsRecorded,
+    approvalsRemaining: 0,
+    summary: `Break-glass release override authorized consequence to ${targetDisplayName(decision)} under explicit emergency controls.`,
+    findingSummary: `Emergency override '${decision.override?.reasonCode ?? 'unspecified'}' replaced normal reviewer closure for this candidate.`,
+  };
+}
+
 function addReviewFinding(
   decision: ReleaseDecision,
   input: ApplyReviewerDecisionInput,
@@ -459,6 +527,54 @@ function cloneDecisionWithReviewOutcome(
   });
 }
 
+function cloneDecisionWithBreakGlassOverride(
+  decision: ReleaseDecision,
+  input: ApplyBreakGlassOverrideInput,
+): ReleaseDecision {
+  const reasonCode = input.reasonCode.trim();
+  if (!reasonCode) {
+    throw new ReleaseReviewerQueueError(
+      'missing_override_reason',
+      'Break-glass override requires a non-empty reasonCode.',
+    );
+  }
+
+  const requestedById = input.requestedById.trim();
+  const requestedByName = input.requestedByName.trim();
+  if (!requestedById || !requestedByName) {
+    throw new ReleaseReviewerQueueError(
+      'missing_override_requester',
+      'Break-glass override requires requestedById and requestedByName.',
+    );
+  }
+
+  const overrideFinding: ReleaseFinding = {
+    code: 'release_break_glass_override',
+    result: 'warn',
+    message: `${requestedByName} authorized an emergency break-glass release for reason '${reasonCode}'.`,
+    source: 'override',
+  };
+
+  return Object.freeze({
+    ...decision,
+    status: 'overridden',
+    override: Object.freeze({
+      reasonCode,
+      ticketId: input.ticketId?.trim() || undefined,
+      requestedBy: Object.freeze({
+        id: requestedById,
+        type: 'user',
+        displayName: requestedByName,
+        role: normalizeOptionalRole(input.requestedByRole) ?? undefined,
+      }),
+    }),
+    findings: Object.freeze([
+      ...decision.findings,
+      overrideFinding,
+    ]),
+  });
+}
+
 function reviewerTimelineEntry(
   occurredAt: string,
   phase: ReleaseReviewerTimelineEntry['phase'],
@@ -501,6 +617,9 @@ function freezeDetail(detail: ReleaseReviewerQueueDetail): ReleaseReviewerQueueD
     }),
     issuedReleaseToken: detail.issuedReleaseToken
       ? Object.freeze({ ...detail.issuedReleaseToken })
+      : null,
+    overrideGrant: detail.overrideGrant
+      ? Object.freeze({ ...detail.overrideGrant })
       : null,
   });
 }
@@ -571,6 +690,7 @@ export function createFinanceReviewerQueueItem(
       timeline,
       reviewerDecisions: Object.freeze([]),
       issuedReleaseToken: null,
+      overrideGrant: null,
     },
     releaseDecision: Object.freeze({
       ...decision,
@@ -646,6 +766,54 @@ export function applyReviewerDecision(
     finalDecisionReached:
       summary.authorityState === 'approved' || summary.authorityState === 'rejected',
   };
+}
+
+export function applyBreakGlassOverride(
+  input: ApplyBreakGlassOverrideInput,
+): ReleaseReviewerQueueRecord {
+  const { record } = input;
+  if (record.detail.status !== 'pending-review') {
+    throw new ReleaseReviewerQueueError(
+      'already_finalized',
+      `Release review '${record.detail.id}' is already ${record.detail.status}.`,
+    );
+  }
+
+  const nextDecision = cloneDecisionWithBreakGlassOverride(record.releaseDecision, input);
+  const summary = buildBreakGlassSummary(nextDecision);
+  const timeline = freezeTimeline([
+    ...record.detail.timeline,
+    reviewerTimelineEntry(
+      input.decidedAt,
+      'override',
+      'overridden',
+      input.requestedByName.trim(),
+    ),
+    reviewerTimelineEntry(
+      input.decidedAt,
+      'terminal-accept',
+      'overridden',
+      input.requestedByName.trim(),
+    ),
+  ]);
+
+  return freezeRecord({
+    detail: {
+      ...record.detail,
+      status: summary.status,
+      authorityState: summary.authorityState,
+      updatedAt: input.decidedAt,
+      releaseDecisionStatus: summary.releaseDecisionStatus,
+      approvalsRecorded: summary.approvalsRecorded,
+      approvalsRemaining: summary.approvalsRemaining,
+      summary: summary.summary,
+      findingSummary: summary.findingSummary,
+      findings: Object.freeze(nextDecision.findings.map((finding) => Object.freeze({ ...finding }))),
+      timeline,
+      overrideGrant: overrideSummaryFromDecision(nextDecision),
+    },
+    releaseDecision: nextDecision,
+  });
 }
 
 export function attachIssuedTokenToReviewerQueueRecord(

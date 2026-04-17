@@ -258,6 +258,9 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
     let reviewRequiredFilingRelease: any = null;
     let reviewQueueId: string | null = null;
     let approvedReleaseToken: string | null = null;
+    let breakGlassFilingRelease: any = null;
+    let breakGlassReviewQueueId: string | null = null;
+    let breakGlassReleaseToken: string | null = null;
     {
       const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
@@ -334,6 +337,37 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       reviewRequiredFilingRelease = body.release.filingExport;
       reviewQueueId = body.release.filingExport.reviewQueueId;
       console.log(`    reviewQueue=${reviewQueueId}, releaseDecision=${body.release.filingExport.decisionId}`);
+    }
+
+    // ═══ PIPELINE RUN — break-glass review-required candidate ═══
+    console.log('\n  [POST /api/v1/pipeline/run — break-glass review-required candidate]');
+    {
+      const breakGlassIntent = {
+        ...COUNTERPARTY_INTENT,
+        materialityTier: 'high',
+      };
+      const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidateSql: COUNTERPARTY_SQL,
+          intent: breakGlassIntent,
+          fixtures: [COUNTERPARTY_FIXTURE],
+          generatedReport: COUNTERPARTY_REPORT,
+          reportContract: COUNTERPARTY_REPORT_CONTRACT,
+          sign: true,
+        }),
+      });
+      ok(res.status === 200, 'Pipeline(break-glass queue): status 200');
+      const body = await res.json() as any;
+      ok(body.decision === 'pending_approval', 'Pipeline(break-glass queue): finance decision is pending approval');
+      ok(body.release?.filingExport !== null, 'Pipeline(break-glass queue): filing release artifact present');
+      ok(body.release.filingExport.decisionStatus === 'hold', 'Pipeline(break-glass queue): release decision is held pending reviewer authority');
+      ok(body.release.filingExport.token === null, 'Pipeline(break-glass queue): no release token issued yet');
+      ok(typeof body.release.filingExport.reviewQueueId === 'string', 'Pipeline(break-glass queue): reviewer queue id present');
+      breakGlassFilingRelease = body.release.filingExport;
+      breakGlassReviewQueueId = body.release.filingExport.reviewQueueId;
+      console.log(`    breakGlassReviewQueue=${breakGlassReviewQueueId}, releaseDecision=${body.release.filingExport.decisionId}`);
     }
 
     // ═══ REVIEWER QUEUE — list/detail/inbox ═══
@@ -429,6 +463,37 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       console.log(`    approvals=2/2, token=${secondApprovalBody.releaseToken.tokenId}`);
     }
 
+    // ═══ REVIEWER QUEUE — break-glass override ═══
+    console.log('\n  [POST /api/v1/admin/release-reviews/:id/override — break-glass release]');
+    {
+      const overrideRes = await fetch(`${BASE}/api/v1/admin/release-reviews/${breakGlassReviewQueueId}/override`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer admin-secret',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          reasonCode: 'regulatory_deadline',
+          ticketId: 'INC-2048',
+          requestedById: 'ops.breakglass',
+          requestedByName: 'Operations Override',
+          requestedByRole: 'incident_commander',
+          note: 'Emergency filing preparation needed before market open.',
+        }),
+      });
+      ok(overrideRes.status === 200, 'Reviewer override: status 200');
+      const overrideBody = await overrideRes.json() as any;
+      ok(overrideBody.review.status === 'overridden', 'Reviewer override: queue item closes as overridden');
+      ok(overrideBody.review.authorityState === 'overridden', 'Reviewer override: authority state becomes overridden');
+      ok(overrideBody.review.releaseDecisionStatus === 'overridden', 'Reviewer override: release decision status becomes overridden');
+      ok(overrideBody.review.overrideGrant?.reasonCode === 'regulatory_deadline', 'Reviewer override: override summary preserves reason code');
+      ok(typeof overrideBody.releaseToken?.token === 'string', 'Reviewer override: short-lived release token issued');
+      ok(overrideBody.releaseToken.override === true, 'Reviewer override: release token is flagged as override');
+      ok(Number(overrideBody.releaseToken.ttlSeconds) <= 60, 'Reviewer override: release token is short-lived');
+      breakGlassReleaseToken = overrideBody.releaseToken.token;
+      console.log(`    override=regulatory_deadline, token=${overrideBody.releaseToken.tokenId}`);
+    }
+
     // ═══ VERIFY ENDPOINT — PKI mandatory: flat Ed25519 rejected with 422 ═══
     console.log('\n  [POST /api/v1/verify — flat Ed25519 rejected (PKI mandatory)]');
     {
@@ -513,6 +578,25 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(body.release?.introspectionVerified === true, 'Filing(approved dual-review token): high-risk introspection is confirmed');
       ok(body.package?.content?.facts?.length > 0, 'Filing(approved dual-review token): filing package is still produced after human authority closes');
       console.log(`    approved review release decision=${body.release.decisionId}, token=${body.release.tokenId}`);
+    }
+
+    // ═══ FILING EXPORT — break-glass override token ═══
+    console.log('\n  [POST /api/v1/filing/export — break-glass override token]');
+    {
+      const res = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${breakGlassReleaseToken}`,
+        },
+        body: JSON.stringify(breakGlassFilingRelease.candidate),
+      });
+      ok(res.status === 200, 'Filing(break-glass token): status 200');
+      const body = await res.json() as any;
+      ok(body.release?.authorized === true, 'Filing(break-glass token): release authorization is attached');
+      ok(body.release?.introspectionVerified === true, 'Filing(break-glass token): high-risk introspection is confirmed');
+      ok(body.package?.content?.facts?.length > 0, 'Filing(break-glass token): filing package is produced after override');
+      console.log(`    overridden release decision=${body.release.decisionId}, token=${body.release.tokenId}`);
     }
 
     // ═══ FILING EXPORT — authorized XBRL ═══

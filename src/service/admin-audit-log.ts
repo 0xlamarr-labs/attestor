@@ -21,6 +21,7 @@ export type AdminAuditAction =
   | 'account.billing.attached'
   | 'async_job.retried'
   | 'billing.stripe.webhook_applied'
+  | 'release_break_glass.issued'
   | 'release_review.approved'
   | 'release_review.rejected'
   | 'release_token.revoked'
