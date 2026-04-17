@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { SignJWT, exportJWK, importPKCS8, importSPKI, jwtVerify } from 'jose';
+import { SignJWT, exportJWK, importPKCS8, importSPKI, jwtVerify, errors as joseErrors } from 'jose';
 import type { JWK, JWTHeaderParameters } from 'jose';
 import type { ReleaseDecision, ReleaseTokenClaims } from './object-model.js';
 import {
@@ -79,9 +79,31 @@ export interface ReleaseTokenVerificationResult {
   readonly publicKeyFingerprint: string;
 }
 
+export type ReleaseTokenVerificationFailureCode = 'expired' | 'invalid';
+
+export class ReleaseTokenVerificationFailure extends Error {
+  readonly code: ReleaseTokenVerificationFailureCode;
+
+  constructor(code: ReleaseTokenVerificationFailureCode, message: string) {
+    super(message);
+    this.name = 'ReleaseTokenVerificationFailure';
+    this.code = code;
+  }
+}
+
 export interface ReleaseTokenIssuer {
   issue(input: ReleaseTokenIssueInput): Promise<IssuedReleaseToken>;
   exportVerificationKey(): Promise<ReleaseTokenVerificationKey>;
+}
+
+function isExpiredJoseError(error: unknown): boolean {
+  return (
+    error instanceof joseErrors.JWTExpired ||
+    (typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: string }).code === 'ERR_JWT_EXPIRED')
+  );
 }
 
 function assertDecisionEligibleForReleaseToken(decision: ReleaseDecision): void {
@@ -203,11 +225,23 @@ export async function verifyIssuedReleaseToken(
     input.verificationKey.publicKeyPem,
     input.verificationKey.algorithm,
   );
-  const verified = await jwtVerify(input.token, publicKey, {
-    issuer: input.verificationKey.issuer,
-    audience: input.audience,
-    currentDate: input.currentDate ? new Date(input.currentDate) : undefined,
-  });
+
+  let verified;
+  try {
+    verified = await jwtVerify(input.token, publicKey, {
+      issuer: input.verificationKey.issuer,
+      audience: input.audience,
+      currentDate: input.currentDate ? new Date(input.currentDate) : undefined,
+    });
+  } catch (error) {
+    if (isExpiredJoseError(error)) {
+      throw new ReleaseTokenVerificationFailure('expired', 'Release token has expired.');
+    }
+
+    const message =
+      error instanceof Error ? error.message : 'Release token verification failed.';
+    throw new ReleaseTokenVerificationFailure('invalid', message);
+  }
 
   return {
     version: RELEASE_TOKEN_VERIFICATION_SPEC_VERSION,

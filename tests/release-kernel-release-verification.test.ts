@@ -152,8 +152,57 @@ async function main(): Promise<void> {
         currentDate: '2026-04-17T21:01:00.000Z',
         introspector,
       }),
-    /not active according to the Attestor introspection registry/,
-    'Release verification: a cryptographically valid but unregistered high-risk token is rejected by active introspection',
+    /not registered in the Attestor release authority plane/,
+    'Release verification: a cryptographically valid but unregistered high-risk token is rejected with an explicit unknown-token lifecycle reason',
+  );
+  passed += 1;
+
+  const revokedIssued = await issuer.issue({
+    decision,
+    issuedAt: '2026-04-17T21:00:00.000Z',
+    tokenId: 'rt_revoked_verification',
+  });
+  introspectionStore.registerIssuedToken({
+    issuedToken: revokedIssued,
+    decision,
+  });
+  introspectionStore.revokeToken({
+    tokenId: revokedIssued.tokenId,
+    revokedAt: '2026-04-17T21:02:00.000Z',
+    reason: 'operator cancelled consequence release',
+    revokedBy: 'admin_api_key',
+  });
+  await assert.rejects(
+    () =>
+      verifyReleaseAuthorization({
+        token: revokedIssued.token,
+        verificationKey,
+        audience: 'finance.reporting.record-store',
+        expectedTargetId: 'finance.reporting.record-store',
+        expectedOutputHash: 'sha256:output',
+        expectedConsequenceHash: 'sha256:consequence',
+        currentDate: '2026-04-17T21:02:30.000Z',
+        introspector,
+      }),
+    /revoked by the Attestor release authority/,
+    'Release verification: revoked high-risk tokens surface explicit revoke semantics instead of a generic inactive failure',
+  );
+  passed += 1;
+
+  await assert.rejects(
+    () =>
+      verifyReleaseAuthorization({
+        token: issued.token,
+        verificationKey,
+        audience: 'finance.reporting.record-store',
+        expectedTargetId: 'finance.reporting.record-store',
+        expectedOutputHash: 'sha256:output',
+        expectedConsequenceHash: 'sha256:consequence',
+        currentDate: '2026-04-17T21:10:00.000Z',
+        introspector,
+      }),
+    /Release token has expired/,
+    'Release verification: naturally expired tokens surface an explicit expiry failure',
   );
   passed += 1;
 

@@ -1,10 +1,14 @@
 import type { ReleaseDecision, ReleaseTokenClaims } from './object-model.js';
 import type {
   IssuedReleaseToken,
+  ReleaseTokenVerificationFailure,
   ReleaseTokenVerificationKey,
   VerifyReleaseTokenInput,
 } from './release-token.js';
-import { verifyIssuedReleaseToken } from './release-token.js';
+import {
+  ReleaseTokenVerificationFailure as ReleaseTokenVerificationFailureError,
+  verifyIssuedReleaseToken,
+} from './release-token.js';
 
 /**
  * Active-status release-token introspection for high-risk release paths.
@@ -20,20 +24,28 @@ import { verifyIssuedReleaseToken } from './release-token.js';
  */
 
 export const RELEASE_TOKEN_REGISTRY_SPEC_VERSION =
-  'attestor.release-token-registry.v1';
+  'attestor.release-token-registry.v2';
 export const RELEASE_TOKEN_INTROSPECTION_SPEC_VERSION =
-  'attestor.release-introspection.v1';
+  'attestor.release-introspection.v2';
 export const DEFAULT_RELEASE_TOKEN_TYPE_HINT = 'attestor_release_token';
 
 export type SupportedReleaseTokenTypeHint =
   | typeof DEFAULT_RELEASE_TOKEN_TYPE_HINT
   | 'access_token';
 
-export type ReleaseTokenRegistryStatus = 'issued';
+export type ReleaseTokenRegistryStatus = 'issued' | 'revoked' | 'expired';
+export type ReleaseTokenInactiveReason =
+  | 'invalid'
+  | 'unknown'
+  | 'unsupported_token_type'
+  | 'claim_mismatch'
+  | 'revoked'
+  | 'expired';
 
 export interface RegisteredReleaseToken {
   readonly version: typeof RELEASE_TOKEN_REGISTRY_SPEC_VERSION;
   readonly status: ReleaseTokenRegistryStatus;
+  readonly statusChangedAt: string;
   readonly tokenId: string;
   readonly issuer: string;
   readonly subject: string;
@@ -53,6 +65,10 @@ export interface RegisteredReleaseToken {
   readonly authorityMode: ReleaseDecision['reviewAuthority']['mode'];
   readonly keyId: string;
   readonly publicKeyFingerprint: string;
+  readonly revokedAt: string | null;
+  readonly revocationReason: string | null;
+  readonly revokedBy: string | null;
+  readonly expiredAt: string | null;
 }
 
 export interface RegisterIssuedReleaseTokenInput {
@@ -60,9 +76,18 @@ export interface RegisterIssuedReleaseTokenInput {
   readonly decision: ReleaseDecision;
 }
 
+export interface RevokeReleaseTokenInput {
+  readonly tokenId: string;
+  readonly revokedAt?: string;
+  readonly reason?: string;
+  readonly revokedBy?: string;
+}
+
 export interface ReleaseTokenIntrospectionStore {
   registerIssuedToken(input: RegisterIssuedReleaseTokenInput): RegisteredReleaseToken;
   findToken(tokenId: string): RegisteredReleaseToken | null;
+  revokeToken(input: RevokeReleaseTokenInput): RegisteredReleaseToken | null;
+  syncLifecycle(currentDate?: string): readonly RegisteredReleaseToken[];
 }
 
 export interface ReleaseTokenIntrospectionInput
@@ -81,6 +106,7 @@ interface ReleaseTokenIntrospectionBase {
 export interface InactiveReleaseTokenIntrospectionResult
   extends ReleaseTokenIntrospectionBase {
   readonly active: false;
+  readonly inactive_reason: ReleaseTokenInactiveReason;
 }
 
 export interface ActiveReleaseTokenIntrospectionResult
@@ -129,12 +155,14 @@ function introspectionTimestamp(currentDate?: string): string {
 }
 
 function inactiveReleaseTokenIntrospection(
+  reason: ReleaseTokenInactiveReason,
   currentDate?: string,
   resourceServerId?: string,
 ): InactiveReleaseTokenIntrospectionResult {
   return {
     version: RELEASE_TOKEN_INTROSPECTION_SPEC_VERSION,
     active: false,
+    inactive_reason: reason,
     token_type: DEFAULT_RELEASE_TOKEN_TYPE_HINT,
     checked_at: introspectionTimestamp(currentDate),
     resource_server_id: resourceServerId ?? null,
@@ -182,10 +210,8 @@ function registeredReleaseTokenMatchesClaims(
 
 function registeredReleaseTokenIsActive(
   record: RegisteredReleaseToken,
-  currentDate?: string,
 ): boolean {
-  const now = introspectionTimestamp(currentDate);
-  return record.status === 'issued' && record.expiresAt > now;
+  return record.status === 'issued';
 }
 
 function buildRegisteredReleaseToken(
@@ -195,6 +221,7 @@ function buildRegisteredReleaseToken(
   return Object.freeze({
     version: RELEASE_TOKEN_REGISTRY_SPEC_VERSION,
     status: 'issued',
+    statusChangedAt: issuedToken.issuedAt,
     tokenId: issuedToken.tokenId,
     issuer: issuedToken.claims.iss,
     subject: issuedToken.claims.sub,
@@ -214,6 +241,59 @@ function buildRegisteredReleaseToken(
     authorityMode: decision.reviewAuthority.mode,
     keyId: issuedToken.keyId,
     publicKeyFingerprint: issuedToken.publicKeyFingerprint,
+    revokedAt: null,
+    revocationReason: null,
+    revokedBy: null,
+    expiredAt: null,
+  });
+}
+
+function normalizeLifecycleTimestamp(label: string, timestamp?: string): string {
+  const normalized = introspectionTimestamp(timestamp);
+  if (Number.isNaN(new Date(normalized).getTime())) {
+    throw new Error(`Release token lifecycle requires a valid ${label} timestamp.`);
+  }
+  return normalized;
+}
+
+function expireRegisteredReleaseToken(
+  record: RegisteredReleaseToken,
+): RegisteredReleaseToken {
+  if (record.status !== 'issued') {
+    return record;
+  }
+
+  return Object.freeze({
+    ...record,
+    status: 'expired',
+    statusChangedAt: record.expiresAt,
+    expiredAt: record.expiresAt,
+  });
+}
+
+function revokeRegisteredReleaseToken(
+  record: RegisteredReleaseToken,
+  input: RevokeReleaseTokenInput,
+): RegisteredReleaseToken {
+  if (record.status === 'revoked') {
+    return record;
+  }
+
+  const revokedAt = normalizeLifecycleTimestamp('revokedAt', input.revokedAt);
+  const reason = typeof input.reason === 'string' && input.reason.trim() !== ''
+    ? input.reason.trim()
+    : null;
+  const revokedBy = typeof input.revokedBy === 'string' && input.revokedBy.trim() !== ''
+    ? input.revokedBy.trim()
+    : null;
+
+  return Object.freeze({
+    ...record,
+    status: 'revoked',
+    statusChangedAt: revokedAt,
+    revokedAt,
+    revocationReason: reason,
+    revokedBy,
   });
 }
 
@@ -230,6 +310,32 @@ export function createInMemoryReleaseTokenIntrospectionStore(): ReleaseTokenIntr
     findToken(tokenId: string): RegisteredReleaseToken | null {
       return records.get(tokenId) ?? null;
     },
+
+    revokeToken(input: RevokeReleaseTokenInput): RegisteredReleaseToken | null {
+      const existing = records.get(input.tokenId);
+      if (!existing) {
+        return null;
+      }
+
+      const revoked = revokeRegisteredReleaseToken(existing, input);
+      records.set(revoked.tokenId, revoked);
+      return revoked;
+    },
+
+    syncLifecycle(currentDate?: string): readonly RegisteredReleaseToken[] {
+      const now = introspectionTimestamp(currentDate);
+      const expired: RegisteredReleaseToken[] = [];
+
+      for (const [tokenId, record] of records.entries()) {
+        if (record.status === 'issued' && record.expiresAt <= now) {
+          const next = expireRegisteredReleaseToken(record);
+          records.set(tokenId, next);
+          expired.push(next);
+        }
+      }
+
+      return Object.freeze(expired);
+    },
   };
 }
 
@@ -238,7 +344,16 @@ export async function introspectReleaseToken(
     readonly store: ReleaseTokenIntrospectionStore;
   },
 ): Promise<ReleaseTokenIntrospectionResult> {
-  normalizeSupportedTokenTypeHint(input.tokenTypeHint);
+  const tokenTypeHint = normalizeSupportedTokenTypeHint(input.tokenTypeHint);
+  if (input.tokenTypeHint && !tokenTypeHint) {
+    return inactiveReleaseTokenIntrospection(
+      'unsupported_token_type',
+      input.currentDate,
+      input.resourceServerId,
+    );
+  }
+
+  input.store.syncLifecycle(input.currentDate);
 
   let verified;
   try {
@@ -248,21 +363,48 @@ export async function introspectReleaseToken(
       audience: input.audience,
       currentDate: input.currentDate,
     });
-  } catch {
-    return inactiveReleaseTokenIntrospection(input.currentDate, input.resourceServerId);
+  } catch (error) {
+    if (
+      error instanceof ReleaseTokenVerificationFailureError &&
+      error.code === 'expired'
+    ) {
+      return inactiveReleaseTokenIntrospection(
+        'expired',
+        input.currentDate,
+        input.resourceServerId,
+      );
+    }
+
+    return inactiveReleaseTokenIntrospection(
+      'invalid',
+      input.currentDate,
+      input.resourceServerId,
+    );
   }
 
   const record = input.store.findToken(verified.claims.jti);
   if (!record) {
-    return inactiveReleaseTokenIntrospection(input.currentDate, input.resourceServerId);
+    return inactiveReleaseTokenIntrospection(
+      'unknown',
+      input.currentDate,
+      input.resourceServerId,
+    );
   }
 
   if (!registeredReleaseTokenMatchesClaims(record, verified.claims)) {
-    return inactiveReleaseTokenIntrospection(input.currentDate, input.resourceServerId);
+    return inactiveReleaseTokenIntrospection(
+      'claim_mismatch',
+      input.currentDate,
+      input.resourceServerId,
+    );
   }
 
-  if (!registeredReleaseTokenIsActive(record, input.currentDate)) {
-    return inactiveReleaseTokenIntrospection(input.currentDate, input.resourceServerId);
+  if (!registeredReleaseTokenIsActive(record)) {
+    return inactiveReleaseTokenIntrospection(
+      record.status === 'revoked' ? 'revoked' : 'expired',
+      input.currentDate,
+      input.resourceServerId,
+    );
   }
 
   return Object.freeze({

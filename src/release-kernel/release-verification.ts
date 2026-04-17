@@ -4,7 +4,10 @@ import type {
   ReleaseTokenVerificationResult,
   VerifyReleaseTokenInput,
 } from './release-token.js';
-import { verifyIssuedReleaseToken } from './release-token.js';
+import {
+  ReleaseTokenVerificationFailure,
+  verifyIssuedReleaseToken,
+} from './release-token.js';
 import type {
   ActiveReleaseTokenIntrospectionResult,
   ReleaseTokenIntrospectionResult,
@@ -248,6 +251,26 @@ function assertActiveIntrospectionConsistency(
   }
 }
 
+function introspectionInactiveDescription(
+  reason: Exclude<ReleaseTokenIntrospectionResult, ActiveReleaseTokenIntrospectionResult>['inactive_reason'],
+): string {
+  switch (reason) {
+    case 'revoked':
+      return 'Release token was revoked by the Attestor release authority.';
+    case 'expired':
+      return 'Release token has expired.';
+    case 'claim_mismatch':
+      return 'Release token registry state does not match the verified token claims.';
+    case 'unsupported_token_type':
+      return 'Release token type hint is not supported by the Attestor introspection registry.';
+    case 'unknown':
+      return 'Release token is not registered in the Attestor release authority plane.';
+    case 'invalid':
+    default:
+      return 'Release token is not active according to the Attestor introspection registry.';
+  }
+}
+
 export async function verifyReleaseAuthorization(
   input: ReleaseVerificationInput,
 ): Promise<ReleaseVerificationContext> {
@@ -257,7 +280,11 @@ export async function verifyReleaseAuthorization(
     verification = await verifyIssuedReleaseToken(input);
   } catch (error) {
     const description =
-      error instanceof Error ? error.message : 'Release token verification failed.';
+      error instanceof ReleaseTokenVerificationFailure
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'Release token verification failed.';
     throw new ReleaseVerificationError(
       401,
       'invalid_token',
@@ -292,13 +319,14 @@ export async function verifyReleaseAuthorization(
     });
 
     if (!introspection.active) {
+      const description = introspectionInactiveDescription(introspection.inactive_reason);
       throw new ReleaseVerificationError(
         401,
         'invalid_token',
-        'Release token is not active according to the Attestor introspection registry.',
+        description,
         buildBearerChallenge(
           'invalid_token',
-          'Release token is not active according to the Attestor introspection registry.',
+          description,
         ),
       );
     }

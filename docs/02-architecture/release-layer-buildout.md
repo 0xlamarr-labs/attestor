@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 15 |
+| Completed | 16 |
 | In progress | 0 |
-| Not started | 9 |
+| Not started | 8 |
 
 ## Frozen Step List
 
@@ -60,7 +60,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 13 | complete | Implement downstream verification SDK/middleware | `src/release-kernel/release-verification.ts`, `tests/release-kernel-release-verification.test.ts` | Downstream services now have a verifier core, RFC6750-style token transport/error contract, binding checks for output/consequence/target, and a Hono middleware path that makes `no token -> no release` straightforward to adopt on the first hard gateway wedge. |
 | 14 | complete | Enforce one finance record path end to end | `src/release-kernel/finance-record-release.ts`, `src/service/api-server.ts`, `tests/release-kernel-finance-record-release.test.ts`, `tests/live-api.test.ts` | The first real fail-closed gateway path now exists on the finance filing export surface: signed pipeline runs mint a hash-bound filing release artifact, and `POST /api/v1/filing/export` rejects missing or tampered release authorization before export. |
 | 15 | complete | Add token introspection for high-risk paths | `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/api-server.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/live-api.test.ts` | High-risk release tokens now require active-status introspection in addition to cryptographic verification: the release authority plane registers issued tokens, the verifier checks active state for `R3/R4`, and the finance filing export path now proves this on the first hard gateway wedge using RFC 7662-style active/inactive semantics adapted to the release layer. |
-| 16 | not_started | Add token revocation and expiry handling | Pending | Explicit invalidation semantics. |
+| 16 | complete | Add token revocation and expiry handling | `src/release-kernel/release-token.ts`, `src/release-kernel/release-introspection.ts`, `src/release-kernel/release-verification.ts`, `src/service/http/routes/admin-routes.ts`, `tests/release-kernel-release-verification.test.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/live-api.test.ts` | Release tokens now distinguish natural expiry from explicit revocation: JOSE verification surfaces expiry clearly, the release registry persists `issued`/`expired`/`revoked` lifecycle state, admin operators can revoke issued release tokens explicitly on the first finance hard-gateway wedge, and downstream verification now blocks revoked tokens with a reason-specific fail-closed response aligned with current RFC 7009 / RFC 7662 lifecycle expectations. |
 | 17 | not_started | Add replay protection ledger | Pending | `jti`-bound or single-use issuance support. |
 | 18 | not_started | Build the reviewer queue UX | Pending | Reviewer decision needs to be fast and legible. |
 | 19 | not_started | Add named review and dual approval | Pending | Default authority model for R3/R4. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 16 is next. The goal is to add explicit token revocation and expiry handling so high-risk release authorization can be invalidated deliberately, not just allowed to age out.
+Step 17 is next. The goal is to add a replay-protection ledger so issued release authorization can become intentionally one-shot or bounded-use rather than reusable while still active.

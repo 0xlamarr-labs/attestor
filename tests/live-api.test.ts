@@ -400,6 +400,43 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       console.log('    tampered payload blocked by output/consequence hash binding');
     }
 
+    // ═══ FILING EXPORT — revoked release token ═══
+    console.log('\n  [POST /api/v1/filing/export — revoked release token]');
+    {
+      const revokeRes = await fetch(`${BASE}/api/v1/admin/release-tokens/${filingRelease.tokenId}/revoke`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer admin-secret',
+          'Idempotency-Key': 'admin-release-token-revoke-live-api',
+        },
+        body: JSON.stringify({
+          reason: 'operator cancelled filing release',
+        }),
+      });
+      ok(revokeRes.status === 200, 'Filing(revoked): admin revoke status 200');
+      const revokeBody = await revokeRes.json() as any;
+      ok(revokeBody.token.status === 'revoked', 'Filing(revoked): token status marked revoked');
+      ok(revokeBody.token.revocationReason === 'operator cancelled filing release', 'Filing(revoked): revoke reason preserved');
+
+      const revokedExportRes = await fetch(`${BASE}/api/v1/filing/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${filingRelease.token}`,
+        },
+        body: JSON.stringify(filingRelease.candidate),
+      });
+      ok(revokedExportRes.status === 401, 'Filing(revoked): revoked token no longer authorizes export');
+      const revokedExportBody = await revokedExportRes.json() as any;
+      ok(revokedExportBody.error === 'invalid_token', 'Filing(revoked): revoke is surfaced as invalid_token');
+      ok(
+        String(revokedExportBody.error_description ?? '').includes('revoked'),
+        'Filing(revoked): revoke reason reaches the downstream verifier response',
+      );
+      console.log('    revoked release token blocked before export');
+    }
+
     // ═══ FILING EXPORT — bad adapter ═══
     console.log('\n  [POST /api/v1/filing/export — unknown adapter]');
     {

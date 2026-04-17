@@ -130,6 +130,63 @@ async function main(): Promise<void> {
     inactiveExpired.active === false,
     'Release introspection: expired tokens are inactive even if they were once registered',
   );
+  if (!inactiveExpired.active) {
+    equal(
+      inactiveExpired.inactive_reason,
+      'expired',
+      'Release introspection: expired inactive responses explain that expiry, not revocation, ended authorization',
+    );
+  }
+  const expiredRecord = store.findToken(issued.tokenId);
+  equal(
+    expiredRecord?.status ?? null,
+    'expired',
+    'Release introspection: lifecycle sync persists an explicit expired registry status',
+  );
+
+  const revokedIssued = await issuer.issue({
+    decision,
+    issuedAt: '2026-04-17T23:00:00.000Z',
+    tokenId: 'rt_revoked_introspection',
+  });
+  store.registerIssuedToken({
+    issuedToken: revokedIssued,
+    decision,
+  });
+  const revokedRecord = store.revokeToken({
+    tokenId: revokedIssued.tokenId,
+    revokedAt: '2026-04-17T23:02:00.000Z',
+    reason: 'operator cancelled filing release',
+    revokedBy: 'admin_api_key',
+  });
+  equal(
+    revokedRecord?.status ?? null,
+    'revoked',
+    'Release introspection: explicit revoke transitions the registry record to revoked',
+  );
+  equal(
+    revokedRecord?.revocationReason ?? null,
+    'operator cancelled filing release',
+    'Release introspection: revoke reason is preserved on the registry record',
+  );
+  const inactiveRevoked = await introspector.introspect({
+    token: revokedIssued.token,
+    verificationKey,
+    audience: 'finance.reporting.record-store',
+    currentDate: '2026-04-17T23:02:30.000Z',
+    resourceServerId: 'attestor.tests.release-introspection',
+  });
+  ok(
+    inactiveRevoked.active === false,
+    'Release introspection: explicitly revoked tokens are inactive even before natural expiry',
+  );
+  if (!inactiveRevoked.active) {
+    equal(
+      inactiveRevoked.inactive_reason,
+      'revoked',
+      'Release introspection: revoked tokens report revocation as the inactive reason',
+    );
+  }
 
   const inactiveAudienceMismatch = await introspector.introspect({
     token: issued.token,

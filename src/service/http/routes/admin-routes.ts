@@ -65,6 +65,7 @@ export function registerAdminRoutes(app: Hono, deps: RouteDeps): void {
     queryUsageLedgerState,
     findTenantRecordByTenantIdState,
     findHostedAccountByTenantIdState,
+    apiReleaseIntrospectionStore,
   } = deps;
 
 app.get('/api/v1/admin/tenant-keys', async (c) => {
@@ -1182,6 +1183,72 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', async (c) => {
       metadata: {
         tenantName: result.record.tenantName,
         revokedAt: result.record.revokedAt,
+      },
+    },
+  });
+
+  return c.json(responseBody);
+});
+
+app.post('/api/v1/admin/release-tokens/:id/revoke', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({}));
+  const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+  const requestPayload = {
+    id: c.req.param('id'),
+    reason: reason || null,
+  };
+  const adminMutation = await adminMutationRequest(c, 'admin.release_tokens.revoke', requestPayload);
+  if (adminMutation instanceof Response) return adminMutation;
+
+  const existing = apiReleaseIntrospectionStore.findToken(c.req.param('id'));
+  if (!existing) {
+    return c.json({ error: 'Release token not found' }, 404);
+  }
+
+  const revoked = apiReleaseIntrospectionStore.revokeToken({
+    tokenId: existing.tokenId,
+    revokedAt: new Date().toISOString(),
+    reason: reason || undefined,
+    revokedBy: 'admin_api_key',
+  });
+  if (!revoked) {
+    return c.json({ error: 'Release token not found' }, 404);
+  }
+
+  const responseBody = await finalizeAdminMutation({
+    idempotencyKey: adminMutation.idempotencyKey,
+    routeId: 'admin.release_tokens.revoke',
+    requestPayload,
+    statusCode: 200,
+    responseBody: {
+      token: {
+        id: revoked.tokenId,
+        status: revoked.status,
+        decisionId: revoked.decisionId,
+        consequenceType: revoked.consequenceType,
+        riskClass: revoked.riskClass,
+        audience: revoked.audience,
+        issuedAt: revoked.issuedAt,
+        expiresAt: revoked.expiresAt,
+        revokedAt: revoked.revokedAt,
+        revocationReason: revoked.revocationReason,
+        revokedBy: revoked.revokedBy,
+      },
+    },
+    audit: {
+      action: 'release_token.revoked',
+      requestHash: adminMutation.requestHash,
+      metadata: {
+        tokenId: revoked.tokenId,
+        decisionId: revoked.decisionId,
+        consequenceType: revoked.consequenceType,
+        riskClass: revoked.riskClass,
+        audience: revoked.audience,
+        reason: revoked.revocationReason,
+        revokedBy: revoked.revokedBy,
       },
     },
   });
