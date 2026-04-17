@@ -126,6 +126,9 @@ export const releaseLayer = Object.freeze({
 });
 
 export type ReleaseLayer = typeof releaseLayer;
+export type ReleaseActorReference = model.ReleaseActorReference;
+export type ReleasePolicyDefinition = policy.ReleasePolicyDefinition;
+export type ReleasePolicyRolloutDefinition = policyRollout.ReleasePolicyRolloutDefinition;
 
 export function releaseLayerPublicSurface(): ReleaseLayerPublicSurfaceDescriptor {
   return Object.freeze({
