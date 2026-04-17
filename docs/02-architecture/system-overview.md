@@ -2,7 +2,22 @@
 
 Architecture of Attestor as of April 2026.
 
-This document assumes the public framing already covered in the [README](../../README.md) and focuses on the architecture only. The current reference implementation is financial and remains the strongest end-to-end path in the repository.
+This document assumes the public framing already covered in the [README](../../README.md) and focuses on the architecture only.
+
+## Current Architectural Identity
+
+Attestor is being shaped as an **AI output release and acceptance layer**.
+
+That means the architecture is converging on a common kernel that sits between generated output and consequence:
+
+- consequence type
+- risk class
+- release decision
+- review authority
+- evidence pack
+- release token
+
+Today, the strongest implemented proving path is still financial reporting. The broader release-layer identity is the architectural direction, while finance remains the deepest end-to-end slice in the repository.
 
 ## Engine Architecture
 
@@ -15,7 +30,7 @@ The engine is built from reusable layers:
 - **Portable proof** issues signed verifier-facing artifacts.
 - **Live proof** records what was actually observed at runtime.
 
-The engine is reusable across domains. Domain packs provide domain-specific clauses, guardrails, evidence obligations, and semantics.
+The current codebase already has the core ingredients for a release layer. What is still being built is the common release kernel that can carry those ingredients consistently across multiple consequence types.
 
 ## Reference Financial Shape
 
@@ -31,99 +46,44 @@ The financial reference path currently includes:
 - signed certificates and verification kits
 - reviewer endorsement and authority closure
 
-This is the most complete path in the repository.
+This remains the strongest proving surface in the repository.
 
-## Proof Maturity Boundary
+## Release-Layer Direction
 
-Attestor keeps proof maturity explicit.
+The release-layer buildout is not trying to replace model runtimes, agent frameworks, or data systems.
 
-**Single-query**
+It is trying to add a common decision boundary before output becomes:
 
-- mature
-- signed
-- reviewer-verifiable
-- outsider-verifiable
+- `communication`
+- `record`
+- `action`
+- `decision-support`
 
-**Multi-query**
+That direction is tracked here:
 
-- signed at the run level
-- portable certificate + kit + reviewer endorsement exist
-- differential evidence exists for multi-run comparison
-- per-unit and aggregate truth preserved
-- still not per-unit certificate issuance
-
-**Real PostgreSQL**
-
-- achieved
-- bounded read-only execution
-- predictive preflight
-- execution context evidence
-- schema/data-state attestation capture in the Postgres prove path
-- reproducible demo bootstrap
-
-## Bounded Service Layer
-
-The repository now ships a real Hono HTTP server. Today it provides:
-
-- `GET /api/v1/health`
-- `GET /api/v1/domains`
-- `GET /api/v1/connectors`
-- `POST /api/v1/pipeline/run`
-- `POST /api/v1/pipeline/run-async`
-- `GET /api/v1/pipeline/status/:jobId`
-- `POST /api/v1/verify`
-- `POST /api/v1/filing/export`
-
-This is a bounded service layer. Async submission/status is now real, but the service default remains an in-process first slice rather than a persistent Redis-backed deployment. It is not yet a distributed control plane or multi-tenant platform.
-
-## Domain, Connector, and Filing Breadth
-
-The repository includes more than the financial reference path:
-
-- **Domain packs:** `finance`, `healthcare`
-- **Connectors:** PostgreSQL, Snowflake
-- **Filing adapters:** XBRL US-GAAP 2024
-- **Identity:** operator-asserted reviewer identity plus OIDC verification on the API path
-- **Trust chain:** JSON PKI chain module
-
-Current boundary:
-
-- Finance is the most complete end-to-end implementation.
-- Healthcare is a pack-first second domain.
-- Snowflake is a real connector module, not yet a top-level prove flow.
-- XBRL is a real mapping/export adapter with API export and report-package issuance; the remaining boundary is regulator-specific validation/submission, not package creation.
-- PKI-backed issuance and chain verification exist on the API path; default CLI/kit issuance still centers on direct Ed25519 signer keys.
-
-## Reviewer Authority
-
-Reviewer authority is cryptographically bound to the run:
-
-- single-query binding: `runId + replayIdentity + evidenceChainTerminal`
-- multi-query binding: `runId + multiQueryHash`
-
-Replay across runs is detectable. Reviewer identity can be operator-asserted or OIDC-verified on the API path. Full enterprise IAM flow is not yet shipped.
+- [Release layer buildout tracker](release-layer-buildout.md)
 
 ## Current Boundary
 
 **Shipped**
 
-- Financial reference implementation
-- Signed single-query and multi-query proof
-- Real PostgreSQL-backed proof path
-- Bounded API service
-- Domain/connector/filing registries
+- financial reference implementation
+- signed single-query and multi-query proof
+- real PostgreSQL-backed proof path
+- bounded API service
+- domain, connector, and filing registries
 - Snowflake connector module
 - XBRL mapping adapter
 - OIDC verification first slice
-- OIDC device-flow helper
-- Async API submission/status first slice
+- async API submission/status first slice
+- first release-kernel vocabulary and object-model work
 
-**Not shipped**
+**Not shipped yet**
 
-- Broader end-to-end domain implementations beyond finance
-- Top-level non-PostgreSQL prove routing
-- Regulator-specific submission and validation beyond the issued filing package
-- Full IAM/session lifecycle
-- PKI as the default verifier path across all CLI/kit flows
-- Redis-backed async service mode as the default API backend
-- Distributed service control plane
+- consequence-specific release enforcement across the four canonical consequence types
+- signed release token issuance for downstream consequence gating
+- downstream verifier SDK/middleware
+- centralized revocation/introspection for high-risk release paths
+- reviewer queue UX for release decisions
+- broader end-to-end domain implementations beyond finance
+- distributed control plane

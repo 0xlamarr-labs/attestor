@@ -1,12 +1,12 @@
 # Attestor
 
-**Acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance.**
+**AI output release and acceptance infrastructure for high-consequence AI systems, proven first on financial reporting workflows.**
 
-Most AI systems can produce something useful before a finance or reporting team knows how to accept it responsibly. That is the real gap Attestor is built to close.
+Most AI systems can produce something useful before a team knows whether that output may safely enter a real consequence. That is the gap Attestor is built to close.
 
-Attestor sits between model output and a reporting consequence. It does not try to be the model. It turns AI-assisted reporting work into something that can be reviewed, signed, verified, monitored, and operated with much higher confidence.
+Attestor sits between AI output and consequence. It does not try to be the model, the agent runtime, or the orchestration layer. It decides whether an output may be released into communication, record, action, or decision-support, under what conditions, with what authority, and with what evidence left behind.
 
-The current primary wedge is financial: reporting, treasury, risk, reconciliation, and filing-oriented evidence. The architectural pattern can travel beyond finance, but the repo should be read first as a finance-first acceptance product, not as a vague general AI governance claim.
+The current proving wedge is financial: reporting, treasury, risk, reconciliation, and filing-oriented evidence. The architectural pattern can travel beyond finance, but the repo should be read first as a finance-proven release and consequence-gateway product, not as a generic AI platform claim.
 
 > [!IMPORTANT]
 > Attestor does not try to prove that AI is universally trustworthy. It gives teams a disciplined way to decide when AI-assisted work can be accepted, and when it must still be blocked, reviewed, or bounded more tightly.
@@ -18,10 +18,10 @@ The current primary wedge is financial: reporting, treasury, risk, reconciliatio
 
 | If you need to... | Attestor gives you... |
 |---|---|
-| move AI-assisted financial reporting closer to production without blind trust | typed contracts, bounded execution, deterministic evidence, reviewer authority |
+| decide whether AI-assisted output may safely move into consequence | typed contracts, bounded execution, release discipline, deterministic evidence |
 | prove later why a reporting output was accepted | signed certificates, verification kits, audit trail, schema/data-state attestation |
 | run it as an actual product surface | hosted auth, billing, observability, HA, DR, promotion packets |
-| expand the same acceptance model later | finance-proven depth, healthcare slice, connector + filing adapter model |
+| expand the same release model later | finance-proven depth, healthcare slice, connector + filing adapter model |
 
 ## Quick Navigation
 
@@ -44,45 +44,59 @@ The current primary wedge is financial: reporting, treasury, risk, reconciliatio
 
 ## The Step Change
 
-The practical jump is not from "no AI" to "AI". It is from "AI can suggest" to "AI-assisted reporting work can be accepted with evidence, policy, and operational control".
+The practical jump is not from "no AI" to "AI". It is from "AI can suggest" to "AI output may enter consequence only after a release decision with evidence, policy, and authority."
 
 ```mermaid
 flowchart LR
-  M["Models / Agents"] --> A["Attestor: acceptance, proof, policy, ops"]
-  A --> C["Production, audit, consequence"]
+  M["Models / Agents"] --> A["Attestor: release decision, acceptance, proof"]
+  A --> C["Communication, record, action, decision-support"]
 ```
 
-Without that middle layer, many AI systems stay advisory. With it, they can move closer to real workflow ownership without pretending that raw model output is sufficient on its own.
+Without that middle layer, many AI systems stay advisory or get pushed forward informally. With it, teams can treat consequence as something that must be authorized, not merely hoped for.
 
 ## Why This Exists
 
-The deepest AI bottleneck is no longer generation. It is acceptance.
+The deepest AI bottleneck is no longer generation. It is release into consequence.
 
 In serious reporting and control workflows, the key questions are not only "can the model say something helpful?" but also:
 
-- can this be accepted safely?
-- who is allowed to endorse it?
-- what evidence exists outside the model itself?
-- what could a reviewer, operator, or auditor verify later?
+- may this output be released at all?
+- under what conditions may it move forward?
+- who is allowed to authorize that release?
+- what evidence survives after the release decision?
 
-Attestor answers those questions with governed acceptance:
+Attestor answers those questions with a release layer:
 
-- typed contracts bound what is allowed before execution
-- deterministic controls produce evidence independent of generation
-- authority is explicit instead of implied
+- output contracts define what kind of consequence is even in scope
+- capability boundaries constrain what the system may touch before release
+- acceptance policy turns findings into a governed release decision
 - proof becomes portable instead of trapped inside one runtime
+- authority is explicit instead of implied
 
-## Primary Wedge
+## Core Category
 
-The first thing Attestor should mean is:
+The first thing Attestor should mean is not "AI platform."
+
+It should mean:
+
+**the layer that decides whether AI output may enter consequence**
+
+In practice, that means Attestor sits before four consequence types:
+
+- `communication`
+- `record`
+- `action`
+- `decision-support`
+
+The first proving wedge remains financial:
 
 **AI-assisted financial reporting acceptance.**
 
-That means:
+That wedge means:
 
 - a report section, metric, or filing-oriented output may be generated or assisted by AI
 - the workflow still needs a clear acceptance boundary before someone relies on it
-- Attestor supplies the evidence, reviewer authority, verification material, and control surface around that boundary
+- Attestor supplies the release decision, evidence, reviewer authority, verification material, and control surface around that boundary
 
 For the detailed wedge framing and current official anchors, see [AI-assisted financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 
@@ -161,17 +175,17 @@ That is the real jump: not only generating reporting work with AI, but making AI
 
 ## What Attestor Is
 
-Attestor is the acceptance layer and operating layer for AI-assisted high-stakes workflows.
+Attestor is the release layer and operating layer for AI-assisted high-stakes workflows.
 
-It does not generate the answer. It governs whether the answer may be accepted, how that acceptance is evidenced, who may endorse it, and what a third party can verify afterward.
+It does not generate the answer. It governs whether the output may be released, how that release is evidenced, who may authorize it, and what a third party can verify afterward.
 
-The recognition to have here is simple: most of the missing infrastructure in AI is not more intelligence. It is better acceptance.
+The recognition to have here is simple: most of the missing infrastructure in AI is not more intelligence. It is better release discipline.
 
 ## What Changes in Practice
 
-| Without an acceptance layer | With Attestor |
+| Without a release layer | With Attestor |
 |---|---|
-| AI output remains advisory, hard to endorse, and hard to audit | AI-assisted output can move through bounded review and evidence-bearing acceptance |
+| AI output remains advisory, hard to endorse, and hard to audit | AI-assisted output can move through bounded release with evidence and authority |
 | trust lives in people, screenshots, and implicit judgment | trust is decomposed into explicit authority, policy, evidence, and verification |
 | production rollout becomes a collection of one-off controls | product and ops surfaces become repeatable: auth, billing, observability, HA, DR |
 | each new domain reinvents the same governance questions | the acceptance model can travel, even when the domain logic changes |
@@ -180,7 +194,7 @@ The recognition to have here is simple: most of the missing infrastructure in AI
 
 Attestor is not a file workspace and not a document app.
 
-Customers buy **hosted API access to the acceptance and proof layer**. They keep their files, data, workflows, and business logic in their own environment, then call Attestor where acceptance, proof, verification, and operational control are needed.
+Customers buy **hosted API access to the release, proof, and control layer**. They keep their files, data, workflows, and business logic in their own environment, then call Attestor where consequence needs to be authorized instead of informally passed through.
 
 What a paying customer should expect to receive:
 
@@ -202,7 +216,7 @@ The commercial product is best understood as **infrastructure delivered as a hos
 ```mermaid
 flowchart LR
   C["Customer systems, data, and workflows"] --> A["Attestor hosted API"]
-  A --> P["Acceptance, proof, verification, control"]
+  A --> P["Release, proof, verification, control"]
   P --> O["Production consequence, audit, review"]
 ```
 
@@ -263,7 +277,7 @@ The commercial principle is straightforward:
 - hosted signup creates a real account and first API key
 - paid plans upgrade the same account instead of creating a second product line
 - the customer's real workflows stay in the customer's systems
-- Attestor supplies the acceptance, proof, billing, and control boundary
+- Attestor supplies the release, proof, billing, and control boundary
 
 ### What the Hosted Account Plane Must Cover
 
@@ -289,7 +303,7 @@ Attestor gives customers:
 - hosted billing, usage, and account surfaces
 - operator-ready deployment and promotion paths
 
-That is why the right category is not just "API". It is **acceptance and operating infrastructure**, exposed through APIs and control surfaces.
+That is why the right category is not just "API". It is **release and operating infrastructure**, exposed through APIs and control surfaces.
 
 ## Plans and Pricing
 

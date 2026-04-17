@@ -1,14 +1,14 @@
 # Hosted Customer Journey
 
-Attestor is bought and used as an API-first infrastructure product, with **AI-assisted financial reporting acceptance** as the primary wedge.
+Attestor is bought and used as an API-first infrastructure product, with **AI-assisted financial reporting acceptance** as the first proving wedge for a broader **AI output release and acceptance layer**.
 
-That means the customer does not come to Attestor to manage files in a hosted workspace. The customer keeps data, files, and business workflows in their own systems, then uses Attestor where governed acceptance, proof, verification, and operational control are required.
+That means the customer does not come to Attestor to manage files in a hosted workspace. The customer keeps data, files, and business workflows in their own systems, then uses Attestor where release decisions, proof, verification, and operational control are required.
 
 ## The Core Product Shape
 
 What the customer buys:
 
-- hosted API access to the acceptance and proof layer
+- hosted API access to the release and proof layer
 - a real account and tenant boundary
 - API keys
 - usage and billing visibility
@@ -24,7 +24,7 @@ What the customer does not buy:
 
 The category to preserve is:
 
-**Acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance, delivered as a hosted API product.**
+**AI output release and acceptance infrastructure, delivered as a hosted API product, with financial reporting acceptance as the first wedge.**
 
 ## The Buying Flow
 
@@ -127,7 +127,7 @@ Attestor should not be framed as a thin utility API.
 
 The customer is buying:
 
-- governed acceptance
+- governed release
 - proof
 - verification
 - operational control
@@ -135,4 +135,4 @@ The customer is buying:
 
 That is why the strongest description is still:
 
-**Attestor is acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance, delivered as a hosted API product.**
+**Attestor is AI output release and acceptance infrastructure, delivered as a hosted API product, with financial reporting acceptance as the first wedge.**

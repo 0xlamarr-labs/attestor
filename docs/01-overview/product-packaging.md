@@ -2,12 +2,12 @@
 
 Attestor is not sold as a file-management app or a generic AI workspace.
 
-It is sold as **acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance**, delivered either as:
+It is sold as **AI output release and acceptance infrastructure**, delivered either as:
 
 - a **hosted API product**
 - or a **customer-operated deployment path** for teams that need stricter control boundaries
 
-That is the central commercial truth to preserve in every public description.
+Financial reporting acceptance remains the first proving wedge, but the category should be wider than finance alone.
 
 ## What Customers Actually Buy
 
@@ -15,7 +15,7 @@ Customers are not buying an upload interface.
 
 They are buying:
 
-- governed acceptance infrastructure
+- governed release and acceptance infrastructure
 - portable proof and verification
 - authority closure and auditability
 - hosted account, billing, and usage surfaces
@@ -34,7 +34,7 @@ Attestor sits around the acceptance boundary:
 ```mermaid
 flowchart LR
   App["Customer systems and workflows"] --> A["Attestor API and control surfaces"]
-  A --> P["Proof, verification, authority, billing, usage"]
+  A --> P["Release, proof, verification, authority, billing, usage"]
   P --> C["Production consequence, audit, review"]
 ```
 
@@ -183,7 +183,7 @@ The fastest enterprise sales pattern is to avoid pitching Attestor as a generic 
 
 Pitch it as:
 
-- the acceptance and control plane between model output and production consequence
+- the release and control plane between model output and production consequence
 - the evidence system that makes reviewer signoff and later audit possible
 - the operational product surface that procurement can actually buy: account, usage, billing, entitlement, and deployment boundary
 
@@ -200,4 +200,4 @@ Do not describe Attestor as:
 
 Describe it as:
 
-**Acceptance, proof, and operating infrastructure for AI-assisted financial reporting acceptance, delivered as a hosted API product.**
+**AI output release and acceptance infrastructure, delivered as a hosted API product, with financial reporting acceptance as the first wedge.**

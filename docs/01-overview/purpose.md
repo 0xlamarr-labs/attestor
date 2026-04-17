@@ -26,23 +26,35 @@ It also contains broader building blocks:
 - a JSON PKI trust-chain module with API-path issuance and chain validation
 - a BullMQ/Redis async orchestration module
 
-Those modules prove architectural breadth. They do not yet imply finance-level end-to-end completeness outside the financial reference path.
+Those modules prove architectural breadth. They do not yet imply release-layer completeness outside the financial reference path.
+
+## What It Is
+
+Attestor is being built as:
+
+- an AI output release layer
+- an AI acceptance layer
+- a consequence gateway between generated output and real-world effect
+
+The point is not to generate the output.
+
+The point is to decide whether that output may move forward into communication, record, action, or decision-support.
 
 ## What It Is Not
 
-- Not a financial chatbot
-- Not an LLM orchestration framework
-- Not a BI front-end
-- Not a generic AI compliance checklist
-- Not a customer-facing automated decision engine
-- Not a distributed enterprise control plane
+- not a financial chatbot
+- not an LLM orchestration framework
+- not a BI front-end
+- not a generic AI compliance checklist
+- not a customer-facing automated decision engine
+- not a universal AI platform
 
-Attestor makes AI-assisted output governable. It does not make AI inherently trustworthy.
+Attestor makes release into consequence governable. It does not make AI inherently trustworthy.
 
 ## Who This Is For
 
-- Teams introducing AI into high-stakes internal workflows
-- Reviewers and control functions who need evidence-bearing acceptance
-- Builders who need portable proof, not just a model answer
-- Organizations that want AI assistance without surrendering authority, auditability, or verification
-- Banks, hospitals, insurers, and internal AI platform teams that need infrastructure rather than another AI app
+- teams introducing AI into high-stakes internal workflows
+- reviewers and control functions who need evidence-bearing release decisions
+- builders who need portable proof, not just a model answer
+- organizations that want AI assistance without surrendering authority, auditability, or verification
+- banks, hospitals, insurers, and internal AI platform teams that need a release boundary rather than another AI app

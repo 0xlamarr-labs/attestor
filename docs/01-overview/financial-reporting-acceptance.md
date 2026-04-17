@@ -1,56 +1,58 @@
 # AI-Assisted Financial Reporting Acceptance
 
-Attestor is now positioned first around **AI-assisted financial reporting acceptance**.
+Attestor should now be read as an **AI output release and acceptance layer**, with **AI-assisted financial reporting acceptance** as the first proving wedge.
 
-That is narrower than “enterprise AI governance” and more honest than “general agent platform.” The core claim is simple:
+That is narrower than "enterprise AI platform" and stronger than a vague "AI governance" label.
 
-- a model or agent can help produce reporting work
-- that output still needs an explicit acceptance boundary before it influences reporting, filing, control, or review processes
-- Attestor is the layer that makes that boundary reviewable, verifiable, and portable
+The core claim is simple:
 
-## What Counts As Acceptance Here
+- an AI system can help produce reporting work
+- that output is still only a proposal until it earns release into consequence
+- Attestor is the layer that decides whether that output may move forward, under what conditions, with what authority, and with what evidence
 
-In this wedge, “acceptance” means more than “someone glanced at it and said OK.”
+## Why Finance Is The First Wedge
 
-It means the reporting workflow can show:
+Financial reporting already assumes explicit structure, packaging, validation, identity, and accountability.
 
-- what query or workflow ran
-- what data boundary it was allowed to touch
+That makes it a strong proving ground for a release layer:
+
+- report sections and metrics become durable records
+- filing packages become formal artifacts
+- reviewer authority matters
+- silent errors are expensive
+- later verification matters as much as first-pass generation
+
+If the release model survives here, it earns the right to travel.
+
+## What "Acceptance" Means Here
+
+In this wedge, acceptance does not mean "someone glanced at it."
+
+It means a reporting workflow can show:
+
+- what output was proposed
+- what consequence it was trying to trigger
+- what data and tool boundaries applied
 - what deterministic checks passed or failed
-- who reviewed it
-- what certificate, proof kit, and verification material survived afterward
+- who, if anyone, authorized release
+- what evidence and verification material survived afterward
 
-That is why the current Attestor proving surface is finance-first:
+## Current Official Anchors
 
-- counterparty exposure reporting
-- liquidity / LCR-style reporting checks
-- reconciliation variance workflows
-- filing-oriented export and evidence paths
+Current official anchors as of **2026-04-17**:
 
-## Why This Wedge Is Real
-
-This is not a made-up category. The financial reporting stack already expects stronger identity, packaging, validation, and audit properties than a generic AI tool usually gives.
-
-Current official anchors as of **2026-04-16**:
-
-- [SEC: EDGAR Next](https://www.sec.gov/submit-filings/improving-edgar/edgar-next-improving-filer-access-account-management)
-  This is the clearest US signal that filer access, delegated authority, and API use are tightening around identity and role discipline.
+- [SEC: EDGAR Next](https://www.sec.gov/newsroom/whats-new/compliance-edgar-next-now-required-file-edgar)
 - [SEC: EDGAR Filer Manual](https://www.sec.gov/submit-filings/edgar-filer-manual)
-  The filing system already assumes explicit technical rules, structured submission constraints, and machine-checkable behavior.
 - [ESMA: ESEF Reporting Manual](https://www.esma.europa.eu/document/esef-reporting-manual)
-  European listed-entity reporting already lives inside structured tagging, validation, and filing-packaging expectations.
-- [EBA: Reporting Frameworks](https://www.eba.europa.eu/risk-and-data-analysis/reporting-frameworks)
-  Prudential and supervisory reporting keeps moving with formal technical packages, taxonomies, and validation rules.
+- [EBA: Reporting Framework 4.0](https://www.eba.europa.eu/risk-and-data-analysis/reporting/reporting-frameworks/reporting-framework-40)
 - [NIST AI 600-1: Generative AI Profile](https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf)
-  Official US guidance is now explicit that GenAI systems need documented governance, monitoring, human oversight, and risk treatment.
 - [XBRL Report Package specification](https://specifications.xbrl.org/work-product-index-report-package-report-package-1.0-report-package-1.0.html)
-  The reporting world is still pushing toward portable, structured package formats rather than ad hoc text-only outputs.
 
-None of those documents says “buy Attestor.” Together they do show why plain model output is not enough once AI starts touching real reporting consequences.
+None of those documents says "buy Attestor." Together they do show why plain model output is not enough once AI starts touching real reporting consequence.
 
 ## The Canonical Attestor Demonstration
 
-The clearest current product proof is:
+The clearest current product proof is still:
 
 1. run the live hybrid counterparty scenario
 2. emit a signed proof packet
@@ -63,7 +65,7 @@ npm run showcase:proof:hybrid
 npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
 ```
 
-The committed sample packet that mirrors this path lives here:
+Committed inspection surface:
 
 - [Committed financial reporting proof packet](../evidence/financial-reporting-acceptance-live-hybrid/README.md)
 
@@ -77,9 +79,9 @@ Not:
 
 Instead:
 
-- AI-assisted financial reporting acceptance
-- a hosted API/control layer for reporting workflows that need proof and reviewer closure
-- a customer-operated deployment path when the boundary cannot stay hosted
+- an AI output release and acceptance layer
+- a hosted API/control layer for reporting workflows that need release discipline, proof, and reviewer closure
+- a customer-operated deployment path when the release boundary cannot stay hosted
 
 ## What This Does Not Claim
 
