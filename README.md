@@ -6,6 +6,8 @@ Most AI systems can produce something useful before a team knows whether that ou
 
 Attestor sits between AI output and consequence. It does not try to be the model, the agent runtime, or the orchestration layer. It decides whether an output may be released into communication, record, action, or decision-support, under what conditions, with what authority, and with what evidence left behind.
 
+That release discipline is not only about safety. It also reduces unnecessary review and release friction: low-risk outputs can move faster, high-risk outputs get routed to the right authority, and teams keep a durable record of why something was accepted, held, or denied.
+
 The current proving wedge is financial: reporting, treasury, risk, reconciliation, and filing-oriented evidence. The architectural pattern can travel beyond finance, but the repo should be read first as a finance-proven release and consequence-gateway product, not as a generic AI platform claim.
 
 > [!IMPORTANT]
@@ -19,6 +21,7 @@ The current proving wedge is financial: reporting, treasury, risk, reconciliatio
 | If you need to... | Attestor gives you... |
 |---|---|
 | decide whether AI-assisted output may safely move into consequence | typed contracts, bounded execution, release discipline, deterministic evidence |
+| reduce review churn and informal approval loops | risk-based auto-accept, reviewer routing, signed release artifacts |
 | prove later why a reporting output was accepted | signed certificates, verification kits, audit trail, schema/data-state attestation |
 | run it as an actual product surface | hosted auth, billing, observability, HA, DR, promotion packets |
 | expand the same release model later | finance-proven depth, healthcare slice, connector + filing adapter model |
@@ -58,7 +61,7 @@ Without that middle layer, many AI systems stay advisory or get pushed forward i
 
 ## Why This Exists
 
-The deepest AI bottleneck is no longer generation. It is release into consequence.
+The deepest AI bottleneck in serious workflows is no longer generation. It is release into consequence.
 
 In serious reporting and control workflows, the key questions are not only "can the model say something helpful?" but also:
 
@@ -75,9 +78,11 @@ Attestor answers those questions with a release layer:
 - proof becomes portable instead of trapped inside one runtime
 - authority is explicit instead of implied
 
+Many teams try to solve this today with ad hoc review, side messages, and scattered evidence. That is slow, hard to audit, and hard to scale. Attestor turns that informal release step into a product surface.
+
 ## Core Category
 
-The first thing Attestor should mean is not "AI platform."
+Attestor should not primarily mean "AI platform."
 
 It should mean:
 
@@ -194,26 +199,27 @@ That is the real jump: not only generating reporting work with AI, but making AI
 
 ## What Attestor Is
 
-Attestor is the release layer and operating layer for AI-assisted high-stakes workflows.
+Attestor is the release layer and operating layer for high-consequence AI workflows.
 
-It does not generate the answer. It governs whether the output may be released, how that release is evidenced, who may authorize it, and what a third party can verify afterward.
+It does not generate the answer. It governs whether the output may move forward automatically, under review, or not at all; how that release is evidenced; who may authorize it; and what a third party can verify afterward.
 
-The recognition to have here is simple: most of the missing infrastructure in AI is not more intelligence. It is better release discipline.
+The main missing infrastructure in many AI systems is not more intelligence. It is better release discipline.
 
 ## What Changes in Practice
 
 | Without a release layer | With Attestor |
 |---|---|
-| AI output remains advisory, hard to endorse, and hard to audit | AI-assisted output can move through bounded release with evidence and authority |
+| every output either stays advisory or gets pushed through informally | low-risk output can move faster, while high-risk output escalates with evidence and authority |
 | trust lives in people, screenshots, and implicit judgment | trust is decomposed into explicit authority, policy, evidence, and verification |
+| release rationale disappears after the fact | release decisions, reviewer actions, and proof artifacts remain inspectable later |
 | production rollout becomes a collection of one-off controls | product and ops surfaces become repeatable: auth, billing, observability, HA, DR |
 | each new domain reinvents the same governance questions | the acceptance model can travel, even when the domain logic changes |
 
 ## How Customers Buy and Use Attestor
 
-Attestor is not a file workspace and not a document app.
+Customers do not move their files or workflows into Attestor. They keep their data, business logic, and operating environment where they already live, then call Attestor at the point where consequence needs to be authorized instead of informally passed through.
 
-Customers buy **hosted API access to the release, proof, and control layer**. They keep their files, data, workflows, and business logic in their own environment, then call Attestor where consequence needs to be authorized instead of informally passed through.
+What they buy is **hosted API access to the release, proof, and control layer**.
 
 What a paying customer should expect to receive:
 
@@ -222,6 +228,7 @@ What a paying customer should expect to receive:
 - usage and billing visibility
 - entitlement and feature state
 - proof, verification, and filing-capable API surfaces
+- reviewer and operator control surfaces
 - docs and deployment guidance
 
 What they should not expect:
@@ -230,7 +237,7 @@ What they should not expect:
 - a drag-and-drop workspace
 - an AI chat shell
 
-The commercial product is best understood as **infrastructure delivered as a hosted API product**.
+The commercial product is best understood as **a hosted release and control layer delivered through APIs**, not as a workspace or chat shell.
 
 ```mermaid
 flowchart LR
@@ -319,6 +326,7 @@ Attestor gives customers:
 - governed execution and acceptance
 - portable proof and verification
 - authority-aware review closure
+- a faster, cleaner path from AI suggestion to accepted artifact
 - hosted billing, usage, and account surfaces
 - operator-ready deployment and promotion paths
 
