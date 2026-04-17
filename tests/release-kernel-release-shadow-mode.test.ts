@@ -79,6 +79,16 @@ async function main(): Promise<void> {
     'Release shadow mode: the finance record wedge is recognized as hard-gate-eligible',
   );
   equal(
+    defaultResult.policyRolloutMode,
+    'enforce',
+    'Release shadow mode: the default finance record policy reports enforce rollout state explicitly',
+  );
+  equal(
+    defaultResult.policyEvaluationMode,
+    'enforce',
+    'Release shadow mode: the default finance record policy is actively enforced rather than only shadowed',
+  );
+  equal(
     defaultResult.wouldDecisionStatus,
     'review-required',
     'Release shadow mode: the shadow verdict still preserves the underlying would-decision status',
@@ -204,6 +214,112 @@ async function main(): Promise<void> {
   ok(
     !lowRiskResult.wouldRequireToken,
     'Release shadow mode: low-risk auto-release paths do not overstate token requirements when the active control profile keeps tokens optional',
+  );
+
+  const dryRunPolicy = createReleasePolicyDefinition({
+    id: 'ops.record-release.r2.dry-run.v1',
+    name: 'Ops structured record dry-run shadow policy',
+    rollout: {
+      mode: 'dry-run',
+      activatedAt: '2026-04-17T20:25:00.000Z',
+    },
+    scope: {
+      wedgeId: 'ops.record-release',
+      consequenceType: 'record',
+      riskClass: 'R2',
+      targetKinds: ['record-store'],
+      dataDomains: ['ops'],
+    },
+    outputContract: {
+      allowedArtifactTypes: ['ops.record'],
+      expectedShape: 'structured ops record payload',
+      consequenceType: 'record',
+      riskClass: 'R2',
+    },
+    capabilityBoundary: {
+      allowedTools: ['ops-write'],
+      allowedTargets: ['ops.record-store'],
+      allowedDataDomains: ['ops'],
+      requiresSingleTargetBinding: true,
+    },
+    acceptance: {
+      strategy: 'all-required',
+      requiredChecks: ['contract-shape', 'target-binding'],
+      requiredEvidenceKinds: ['trace'],
+      maxWarnings: 0,
+      failureDisposition: 'hold',
+    },
+    release: {
+      reviewMode: 'auto',
+      minimumReviewerCount: 0,
+      tokenEnforcement: 'required',
+      requireSignedEnvelope: false,
+      requireDurableEvidencePack: false,
+      requireDownstreamReceipt: false,
+      retentionClass: 'standard',
+    },
+    notes: ['Dry-run rollout proof path.'],
+  });
+
+  const dryRunEngine = createReleaseDecisionEngine({ policies: [dryRunPolicy] });
+  const dryRunEvaluator = createShadowModeReleaseEvaluator({ engine: dryRunEngine });
+  const dryRunResult = dryRunEvaluator.evaluate(
+    {
+      id: 'shadow_dry_run_001',
+      createdAt: '2026-04-17T19:10:00.000Z',
+      outputHash: 'sha256:output-dry-run',
+      consequenceHash: 'sha256:consequence-dry-run',
+      outputContract: {
+        artifactType: 'ops.record',
+        expectedShape: 'structured ops record payload',
+        consequenceType: 'record',
+        riskClass: 'R2',
+      },
+      capabilityBoundary: {
+        allowedTools: ['ops-write'],
+        allowedTargets: ['ops.record-store'],
+        allowedDataDomains: ['ops'],
+      },
+      requester: {
+        id: 'svc.ops-bot',
+        type: 'service',
+      },
+      target: {
+        kind: 'record-store',
+        id: 'ops.record-store',
+      },
+    },
+    {
+      actualArtifactType: 'ops.record',
+      actualShape: 'structured ops record payload',
+      observedTargetId: 'ops.record-store',
+      usedTools: ['ops-write'],
+      usedDataDomains: ['ops'],
+      observedOutputHash: 'sha256:output-dry-run',
+      observedConsequenceHash: 'sha256:consequence-dry-run',
+      policyRulesSatisfied: true,
+      evidenceKinds: ['trace'],
+    },
+  );
+
+  equal(
+    dryRunResult.policyRolloutMode,
+    'dry-run',
+    'Release shadow mode: shadow surface carries the matched policy rollout mode',
+  );
+  equal(
+    dryRunResult.policyEvaluationMode,
+    'shadow',
+    'Release shadow mode: dry-run rollout keeps the current request in shadow evaluation mode',
+  );
+  equal(
+    dryRunResult.auditAnnotations['attestor.io/policy-rollout-mode'],
+    'dry-run',
+    'Release shadow mode: audit annotations capture the rollout mode for later analysis',
+  );
+  ok(
+    dryRunResult.signals.some((signal) => signal.code === 'shadow_rollout_dry_run'),
+    'Release shadow mode: dry-run rollout surfaces an explicit rollout warning signal',
   );
 
   console.log(`\nRelease kernel release-shadow-mode tests: ${passed} passed, 0 failed`);

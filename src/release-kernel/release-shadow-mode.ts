@@ -8,6 +8,10 @@ import type {
 } from './release-decision-engine.js';
 import { createReleaseDecisionEngine } from './release-decision-engine.js';
 import type { DeterministicCheckObservation } from './release-deterministic-checks.js';
+import type {
+  ReleasePolicyRolloutEvaluationMode,
+  ReleasePolicyRolloutMode,
+} from './release-policy-rollout.js';
 import { riskControlProfile } from './risk-controls.js';
 
 /**
@@ -41,6 +45,8 @@ export interface ShadowReleaseEvaluationResult {
   readonly severity: ShadowReleaseSeverity;
   readonly passThrough: true;
   readonly enforcementReadiness: ShadowEnforcementReadiness;
+  readonly policyRolloutMode: ReleasePolicyRolloutMode | null;
+  readonly policyEvaluationMode: ReleasePolicyRolloutEvaluationMode | null;
   readonly wouldDecisionStatus: ReleaseDecisionStatus;
   readonly wouldPhase: ReleaseEvaluationPhase;
   readonly wouldBlockIfEnforced: boolean;
@@ -105,6 +111,35 @@ function buildSignals(
   requireToken: boolean,
 ): readonly ShadowReleaseSignal[] {
   const signals: ShadowReleaseSignal[] = [];
+  const rolloutMode = result.plan.rolloutMode;
+  const rolloutEvaluationMode = result.plan.rolloutEvaluationMode;
+
+  if (rolloutMode === 'dry-run' && rolloutEvaluationMode === 'shadow') {
+    signals.push({
+      code: 'shadow_rollout_dry_run',
+      severity: 'warn',
+      message:
+        'The matched release policy is currently in dry-run mode, so this request is being evaluated for evidence and readiness without live enforcement.',
+    });
+  }
+
+  if (rolloutMode === 'canary' && rolloutEvaluationMode === 'shadow') {
+    signals.push({
+      code: 'shadow_rollout_canary',
+      severity: 'warn',
+      message:
+        'The matched release policy is in canary rollout mode and this request fell outside the current enforced cohort.',
+    });
+  }
+
+  if (rolloutMode === 'rolled-back') {
+    signals.push({
+      code: 'shadow_rollout_rollback',
+      severity: 'warn',
+      message:
+        'The matched release policy is under rollback control, so Attestor is preserving shadow visibility while avoiding unconditional enforcement drift.',
+    });
+  }
 
   if (readiness === 'advisory-only') {
     signals.push({
@@ -170,6 +205,9 @@ function buildAuditAnnotations(
     'attestor.io/would-require-review': String(requireReview),
     'attestor.io/would-require-token': String(requireToken),
     'attestor.io/enforcement-readiness': readiness,
+    'attestor.io/policy-rollout-mode': result.plan.rolloutMode ?? 'none',
+    'attestor.io/policy-evaluation-mode': result.plan.rolloutEvaluationMode ?? 'none',
+    'attestor.io/effective-policy-id': result.plan.effectivePolicyId ?? 'none',
   });
 }
 
@@ -197,6 +235,8 @@ export function createShadowModeReleaseEvaluator(
         severity,
         passThrough: true,
         enforcementReadiness: readiness,
+        policyRolloutMode: evaluation.plan.rolloutMode,
+        policyEvaluationMode: evaluation.plan.rolloutEvaluationMode,
         wouldDecisionStatus: evaluation.decision.status,
         wouldPhase: evaluation.plan.phase,
         wouldBlockIfEnforced: wouldBlockIfEnforced(evaluation.decision.status, readiness),

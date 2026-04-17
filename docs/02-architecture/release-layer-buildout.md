@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 21 |
+| Completed | 22 |
 | In progress | 0 |
-| Not started | 3 |
+| Not started | 2 |
 
 ## Frozen Step List
 
@@ -66,10 +66,10 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 19 | complete | Add named review and dual approval | `src/release-kernel/reviewer-queue.ts`, `src/service/http/routes/release-review-routes.ts`, `src/service/release-review-site.ts`, `src/service/admin-audit-log.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/live-api.test.ts` | Reviewer authority is now real rather than implied: named reviewers are required for high-consequence review actions, R4 candidates require two distinct approvals before token issuance, duplicate reviewer reuse is blocked, approval/rejection decisions are captured in the reviewer packet and admin audit log, and the finance proving path now mints a release token only after explicit human authority closure. |
 | 20 | complete | Add override and break-glass path | `src/release-kernel/reviewer-queue.ts`, `src/release-kernel/release-decision-log.ts`, `src/service/http/routes/release-review-routes.ts`, `src/service/release-review-site.ts`, `src/service/admin-audit-log.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/live-api.test.ts` | Emergency release is now explicit instead of becoming a hidden bypass: held release reviews can be closed through a named break-glass override with reason code, requester identity, incident/ticket context, distinct override timeline/audit events, and a short-lived override-marked release token that the finance hard-gateway path can consume under the same fail-closed release discipline. |
 | 21 | complete | Sign and export the durable evidence pack | `src/release-kernel/release-evidence-pack.ts`, `src/service/http/routes/pipeline-routes.ts`, `src/service/http/routes/release-review-routes.ts`, `src/service/release-review-site.ts`, `tests/release-kernel-release-evidence-pack.test.ts`, `tests/live-api.test.ts` | Durable release proof is now separate from short-lived authorization: accepted and overridden finance release decisions mint DSSE-signed, in-toto-style evidence bundles with stable evidence-pack ids, statement subjects bound to output/consequence digests, release/review/log summaries, exported verification-key material, and an admin export route so the proving path now has a portable long-lived attestation bundle instead of only an online release token. |
-| 22 | not_started | Add policy rollout controls | Pending | Dry-run, canary, enforce, rollback. |
+| 22 | complete | Add policy rollout controls | `src/release-kernel/release-policy-rollout.ts`, `src/release-kernel/release-policy.ts`, `src/release-kernel/release-decision-engine.ts`, `src/release-kernel/release-shadow-mode.ts`, `src/release-kernel/release-decision-log.ts`, `tests/release-kernel-release-policy-rollout.test.ts`, `tests/release-kernel-release-policy.test.ts`, `tests/release-kernel-release-decision-engine.test.ts`, `tests/release-kernel-release-shadow-mode.test.ts` | Release enforcement is no longer an all-or-nothing property of the whole system: policies now carry first-class rollout state (`dry-run`, `canary`, `enforce`, `rolled-back`), canary cohorts are deterministically assigned from request-bound material, the decision engine resolves effective policy + rollout mode before evaluation, rollback can redirect to an explicit fallback policy, and shadow-mode/audit annotations now expose whether a request is being observed, canary-enforced, or held back by rollout posture, aligned with current Kubernetes warn/audit/deny admission patterns, current OPA bundle/discovery rollout practice, and modern external-auth staged enforcement patterns. |
 | 23 | not_started | Launch the second and third canonical flows | Pending | `communication` then `action`, after `record` works. |
 | 24 | not_started | Package the release layer as a reusable platform surface | Pending | Stable SDKs, docs, and extraction criteria ready. |
 
 ## Immediate Next Step
 
-Step 22 is next. The goal is to add policy rollout controls so warn, canary, enforce, and rollback can happen without collapsing the release boundary into one global switch.
+Step 23 is next. The goal is to launch the second and third canonical flows so `communication` and `action` start using the same release kernel that now already supports consequence rollout, risk controls, reviewer authority, durable evidence, and policy-level staged enforcement.

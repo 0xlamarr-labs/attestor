@@ -68,6 +68,11 @@ async function main(): Promise<void> {
     firstPolicy.release.requireDurableEvidencePack,
     'Release policy: the first policy requires a durable evidence pack',
   );
+  equal(
+    firstPolicy.rollout.mode,
+    'enforce',
+    'Release policy: the first hard gateway policy starts in enforce mode instead of relying on an implicit global switch',
+  );
 
   const matchingOutputContract: OutputContractDescriptor = {
     artifactType: 'financial-reporting.record-field',
@@ -113,6 +118,10 @@ async function main(): Promise<void> {
     id: 'custom.communication.policy',
     name: 'Custom communication policy',
     status: 'draft',
+    rollout: {
+      mode: 'dry-run',
+      activatedAt: '2026-04-17T20:10:00.000Z',
+    },
     scope: {
       wedgeId: 'custom-communication',
       consequenceType: 'communication',
@@ -164,6 +173,11 @@ async function main(): Promise<void> {
     customPolicy.release.tokenEnforcement,
     'required',
     'Release policy: the language can express hard enforcement without introspection',
+  );
+  equal(
+    customPolicy.rollout.mode,
+    'dry-run',
+    'Release policy: rollout state is first-class and can keep a policy in dry-run while the policy grammar itself stays stable',
   );
 
   console.log(`\nRelease kernel release-policy tests: ${passed} passed, 0 failed`);

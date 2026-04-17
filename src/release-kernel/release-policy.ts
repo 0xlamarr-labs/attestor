@@ -13,6 +13,11 @@ import type {
 import { riskControlProfile } from './risk-controls.js';
 import { firstHardGatewayWedge } from './first-hard-gateway-wedge.js';
 import type { ReleaseTargetKind } from './object-model.js';
+import {
+  createReleasePolicyRollout,
+  type CreateReleasePolicyRolloutInput,
+  type ReleasePolicyRolloutDefinition,
+} from './release-policy-rollout.js';
 
 /**
  * Release policy language v1.
@@ -77,6 +82,7 @@ export interface ReleasePolicyDefinition {
   readonly id: string;
   readonly name: string;
   readonly status: ReleasePolicyStatus;
+  readonly rollout: ReleasePolicyRolloutDefinition;
   readonly scope: ReleasePolicyScope;
   readonly outputContract: OutputContractPolicy;
   readonly capabilityBoundary: CapabilityBoundaryPolicy;
@@ -89,6 +95,7 @@ export interface CreateReleasePolicyDefinitionInput {
   readonly id: string;
   readonly name: string;
   readonly status?: ReleasePolicyStatus;
+  readonly rollout?: CreateReleasePolicyRolloutInput;
   readonly scope: ReleasePolicyScope;
   readonly outputContract: OutputContractPolicy;
   readonly capabilityBoundary: CapabilityBoundaryPolicy;
@@ -105,6 +112,7 @@ export function createReleasePolicyDefinition(
     id: input.id,
     name: input.name,
     status: input.status ?? 'active',
+    rollout: createReleasePolicyRollout(input.rollout ?? { mode: 'enforce' }),
     scope: input.scope,
     outputContract: input.outputContract,
     capabilityBoundary: input.capabilityBoundary,
@@ -139,6 +147,13 @@ export function createFirstHardGatewayReleasePolicy(): ReleasePolicyDefinition {
   return createReleasePolicyDefinition({
     id: 'finance.structured-record-release.v1',
     name: 'Finance structured record release policy',
+    rollout: {
+      mode: 'enforce',
+      activatedAt: '2026-04-17T00:00:00.000Z',
+      notes: [
+        'The first hard gateway wedge starts in enforce mode so the finance proving path remains fail-closed by default.',
+      ],
+    },
     scope: {
       wedgeId: wedge.id,
       consequenceType: wedge.consequenceType,

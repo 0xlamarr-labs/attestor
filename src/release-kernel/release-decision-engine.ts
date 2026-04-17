@@ -20,6 +20,13 @@ import {
   createFirstHardGatewayReleasePolicy,
   matchesReleasePolicyScope,
 } from './release-policy.js';
+import {
+  resolveReleasePolicyRollout,
+  type ReleasePolicyRolloutEvaluationContext,
+  type ReleasePolicyRolloutEvaluationMode,
+  type ReleasePolicyRolloutMode,
+  type ReleasePolicyRolloutResolution,
+} from './release-policy-rollout.js';
 import type { CapabilityBoundaryDescriptor, OutputContractDescriptor } from './types.js';
 
 /**
@@ -57,6 +64,12 @@ export interface ReleaseEvaluationPlan {
   readonly pendingEvidenceKinds: readonly string[];
   readonly requiresReview: boolean;
   readonly policyId: string | null;
+  readonly effectivePolicyId: string | null;
+  readonly rolloutMode: ReleasePolicyRolloutMode | null;
+  readonly rolloutEvaluationMode: ReleasePolicyRolloutEvaluationMode | null;
+  readonly rolloutReason: string | null;
+  readonly rolloutCanaryBucket: number | null;
+  readonly rolloutFallbackPolicyId: string | null;
 }
 
 export interface ReleaseEvaluationResult {
@@ -103,6 +116,92 @@ function buildPendingChecksFinding(policyId: string): ReleaseFinding {
   };
 }
 
+function buildRolloutContext(
+  input: ReleaseEvaluationRequest,
+): ReleasePolicyRolloutEvaluationContext {
+  return {
+    requestId: input.id,
+    outputHash: input.outputHash,
+    requesterId: input.requester.id,
+    targetId: input.target.id,
+  };
+}
+
+interface EffectiveReleasePolicyResolution {
+  readonly matchedPolicy: ReleasePolicyDefinition;
+  readonly effectivePolicy: ReleasePolicyDefinition;
+  readonly rollout: ReleasePolicyRolloutResolution;
+  readonly fallbackPolicyId: string | null;
+}
+
+function findRollbackFallbackPolicy(
+  policies: readonly ReleasePolicyDefinition[],
+  matchedPolicy: ReleasePolicyDefinition,
+  input: ReleaseEvaluationRequest,
+): ReleasePolicyDefinition | null {
+  const fallbackPolicyId = matchedPolicy.rollout.fallbackPolicyId;
+  if (!fallbackPolicyId) {
+    return null;
+  }
+
+  const fallback = policies.find((policy) => policy.id === fallbackPolicyId) ?? null;
+  if (!fallback || fallback.status === 'draft') {
+    return null;
+  }
+
+  return matchesReleasePolicyScope(
+    fallback,
+    input.outputContract,
+    input.capabilityBoundary,
+    input.target.kind,
+  )
+    ? fallback
+    : null;
+}
+
+function resolveEffectiveReleasePolicy(
+  policies: readonly ReleasePolicyDefinition[],
+  input: ReleaseEvaluationRequest,
+): EffectiveReleasePolicyResolution | null {
+  const matchedPolicy = resolveMatchingReleasePolicy(policies, input);
+  if (!matchedPolicy) {
+    return null;
+  }
+
+  const rolloutContext = buildRolloutContext(input);
+  if (matchedPolicy.rollout.mode !== 'rolled-back') {
+    return {
+      matchedPolicy,
+      effectivePolicy: matchedPolicy,
+      rollout: resolveReleasePolicyRollout(matchedPolicy.rollout, rolloutContext),
+      fallbackPolicyId: null,
+    };
+  }
+
+  const fallback = findRollbackFallbackPolicy(policies, matchedPolicy, input);
+  if (!fallback) {
+    return {
+      matchedPolicy,
+      effectivePolicy: matchedPolicy,
+      rollout: resolveReleasePolicyRollout(matchedPolicy.rollout, rolloutContext),
+      fallbackPolicyId: matchedPolicy.rollout.fallbackPolicyId,
+    };
+  }
+
+  const fallbackRollout = resolveReleasePolicyRollout(fallback.rollout, rolloutContext);
+  return {
+    matchedPolicy,
+    effectivePolicy: fallback,
+    rollout: {
+      rolloutMode: 'rolled-back',
+      evaluationMode: fallbackRollout.evaluationMode,
+      reason: 'rolled-back',
+      canaryBucket: fallbackRollout.canaryBucket,
+    },
+    fallbackPolicyId: fallback.id,
+  };
+}
+
 function logEvaluation(
   writer: ReleaseDecisionLogWriter | undefined,
   request: ReleaseEvaluationRequest,
@@ -116,14 +215,20 @@ function logEvaluation(
     phase,
     matchedPolicyId: result.matchedPolicyId,
     decision: result.decision,
-    metadata: {
-      policyMatched: result.policyMatched,
-      pendingChecks: result.plan.pendingChecks,
-      pendingEvidenceKinds: result.plan.pendingEvidenceKinds,
-      requiresReview: result.plan.requiresReview,
-      deterministicChecksCompleted,
-    },
-  });
+      metadata: {
+        policyMatched: result.policyMatched,
+        pendingChecks: result.plan.pendingChecks,
+        pendingEvidenceKinds: result.plan.pendingEvidenceKinds,
+        requiresReview: result.plan.requiresReview,
+        deterministicChecksCompleted,
+        effectivePolicyId: result.plan.effectivePolicyId,
+        rolloutMode: result.plan.rolloutMode,
+        rolloutEvaluationMode: result.plan.rolloutEvaluationMode,
+        rolloutReason: result.plan.rolloutReason,
+        rolloutCanaryBucket: result.plan.rolloutCanaryBucket,
+        rolloutFallbackPolicyId: result.plan.rolloutFallbackPolicyId,
+      },
+    });
 }
 
 export function resolveMatchingReleasePolicy(
@@ -148,9 +253,9 @@ export function evaluateReleaseDecisionSkeleton(
   input: ReleaseEvaluationRequest,
   policies: readonly ReleasePolicyDefinition[],
 ): ReleaseEvaluationResult {
-  const matchedPolicy = resolveMatchingReleasePolicy(policies, input);
+  const resolvedPolicy = resolveEffectiveReleasePolicy(policies, input);
 
-  if (!matchedPolicy) {
+  if (!resolvedPolicy) {
     const decision = createReleaseDecisionSkeleton({
       id: input.id,
       createdAt: input.createdAt,
@@ -177,27 +282,35 @@ export function evaluateReleaseDecisionSkeleton(
         pendingEvidenceKinds: [],
         requiresReview: false,
         policyId: null,
+        effectivePolicyId: null,
+        rolloutMode: null,
+        rolloutEvaluationMode: null,
+        rolloutReason: null,
+        rolloutCanaryBucket: null,
+        rolloutFallbackPolicyId: null,
       },
     };
   }
 
+  const matchedPolicy = resolvedPolicy.matchedPolicy;
+  const effectivePolicy = resolvedPolicy.effectivePolicy;
   const requiresReview =
-    matchedPolicy.release.reviewMode === 'named-reviewer' ||
-    matchedPolicy.release.reviewMode === 'dual-approval';
+    effectivePolicy.release.reviewMode === 'named-reviewer' ||
+    effectivePolicy.release.reviewMode === 'dual-approval';
 
   const decision = createReleaseDecisionSkeleton({
     id: input.id,
     createdAt: input.createdAt,
     status: 'hold',
-    policyVersion: matchedPolicy.id,
-    policyHash: matchedPolicy.id,
+    policyVersion: effectivePolicy.id,
+    policyHash: effectivePolicy.id,
     outputHash: input.outputHash,
     consequenceHash: input.consequenceHash,
     outputContract: input.outputContract,
     capabilityBoundary: input.capabilityBoundary,
     requester: input.requester,
     target: input.target,
-    findings: [buildPendingChecksFinding(matchedPolicy.id)],
+    findings: [buildPendingChecksFinding(effectivePolicy.id)],
   });
 
   return {
@@ -207,10 +320,16 @@ export function evaluateReleaseDecisionSkeleton(
     decision,
     plan: {
       phase: 'deterministic-checks',
-      pendingChecks: matchedPolicy.acceptance.requiredChecks,
-      pendingEvidenceKinds: matchedPolicy.acceptance.requiredEvidenceKinds,
+      pendingChecks: effectivePolicy.acceptance.requiredChecks,
+      pendingEvidenceKinds: effectivePolicy.acceptance.requiredEvidenceKinds,
       requiresReview,
       policyId: matchedPolicy.id,
+      effectivePolicyId: effectivePolicy.id,
+      rolloutMode: resolvedPolicy.rollout.rolloutMode,
+      rolloutEvaluationMode: resolvedPolicy.rollout.evaluationMode,
+      rolloutReason: resolvedPolicy.rollout.reason,
+      rolloutCanaryBucket: resolvedPolicy.rollout.canaryBucket,
+      rolloutFallbackPolicyId: resolvedPolicy.fallbackPolicyId,
     },
   };
 }
@@ -241,15 +360,19 @@ export function createReleaseDecisionEngine(
         };
       }
 
-      const matchedPolicy = resolveMatchingReleasePolicy(policies, request);
-      if (!matchedPolicy) {
+      const resolvedPolicy = resolveEffectiveReleasePolicy(policies, request);
+      if (!resolvedPolicy) {
         return {
           ...initial,
           deterministicChecksCompleted: false,
         };
       }
 
-      const report = runDeterministicReleaseChecks(matchedPolicy, initial.decision, observation);
+      const report = runDeterministicReleaseChecks(
+        resolvedPolicy.effectivePolicy,
+        initial.decision,
+        observation,
+      );
       const decision = applyDeterministicCheckReport(initial.decision, report);
       const finalResult: ReleaseDeterministicEvaluationResult = {
         version: initial.version,
@@ -262,6 +385,12 @@ export function createReleaseDecisionEngine(
           pendingEvidenceKinds: [],
           requiresReview: report.nextPhase === 'review',
           policyId: initial.matchedPolicyId,
+          effectivePolicyId: initial.plan.effectivePolicyId,
+          rolloutMode: initial.plan.rolloutMode,
+          rolloutEvaluationMode: initial.plan.rolloutEvaluationMode,
+          rolloutReason: initial.plan.rolloutReason,
+          rolloutCanaryBucket: initial.plan.rolloutCanaryBucket,
+          rolloutFallbackPolicyId: initial.plan.rolloutFallbackPolicyId,
         },
         deterministicChecksCompleted: true,
       };

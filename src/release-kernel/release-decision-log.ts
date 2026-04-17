@@ -25,6 +25,12 @@ export interface ReleaseDecisionLogMetadata {
   readonly pendingEvidenceKinds: readonly string[];
   readonly requiresReview: boolean;
   readonly deterministicChecksCompleted: boolean;
+  readonly effectivePolicyId: string | null;
+  readonly rolloutMode: string | null;
+  readonly rolloutEvaluationMode: string | null;
+  readonly rolloutReason: string | null;
+  readonly rolloutCanaryBucket: number | null;
+  readonly rolloutFallbackPolicyId: string | null;
 }
 
 export interface ReleaseDecisionLogEntry {
@@ -119,6 +125,12 @@ function snapshotMetadata(metadata: ReleaseDecisionLogMetadata): ReleaseDecision
     pendingEvidenceKinds: Object.freeze([...metadata.pendingEvidenceKinds]),
     requiresReview: metadata.requiresReview,
     deterministicChecksCompleted: metadata.deterministicChecksCompleted,
+    effectivePolicyId: metadata.effectivePolicyId,
+    rolloutMode: metadata.rolloutMode,
+    rolloutEvaluationMode: metadata.rolloutEvaluationMode,
+    rolloutReason: metadata.rolloutReason,
+    rolloutCanaryBucket: metadata.rolloutCanaryBucket,
+    rolloutFallbackPolicyId: metadata.rolloutFallbackPolicyId,
   });
 }
 

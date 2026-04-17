@@ -65,6 +65,12 @@ async function main(): Promise<void> {
         pendingEvidenceKinds: ['trace'],
         requiresReview: true,
         deterministicChecksCompleted: false,
+        effectivePolicyId: 'finance.structured-record-release.v1',
+        rolloutMode: 'enforce',
+        rolloutEvaluationMode: 'enforce',
+        rolloutReason: 'enforce',
+        rolloutCanaryBucket: null,
+        rolloutFallbackPolicyId: null,
       },
     },
     1,
@@ -95,6 +101,12 @@ async function main(): Promise<void> {
       pendingEvidenceKinds: ['trace'],
       requiresReview: true,
       deterministicChecksCompleted: false,
+      effectivePolicyId: 'finance.structured-record-release.v1',
+      rolloutMode: 'enforce',
+      rolloutEvaluationMode: 'enforce',
+      rolloutReason: 'enforce',
+      rolloutCanaryBucket: null,
+      rolloutFallbackPolicyId: null,
     },
   });
   writer.append({
@@ -109,6 +121,12 @@ async function main(): Promise<void> {
       pendingEvidenceKinds: [],
       requiresReview: true,
       deterministicChecksCompleted: true,
+      effectivePolicyId: 'finance.structured-record-release.v1',
+      rolloutMode: 'enforce',
+      rolloutEvaluationMode: 'enforce',
+      rolloutReason: 'enforce',
+      rolloutCanaryBucket: null,
+      rolloutFallbackPolicyId: null,
     },
   });
 

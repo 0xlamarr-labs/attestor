@@ -5,7 +5,10 @@ import {
   RELEASE_DECISION_ENGINE_SPEC_VERSION,
   resolveMatchingReleasePolicy,
 } from '../src/release-kernel/release-decision-engine.js';
-import { createFirstHardGatewayReleasePolicy } from '../src/release-kernel/release-policy.js';
+import {
+  createFirstHardGatewayReleasePolicy,
+  createReleasePolicyDefinition,
+} from '../src/release-kernel/release-policy.js';
 import type {
   CapabilityBoundaryDescriptor,
   OutputContractDescriptor,
@@ -101,6 +104,16 @@ async function main(): Promise<void> {
     'Release decision engine: review requirements are surfaced before final release',
   );
   equal(
+    result.plan.rolloutMode,
+    'enforce',
+    'Release decision engine: the first hard-gateway policy carries an explicit enforce rollout state',
+  );
+  equal(
+    result.plan.rolloutEvaluationMode,
+    'enforce',
+    'Release decision engine: the first hard-gateway policy is actively enforced instead of relying on implicit rollout state',
+  );
+  equal(
     result.decision.policyVersion,
     'finance.structured-record-release.v1',
     'Release decision engine: the initial decision skeleton binds to the matched policy version',
@@ -153,6 +166,173 @@ async function main(): Promise<void> {
     denied.decision.findings[0]?.code,
     'policy_scope_mismatch',
     'Release decision engine: denied requests explain the policy scope mismatch',
+  );
+
+  const dryRunPolicy = createReleasePolicyDefinition({
+    id: 'ops.record-release.r2.v1',
+    name: 'Ops structured record dry-run policy',
+    rollout: {
+      mode: 'dry-run',
+      activatedAt: '2026-04-17T20:15:00.000Z',
+    },
+    scope: {
+      wedgeId: 'ops-record-release',
+      consequenceType: 'record',
+      riskClass: 'R2',
+      targetKinds: ['record-store'],
+      dataDomains: ['ops'],
+    },
+    outputContract: {
+      allowedArtifactTypes: ['ops.record'],
+      expectedShape: 'structured ops record payload',
+      consequenceType: 'record',
+      riskClass: 'R2',
+    },
+    capabilityBoundary: {
+      allowedTools: ['ops-write'],
+      allowedTargets: ['ops.record-store'],
+      allowedDataDomains: ['ops'],
+      requiresSingleTargetBinding: true,
+    },
+    acceptance: {
+      strategy: 'all-required',
+      requiredChecks: ['contract-shape', 'target-binding'],
+      requiredEvidenceKinds: ['trace'],
+      maxWarnings: 0,
+      failureDisposition: 'hold',
+    },
+    release: {
+      reviewMode: 'auto',
+      minimumReviewerCount: 0,
+      tokenEnforcement: 'required',
+      requireSignedEnvelope: false,
+      requireDurableEvidencePack: false,
+      requireDownstreamReceipt: false,
+      retentionClass: 'standard',
+    },
+  });
+
+  const dryRunResult = evaluateReleaseDecisionSkeleton(
+    {
+      id: 'rd_eval_dry_run_001',
+      createdAt: '2026-04-17T15:10:00.000Z',
+      outputHash: 'sha256:ops-output',
+      consequenceHash: 'sha256:ops-consequence',
+      outputContract: {
+        artifactType: 'ops.record',
+        expectedShape: 'structured ops record payload',
+        consequenceType: 'record',
+        riskClass: 'R2',
+      },
+      capabilityBoundary: {
+        allowedTools: ['ops-write'],
+        allowedTargets: ['ops.record-store'],
+        allowedDataDomains: ['ops'],
+      },
+      requester: {
+        id: 'svc.ops-bot',
+        type: 'service',
+        displayName: 'Ops Bot',
+      },
+      target: {
+        kind: 'record-store',
+        id: 'ops.record-store',
+      },
+    },
+    [dryRunPolicy],
+  );
+  equal(
+    dryRunResult.plan.rolloutMode,
+    'dry-run',
+    'Release decision engine: rollout mode is preserved on the evaluation plan',
+  );
+  equal(
+    dryRunResult.plan.rolloutEvaluationMode,
+    'shadow',
+    'Release decision engine: dry-run policies resolve to shadow evaluation mode',
+  );
+
+  const rollbackFallbackPolicy = createReleasePolicyDefinition({
+    id: 'finance.structured-record-release.rollback',
+    name: 'Finance structured record fallback policy',
+    status: 'deprecated',
+    rollout: {
+      mode: 'enforce',
+      activatedAt: '2026-04-10T00:00:00.000Z',
+    },
+    scope: {
+      wedgeId: 'finance-structured-record-release',
+      consequenceType: 'record',
+      riskClass: 'R4',
+      targetKinds: ['record-store', 'artifact-registry'],
+      dataDomains: ['financial-reporting'],
+    },
+    outputContract: {
+      allowedArtifactTypes: [
+        'financial-reporting.record-field',
+        'financial-reporting.filing-preparation-payload',
+        'financial-reporting.structured-report-artifact',
+      ],
+      expectedShape: 'structured financial record payload',
+      consequenceType: 'record',
+      riskClass: 'R4',
+    },
+    capabilityBoundary: {
+      allowedTools: ['xbrl-export', 'filing-prepare', 'record-commit'],
+      allowedTargets: ['sec.edgar.filing.prepare', 'finance.reporting.record-store'],
+      allowedDataDomains: ['financial-reporting'],
+      requiresSingleTargetBinding: true,
+    },
+    acceptance: {
+      strategy: 'all-required',
+      requiredChecks: ['contract-shape', 'target-binding', 'capability-boundary'],
+      requiredEvidenceKinds: ['trace', 'finding-log'],
+      maxWarnings: 0,
+      failureDisposition: 'hold',
+    },
+    release: {
+      reviewMode: 'named-reviewer',
+      minimumReviewerCount: 1,
+      tokenEnforcement: 'required-with-introspection',
+      requireSignedEnvelope: true,
+      requireDurableEvidencePack: true,
+      requireDownstreamReceipt: true,
+      retentionClass: 'regulated',
+    },
+  });
+
+  const rolledBackPrimaryPolicy = createReleasePolicyDefinition({
+    ...createFirstHardGatewayReleasePolicy(),
+    rollout: {
+      mode: 'rolled-back',
+      fallbackPolicyId: 'finance.structured-record-release.rollback',
+      activatedAt: '2026-04-17T20:20:00.000Z',
+    },
+  });
+
+  const rollbackResult = evaluateReleaseDecisionSkeleton(request, [
+    rolledBackPrimaryPolicy,
+    rollbackFallbackPolicy,
+  ]);
+  equal(
+    rollbackResult.plan.rolloutMode,
+    'rolled-back',
+    'Release decision engine: rollback state remains visible even when a fallback policy is selected',
+  );
+  equal(
+    rollbackResult.plan.effectivePolicyId,
+    'finance.structured-record-release.rollback',
+    'Release decision engine: rollback can move evaluation onto an explicitly named fallback policy',
+  );
+  equal(
+    rollbackResult.plan.rolloutFallbackPolicyId,
+    'finance.structured-record-release.rollback',
+    'Release decision engine: fallback policy id is preserved on the evaluation plan',
+  );
+  equal(
+    rollbackResult.decision.policyVersion,
+    'finance.structured-record-release.rollback',
+    'Release decision engine: decision skeleton binds to the effective fallback policy during rollback',
   );
 
   console.log(`\nRelease kernel release-decision-engine tests: ${passed} passed, 0 failed`);
