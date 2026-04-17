@@ -126,6 +126,10 @@ function assertActivationTargetValidity(target: PolicyActivationTarget): void {
     throw new Error('Policy control-plane account-scoped activation also requires tenant scope.');
   }
 
+   if (target.wedgeId !== null && target.domainId === null) {
+    throw new Error('Policy control-plane wedge-scoped activation also requires domain scope.');
+  }
+
   if (target.riskClass !== null && target.consequenceType === null) {
     throw new Error(
       'Policy control-plane risk-class targeting requires a consequence type to be set.',

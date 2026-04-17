@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 2 |
+| Completed | 3 |
 | In progress | 0 |
-| Not started | 18 |
+| Not started | 17 |
 
 ## Frozen Step List
 
@@ -68,7 +68,7 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 |---|---|---|---|---|
 | 01 | complete | Codify the policy control-plane vocabulary | `src/release-policy-control-plane/types.ts`, `tests/release-policy-control-plane-types.test.ts` | The control plane now has a stable first-class grammar for policy pack lifecycle states, activation states, discovery modes, store kinds, scope dimensions, mutation actions, bundle references, and normalized activation targets/selectors built on the packaged release-layer consequence/risk vocabulary. |
 | 02 | complete | Define the versioned policy-pack object model | `src/release-policy-control-plane/object-model.ts`, `tests/release-policy-control-plane-object-model.test.ts` | The control plane now has versioned first-class objects for policy packs, bundle manifests, bundle signatures, activation records, and compatibility-bearing control-plane metadata that bind directly to the packaged release-layer policy and rollout specs. |
-| 03 | not_started | Define scoping and precedence rules | Pending | Freeze how account, tenant, consequence-type, wedge, domain, and environment scope interact, including override precedence and fallback behavior. |
+| 03 | complete | Define scoping and precedence rules | `src/release-policy-control-plane/scoping.ts`, `tests/release-policy-control-plane-scoping.test.ts` | Scope resolution is now deterministic: environment is a hard exact boundary, null dimensions act as wildcards, account outranks tenant, wedge outranks domain, risk-class outranks consequence-type, plan is the lowest optional discriminator, and top-level precedence ties are treated as explicit control-plane conflicts instead of implicit winner-picking. |
 | 04 | not_started | Define the signed policy-bundle format | Pending | Turn policies from in-process factories into portable, hashable, signable bundles with manifest integrity and explicit compatibility metadata. |
 | 05 | not_started | Implement policy-bundle signing and verification | Pending | Add cryptographic signing and verification for policy bundles so activation can be gated on verified provenance instead of trust-by-location. |
 | 06 | not_started | Build the policy store abstraction | Pending | Add a first-class store/repository layer for policy packs, bundle versions, activation state, and version history rather than scattering policy state across route wiring. |
@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-Step 03 is next. The goal is to freeze how scoped policy activation resolves precedence across environment, tenant, account, domain, wedge, consequence type, and risk class.
+Step 04 is next. The goal is to turn policy packs into portable, hashable bundle artifacts with a frozen signed-bundle format.
