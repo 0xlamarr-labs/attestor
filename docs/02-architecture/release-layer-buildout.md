@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 9 |
+| Completed | 10 |
 | In progress | 0 |
-| Not started | 15 |
+| Not started | 14 |
 
 ## Frozen Step List
 
@@ -54,7 +54,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 07 | complete | Build the release decision engine skeleton | `src/release-kernel/release-decision-engine.ts`, `tests/release-kernel-release-decision-engine.test.ts` | A first-class PDP skeleton now resolves the active release policy, stamps an initial release decision, and emits the pending deterministic-check plan without yet executing the checks. |
 | 08 | complete | Implement deterministic release checks | `src/release-kernel/release-deterministic-checks.ts`, `tests/release-kernel-release-deterministic-checks.test.ts` | Deterministic contract, boundary, hash, evidence, provenance, and downstream-receipt checks now execute as a reproducible runner and can advance the PDP from planned checks into concrete release outcomes. |
 | 09 | complete | Implement immutable release decision logging | `src/release-kernel/release-decision-log.ts`, `tests/release-kernel-release-decision-log.test.ts` | Append-only, hash-linked release decision events now record policy-resolution and deterministic-check phases as verifiable audit evidence, aligned with current OPA decision-log practice, current NIST log-management guidance, and current QLDB-style digest-chain verification patterns. |
-| 10 | not_started | Add shadow-mode release evaluation | Pending | Observe without blocking the downstream path. |
+| 10 | complete | Add shadow-mode release evaluation | `src/release-kernel/release-shadow-mode.ts`, `tests/release-kernel-release-shadow-mode.test.ts` | Shadow-mode evaluation now computes the full would-decision, emits pass-through-with-warning semantics, and annotates what hard enforcement would have required, following current warn/audit-first policy rollout patterns from current Kubernetes admission policy guidance and current proxy/authz dry-run practices. |
 | 11 | not_started | Canonicalize and hash releasable outputs | Pending | Stable `outputHash` and `consequenceHash` generation. |
 | 12 | not_started | Implement signed release token issuance | Pending | Short-lived authorization artifact. |
 | 13 | not_started | Implement downstream verification SDK/middleware | Pending | `no token -> no release` must be easy to adopt. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 10 is next. The goal is to add shadow-mode release evaluation so the first hard gateway wedge can be observed safely before fail-closed enforcement.
+Step 11 is next. The goal is to canonicalize and hash releasable outputs so release decisions, tokens, and downstream verification all bind to the same stable artifact representation.
