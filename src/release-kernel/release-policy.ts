@@ -14,6 +14,16 @@ import { riskControlProfile } from './risk-controls.js';
 import { firstHardGatewayWedge } from './first-hard-gateway-wedge.js';
 import type { ReleaseTargetKind } from './object-model.js';
 import {
+  FINANCE_REVIEW_SUMMARY_ARTIFACT_TYPE,
+  FINANCE_REVIEW_SUMMARY_EXPECTED_SHAPE,
+  FINANCE_REVIEW_SUMMARY_TARGET_ID,
+} from './finance-communication-release.js';
+import {
+  FINANCE_WORKFLOW_ACTION_ARTIFACT_TYPE,
+  FINANCE_WORKFLOW_ACTION_EXPECTED_SHAPE,
+  FINANCE_WORKFLOW_ACTION_TARGET_ID,
+} from './finance-action-release.js';
+import {
   createReleasePolicyRollout,
   type CreateReleasePolicyRolloutInput,
   type ReleasePolicyRolloutDefinition,
@@ -196,6 +206,114 @@ export function createFirstHardGatewayReleasePolicy(): ReleasePolicyDefinition {
     notes: [
       'This first policy language slice is intentionally declarative and wedge-bound.',
       'The first hard gateway policy stays anchored to structured financial record release before broader platform generalization.',
+    ],
+  });
+}
+
+export function createFinanceCommunicationReleasePolicy(): ReleasePolicyDefinition {
+  const riskControls = riskControlProfile('R2');
+
+  return createReleasePolicyDefinition({
+    id: 'finance.review-summary-communication.v1',
+    name: 'Finance review summary communication policy',
+    rollout: {
+      mode: 'dry-run',
+      activatedAt: '2026-04-17T00:00:00.000Z',
+      notes: [
+        'Communication launches in dry-run so recipient and channel binding can be calibrated before any blocking send path is enabled.',
+      ],
+    },
+    scope: {
+      wedgeId: 'finance-review-summary-communication',
+      consequenceType: 'communication',
+      riskClass: 'R2',
+      targetKinds: ['endpoint'],
+      dataDomains: ['financial-reporting'],
+    },
+    outputContract: {
+      allowedArtifactTypes: [FINANCE_REVIEW_SUMMARY_ARTIFACT_TYPE],
+      expectedShape: FINANCE_REVIEW_SUMMARY_EXPECTED_SHAPE,
+      consequenceType: 'communication',
+      riskClass: 'R2',
+    },
+    capabilityBoundary: {
+      allowedTools: ['review-summary-render', 'channel-dispatch'],
+      allowedTargets: [FINANCE_REVIEW_SUMMARY_TARGET_ID],
+      allowedDataDomains: ['financial-reporting'],
+      requiresSingleTargetBinding: true,
+    },
+    acceptance: {
+      strategy: 'all-required',
+      requiredChecks: riskControls.deterministicChecks,
+      requiredEvidenceKinds: ['trace', 'finding-log'],
+      maxWarnings: 0,
+      failureDisposition: riskControls.review.failureDisposition,
+    },
+    release: {
+      reviewMode: 'auto',
+      minimumReviewerCount: 0,
+      tokenEnforcement: riskControls.token.minimumEnforcement,
+      requireSignedEnvelope: false,
+      requireDurableEvidencePack: riskControls.evidence.requiresDurableEvidencePack,
+      requireDownstreamReceipt: riskControls.evidence.requiresDownstreamReceipt,
+      retentionClass: riskControls.evidence.retentionClass,
+    },
+    notes: [
+      'This is the second canonical flow: outbound reviewer-facing communication after record release proved the first hard boundary.',
+    ],
+  });
+}
+
+export function createFinanceActionReleasePolicy(): ReleasePolicyDefinition {
+  const riskControls = riskControlProfile('R3');
+
+  return createReleasePolicyDefinition({
+    id: 'finance.workflow-action-release.v1',
+    name: 'Finance workflow action release policy',
+    rollout: {
+      mode: 'dry-run',
+      activatedAt: '2026-04-17T00:00:00.000Z',
+      notes: [
+        'Action release launches in dry-run so side effects stay observable before pre-execution authorization becomes mandatory.',
+      ],
+    },
+    scope: {
+      wedgeId: 'finance-workflow-action-release',
+      consequenceType: 'action',
+      riskClass: 'R3',
+      targetKinds: ['workflow'],
+      dataDomains: ['financial-reporting'],
+    },
+    outputContract: {
+      allowedArtifactTypes: [FINANCE_WORKFLOW_ACTION_ARTIFACT_TYPE],
+      expectedShape: FINANCE_WORKFLOW_ACTION_EXPECTED_SHAPE,
+      consequenceType: 'action',
+      riskClass: 'R3',
+    },
+    capabilityBoundary: {
+      allowedTools: ['workflow-dispatch', 'filing-prepare'],
+      allowedTargets: [FINANCE_WORKFLOW_ACTION_TARGET_ID],
+      allowedDataDomains: ['financial-reporting'],
+      requiresSingleTargetBinding: true,
+    },
+    acceptance: {
+      strategy: 'all-required',
+      requiredChecks: riskControls.deterministicChecks,
+      requiredEvidenceKinds: ['trace', 'finding-log', 'provenance'],
+      maxWarnings: 0,
+      failureDisposition: riskControls.review.failureDisposition,
+    },
+    release: {
+      reviewMode: riskControls.review.mode,
+      minimumReviewerCount: riskControls.review.minimumReviewerCount,
+      tokenEnforcement: riskControls.token.minimumEnforcement,
+      requireSignedEnvelope: true,
+      requireDurableEvidencePack: riskControls.evidence.requiresDurableEvidencePack,
+      requireDownstreamReceipt: riskControls.evidence.requiresDownstreamReceipt,
+      retentionClass: riskControls.evidence.retentionClass,
+    },
+    notes: [
+      'This is the third canonical flow: bounded workflow action requests stay shadow-first until a concrete pre-execution gate is ready.',
     ],
   });
 }

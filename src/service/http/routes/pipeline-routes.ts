@@ -15,6 +15,14 @@ export function registerPipelineRoutes(app: Hono, deps: RouteDeps): void {
     createRequestSigners,
     runFinancialPipeline,
     buildVerificationKit,
+    createFinanceCommunicationReleaseCandidateFromReport,
+    buildFinanceCommunicationReleaseMaterial,
+    buildFinanceCommunicationReleaseObservation,
+    financeCommunicationReleaseShadowEvaluator,
+    createFinanceActionReleaseCandidateFromReport,
+    buildFinanceActionReleaseMaterial,
+    buildFinanceActionReleaseObservation,
+    financeActionReleaseShadowEvaluator,
     createFinanceFilingReleaseCandidateFromReport,
     FINANCE_FILING_ADAPTER_ID,
     buildFinanceFilingReleaseMaterial,
@@ -195,6 +203,42 @@ app.post('/api/v1/pipeline/run', async (c) => {
     };
 
     const report = runFinancialPipeline(input);
+    let financeCommunicationRelease: {
+      targetId: string;
+      decisionId: string;
+      decisionStatus: string;
+      policyVersion: string;
+      policyRolloutMode: string | null;
+      policyEvaluationMode: string | null;
+      wouldBlockIfEnforced: boolean;
+      wouldRequireReview: boolean;
+      wouldRequireToken: boolean;
+      outputHash: string;
+      consequenceHash: string;
+      preview: {
+        recipientId: string;
+        channelId: string;
+        subject: string;
+      };
+    } | null = null;
+    let financeActionRelease: {
+      targetId: string;
+      decisionId: string;
+      decisionStatus: string;
+      policyVersion: string;
+      policyRolloutMode: string | null;
+      policyEvaluationMode: string | null;
+      wouldBlockIfEnforced: boolean;
+      wouldRequireReview: boolean;
+      wouldRequireToken: boolean;
+      outputHash: string;
+      consequenceHash: string;
+      preview: {
+        workflowId: string;
+        actionType: string;
+        requestedTransition: string;
+      };
+    } | null = null;
     let financeFilingRelease: {
       targetId: string;
       decisionId: string;
@@ -341,6 +385,80 @@ app.post('/api/v1/pipeline/run', async (c) => {
       }
     }
 
+    const communicationCandidate = createFinanceCommunicationReleaseCandidateFromReport(report);
+    if (communicationCandidate) {
+      const communicationMaterial = buildFinanceCommunicationReleaseMaterial(communicationCandidate);
+      const communicationShadow = financeCommunicationReleaseShadowEvaluator.evaluate(
+        {
+          id: `release_comm_${randomUUID()}`,
+          createdAt: report.timestamp,
+          outputHash: communicationMaterial.hashBundle.outputHash,
+          consequenceHash: communicationMaterial.hashBundle.consequenceHash,
+          outputContract: communicationMaterial.outputContract,
+          capabilityBoundary: communicationMaterial.capabilityBoundary,
+          requester: currentReleaseRequester(c, reviewerIdentity),
+          target: communicationMaterial.target,
+        },
+        buildFinanceCommunicationReleaseObservation(communicationMaterial, report),
+      );
+
+      financeCommunicationRelease = {
+        targetId: communicationMaterial.target.id,
+        decisionId: communicationShadow.evaluation.decision.id,
+        decisionStatus: communicationShadow.evaluation.decision.status,
+        policyVersion: communicationShadow.evaluation.decision.policyVersion,
+        policyRolloutMode: communicationShadow.policyRolloutMode,
+        policyEvaluationMode: communicationShadow.policyEvaluationMode,
+        wouldBlockIfEnforced: communicationShadow.wouldBlockIfEnforced,
+        wouldRequireReview: communicationShadow.wouldRequireReview,
+        wouldRequireToken: communicationShadow.wouldRequireToken,
+        outputHash: communicationMaterial.hashBundle.outputHash,
+        consequenceHash: communicationMaterial.hashBundle.consequenceHash,
+        preview: {
+          recipientId: communicationCandidate.recipientId,
+          channelId: communicationCandidate.channelId,
+          subject: communicationCandidate.subject,
+        },
+      };
+    }
+
+    const actionCandidate = createFinanceActionReleaseCandidateFromReport(report);
+    if (actionCandidate) {
+      const actionMaterial = buildFinanceActionReleaseMaterial(actionCandidate);
+      const actionShadow = financeActionReleaseShadowEvaluator.evaluate(
+        {
+          id: `release_action_${randomUUID()}`,
+          createdAt: report.timestamp,
+          outputHash: actionMaterial.hashBundle.outputHash,
+          consequenceHash: actionMaterial.hashBundle.consequenceHash,
+          outputContract: actionMaterial.outputContract,
+          capabilityBoundary: actionMaterial.capabilityBoundary,
+          requester: currentReleaseRequester(c, reviewerIdentity),
+          target: actionMaterial.target,
+        },
+        buildFinanceActionReleaseObservation(actionMaterial, report),
+      );
+
+      financeActionRelease = {
+        targetId: actionMaterial.target.id,
+        decisionId: actionShadow.evaluation.decision.id,
+        decisionStatus: actionShadow.evaluation.decision.status,
+        policyVersion: actionShadow.evaluation.decision.policyVersion,
+        policyRolloutMode: actionShadow.policyRolloutMode,
+        policyEvaluationMode: actionShadow.policyEvaluationMode,
+        wouldBlockIfEnforced: actionShadow.wouldBlockIfEnforced,
+        wouldRequireReview: actionShadow.wouldRequireReview,
+        wouldRequireToken: actionShadow.wouldRequireToken,
+        outputHash: actionMaterial.hashBundle.outputHash,
+        consequenceHash: actionMaterial.hashBundle.consequenceHash,
+        preview: {
+          workflowId: actionCandidate.workflowId,
+          actionType: actionCandidate.actionType,
+          requestedTransition: actionCandidate.requestedTransition,
+        },
+      };
+    }
+
     const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
 
     return c.json({
@@ -379,6 +497,8 @@ app.post('/api/v1/pipeline/run', async (c) => {
       reviewerName: reviewerIdentity?.name ?? null,
       release: {
         filingExport: financeFilingRelease,
+        communication: financeCommunicationRelease,
+        action: financeActionRelease,
       },
       // Auto-filing: when sign=true and filing adapter is available, include XBRL summary + issued report package
       ...(await (async () => {

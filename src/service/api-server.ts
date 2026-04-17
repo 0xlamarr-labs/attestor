@@ -77,6 +77,16 @@ import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js'
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import {
+  buildFinanceCommunicationReleaseMaterial,
+  buildFinanceCommunicationReleaseObservation,
+  createFinanceCommunicationReleaseCandidateFromReport,
+} from '../release-kernel/finance-communication-release.js';
+import {
+  buildFinanceActionReleaseMaterial,
+  buildFinanceActionReleaseObservation,
+  createFinanceActionReleaseCandidateFromReport,
+} from '../release-kernel/finance-action-release.js';
+import {
   buildFinanceFilingReleaseMaterial,
   createFinanceFilingReleaseCandidateFromReport,
   FINANCE_FILING_ADAPTER_ID,
@@ -85,6 +95,7 @@ import {
 } from '../release-kernel/finance-record-release.js';
 import { createReleaseDecisionEngine } from '../release-kernel/release-decision-engine.js';
 import { createInMemoryReleaseDecisionLogWriter } from '../release-kernel/release-decision-log.js';
+import { createShadowModeReleaseEvaluator } from '../release-kernel/release-shadow-mode.js';
 import {
   createInMemoryReleaseTokenIntrospectionStore,
   createReleaseTokenIntrospector,
@@ -98,6 +109,10 @@ import {
   createInMemoryReleaseEvidencePackStore,
   createReleaseEvidencePackIssuer,
 } from '../release-kernel/release-evidence-pack.js';
+import {
+  createFinanceActionReleasePolicy,
+  createFinanceCommunicationReleasePolicy,
+} from '../release-kernel/release-policy.js';
 import {
   ReleaseVerificationError,
   resolveReleaseTokenFromRequest,
@@ -530,6 +545,16 @@ const pkiReady = true;
 const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
 const financeReleaseDecisionEngine = createReleaseDecisionEngine({
   decisionLog: financeReleaseDecisionLog,
+});
+const financeCommunicationReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
+  engine: createReleaseDecisionEngine({
+    policies: [createFinanceCommunicationReleasePolicy()],
+  }),
+});
+const financeActionReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
+  engine: createReleaseDecisionEngine({
+    policies: [createFinanceActionReleasePolicy()],
+  }),
 });
 const apiReleaseReviewerQueueStore = createInMemoryReleaseReviewerQueueStore();
 const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
@@ -1811,10 +1836,18 @@ const routeDeps = {
   classifyIdentitySource,
   createRequestSigners,
   runFinancialPipeline,
-  buildVerificationKit,
-  createFinanceFilingReleaseCandidateFromReport,
-  FINANCE_FILING_ADAPTER_ID,
-  buildFinanceFilingReleaseMaterial,
+    buildVerificationKit,
+    createFinanceCommunicationReleaseCandidateFromReport,
+    buildFinanceCommunicationReleaseMaterial,
+    buildFinanceCommunicationReleaseObservation,
+    financeCommunicationReleaseShadowEvaluator,
+    createFinanceActionReleaseCandidateFromReport,
+    buildFinanceActionReleaseMaterial,
+    buildFinanceActionReleaseObservation,
+    financeActionReleaseShadowEvaluator,
+    createFinanceFilingReleaseCandidateFromReport,
+    FINANCE_FILING_ADAPTER_ID,
+    buildFinanceFilingReleaseMaterial,
   financeReleaseDecisionEngine,
   financeReleaseDecisionLog,
   buildFinanceFilingReleaseObservation,
