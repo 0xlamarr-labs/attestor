@@ -4,6 +4,11 @@ import { generateKeyPair } from '../src/signing/keys.js';
 import { createReleaseDecisionSkeleton } from '../src/release-kernel/object-model.js';
 import { createReleaseTokenIssuer } from '../src/release-kernel/release-token.js';
 import {
+  createInMemoryReleaseTokenIntrospectionStore,
+  createReleaseTokenIntrospector,
+  introspectReleaseToken,
+} from '../src/release-kernel/release-introspection.js';
+import {
   createReleaseVerificationMiddleware,
   DEFAULT_RELEASE_CONTEXT_KEY,
   resolveReleaseTokenFromRequest,
@@ -30,6 +35,8 @@ async function main(): Promise<void> {
     publicKeyPem: keyPair.publicKeyPem,
   });
   const verificationKey = await issuer.exportVerificationKey();
+  const introspectionStore = createInMemoryReleaseTokenIntrospectionStore();
+  const introspector = createReleaseTokenIntrospector(introspectionStore);
 
   const decision = createReleaseDecisionSkeleton({
     id: 'decision-release-verifier',
@@ -64,6 +71,10 @@ async function main(): Promise<void> {
     decision,
     issuedAt: '2026-04-17T21:00:00.000Z',
   });
+  introspectionStore.registerIssuedToken({
+    issuedToken: issued,
+    decision,
+  });
 
   const verified = await verifyReleaseAuthorization({
     token: issued.token,
@@ -73,6 +84,9 @@ async function main(): Promise<void> {
     expectedOutputHash: 'sha256:output',
     expectedConsequenceHash: 'sha256:consequence',
     currentDate: '2026-04-17T21:01:00.000Z',
+    introspector,
+    tokenTypeHint: 'attestor_release_token',
+    resourceServerId: 'attestor.tests.release-verification',
   });
 
   equal(
@@ -85,6 +99,24 @@ async function main(): Promise<void> {
     'sha256:output',
     'Release verification: downstream expected output hash is bound into the verification context',
   );
+  ok(
+    verified.introspection?.active === true,
+    'Release verification: high-risk release tokens require and preserve an active introspection result',
+  );
+
+  const inactiveIntrospection = await introspectReleaseToken({
+    token: issued.token,
+    verificationKey,
+    audience: 'some.other.target',
+    currentDate: '2026-04-17T21:01:00.000Z',
+    store: introspectionStore,
+    tokenTypeHint: 'access_token',
+    resourceServerId: 'attestor.tests.release-verification',
+  });
+  ok(
+    inactiveIntrospection.active === false,
+    'Release introspection: audience-mismatched high-risk tokens are reported inactive instead of being treated as reusable authorization',
+  );
 
   await assert.rejects(
     () =>
@@ -96,9 +128,32 @@ async function main(): Promise<void> {
         expectedOutputHash: 'sha256:wrong',
         expectedConsequenceHash: 'sha256:consequence',
         currentDate: '2026-04-17T21:01:00.000Z',
+        introspector,
       }),
     /output hash does not match/,
     'Release verification: output hash mismatch is rejected instead of silently trusting the token',
+  );
+  passed += 1;
+
+  const unregisteredIssued = await issuer.issue({
+    decision,
+    issuedAt: '2026-04-17T21:00:00.000Z',
+    tokenId: 'rt_unregistered',
+  });
+  await assert.rejects(
+    () =>
+      verifyReleaseAuthorization({
+        token: unregisteredIssued.token,
+        verificationKey,
+        audience: 'finance.reporting.record-store',
+        expectedTargetId: 'finance.reporting.record-store',
+        expectedOutputHash: 'sha256:output',
+        expectedConsequenceHash: 'sha256:consequence',
+        currentDate: '2026-04-17T21:01:00.000Z',
+        introspector,
+      }),
+    /not active according to the Attestor introspection registry/,
+    'Release verification: a cryptographically valid but unregistered high-risk token is rejected by active introspection',
   );
   passed += 1;
 
@@ -138,6 +193,9 @@ async function main(): Promise<void> {
       expectedOutputHash: 'sha256:output',
       expectedConsequenceHash: 'sha256:consequence',
       currentDate: '2026-04-17T21:01:00.000Z',
+      introspector,
+      tokenTypeHint: 'attestor_release_token',
+      resourceServerId: 'attestor.tests.release-verification',
     }),
   );
   app.post('/release', (context) => {
@@ -145,6 +203,7 @@ async function main(): Promise<void> {
     return context.json({
       ok: true,
       decisionId: verificationContext.verification.claims.decision_id,
+      introspectionActive: verificationContext.introspection?.active ?? false,
     });
   });
 
@@ -164,6 +223,10 @@ async function main(): Promise<void> {
     successBody.decisionId,
     decision.id,
     'Release verification middleware: downstream handlers receive the verified release context',
+  );
+  ok(
+    successBody.introspectionActive === true,
+    'Release verification middleware: downstream handlers can see that high-risk introspection succeeded',
   );
 
   const missingTokenResponse = await app.request('https://attestor.local/release', {
@@ -189,6 +252,7 @@ async function main(): Promise<void> {
       expectedOutputHash: 'sha256:output',
       expectedConsequenceHash: 'sha256:wrong-consequence',
       currentDate: '2026-04-17T21:01:00.000Z',
+      introspector,
     }),
   );
   mismatchApp.post('/release', (context) => context.json({ ok: true }));

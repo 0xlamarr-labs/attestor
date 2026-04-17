@@ -85,6 +85,10 @@ import {
 } from '../release-kernel/finance-record-release.js';
 import { createReleaseDecisionEngine } from '../release-kernel/release-decision-engine.js';
 import { createInMemoryReleaseDecisionLogWriter } from '../release-kernel/release-decision-log.js';
+import {
+  createInMemoryReleaseTokenIntrospectionStore,
+  createReleaseTokenIntrospector,
+} from '../release-kernel/release-introspection.js';
 import { createReleaseTokenIssuer } from '../release-kernel/release-token.js';
 import {
   ReleaseVerificationError,
@@ -588,6 +592,8 @@ const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
 const financeReleaseDecisionEngine = createReleaseDecisionEngine({
   decisionLog: financeReleaseDecisionLog,
 });
+const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
+const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
 const apiReleaseTokenIssuer = createReleaseTokenIssuer({
   issuer: 'attestor.api.release.local',
   privateKeyPem: pki.signer.keyPair.privateKeyPem,
@@ -6265,6 +6271,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       decisionId: string;
       decisionStatus: string;
       policyVersion: string;
+      introspectionRequired: boolean;
       outputHash: string;
       consequenceHash: string;
       tokenId: string | null;
@@ -6318,12 +6325,23 @@ app.post('/api/v1/pipeline/run', async (c) => {
                 issuedAt: report.timestamp,
               })
             : null;
+        if (issuedReleaseToken) {
+          apiReleaseIntrospectionStore.registerIssuedToken({
+            issuedToken: issuedReleaseToken,
+            decision: releaseDecision,
+          });
+        }
 
         financeFilingRelease = {
           targetId: material.target.id,
           decisionId: releaseDecision.id,
           decisionStatus: releaseDecision.status,
           policyVersion: releaseDecision.policyVersion,
+          introspectionRequired:
+            issuedReleaseToken?.claims.introspection_required ??
+            releaseDecision.releaseConditions.items.some(
+              (item) => item.kind === 'introspection' && item.required,
+            ),
           outputHash: material.hashBundle.outputHash,
           consequenceHash: material.hashBundle.consequenceHash,
           tokenId: issuedReleaseToken?.tokenId ?? null,
@@ -6542,6 +6560,9 @@ app.post('/api/v1/filing/export', async (c) => {
           expectedTargetId: material.target.id,
           expectedOutputHash: material.hashBundle.outputHash,
           expectedConsequenceHash: material.hashBundle.consequenceHash,
+          introspector: apiReleaseIntrospector,
+          tokenTypeHint: 'attestor_release_token',
+          resourceServerId: 'attestor.api.finance.filing-export',
         });
       } catch (error) {
         if (error instanceof ReleaseVerificationError) {
@@ -6594,6 +6615,7 @@ app.post('/api/v1/filing/export', async (c) => {
             decisionId: verifiedRelease.verification.claims.decision_id,
             tokenId: verifiedRelease.verification.claims.jti,
             targetId: verifiedRelease.verification.claims.aud,
+            introspectionVerified: verifiedRelease.introspection?.active ?? false,
           }
         : null,
     });

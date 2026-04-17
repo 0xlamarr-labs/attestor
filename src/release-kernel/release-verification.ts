@@ -5,6 +5,11 @@ import type {
   VerifyReleaseTokenInput,
 } from './release-token.js';
 import { verifyIssuedReleaseToken } from './release-token.js';
+import type {
+  ActiveReleaseTokenIntrospectionResult,
+  ReleaseTokenIntrospectionResult,
+  ReleaseTokenIntrospector,
+} from './release-introspection.js';
 
 /**
  * Downstream release-token verification SDK and middleware.
@@ -34,6 +39,9 @@ export interface ReleaseVerificationInput extends VerifyReleaseTokenInput {
   readonly expectedTargetId?: string;
   readonly expectedOutputHash?: string;
   readonly expectedConsequenceHash?: string;
+  readonly introspector?: ReleaseTokenIntrospector;
+  readonly tokenTypeHint?: string;
+  readonly resourceServerId?: string;
 }
 
 export interface ReleaseVerificationContext {
@@ -44,6 +52,7 @@ export interface ReleaseVerificationContext {
   readonly expectedTargetId: string | undefined;
   readonly expectedOutputHash: string | undefined;
   readonly expectedConsequenceHash: string | undefined;
+  readonly introspection: ReleaseTokenIntrospectionResult | null;
 }
 
 export class ReleaseVerificationError extends Error {
@@ -83,6 +92,11 @@ export interface CreateReleaseVerificationMiddlewareInput {
   readonly expectedOutputHash?: ResolveMaybe<string | undefined>;
   readonly expectedConsequenceHash?: ResolveMaybe<string | undefined>;
   readonly currentDate?: ResolveMaybe<string | undefined>;
+  readonly introspector?:
+    | ReleaseTokenIntrospector
+    | ((context: Context) => ReleaseTokenIntrospector | Promise<ReleaseTokenIntrospector>);
+  readonly tokenTypeHint?: ResolveMaybe<string | undefined>;
+  readonly resourceServerId?: ResolveMaybe<string | undefined>;
   readonly tokenHeaderName?: string;
   readonly contextKey?: string;
 }
@@ -208,6 +222,32 @@ function assertVerifiedBinding(
   }
 }
 
+function assertActiveIntrospectionConsistency(
+  verification: ReleaseTokenVerificationResult,
+  introspection: ActiveReleaseTokenIntrospectionResult,
+): void {
+  if (
+    introspection.jti !== verification.claims.jti ||
+    introspection.decision_id !== verification.claims.decision_id ||
+    introspection.aud !== verification.claims.aud ||
+    introspection.output_hash !== verification.claims.output_hash ||
+    introspection.consequence_hash !== verification.claims.consequence_hash ||
+    introspection.policy_hash !== verification.claims.policy_hash ||
+    introspection.decision !== verification.claims.decision ||
+    introspection.risk_class !== verification.claims.risk_class
+  ) {
+    throw new ReleaseVerificationError(
+      401,
+      'invalid_token',
+      'Release token introspection does not match the verified token claims.',
+      buildBearerChallenge(
+        'invalid_token',
+        'Release token introspection does not match the verified token claims.',
+      ),
+    );
+  }
+}
+
 export async function verifyReleaseAuthorization(
   input: ReleaseVerificationInput,
 ): Promise<ReleaseVerificationContext> {
@@ -228,6 +268,44 @@ export async function verifyReleaseAuthorization(
 
   assertVerifiedBinding(verification, input);
 
+  let introspection: ReleaseTokenIntrospectionResult | null = null;
+  if (verification.claims.introspection_required) {
+    if (!input.introspector) {
+      throw new ReleaseVerificationError(
+        401,
+        'invalid_token',
+        'This high-risk release token requires active introspection before the consequence path may proceed.',
+        buildBearerChallenge(
+          'invalid_token',
+          'This high-risk release token requires active introspection before the consequence path may proceed.',
+        ),
+      );
+    }
+
+    introspection = await input.introspector.introspect({
+      token: input.token,
+      verificationKey: input.verificationKey,
+      audience: input.audience,
+      currentDate: input.currentDate,
+      tokenTypeHint: input.tokenTypeHint,
+      resourceServerId: input.resourceServerId,
+    });
+
+    if (!introspection.active) {
+      throw new ReleaseVerificationError(
+        401,
+        'invalid_token',
+        'Release token is not active according to the Attestor introspection registry.',
+        buildBearerChallenge(
+          'invalid_token',
+          'Release token is not active according to the Attestor introspection registry.',
+        ),
+      );
+    }
+
+    assertActiveIntrospectionConsistency(verification, introspection);
+  }
+
   return Object.freeze({
     version: RELEASE_VERIFICATION_SPEC_VERSION,
     token: input.token,
@@ -236,6 +314,7 @@ export async function verifyReleaseAuthorization(
     expectedTargetId: input.expectedTargetId,
     expectedOutputHash: input.expectedOutputHash,
     expectedConsequenceHash: input.expectedConsequenceHash,
+    introspection,
   });
 }
 
@@ -260,6 +339,9 @@ export function createReleaseVerificationMiddleware(
         context,
       );
       const currentDate = await resolveValue(input.currentDate, context);
+      const introspector = await resolveValue(input.introspector, context);
+      const tokenTypeHint = await resolveValue(input.tokenTypeHint, context);
+      const resourceServerId = await resolveValue(input.resourceServerId, context);
 
       const verified = await verifyReleaseAuthorization({
         token,
@@ -269,6 +351,9 @@ export function createReleaseVerificationMiddleware(
         expectedOutputHash,
         expectedConsequenceHash,
         currentDate,
+        introspector,
+        tokenTypeHint,
+        resourceServerId,
       });
 
       context.set(contextKey, verified);
