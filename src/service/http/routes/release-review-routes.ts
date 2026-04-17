@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Hono } from 'hono';
 import {
   ReleaseReviewerQueueError,
@@ -42,6 +43,7 @@ async function parseReviewActionBody(c: any): Promise<Record<string, unknown>> {
 function buildReviewActionResponse(
   review: any,
   releaseToken: any,
+  evidencePack: any,
 ): Record<string, unknown> {
   return {
     review,
@@ -53,6 +55,7 @@ function buildReviewActionResponse(
       finalized: review.authorityState !== 'pending',
     },
     releaseToken,
+    evidencePack,
   };
 }
 
@@ -70,12 +73,25 @@ function buildIssuedReleaseTokenResponse(
   };
 }
 
+function buildIssuedEvidencePackResponse(
+  issuedEvidencePack: any,
+): Record<string, unknown> {
+  return {
+    evidencePackId: issuedEvidencePack.evidencePack.id,
+    exportPath: `/api/v1/admin/release-evidence/${issuedEvidencePack.evidencePack.id}`,
+    bundleDigest: issuedEvidencePack.bundleDigest,
+    predicateType: issuedEvidencePack.statement.predicateType,
+    retentionClass: issuedEvidencePack.evidencePack.retentionClass,
+    subjectCount: issuedEvidencePack.statement.subject.length,
+  };
+}
+
 function appendReviewerTimelineToDecisionLog(
   writer: any,
   decision: any,
   occurredAt: string,
   requestId: string,
-  phase: 'review' | 'override' | 'terminal-accept' | 'terminal-deny',
+  phase: 'review' | 'override' | 'evidence-pack' | 'terminal-accept' | 'terminal-deny',
 ): void {
   writer.append({
     occurredAt,
@@ -101,10 +117,25 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
     renderReleaseReviewerQueueDetailPage,
     financeReleaseDecisionLog,
     apiReleaseTokenIssuer,
+    apiReleaseEvidencePackStore,
+    apiReleaseEvidencePackIssuer,
     apiReleaseIntrospectionStore,
     adminMutationRequest,
     finalizeAdminMutation,
   } = deps;
+
+  app.get('/api/v1/admin/release-evidence/:id', (c) => {
+    const unauthorized = currentAdminAuthorized(c);
+    if (unauthorized) return unauthorized;
+
+    const pack = apiReleaseEvidencePackStore.get(c.req.param('id'));
+    if (!pack) {
+      return c.json({ error: `Release evidence pack '${c.req.param('id')}' not found.` }, 404);
+    }
+
+    c.header('cache-control', 'no-store');
+    return c.json({ evidencePack: pack });
+  });
 
   app.get('/api/v1/admin/release-reviews', (c) => {
     const unauthorized = currentAdminAuthorized(c);
@@ -215,6 +246,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
 
       let finalRecord = transition.record;
       let responseToken: Record<string, unknown> | null = null;
+      let responseEvidencePack: Record<string, unknown> | null = null;
       if (transition.record.detail.authorityState === 'approved') {
         appendReviewerTimelineToDecisionLog(
           financeReleaseDecisionLog,
@@ -236,6 +268,50 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
           issuedToken,
         });
         responseToken = buildIssuedReleaseTokenResponse(issuedToken);
+        const evidencePackId = `ep_${randomUUID()}`;
+        const releaseDecisionWithEvidence = {
+          ...finalRecord.releaseDecision,
+          evidencePackId,
+        };
+        appendReviewerTimelineToDecisionLog(
+          financeReleaseDecisionLog,
+          releaseDecisionWithEvidence,
+          decidedAt,
+          `review:${transition.record.detail.id}:evidence-pack`,
+          'evidence-pack',
+        );
+        const issuedEvidencePack = await apiReleaseEvidencePackIssuer.issue({
+          decision: releaseDecisionWithEvidence,
+          evidencePackId,
+          issuedAt: decidedAt,
+          decisionLogEntries: financeReleaseDecisionLog
+            .entries()
+            .filter((entry: any) => entry.decisionId === releaseDecisionWithEvidence.id),
+          decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
+          review: finalRecord.detail,
+          releaseToken: issuedToken,
+        });
+        apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
+        finalRecord = {
+          detail: {
+            ...finalRecord.detail,
+            updatedAt: decidedAt,
+            evidencePackId,
+            timeline: [
+              ...finalRecord.detail.timeline,
+              {
+                occurredAt: decidedAt,
+                phase: 'evidence-pack',
+                decisionStatus: finalRecord.releaseDecision.status,
+                requiresReview: false,
+                deterministicChecksCompleted: true,
+                reviewerLabel: 'Attestor release evidence issuer',
+              },
+            ],
+          },
+          releaseDecision: releaseDecisionWithEvidence,
+        };
+        responseEvidencePack = buildIssuedEvidencePackResponse(issuedEvidencePack);
       }
 
       const stored = apiReleaseReviewerQueueStore.upsert(finalRecord);
@@ -246,7 +322,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
           routeId,
           requestPayload: body,
           statusCode: 200,
-          responseBody: buildReviewActionResponse(stored, responseToken),
+          responseBody: buildReviewActionResponse(stored, responseToken, responseEvidencePack),
           audit: {
             action: 'release_review.approved',
             requestHash: mutation.requestHash,
@@ -258,6 +334,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
               authorityState: stored.authorityState,
               approvalsRecorded: stored.approvalsRecorded,
               releaseTokenId: responseToken?.tokenId ?? null,
+              evidencePackId: responseEvidencePack?.evidencePackId ?? null,
             },
           },
         }),
@@ -330,7 +407,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
           routeId,
           requestPayload: body,
           statusCode: 200,
-          responseBody: buildReviewActionResponse(stored, null),
+          responseBody: buildReviewActionResponse(stored, null, null),
           audit: {
             action: 'release_review.rejected',
             requestHash: mutation.requestHash,
@@ -419,9 +496,53 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
         record: overriddenRecord,
         issuedToken,
       });
+      const evidencePackId = `ep_${randomUUID()}`;
+      const releaseDecisionWithEvidence = {
+        ...finalRecord.releaseDecision,
+        evidencePackId,
+      };
+      appendReviewerTimelineToDecisionLog(
+        financeReleaseDecisionLog,
+        releaseDecisionWithEvidence,
+        decidedAt,
+        `review:${overriddenRecord.detail.id}:evidence-pack`,
+        'evidence-pack',
+      );
+      const issuedEvidencePack = await apiReleaseEvidencePackIssuer.issue({
+        decision: releaseDecisionWithEvidence,
+        evidencePackId,
+        issuedAt: decidedAt,
+        decisionLogEntries: financeReleaseDecisionLog
+          .entries()
+          .filter((entry: any) => entry.decisionId === releaseDecisionWithEvidence.id),
+        decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
+        review: finalRecord.detail,
+        releaseToken: issuedToken,
+      });
+      apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
+      const finalRecordWithEvidence = {
+        detail: {
+          ...finalRecord.detail,
+          updatedAt: decidedAt,
+          evidencePackId,
+          timeline: [
+            ...finalRecord.detail.timeline,
+            {
+              occurredAt: decidedAt,
+              phase: 'evidence-pack',
+              decisionStatus: finalRecord.releaseDecision.status,
+              requiresReview: false,
+              deterministicChecksCompleted: true,
+              reviewerLabel: 'Attestor release evidence issuer',
+            },
+          ],
+        },
+        releaseDecision: releaseDecisionWithEvidence,
+      };
 
-      const stored = apiReleaseReviewerQueueStore.upsert(finalRecord);
+      const stored = apiReleaseReviewerQueueStore.upsert(finalRecordWithEvidence);
       const responseToken = buildIssuedReleaseTokenResponse(issuedToken);
+      const responseEvidencePack = buildIssuedEvidencePackResponse(issuedEvidencePack);
       c.header('cache-control', 'no-store');
       return c.json(
         await finalizeAdminMutation({
@@ -429,7 +550,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
           routeId,
           requestPayload: body,
           statusCode: 200,
-          responseBody: buildReviewActionResponse(stored, responseToken),
+          responseBody: buildReviewActionResponse(stored, responseToken, responseEvidencePack),
           audit: {
             action: 'release_break_glass.issued',
             requestHash: mutation.requestHash,
@@ -442,6 +563,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
               requestedByRole: stored.overrideGrant?.requestedByRole ?? null,
               authorityState: stored.authorityState,
               releaseTokenId: responseToken.tokenId,
+              evidencePackId: responseEvidencePack.evidencePackId,
               ttlSeconds: responseToken.ttlSeconds,
             },
           },

@@ -287,6 +287,14 @@ function renderOverride(detail: ReleaseReviewerQueueDetail): string {
   return `<p class="token"><strong>${escapeHtml(detail.overrideGrant.reasonCode)}</strong>${detail.overrideGrant.ticketId ? ` Â· ticket ${escapeHtml(detail.overrideGrant.ticketId)}` : ''} Â· requested by ${escapeHtml(detail.overrideGrant.requestedByLabel)}${detail.overrideGrant.requestedByRole ? ` (${escapeHtml(detail.overrideGrant.requestedByRole)})` : ''}</p>`;
 }
 
+function renderEvidencePack(detail: ReleaseReviewerQueueDetail): string {
+  if (!detail.evidencePackId) {
+    return '<p class="token">No durable evidence pack has been exported yet.</p>';
+  }
+
+  return `<p class="token"><strong>${escapeHtml(detail.evidencePackId)}</strong> · export <code>/api/v1/admin/release-evidence/${escapeHtml(detail.evidencePackId)}</code></p>`;
+}
+
 function renderRowPreview(detail: ReleaseReviewerQueueDetail): string {
   if (detail.candidate.previewRows.length === 0) {
     return '<p class="mono">No row preview available.</p>';
@@ -447,6 +455,10 @@ export function renderReleaseReviewerQueueDetailPage(
         <article class="panel">
           <h2>Break-glass override</h2>
           ${renderOverride(detail)}
+        </article>
+        <article class="panel">
+          <h2>Durable evidence pack</h2>
+          ${renderEvidencePack(detail)}
         </article>
         <article class="panel">
           <h2>Decision timeline</h2>

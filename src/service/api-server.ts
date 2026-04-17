@@ -95,6 +95,10 @@ import {
 } from '../release-kernel/reviewer-queue.js';
 import { createReleaseTokenIssuer } from '../release-kernel/release-token.js';
 import {
+  createInMemoryReleaseEvidencePackStore,
+  createReleaseEvidencePackIssuer,
+} from '../release-kernel/release-evidence-pack.js';
+import {
   ReleaseVerificationError,
   resolveReleaseTokenFromRequest,
   verifyReleaseAuthorization,
@@ -531,6 +535,12 @@ const apiReleaseReviewerQueueStore = createInMemoryReleaseReviewerQueueStore();
 const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
 const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
 const apiReleaseTokenIssuer = createReleaseTokenIssuer({
+  issuer: 'attestor.api.release.local',
+  privateKeyPem: pki.signer.keyPair.privateKeyPem,
+  publicKeyPem: pki.signer.keyPair.publicKeyPem,
+});
+const apiReleaseEvidencePackStore = createInMemoryReleaseEvidencePackStore();
+const apiReleaseEvidencePackIssuer = createReleaseEvidencePackIssuer({
   issuer: 'attestor.api.release.local',
   privateKeyPem: pki.signer.keyPair.privateKeyPem,
   publicKeyPem: pki.signer.keyPair.publicKeyPem,
@@ -1813,6 +1823,8 @@ const routeDeps = {
   createFinanceReviewerQueueItem,
   apiReleaseReviewerQueueStore,
   apiReleaseTokenIssuer,
+  apiReleaseEvidencePackStore,
+  apiReleaseEvidencePackIssuer,
   apiReleaseIntrospectionStore,
   consumePipelineRunState,
   schemaAttestationSummaryFromFull,

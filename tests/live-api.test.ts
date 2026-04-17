@@ -261,6 +261,7 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
     let breakGlassFilingRelease: any = null;
     let breakGlassReviewQueueId: string | null = null;
     let breakGlassReleaseToken: string | null = null;
+    let breakGlassEvidencePackId: string | null = null;
     {
       const res = await fetch(`${BASE}/api/v1/pipeline/run`, {
         method: 'POST',
@@ -301,6 +302,9 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(typeof body.release.filingExport.token === 'string', 'Pipeline(signed): filing release token present');
       ok(typeof body.release.filingExport.outputHash === 'string', 'Pipeline(signed): filing release output hash present');
       ok(typeof body.release.filingExport.consequenceHash === 'string', 'Pipeline(signed): filing release consequence hash present');
+      ok(typeof body.release.filingExport.evidencePackId === 'string', 'Pipeline(signed): durable evidence pack id present');
+      ok(typeof body.release.filingExport.evidencePackPath === 'string', 'Pipeline(signed): durable evidence pack export path present');
+      ok(typeof body.release.filingExport.evidencePackDigest === 'string', 'Pipeline(signed): durable evidence pack digest present');
       ok(body.release.filingExport.candidate.adapterId === 'xbrl-us-gaap-2024', 'Pipeline(signed): filing release candidate adapter');
       ok(Array.isArray(body.release.filingExport.candidate.rows), 'Pipeline(signed): filing release candidate rows present');
       filingRelease = body.release.filingExport;
@@ -452,6 +456,8 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(secondApprovalBody.review.status === 'approved', 'Reviewer approve(second): review queue item closes as approved');
       ok(secondApprovalBody.review.authorityState === 'approved', 'Reviewer approve(second): authority state becomes approved');
       ok(typeof secondApprovalBody.releaseToken?.token === 'string', 'Reviewer approve(second): release token is issued after dual approval');
+      ok(typeof secondApprovalBody.evidencePack?.evidencePackId === 'string', 'Reviewer approve(second): durable evidence pack is exported after dual approval');
+      ok(typeof secondApprovalBody.evidencePack?.exportPath === 'string', 'Reviewer approve(second): durable evidence pack export path returned');
       approvedReleaseToken = secondApprovalBody.releaseToken.token;
 
       const listAfterApprovalRes = await fetch(`${BASE}/api/v1/admin/release-reviews`, {
@@ -490,8 +496,29 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(typeof overrideBody.releaseToken?.token === 'string', 'Reviewer override: short-lived release token issued');
       ok(overrideBody.releaseToken.override === true, 'Reviewer override: release token is flagged as override');
       ok(Number(overrideBody.releaseToken.ttlSeconds) <= 60, 'Reviewer override: release token is short-lived');
+      ok(typeof overrideBody.evidencePack?.evidencePackId === 'string', 'Reviewer override: durable evidence pack is exported after break-glass release');
+      ok(typeof overrideBody.evidencePack?.exportPath === 'string', 'Reviewer override: durable evidence pack export path returned');
       breakGlassReleaseToken = overrideBody.releaseToken.token;
+      breakGlassEvidencePackId = overrideBody.evidencePack.evidencePackId;
       console.log(`    override=regulatory_deadline, token=${overrideBody.releaseToken.tokenId}`);
+    }
+
+    // ═══ RELEASE EVIDENCE PACK — exported durable bundle ═══
+    console.log('\n  [GET /api/v1/admin/release-evidence/:id — durable evidence bundle]');
+    {
+      const res = await fetch(`${BASE}/api/v1/admin/release-evidence/${breakGlassEvidencePackId}`, {
+        headers: { Authorization: 'Bearer admin-secret' },
+      });
+      ok(res.status === 200, 'Release evidence bundle: status 200');
+      const body = await res.json() as any;
+      ok(body.evidencePack.evidencePack.id === breakGlassEvidencePackId, 'Release evidence bundle: expected evidence pack returned');
+      ok(body.evidencePack.statement._type === 'https://in-toto.io/Statement/v1', 'Release evidence bundle: in-toto statement type exported');
+      ok(body.evidencePack.statement.predicateType === 'https://attestor.ai/attestation/release-evidence/v1', 'Release evidence bundle: Attestor release predicate exported');
+      ok(body.evidencePack.statement.predicate.review.overrideReasonCode === 'regulatory_deadline', 'Release evidence bundle: override reason is preserved in the durable review summary');
+      ok(body.evidencePack.statement.predicate.releaseToken.override === true, 'Release evidence bundle: override token summary is preserved');
+      ok(typeof body.evidencePack.verificationKey.keyId === 'string', 'Release evidence bundle: verification key metadata exported');
+      ok(typeof body.evidencePack.bundleDigest === 'string', 'Release evidence bundle: bundle digest exported');
+      console.log(`    evidencePack=${body.evidencePack.evidencePack.id}, predicate=${body.evidencePack.statement.predicateType}`);
     }
 
     // ═══ VERIFY ENDPOINT — PKI mandatory: flat Ed25519 rejected with 422 ═══

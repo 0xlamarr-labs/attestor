@@ -15,6 +15,7 @@ export type ReleaseDecisionLogPhase =
   | 'deterministic-checks'
   | 'review'
   | 'override'
+  | 'evidence-pack'
   | 'terminal-accept'
   | 'terminal-deny';
 

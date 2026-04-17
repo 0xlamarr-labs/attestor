@@ -26,6 +26,8 @@ export function registerPipelineRoutes(app: Hono, deps: RouteDeps): void {
     createFinanceReviewerQueueItem,
     apiReleaseReviewerQueueStore,
     apiReleaseTokenIssuer,
+    apiReleaseEvidencePackStore,
+    apiReleaseEvidencePackIssuer,
     apiReleaseIntrospectionStore,
     consumePipelineRunState,
     schemaAttestationSummaryFromFull,
@@ -204,6 +206,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
       tokenId: string | null;
       token: string | null;
       expiresAt: string | null;
+      evidencePackId: string | null;
+      evidencePackPath: string | null;
+      evidencePackDigest: string | null;
       reviewQueueId: string | null;
       reviewQueuePath: string | null;
       candidate: {
@@ -266,11 +271,45 @@ app.post('/api/v1/pipeline/run', async (c) => {
                 issuedAt: report.timestamp,
               })
             : null;
+        const decisionForEvidence = issuedReleaseToken
+          ? {
+              ...releaseDecision,
+              releaseTokenId: issuedReleaseToken.tokenId,
+            }
+          : releaseDecision;
         if (issuedReleaseToken) {
           apiReleaseIntrospectionStore.registerIssuedToken({
             issuedToken: issuedReleaseToken,
             decision: releaseDecision,
           });
+        }
+        const issuedEvidencePack =
+          issuedReleaseToken
+            ? await apiReleaseEvidencePackIssuer.issue({
+                decision: decisionForEvidence,
+                issuedAt: report.timestamp,
+                decisionLogEntries: financeReleaseDecisionLog
+                  .entries()
+                  .filter((entry: any) => entry.decisionId === releaseDecision.id),
+                decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
+                releaseToken: issuedReleaseToken,
+                artifactReferences: Object.freeze(
+                  report.evidenceChain?.terminalHash
+                    ? [
+                        {
+                          kind: 'provenance',
+                          path: `finance-evidence-chain://${report.runId}`,
+                          digest: report.evidenceChain.terminalHash.startsWith('sha256:')
+                            ? report.evidenceChain.terminalHash
+                            : `sha256:${report.evidenceChain.terminalHash}`,
+                        },
+                      ]
+                    : [],
+                ),
+              })
+            : null;
+        if (issuedEvidencePack) {
+          apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
         }
 
         financeFilingRelease = {
@@ -288,6 +327,11 @@ app.post('/api/v1/pipeline/run', async (c) => {
           tokenId: issuedReleaseToken?.tokenId ?? null,
           token: issuedReleaseToken?.token ?? null,
           expiresAt: issuedReleaseToken?.expiresAt ?? null,
+          evidencePackId: issuedEvidencePack?.evidencePack.id ?? null,
+          evidencePackPath: issuedEvidencePack
+            ? `/api/v1/admin/release-evidence/${issuedEvidencePack.evidencePack.id}`
+            : null,
+          evidencePackDigest: issuedEvidencePack?.bundleDigest ?? null,
           reviewQueueId: reviewQueueItem?.id ?? null,
           reviewQueuePath: reviewQueueItem
             ? `/api/v1/admin/release-reviews/${reviewQueueItem.id}`
