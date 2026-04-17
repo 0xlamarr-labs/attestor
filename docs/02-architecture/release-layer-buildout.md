@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 2 |
+| Completed | 3 |
 | In progress | 0 |
-| Not started | 22 |
+| Not started | 21 |
 
 ## Frozen Step List
 
@@ -47,7 +47,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 |---|---|---|---|---|
 | 01 | complete | Codify the shared release-kernel vocabulary | `src/release-kernel/types.ts`, `tests/release-kernel-types.test.ts` | Consequence types, risk classes, review authority defaults, and release decision status grammar are now first-class. |
 | 02 | complete | Define the versioned core object model | `src/release-kernel/object-model.ts`, `tests/release-kernel-object-model.test.ts` | `releaseDecision`, `releaseToken`, `releaseConditions`, `reviewAuthority`, and `evidencePack` are now versioned first-class objects with stable defaults. |
-| 03 | not_started | Define the consequence taxonomy rollout rules | Pending | `communication`, `record`, `action`, `decision-support` need consequence-specific contract guidance. |
+| 03 | complete | Define the consequence taxonomy rollout rules | `src/release-kernel/consequence-rollout.ts`, `tests/release-kernel-consequence-rollout.test.ts` | Consequence rollout order, enforcement posture, and contract/evidence expectations are now explicit for `communication`, `record`, `action`, and `decision-support`. |
 | 04 | not_started | Define the risk-to-control matrix | Pending | R0-R4 must map to deterministic checks, review mode, retention, and token enforcement. |
 | 05 | not_started | Choose the first hard gateway wedge | Pending | First enforceable flow should remain `AI output -> structured record`. |
 | 06 | not_started | Build the release policy language v1 | Pending | Output contract, capability boundary, and acceptance policy. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 03 is next. The goal is to define consequence-specific rollout rules so the common release-kernel objects can be applied consistently across `communication`, `record`, `action`, and `decision-support`.
+Step 04 is next. The goal is to define the risk-to-control matrix so the shared release-kernel objects and consequence rollout rules can be translated into concrete release discipline.
