@@ -10,6 +10,10 @@ import {
   applyDeterministicCheckReport,
   runDeterministicReleaseChecks,
 } from './release-deterministic-checks.js';
+import type {
+  ReleaseDecisionLogPhase,
+  ReleaseDecisionLogWriter,
+} from './release-decision-log.js';
 import type { DeterministicControlCategory } from './risk-controls.js';
 import type { ReleasePolicyDefinition } from './release-policy.js';
 import {
@@ -77,6 +81,7 @@ export interface ReleaseDecisionEngine {
 
 export interface CreateReleaseDecisionEngineInput {
   readonly policies?: readonly ReleasePolicyDefinition[];
+  readonly decisionLog?: ReleaseDecisionLogWriter;
 }
 
 function buildPolicyScopeMismatchFinding(): ReleaseFinding {
@@ -96,6 +101,29 @@ function buildPendingChecksFinding(policyId: string): ReleaseFinding {
     message: `Release policy ${policyId} matched. Deterministic release checks must run before final release.`,
     source: 'policy',
   };
+}
+
+function logEvaluation(
+  writer: ReleaseDecisionLogWriter | undefined,
+  request: ReleaseEvaluationRequest,
+  result: ReleaseEvaluationResult,
+  phase: ReleaseDecisionLogPhase,
+  deterministicChecksCompleted: boolean,
+): void {
+  writer?.append({
+    occurredAt: request.createdAt,
+    requestId: request.id,
+    phase,
+    matchedPolicyId: result.matchedPolicyId,
+    decision: result.decision,
+    metadata: {
+      policyMatched: result.policyMatched,
+      pendingChecks: result.plan.pendingChecks,
+      pendingEvidenceKinds: result.plan.pendingEvidenceKinds,
+      requiresReview: result.plan.requiresReview,
+      deterministicChecksCompleted,
+    },
+  });
 }
 
 export function resolveMatchingReleasePolicy(
@@ -191,16 +219,20 @@ export function createReleaseDecisionEngine(
   input: CreateReleaseDecisionEngineInput = {},
 ): ReleaseDecisionEngine {
   const policies = input.policies ?? [createFirstHardGatewayReleasePolicy()];
+  const decisionLog = input.decisionLog;
 
   return {
     evaluate(request: ReleaseEvaluationRequest): ReleaseEvaluationResult {
-      return evaluateReleaseDecisionSkeleton(request, policies);
+      const result = evaluateReleaseDecisionSkeleton(request, policies);
+      logEvaluation(decisionLog, request, result, 'policy-resolution', false);
+      return result;
     },
     evaluateWithDeterministicChecks(
       request: ReleaseEvaluationRequest,
       observation: DeterministicCheckObservation,
     ): ReleaseDeterministicEvaluationResult {
       const initial = evaluateReleaseDecisionSkeleton(request, policies);
+      logEvaluation(decisionLog, request, initial, 'policy-resolution', false);
 
       if (!initial.policyMatched || initial.matchedPolicyId === null) {
         return {
@@ -219,8 +251,7 @@ export function createReleaseDecisionEngine(
 
       const report = runDeterministicReleaseChecks(matchedPolicy, initial.decision, observation);
       const decision = applyDeterministicCheckReport(initial.decision, report);
-
-      return {
+      const finalResult: ReleaseDeterministicEvaluationResult = {
         version: initial.version,
         matchedPolicyId: initial.matchedPolicyId,
         policyMatched: true,
@@ -234,6 +265,8 @@ export function createReleaseDecisionEngine(
         },
         deterministicChecksCompleted: true,
       };
+      logEvaluation(decisionLog, request, finalResult, 'deterministic-checks', true);
+      return finalResult;
     },
   };
 }

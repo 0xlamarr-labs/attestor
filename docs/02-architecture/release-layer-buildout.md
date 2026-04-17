@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 8 |
+| Completed | 9 |
 | In progress | 0 |
-| Not started | 16 |
+| Not started | 15 |
 
 ## Frozen Step List
 
@@ -53,7 +53,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 06 | complete | Build the release policy language v1 | `src/release-kernel/release-policy.ts`, `tests/release-kernel-release-policy.test.ts` | Versioned release policies now express scope, output contract, capability boundary, acceptance rules, and release requirements in a declarative grammar aligned with current OPA/Cedar/validated-policy design patterns. |
 | 07 | complete | Build the release decision engine skeleton | `src/release-kernel/release-decision-engine.ts`, `tests/release-kernel-release-decision-engine.test.ts` | A first-class PDP skeleton now resolves the active release policy, stamps an initial release decision, and emits the pending deterministic-check plan without yet executing the checks. |
 | 08 | complete | Implement deterministic release checks | `src/release-kernel/release-deterministic-checks.ts`, `tests/release-kernel-release-deterministic-checks.test.ts` | Deterministic contract, boundary, hash, evidence, provenance, and downstream-receipt checks now execute as a reproducible runner and can advance the PDP from planned checks into concrete release outcomes. |
-| 09 | not_started | Implement immutable release decision logging | Pending | Structured audit trail for every release evaluation. |
+| 09 | complete | Implement immutable release decision logging | `src/release-kernel/release-decision-log.ts`, `tests/release-kernel-release-decision-log.test.ts` | Append-only, hash-linked release decision events now record policy-resolution and deterministic-check phases as verifiable audit evidence, aligned with current OPA decision-log practice, current NIST log-management guidance, and current QLDB-style digest-chain verification patterns. |
 | 10 | not_started | Add shadow-mode release evaluation | Pending | Observe without blocking the downstream path. |
 | 11 | not_started | Canonicalize and hash releasable outputs | Pending | Stable `outputHash` and `consequenceHash` generation. |
 | 12 | not_started | Implement signed release token issuance | Pending | Short-lived authorization artifact. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 09 is next. The goal is to implement immutable release decision logging so every evaluation and deterministic outcome becomes durable audit evidence.
+Step 10 is next. The goal is to add shadow-mode release evaluation so the first hard gateway wedge can be observed safely before fail-closed enforcement.
