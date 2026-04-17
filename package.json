@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/financial/financial.test.ts && tsx src/signing/signing.test.ts && tsx tests/account-session-cookie-security.test.ts && tsx tests/stripe-commercial-config.test.ts && tsx tests/stripe-webhook-events.test.ts && tsx tests/proof-showcase.test.ts && tsx tests/financial-reporting-acceptance-surface.test.ts && tsx tests/release-kernel-types.test.ts && tsx tests/release-kernel-object-model.test.ts && tsx tests/release-kernel-consequence-rollout.test.ts && tsx tests/release-kernel-risk-controls.test.ts && tsx tests/release-kernel-first-hard-gateway-wedge.test.ts && tsx tests/release-kernel-release-policy.test.ts && tsx tests/release-kernel-release-decision-engine.test.ts",
+    "test": "tsx src/financial/financial.test.ts && tsx src/signing/signing.test.ts && tsx tests/account-session-cookie-security.test.ts && tsx tests/stripe-commercial-config.test.ts && tsx tests/stripe-webhook-events.test.ts && tsx tests/proof-showcase.test.ts && tsx tests/financial-reporting-acceptance-surface.test.ts && tsx tests/release-kernel-types.test.ts && tsx tests/release-kernel-object-model.test.ts && tsx tests/release-kernel-consequence-rollout.test.ts && tsx tests/release-kernel-risk-controls.test.ts && tsx tests/release-kernel-first-hard-gateway-wedge.test.ts && tsx tests/release-kernel-release-policy.test.ts && tsx tests/release-kernel-release-decision-engine.test.ts && tsx tests/release-kernel-release-deterministic-checks.test.ts",
     "test:financial": "tsx src/financial/financial.test.ts",
     "test:signing": "tsx src/signing/signing.test.ts",
     "test:stripe-commercial": "tsx tests/stripe-commercial-config.test.ts",

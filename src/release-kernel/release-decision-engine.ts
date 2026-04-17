@@ -5,6 +5,11 @@ import type {
   ReleaseTargetReference,
 } from './object-model.js';
 import { createReleaseDecisionSkeleton } from './object-model.js';
+import type { DeterministicCheckObservation } from './release-deterministic-checks.js';
+import {
+  applyDeterministicCheckReport,
+  runDeterministicReleaseChecks,
+} from './release-deterministic-checks.js';
 import type { DeterministicControlCategory } from './risk-controls.js';
 import type { ReleasePolicyDefinition } from './release-policy.js';
 import {
@@ -28,6 +33,7 @@ export type ReleaseEvaluationPhase =
   | 'policy-resolution'
   | 'deterministic-checks'
   | 'review'
+  | 'terminal-accept'
   | 'terminal-deny';
 
 export interface ReleaseEvaluationRequest {
@@ -57,8 +63,16 @@ export interface ReleaseEvaluationResult {
   readonly plan: ReleaseEvaluationPlan;
 }
 
+export interface ReleaseDeterministicEvaluationResult extends ReleaseEvaluationResult {
+  readonly deterministicChecksCompleted: boolean;
+}
+
 export interface ReleaseDecisionEngine {
   evaluate(input: ReleaseEvaluationRequest): ReleaseEvaluationResult;
+  evaluateWithDeterministicChecks(
+    input: ReleaseEvaluationRequest,
+    observation: DeterministicCheckObservation,
+  ): ReleaseDeterministicEvaluationResult;
 }
 
 export interface CreateReleaseDecisionEngineInput {
@@ -181,6 +195,45 @@ export function createReleaseDecisionEngine(
   return {
     evaluate(request: ReleaseEvaluationRequest): ReleaseEvaluationResult {
       return evaluateReleaseDecisionSkeleton(request, policies);
+    },
+    evaluateWithDeterministicChecks(
+      request: ReleaseEvaluationRequest,
+      observation: DeterministicCheckObservation,
+    ): ReleaseDeterministicEvaluationResult {
+      const initial = evaluateReleaseDecisionSkeleton(request, policies);
+
+      if (!initial.policyMatched || initial.matchedPolicyId === null) {
+        return {
+          ...initial,
+          deterministicChecksCompleted: false,
+        };
+      }
+
+      const matchedPolicy = resolveMatchingReleasePolicy(policies, request);
+      if (!matchedPolicy) {
+        return {
+          ...initial,
+          deterministicChecksCompleted: false,
+        };
+      }
+
+      const report = runDeterministicReleaseChecks(matchedPolicy, initial.decision, observation);
+      const decision = applyDeterministicCheckReport(initial.decision, report);
+
+      return {
+        version: initial.version,
+        matchedPolicyId: initial.matchedPolicyId,
+        policyMatched: true,
+        decision,
+        plan: {
+          phase: report.nextPhase,
+          pendingChecks: [],
+          pendingEvidenceKinds: [],
+          requiresReview: report.nextPhase === 'review',
+          policyId: initial.matchedPolicyId,
+        },
+        deterministicChecksCompleted: true,
+      };
     },
   };
 }

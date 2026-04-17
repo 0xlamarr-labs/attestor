@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 7 |
+| Completed | 8 |
 | In progress | 0 |
-| Not started | 17 |
+| Not started | 16 |
 
 ## Frozen Step List
 
@@ -52,7 +52,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 05 | complete | Choose the first hard gateway wedge | `src/release-kernel/first-hard-gateway-wedge.ts`, `tests/release-kernel-first-hard-gateway-wedge.test.ts` | The first enforceable path is now frozen as `AI output -> structured financial record release`, with explicit in-scope, out-of-scope, and fail-closed success criteria anchored to current SEC/ESMA/EBA structured reporting surfaces. |
 | 06 | complete | Build the release policy language v1 | `src/release-kernel/release-policy.ts`, `tests/release-kernel-release-policy.test.ts` | Versioned release policies now express scope, output contract, capability boundary, acceptance rules, and release requirements in a declarative grammar aligned with current OPA/Cedar/validated-policy design patterns. |
 | 07 | complete | Build the release decision engine skeleton | `src/release-kernel/release-decision-engine.ts`, `tests/release-kernel-release-decision-engine.test.ts` | A first-class PDP skeleton now resolves the active release policy, stamps an initial release decision, and emits the pending deterministic-check plan without yet executing the checks. |
-| 08 | not_started | Implement deterministic release checks | Pending | Schema checks, capability checks, consequence-target checks. |
+| 08 | complete | Implement deterministic release checks | `src/release-kernel/release-deterministic-checks.ts`, `tests/release-kernel-release-deterministic-checks.test.ts` | Deterministic contract, boundary, hash, evidence, provenance, and downstream-receipt checks now execute as a reproducible runner and can advance the PDP from planned checks into concrete release outcomes. |
 | 09 | not_started | Implement immutable release decision logging | Pending | Structured audit trail for every release evaluation. |
 | 10 | not_started | Add shadow-mode release evaluation | Pending | Observe without blocking the downstream path. |
 | 11 | not_started | Canonicalize and hash releasable outputs | Pending | Stable `outputHash` and `consequenceHash` generation. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 08 is next. The goal is to implement deterministic release checks so the decision engine can move from policy-match planning into actual bounded release validation.
+Step 09 is next. The goal is to implement immutable release decision logging so every evaluation and deterministic outcome becomes durable audit evidence.
