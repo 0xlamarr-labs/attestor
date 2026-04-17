@@ -214,7 +214,7 @@ export function retentionClassForRiskClass(riskClass: RiskClass): EvidenceRetent
   }
 }
 
-function defaultTtlSecondsForRiskClass(riskClass: RiskClass): number {
+export function defaultReleaseTokenTtlSecondsForRiskClass(riskClass: RiskClass): number {
   switch (riskClass) {
     case 'R0':
       return 1800;
@@ -249,7 +249,7 @@ export function defaultReleaseConditions(
   createdAtIso: string,
 ): ReleaseConditions {
   const createdAt = new Date(createdAtIso);
-  const ttlSeconds = defaultTtlSecondsForRiskClass(riskClass);
+  const ttlSeconds = defaultReleaseTokenTtlSecondsForRiskClass(riskClass);
   const expiresAt = new Date(createdAt.getTime() + ttlSeconds * 1000).toISOString();
 
   return {
