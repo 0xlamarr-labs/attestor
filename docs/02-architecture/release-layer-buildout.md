@@ -37,9 +37,9 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | Metric | Value |
 |---|---|
 | Total frozen steps | 24 |
-| Completed | 10 |
+| Completed | 11 |
 | In progress | 0 |
-| Not started | 14 |
+| Not started | 13 |
 
 ## Frozen Step List
 
@@ -55,7 +55,7 @@ This file is the frozen implementation list for turning Attestor into a real rel
 | 08 | complete | Implement deterministic release checks | `src/release-kernel/release-deterministic-checks.ts`, `tests/release-kernel-release-deterministic-checks.test.ts` | Deterministic contract, boundary, hash, evidence, provenance, and downstream-receipt checks now execute as a reproducible runner and can advance the PDP from planned checks into concrete release outcomes. |
 | 09 | complete | Implement immutable release decision logging | `src/release-kernel/release-decision-log.ts`, `tests/release-kernel-release-decision-log.test.ts` | Append-only, hash-linked release decision events now record policy-resolution and deterministic-check phases as verifiable audit evidence, aligned with current OPA decision-log practice, current NIST log-management guidance, and current QLDB-style digest-chain verification patterns. |
 | 10 | complete | Add shadow-mode release evaluation | `src/release-kernel/release-shadow-mode.ts`, `tests/release-kernel-release-shadow-mode.test.ts` | Shadow-mode evaluation now computes the full would-decision, emits pass-through-with-warning semantics, and annotates what hard enforcement would have required, following current warn/audit-first policy rollout patterns from current Kubernetes admission policy guidance and current proxy/authz dry-run practices. |
-| 11 | not_started | Canonicalize and hash releasable outputs | Pending | Stable `outputHash` and `consequenceHash` generation. |
+| 11 | complete | Canonicalize and hash releasable outputs | `src/release-kernel/release-canonicalization.ts`, `tests/release-kernel-release-canonicalization.test.ts` | Stable canonical JSON envelopes and SHA-256 release hashes now bind the output artifact contract and the downstream consequence candidate, aligned with current RFC 8785 JSON canonicalization practice, current NIST SHA-256 guidance, and current structured-output contract discipline. |
 | 12 | not_started | Implement signed release token issuance | Pending | Short-lived authorization artifact. |
 | 13 | not_started | Implement downstream verification SDK/middleware | Pending | `no token -> no release` must be easy to adopt. |
 | 14 | not_started | Enforce one finance record path end to end | Pending | First fail-closed gateway path. |
@@ -72,4 +72,4 @@ This file is the frozen implementation list for turning Attestor into a real rel
 
 ## Immediate Next Step
 
-Step 11 is next. The goal is to canonicalize and hash releasable outputs so release decisions, tokens, and downstream verification all bind to the same stable artifact representation.
+Step 12 is next. The goal is to implement signed release token issuance so accepted release decisions can become short-lived authorization artifacts for downstream enforcement.
