@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 7 |
+| Completed | 8 |
 | In progress | 0 |
-| Not started | 13 |
+| Not started | 12 |
 
 ## Frozen Step List
 
@@ -73,7 +73,7 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | 05 | complete | Implement policy-bundle signing and verification | `src/release-policy-control-plane/bundle-signing.ts`, `tests/release-policy-control-plane-bundle-signing.test.ts` | Policy bundles now have real DSSE-style signing and verification with explicit verification-key exports, signature-record coherence checks, wrong-key failure, payload-tamper rejection, and bundle-reference binding enforcement. |
 | 06 | complete | Build the policy store abstraction | `src/release-policy-control-plane/store.ts`, `tests/release-policy-control-plane-store.test.ts` | The control plane now has an explicit repository contract for pack metadata, bundle history, signed bundle records, activation history, and metadata snapshots, with both in-memory and file-backed first-slice implementations. |
 | 07 | complete | Build activation and rollback records | `src/release-policy-control-plane/activation-records.ts`, `tests/release-policy-control-plane-activation-records.test.ts` | Activation records now carry explicit rollout mode, reason code, operation type, supersession link, and rollback target fields, with lifecycle helpers that stage candidates, supersede prior exact-scope activations, and create rollback replacements on top of the control-plane store. |
-| 08 | not_started | Add discovery and bundle-resolution surface | Pending | Introduce a discovery contract that tells consumers which bundle to load and under what labels/scope, aligned with modern policy-distribution practice. |
+| 08 | complete | Add discovery and bundle-resolution surface | `src/release-policy-control-plane/discovery.ts`, `tests/release-policy-control-plane-discovery.test.ts` | The control plane now has a first-class discovery surface with reserved scope labels, static vs scoped-active discovery handling, explicit bundle resource descriptors, and fail-closed bundle-resolution results for resolved, ambiguous, no-match, and missing-bundle cases. |
 | 09 | not_started | Build the active policy resolver | Pending | Replace direct policy-factory selection with a control-plane-backed resolver that returns the effective active policy bundle for a request scope. |
 | 10 | not_started | Add policy simulation and dry-run API | Pending | Operators need to ask “what would this policy do?” before activation; simulation must become a first-class control-plane capability. |
 | 11 | not_started | Add policy diff and impact summaries | Pending | Show semantic differences between policy versions, affected scopes, and consequence/risk changes before rollout. |
@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-Step 08 is next. The goal is to add discovery and bundle-resolution surfaces on top of the signed bundle store and activation lifecycle.
+Step 09 is next. The goal is to build the active policy resolver on top of the new discovery and bundle-resolution surface.
