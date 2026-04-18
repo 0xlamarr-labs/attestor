@@ -127,9 +127,16 @@ export const releaseLayer = Object.freeze({
 
 export type ReleaseLayer = typeof releaseLayer;
 export type ReleaseActorReference = model.ReleaseActorReference;
+export type OutputContractDescriptor = vocabulary.OutputContractDescriptor;
+export type CapabilityBoundaryDescriptor = vocabulary.CapabilityBoundaryDescriptor;
+export type ReleaseTargetKind = model.ReleaseTargetKind;
 export type ReleasePolicyDefinition = policy.ReleasePolicyDefinition;
 export type ReleasePolicyRolloutDefinition = policyRollout.ReleasePolicyRolloutDefinition;
 export type ReleasePolicyRolloutMode = policyRollout.ReleasePolicyRolloutMode;
+export type ReleasePolicyRolloutEvaluationContext =
+  policyRollout.ReleasePolicyRolloutEvaluationContext;
+export type ReleasePolicyRolloutResolution =
+  policyRollout.ReleasePolicyRolloutResolution;
 
 export function releaseLayerPublicSurface(): ReleaseLayerPublicSurfaceDescriptor {
   return Object.freeze({
