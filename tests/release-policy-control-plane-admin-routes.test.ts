@@ -16,6 +16,10 @@ import {
   type PolicyControlPlaneStore,
 } from '../src/release-policy-control-plane/store.js';
 import {
+  createInMemoryPolicyActivationApprovalStore,
+  type PolicyActivationApprovalStore,
+} from '../src/release-policy-control-plane/activation-approvals.js';
+import {
   createInMemoryPolicyMutationAuditLogWriter,
   type PolicyMutationAuditLogWriter,
 } from '../src/release-policy-control-plane/audit-log.js';
@@ -26,6 +30,7 @@ import { policy } from '../src/release-layer/index.js';
 type TestAppFixture = {
   app: Hono;
   store: PolicyControlPlaneStore;
+  approvalStore: PolicyActivationApprovalStore;
   auditLog: PolicyMutationAuditLogWriter;
   adminAuditRecords: Array<Record<string, unknown>>;
 };
@@ -156,6 +161,7 @@ function sampleResolverInput() {
 function createFixture(options?: { idempotency?: boolean }): TestAppFixture {
   const app = new Hono();
   const store = createInMemoryPolicyControlPlaneStore();
+  const approvalStore = createInMemoryPolicyActivationApprovalStore();
   const auditLog = createInMemoryPolicyMutationAuditLogWriter();
   const adminAuditRecords: Array<Record<string, unknown>> = [];
   const idempotency = new Map<string, {
@@ -173,6 +179,7 @@ function createFixture(options?: { idempotency?: boolean }): TestAppFixture {
         : c.json({ error: 'Valid admin API key required.' }, 401);
     },
     policyControlPlaneStore: store,
+    policyActivationApprovalStore: approvalStore,
     policyMutationAuditLog: auditLog,
     adminMutationRequest: options?.idempotency
       ? async (c, routeId, requestPayload) => {
@@ -213,7 +220,7 @@ function createFixture(options?: { idempotency?: boolean }): TestAppFixture {
       : undefined,
   });
 
-  return { app, store, auditLog, adminAuditRecords };
+  return { app, store, approvalStore, auditLog, adminAuditRecords };
 }
 
 async function requestJson(
@@ -256,6 +263,66 @@ async function publishBundleThroughRoutes(fixture: TestAppFixture) {
   return bundle;
 }
 
+async function requestAndApproveActivation(fixture: TestAppFixture): Promise<string> {
+  const request = await requestJson(fixture.app, '/api/v1/admin/release-policy/activation-approvals', {
+    method: 'POST',
+    headers: adminHeaders({
+      'x-attestor-admin-actor-id': 'requester_policy_admin',
+      'x-attestor-admin-actor-role': 'policy-admin',
+    }),
+    body: {
+      approvalRequestId: 'approval_prod_current',
+      packId: 'finance-core',
+      bundleId: 'bundle_finance_core_2026_04_18',
+      target: sampleTarget(),
+      rationale: 'Request policy activation approval.',
+      requestedAt: '2026-04-18T09:08:00.000Z',
+      expiresAt: '2026-04-19T09:08:00.000Z',
+    },
+  });
+  assert.equal(request.status, 201);
+  assert.equal(request.body.approvalRequest.state, 'pending');
+  assert.equal(request.body.approvalRequest.requirement.requiredApprovals, 2);
+
+  const first = await requestJson(
+    fixture.app,
+    '/api/v1/admin/release-policy/activation-approvals/approval_prod_current/approve',
+    {
+      method: 'POST',
+      headers: adminHeaders({
+        'x-attestor-admin-actor-id': 'risk_owner',
+        'x-attestor-admin-actor-role': 'risk-owner',
+      }),
+      body: {
+        rationale: 'Risk owner approves activation.',
+        decidedAt: '2026-04-18T09:09:00.000Z',
+      },
+    },
+  );
+  assert.equal(first.status, 200);
+  assert.equal(first.body.approvalRequest.state, 'pending');
+
+  const second = await requestJson(
+    fixture.app,
+    '/api/v1/admin/release-policy/activation-approvals/approval_prod_current/approve',
+    {
+      method: 'POST',
+      headers: adminHeaders({
+        'x-attestor-admin-actor-id': 'compliance_officer',
+        'x-attestor-admin-actor-role': 'compliance-officer',
+      }),
+      body: {
+        rationale: 'Compliance approves activation.',
+        decidedAt: '2026-04-18T09:10:00.000Z',
+      },
+    },
+  );
+  assert.equal(second.status, 200);
+  assert.equal(second.body.approvalRequest.state, 'approved');
+
+  return 'approval_prod_current';
+}
+
 async function testAdminAuthIsRequired(): Promise<void> {
   const fixture = createFixture();
   const response = await requestJson(fixture.app, '/api/v1/admin/release-policy/packs', {
@@ -288,7 +355,7 @@ async function testPackAndBundleSurfaces(): Promise<void> {
   assert.equal(detail.body.bundle.artifact.payloadDigest, bundle.artifact.payloadDigest);
 }
 
-async function testActivationAndRollbackSurfaces(): Promise<void> {
+async function testActivationRequiresApprovalForR4(): Promise<void> {
   const fixture = createFixture();
   await publishBundleThroughRoutes(fixture);
 
@@ -298,6 +365,46 @@ async function testActivationAndRollbackSurfaces(): Promise<void> {
       activationId: 'activation_prod_current',
       packId: 'finance-core',
       bundleId: 'bundle_finance_core_2026_04_18',
+      target: sampleTarget(),
+      rationale: 'Promote finance record release policy.',
+    },
+  });
+
+  assert.equal(activation.status, 409);
+  assert.equal(activation.body.approval.status, 'approval-required');
+  assert.equal(fixture.store.listActivations().length, 0);
+}
+
+async function testApprovalRoutesEnforceDualReview(): Promise<void> {
+  const fixture = createFixture();
+  await publishBundleThroughRoutes(fixture);
+  const approvalRequestId = await requestAndApproveActivation(fixture);
+  const listed = await requestJson(
+    fixture.app,
+    '/api/v1/admin/release-policy/activation-approvals?state=approved',
+  );
+
+  assert.equal(approvalRequestId, 'approval_prod_current');
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.approvalRequests.length, 1);
+  assert.deepEqual(
+    listed.body.approvalRequests[0].approvedReviewerIds,
+    ['compliance_officer', 'risk_owner'],
+  );
+}
+
+async function testActivationAndRollbackSurfaces(): Promise<void> {
+  const fixture = createFixture();
+  await publishBundleThroughRoutes(fixture);
+  const approvalRequestId = await requestAndApproveActivation(fixture);
+
+  const activation = await requestJson(fixture.app, '/api/v1/admin/release-policy/activations', {
+    method: 'POST',
+    body: {
+      activationId: 'activation_prod_current',
+      packId: 'finance-core',
+      bundleId: 'bundle_finance_core_2026_04_18',
+      approvalRequestId,
       target: sampleTarget(),
       rationale: 'Promote finance record release policy.',
     },
@@ -322,19 +429,29 @@ async function testActivationAndRollbackSurfaces(): Promise<void> {
   assert.equal(activations.body.activations.length, 2);
   assert.deepEqual(
     fixture.auditLog.entries().map((entry) => entry.action),
-    ['create-pack', 'publish-bundle', 'activate-bundle', 'rollback-activation'],
+    [
+      'create-pack',
+      'publish-bundle',
+      'request-activation-approval',
+      'approve-activation',
+      'approve-activation',
+      'activate-bundle',
+      'rollback-activation',
+    ],
   );
 }
 
 async function testResolveAndSimulationSurfaces(): Promise<void> {
   const fixture = createFixture();
   await publishBundleThroughRoutes(fixture);
+  const approvalRequestId = await requestAndApproveActivation(fixture);
   await requestJson(fixture.app, '/api/v1/admin/release-policy/activations', {
     method: 'POST',
     body: {
       activationId: 'activation_prod_current',
       packId: 'finance-core',
       bundleId: 'bundle_finance_core_2026_04_18',
+      approvalRequestId,
       target: sampleTarget(),
       rationale: 'Promote finance record release policy.',
     },
@@ -411,11 +528,13 @@ async function testIdempotentMutationReplayDoesNotAppendAuditTwice(): Promise<vo
 async function run(): Promise<void> {
   await testAdminAuthIsRequired();
   await testPackAndBundleSurfaces();
+  await testActivationRequiresApprovalForR4();
+  await testApprovalRoutesEnforceDualReview();
   await testActivationAndRollbackSurfaces();
   await testResolveAndSimulationSurfaces();
   await testAuditSurfaceFiltersAndSnapshotDisclosure();
   await testIdempotentMutationReplayDoesNotAppendAuditTwice();
-  console.log('Release policy control-plane admin-route tests: 6 passed, 0 failed');
+  console.log('Release policy control-plane admin-route tests: 8 passed, 0 failed');
 }
 
 await run();

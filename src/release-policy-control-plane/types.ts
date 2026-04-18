@@ -59,6 +59,9 @@ export type PolicyScopeDimension = typeof POLICY_SCOPE_DIMENSIONS[number];
 export const POLICY_MUTATION_ACTIONS = [
   'create-pack',
   'publish-bundle',
+  'request-activation-approval',
+  'approve-activation',
+  'reject-activation',
   'activate-bundle',
   'rollback-activation',
   'freeze-scope',

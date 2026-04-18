@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 14 |
+| Completed | 15 |
 | In progress | 0 |
-| Not started | 6 |
+| Not started | 5 |
 
 ## Frozen Step List
 
@@ -80,7 +80,7 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | 12 | complete | Build a policy test-pack format and runner | `src/release-policy-control-plane/test-pack.ts`, `tests/release-policy-control-plane-test-pack.test.ts` | Candidate bundles can now carry executable pre-activation expectations through versioned policy test packs. The runner executes required and advisory cases through the same dry-run preview path as the live control plane and returns a fail-closed run result that can gate activation on reproducible policy checks. |
 | 13 | complete | Add immutable policy mutation audit logging | `src/release-policy-control-plane/audit-log.ts`, `tests/release-policy-control-plane-audit-log.test.ts` | Policy lifecycle mutations now have a separate hash-linked audit chain with in-memory and file-backed writers, stable mutation snapshots, tamper detection, append-only verification, and subject helpers for pack, bundle, and activation events. |
 | 14 | complete | Add admin HTTP surfaces for policy control | `src/service/http/routes/release-policy-control-routes.ts`, `tests/release-policy-control-plane-admin-routes.test.ts` | Operators now have explicit admin-only policy-control HTTP routes for pack and bundle/version inspection, pack upsert, bundle publish, active resolution, candidate simulation, activation, rollback, and policy mutation audit verification, wired through the same store, simulation, activation, and tamper-evident audit primitives as the control plane. |
-| 15 | not_started | Add reviewer approval for policy activation | Pending | High-impact policy changes should require named review and, where needed, dual approval before they can become active. |
+| 15 | complete | Add reviewer approval for policy activation | `src/release-policy-control-plane/activation-approvals.ts`, `tests/release-policy-control-plane-activation-approvals.test.ts`, `src/service/http/routes/release-policy-control-routes.ts` | High-impact policy activations now require a first-class approval request before promotion. R3 changes require named review, R4 changes require dual approval, self-approval is rejected, approval expiry and bundle/target mismatches fail closed, and the admin activation route now enforces the approval gate before mutating active policy state. |
 | 16 | not_started | Add emergency rollback and freeze switch | Pending | Control-plane operations need an explicit break-glass rollback/freeze path so bad policy rollouts can be contained immediately. |
 | 17 | not_started | Add bundle caching, persistence, and freshness controls | Pending | Consumers need stable ETag/version/freshness semantics so discovery and bundle loading stay deterministic under failure and restart. |
 | 18 | not_started | Migrate the finance proving policies onto the control plane | Pending | The current finance record/communication/action policies should be served through the control plane, not through direct in-process factory selection. |
@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-Step 15 is next. The goal is to add reviewer approval for policy activation so high-impact policy changes require named review and, where needed, dual approval before becoming active.
+Step 16 is next. The goal is to add emergency rollback and freeze switch support so bad policy rollouts can be contained immediately through an explicit break-glass path.

@@ -78,6 +78,7 @@ import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { decision, decisionLog, evidence, introspection, policy, review, shadow, token, verification } from '../release-layer/index.js';
 import { action as financeActionRelease, communication as financeCommunicationRelease, financeReleasePolicies, record as financeRecordRelease } from '../release-layer/finance.js';
+import { createFileBackedPolicyActivationApprovalStore } from '../release-policy-control-plane/activation-approvals.js';
 import { createFileBackedPolicyControlPlaneStore } from '../release-policy-control-plane/store.js';
 import { createFileBackedPolicyMutationAuditLogWriter } from '../release-policy-control-plane/audit-log.js';
 import {
@@ -567,6 +568,7 @@ const apiReleaseEvidencePackIssuer = createReleaseEvidencePackIssuer({
 });
 const apiReleaseVerificationKeyPromise = apiReleaseTokenIssuer.exportVerificationKey();
 const policyControlPlaneStore = createFileBackedPolicyControlPlaneStore();
+const policyActivationApprovalStore = createFileBackedPolicyActivationApprovalStore();
 const policyMutationAuditLog = createFileBackedPolicyMutationAuditLogWriter();
 
 // Keyless signer: per-request ephemeral keys with CA-issued short-lived certs (Sigstore pattern)
@@ -1857,6 +1859,7 @@ const routeDeps = {
   apiReleaseEvidencePackIssuer,
   apiReleaseIntrospectionStore,
   policyControlPlaneStore,
+  policyActivationApprovalStore,
   policyMutationAuditLog,
   consumePipelineRunState,
   schemaAttestationSummaryFromFull,
