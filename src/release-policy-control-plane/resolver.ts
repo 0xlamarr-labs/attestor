@@ -42,6 +42,7 @@ export const ACTIVE_POLICY_RESOLVER_SPEC_VERSION =
 
 export type ActivePolicyResolutionStatus =
   | 'resolved'
+  | 'policy-scope-frozen'
   | 'bundle-resolution-failed'
   | 'incompatible-bundle'
   | 'no-policy-entry'
@@ -197,6 +198,15 @@ export function resolveActivePolicy(
     target: input.target,
   });
   const bundleRecord = bundleResolution.selectedCandidate?.bundleRecord ?? null;
+
+  if (bundleResolution.status === 'frozen') {
+    return failResult(
+      input,
+      bundleResolution,
+      bundleRecord,
+      'policy-scope-frozen',
+    );
+  }
 
   if (bundleResolution.status !== 'resolved' || !bundleRecord) {
     return failResult(

@@ -25,6 +25,8 @@ export type AdminAuditAction =
   | 'policy_activation.approval_rejected'
   | 'policy_activation.approval_requested'
   | 'policy_activation.activated'
+  | 'policy_activation.emergency_frozen'
+  | 'policy_activation.emergency_rolled_back'
   | 'policy_activation.rolled_back'
   | 'policy_bundle.published'
   | 'policy_pack.upserted'

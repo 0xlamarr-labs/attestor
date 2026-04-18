@@ -253,6 +253,81 @@ function testScopedActiveResolutionSelectsMostSpecificBundle(): void {
   assert.equal(result.labels.values['cohort'], 'wave-a');
 }
 
+function testFrozenScopeFailsClosedEvenWithMoreSpecificActiveBundle(): void {
+  const store = createInMemoryPolicyControlPlaneStore();
+  const tenantWide = createSignedBundle('bundle_finance_tenant_freeze', {
+    environment: 'prod-eu',
+    tenantId: 'tenant-finance',
+    domainId: 'finance',
+    consequenceType: 'record',
+  });
+  const accountSpecific = createSignedBundle('bundle_finance_account_active', {
+    environment: 'prod-eu',
+    tenantId: 'tenant-finance',
+    accountId: 'account-123',
+    domainId: 'finance',
+    consequenceType: 'record',
+  });
+
+  store.upsertPack(tenantWide.pack);
+  store.upsertBundle({
+    manifest: tenantWide.manifest,
+    artifact: tenantWide.artifact,
+    signedBundle: tenantWide.signedBundle,
+  });
+  store.upsertBundle({
+    manifest: accountSpecific.manifest,
+    artifact: accountSpecific.artifact,
+    signedBundle: accountSpecific.signedBundle,
+  });
+  store.upsertActivation(
+    createPolicyActivationRecord({
+      id: 'activation-tenant-freeze',
+      state: 'frozen',
+      target: createPolicyActivationTarget({
+        environment: 'prod-eu',
+        tenantId: 'tenant-finance',
+        domainId: 'finance',
+        consequenceType: 'record',
+      }),
+      bundle: tenantWide.manifest.bundle,
+      activatedBy: {
+        id: 'incident_commander',
+        type: 'user',
+        displayName: 'Incident Commander',
+        role: 'policy-break-glass',
+      },
+      activatedAt: '2026-04-17T14:12:00.000Z',
+      rationale: 'Freeze tenant-wide record release policy.',
+      freezeReason: 'Emergency policy containment.',
+    }),
+  );
+  store.upsertActivation(
+    createActivation('activation-account-active', accountSpecific.artifact.bundleId, {
+      environment: 'prod-eu',
+      tenantId: 'tenant-finance',
+      accountId: 'account-123',
+      domainId: 'finance',
+      consequenceType: 'record',
+    }),
+  );
+
+  const result = resolvePolicyBundleForTarget(store, {
+    target: createPolicyActivationTarget({
+      environment: 'prod-eu',
+      tenantId: 'tenant-finance',
+      accountId: 'account-123',
+      domainId: 'finance',
+      consequenceType: 'record',
+    }),
+  });
+
+  assert.equal(result.status, 'frozen');
+  assert.equal(result.selectedCandidate?.activation?.state, 'frozen');
+  assert.equal(result.selectedCandidate?.activation?.freezeReason, 'Emergency policy containment.');
+  assert.equal(result.matchedCandidates.length, 2);
+}
+
 function testStaticResolutionUsesMetadataActiveBundle(): void {
   const { store, bundle } = seedStoreWithBundle('bundle_finance_static', {
     environment: 'prod-eu',
@@ -421,11 +496,12 @@ function run(): void {
   testDiscoveryLabelsCarryReservedAndCustomValues();
   testReservedDiscoveryLabelsCannotBeOverridden();
   testScopedActiveResolutionSelectsMostSpecificBundle();
+  testFrozenScopeFailsClosedEvenWithMoreSpecificActiveBundle();
   testStaticResolutionUsesMetadataActiveBundle();
   testAmbiguousTopCandidatesStayExplicit();
   testMissingBundleIsFailClosed();
   testDiscoveryDocumentCarriesResolutionContext();
-  console.log('Release policy control-plane discovery tests: 7 passed, 0 failed');
+  console.log('Release policy control-plane discovery tests: 8 passed, 0 failed');
 }
 
 run();

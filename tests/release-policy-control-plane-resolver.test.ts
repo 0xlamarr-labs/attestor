@@ -361,13 +361,68 @@ function testBundleResolutionFailurePassesThrough(): void {
   assert.equal(result.effectivePolicy, null);
 }
 
+function testFrozenBundleResolutionFailsClosedBeforePolicySelection(): void {
+  const store = createInMemoryPolicyControlPlaneStore();
+  const bundle = createSignedBundle('bundle_finance_frozen', [
+    createEntry(
+      'entry-record',
+      {
+        environment: 'prod-eu',
+        tenantId: 'tenant-finance',
+        domainId: 'finance',
+        wedgeId: 'finance.record.release',
+        consequenceType: 'record',
+        riskClass: 'R4',
+      },
+      policy.createFirstHardGatewayReleasePolicy(),
+    ),
+  ]);
+
+  store.upsertPack(bundle.pack);
+  store.upsertBundle({
+    manifest: bundle.manifest,
+    artifact: bundle.artifact,
+    signedBundle: bundle.signedBundle,
+  });
+  const frozen = createPolicyActivationRecord({
+    id: 'activation-frozen',
+    state: 'frozen',
+    target: createPolicyActivationTarget({
+      environment: 'prod-eu',
+      tenantId: 'tenant-finance',
+      domainId: 'finance',
+      consequenceType: 'record',
+    }),
+    bundle: bundle.manifest.bundle,
+    activatedBy: {
+      id: 'incident_commander',
+      type: 'user',
+      displayName: 'Incident Commander',
+      role: 'policy-break-glass',
+    },
+    activatedAt: '2026-04-18T08:20:00.000Z',
+    rationale: 'Freeze bad policy rollout.',
+    freezeReason: 'Emergency containment.',
+  });
+  store.upsertActivation(frozen);
+
+  const result = createActivePolicyResolver(store).resolve(sampleResolverInput());
+
+  assert.equal(result.status, 'policy-scope-frozen');
+  assert.equal(result.bundleResolution.status, 'frozen');
+  assert.equal(result.bundleResolution.selectedCandidate?.activationId, 'activation-frozen');
+  assert.equal(result.effectivePolicy, null);
+  assert.equal(result.rollout, null);
+}
+
 function run(): void {
   testResolvedPolicyUsesMostSpecificEntry();
   testNoPolicyEntryFailsClosedWhenBundleExists();
   testAmbiguousEntryResolutionFailsClosed();
   testIncompatibleBundleFailsClosed();
   testBundleResolutionFailurePassesThrough();
-  console.log('Release policy control-plane resolver tests: 5 passed, 0 failed');
+  testFrozenBundleResolutionFailsClosedBeforePolicySelection();
+  console.log('Release policy control-plane resolver tests: 6 passed, 0 failed');
 }
 
 run();

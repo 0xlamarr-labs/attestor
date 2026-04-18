@@ -58,6 +58,17 @@ export interface RollbackPolicyActivationInput {
   readonly reasonCode?: string;
 }
 
+export interface FreezePolicyActivationScopeInput {
+  readonly id: string;
+  readonly target: PolicyActivationTarget;
+  readonly bundle?: PolicyBundleReference;
+  readonly activatedBy: ReleaseActorReference;
+  readonly activatedAt: string;
+  readonly freezeReason: string;
+  readonly rationale: string;
+  readonly reasonCode?: string;
+}
+
 export interface PolicyActivationLifecycleResult {
   readonly version: typeof POLICY_ACTIVATION_LIFECYCLE_SPEC_VERSION;
   readonly operationType: PolicyActivationOperationType;
@@ -95,6 +106,17 @@ export function findLatestActiveExactTargetActivation(
 ): PolicyActivationRecord | null {
   return (
     exactTargetActivations(store, target).find((record) => record.state === 'active') ?? null
+  );
+}
+
+function findLatestActiveOrFrozenExactTargetActivation(
+  store: PolicyControlPlaneStore,
+  target: PolicyActivationTarget,
+): PolicyActivationRecord | null {
+  return (
+    exactTargetActivations(store, target).find((record) =>
+      record.state === 'active' || record.state === 'frozen'
+    ) ?? null
   );
 }
 
@@ -156,7 +178,7 @@ export function activatePolicyBundle(
   store: PolicyControlPlaneStore,
   input: ActivatePolicyBundleInput,
 ): PolicyActivationLifecycleResult {
-  const currentActive = findLatestActiveExactTargetActivation(store, input.target);
+  const currentActive = findLatestActiveOrFrozenExactTargetActivation(store, input.target);
   const appliedRecord = store.upsertActivation(
     createPolicyActivationRecord({
       id: input.id,
@@ -211,7 +233,7 @@ export function rollbackPolicyActivation(
     );
   }
 
-  const currentActive = findLatestActiveExactTargetActivation(store, input.target);
+  const currentActive = findLatestActiveOrFrozenExactTargetActivation(store, input.target);
   const appliedRecord = store.upsertActivation(
     createPolicyActivationRecord({
       id: input.id,
@@ -248,5 +270,56 @@ export function rollbackPolicyActivation(
     currentActiveRecord: currentActive,
     updatedHistoricalRecord,
     rollbackTargetRecord,
+  });
+}
+
+export function freezePolicyActivationScope(
+  store: PolicyControlPlaneStore,
+  input: FreezePolicyActivationScopeInput,
+): PolicyActivationLifecycleResult {
+  const currentActive = findLatestActiveOrFrozenExactTargetActivation(store, input.target);
+  const bundle = input.bundle ?? currentActive?.bundle;
+  if (!bundle) {
+    throw new Error(
+      'Cannot freeze policy activation scope without an active policy bundle or explicit bundle reference.',
+    );
+  }
+
+  const appliedRecord = store.upsertActivation(
+    createPolicyActivationRecord({
+      id: input.id,
+      state: 'frozen',
+      operationType: 'freeze-scope',
+      target: input.target,
+      bundle,
+      activatedBy: input.activatedBy,
+      activatedAt: input.activatedAt,
+      rolloutMode: 'rolled-back',
+      reasonCode: input.reasonCode ?? 'emergency-freeze',
+      rationale: input.rationale,
+      previousActivationId: currentActive?.id ?? null,
+      freezeReason: input.freezeReason,
+    }),
+  );
+
+  const updatedHistoricalRecord =
+    currentActive && currentActive.id !== appliedRecord.id
+      ? store.upsertActivation(
+          markHistoricalActivation(
+            currentActive,
+            'superseded',
+            appliedRecord.id,
+          ),
+        )
+      : null;
+
+  return Object.freeze({
+    version: POLICY_ACTIVATION_LIFECYCLE_SPEC_VERSION,
+    operationType: appliedRecord.operationType,
+    targetLabel: appliedRecord.targetLabel,
+    appliedRecord,
+    currentActiveRecord: currentActive,
+    updatedHistoricalRecord,
+    rollbackTargetRecord: null,
   });
 }

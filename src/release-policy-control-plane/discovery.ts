@@ -5,6 +5,7 @@ import type {
   StoredPolicyBundleRecord,
 } from './store.js';
 import {
+  comparePolicyScopeMatches,
   matchPolicyScope,
   resolvePolicyActivationPrecedence,
   type PolicyScopeMatchResult,
@@ -32,7 +33,8 @@ export type PolicyBundleResolutionStatus =
   | 'resolved'
   | 'no-match'
   | 'ambiguous'
-  | 'missing-bundle';
+  | 'missing-bundle'
+  | 'frozen';
 
 export type PolicyBundleResolutionSource = 'static' | 'activation';
 
@@ -299,6 +301,9 @@ function classifyResolutionStatus(input: {
   readonly missingBundleCandidates: readonly PolicyBundleResolutionCandidate[];
   readonly matchedCandidates: readonly PolicyBundleResolutionCandidate[];
 }): PolicyBundleResolutionStatus {
+  if (input.selectedCandidate?.activation?.state === 'frozen') {
+    return 'frozen';
+  }
   if (input.ambiguousCandidates.length > 0) {
     return 'ambiguous';
   }
@@ -312,6 +317,26 @@ function classifyResolutionStatus(input: {
     return 'no-match';
   }
   return 'resolved';
+}
+
+function candidateActivationsForScopedResolution(
+  store: PolicyControlPlaneStore,
+): readonly PolicyActivationRecord[] {
+  return store
+    .listActivations()
+    .filter((activation) =>
+      activation.state === 'active' || activation.state === 'frozen'
+    );
+}
+
+function resolveFrozenPrecedence(
+  target: PolicyActivationTarget,
+  candidates: readonly PolicyActivationRecord[],
+) {
+  return resolvePolicyActivationPrecedence(
+    target,
+    candidates.filter((activation) => activation.state === 'frozen'),
+  );
 }
 
 export function createPolicyDiscoveryLabels(
@@ -368,9 +393,56 @@ export function resolvePolicyBundleForTarget(
     });
   }
 
-  const activeActivations = store
-    .listActivations()
-    .filter((activation) => activation.state === 'active');
+  const scopedActivations = candidateActivationsForScopedResolution(store);
+  const frozenPrecedence = resolveFrozenPrecedence(input.target, scopedActivations);
+  if (frozenPrecedence.matchedCandidates.length > 0) {
+    const topFrozenCandidate =
+      frozenPrecedence.winner ?? frozenPrecedence.matchedCandidates[0]!;
+    const frozenCandidate = createActivationCandidate(
+      store,
+      topFrozenCandidate.activation,
+      topFrozenCandidate.match,
+    );
+    const matchedCandidates = Object.freeze(
+      scopedActivations
+        .map((activation) => ({
+          activation,
+          match: matchPolicyScope(input.target, activation.selector),
+        }))
+        .filter((candidate) => candidate.match.matches)
+        .sort((left, right) => comparePolicyScopeMatches(left.match, right.match))
+        .map((candidate) =>
+          createActivationCandidate(store, candidate.activation, candidate.match),
+        ),
+    );
+    const missingBundleCandidates = Object.freeze(
+      matchedCandidates.filter((candidate) => candidate.bundleRecord === null),
+    );
+    const ambiguousCandidates = Object.freeze(
+      frozenPrecedence.ambiguousTopCandidates.map((candidate) =>
+        createActivationCandidate(store, candidate.activation, candidate.match),
+      ),
+    );
+
+    return Object.freeze({
+      version: POLICY_BUNDLE_RESOLUTION_SPEC_VERSION,
+      status: 'frozen',
+      storeKind: store.kind,
+      discoveryMode,
+      target: input.target,
+      targetLabel,
+      labels,
+      metadata,
+      selectedCandidate: frozenCandidate,
+      matchedCandidates,
+      ambiguousCandidates,
+      missingBundleCandidates,
+    });
+  }
+
+  const activeActivations = scopedActivations.filter(
+    (activation) => activation.state === 'active',
+  );
   const precedence = resolvePolicyActivationPrecedence(input.target, activeActivations);
   const matchedCandidates = Object.freeze(
     precedence.matchedCandidates.map((candidate) =>
@@ -445,4 +517,3 @@ export function createPolicyDiscoveryDocument(
     bundleResolution,
   });
 }
-

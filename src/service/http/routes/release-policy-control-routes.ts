@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import type { Context, Hono } from 'hono';
 import {
   activatePolicyBundle,
+  findLatestActiveExactTargetActivation,
+  freezePolicyActivationScope,
   rollbackPolicyActivation,
 } from '../../../release-policy-control-plane/activation-records.js';
 import {
@@ -77,6 +79,12 @@ type RouteDeps = {
 };
 
 const ROLLOUT_MODES = ['dry-run', 'canary', 'enforce', 'rolled-back'] as const;
+const BREAK_GLASS_ROLES = Object.freeze([
+  'policy-break-glass',
+  'security-admin',
+  'incident-commander',
+  'break-glass-admin',
+]);
 
 function noStore(c: Context): void {
   c.header('cache-control', 'no-store');
@@ -366,6 +374,47 @@ function routeAdminActor(c: Context): ReleaseActorReference {
     type: actorId === 'admin_api_key' ? 'service' : 'user',
     displayName: c.req.header('x-attestor-admin-actor-name')?.trim() || 'Policy Admin API',
     role: c.req.header('x-attestor-admin-actor-role')?.trim() || 'policy-admin',
+  };
+}
+
+function requireBreakGlassAuthorization(
+  c: Context,
+  body: JsonRecord,
+): {
+  readonly actor: ReleaseActorReference;
+  readonly reasonCode: string;
+  readonly rationale: string;
+  readonly incidentId: string | null;
+} | Response {
+  const actor = routeAdminActor(c);
+  const acknowledged =
+    body.breakGlass === true ||
+    c.req.header('x-attestor-break-glass')?.trim().toLowerCase() === 'true';
+  if (!acknowledged) {
+    return c.json({
+      error: 'Emergency policy control operations require breakGlass=true or x-attestor-break-glass: true.',
+    }, 400);
+  }
+
+  if (!BREAK_GLASS_ROLES.includes((actor.role ?? '').trim().toLowerCase())) {
+    return c.json({
+      error: `Emergency policy control operations require one of these actor roles: ${BREAK_GLASS_ROLES.join(', ')}.`,
+    }, 403);
+  }
+
+  const reasonCode = optionalString(body, 'reasonCode');
+  const rationale = optionalString(body, 'rationale');
+  if (!reasonCode || !rationale) {
+    return c.json({
+      error: 'Emergency policy control operations require non-empty reasonCode and rationale fields.',
+    }, 400);
+  }
+
+  return {
+    actor,
+    reasonCode,
+    rationale,
+    incidentId: optionalString(body, 'incidentId'),
   };
 }
 
@@ -1064,6 +1113,186 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: RouteDeps): 
           activationId: lifecycle.appliedRecord.id,
           targetLabel: lifecycle.targetLabel,
           auditEntryId: audit.entryId,
+        },
+      });
+      noStore(c);
+      return c.json(finalized, 201);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+  });
+
+  app.post('/api/v1/admin/release-policy/emergency/freeze', async (c) => {
+    const unauthorized = deps.currentAdminAuthorized(c);
+    if (unauthorized) return unauthorized;
+
+    const body = await parseJsonBody(c);
+    if (body instanceof Response) return body;
+    const breakGlass = requireBreakGlassAuthorization(c, body);
+    if (breakGlass instanceof Response) return breakGlass;
+    const routeId = 'admin.release_policy.emergency.freeze';
+    const mutation = await beginMutation(c, deps, routeId, body);
+    if (mutation instanceof Response) return mutation;
+
+    try {
+      const target = parseActivationTarget(body.target);
+      const packId = optionalString(body, 'packId');
+      const bundleId = optionalString(body, 'bundleId');
+      if ((packId && !bundleId) || (!packId && bundleId)) {
+        return c.json({ error: 'Emergency freeze requires both packId and bundleId when either is provided.' }, 400);
+      }
+
+      const currentActive = findLatestActiveExactTargetActivation(store, target);
+      const bundle =
+        packId && bundleId
+          ? findRequiredBundle(store, packId, bundleId)
+          : currentActive
+            ? findRequiredBundle(store, currentActive.bundle.packId, currentActive.bundle.bundleId)
+            : null;
+      if (!bundle) {
+        return c.json({
+          error: packId && bundleId
+            ? `Policy bundle '${bundleId}' in pack '${packId}' not found.`
+            : 'Emergency freeze requires an exact active activation or an explicit packId and bundleId.',
+        }, packId && bundleId ? 404 : 400);
+      }
+
+      const lifecycle = freezePolicyActivationScope(store, {
+        id: optionalString(body, 'activationId') ?? `freeze_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+        target,
+        bundle: bundle.manifest.bundle,
+        activatedBy: breakGlass.actor,
+        activatedAt: optionalString(body, 'activatedAt') ?? new Date().toISOString(),
+        reasonCode: breakGlass.reasonCode,
+        rationale: breakGlass.rationale,
+        freezeReason: optionalString(body, 'freezeReason') ?? breakGlass.rationale,
+      });
+      publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
+      const audit = auditLog.append({
+        occurredAt: new Date().toISOString(),
+        action: 'freeze-scope',
+        actor: breakGlass.actor,
+        subject: createPolicyMutationAuditSubjectFromActivation(lifecycle.appliedRecord),
+        reasonCode: lifecycle.appliedRecord.reasonCode,
+        rationale: lifecycle.appliedRecord.rationale,
+        mutationSnapshot: {
+          lifecycle,
+          breakGlass: {
+            actor: breakGlass.actor,
+            reasonCode: breakGlass.reasonCode,
+            incidentId: breakGlass.incidentId,
+          },
+        },
+      });
+      const responseBody = {
+        activation: activationView(lifecycle.appliedRecord),
+        lifecycle,
+        breakGlass: {
+          actor: breakGlass.actor,
+          reasonCode: breakGlass.reasonCode,
+          incidentId: breakGlass.incidentId,
+        },
+        audit: auditEntryView(audit, false),
+      };
+      const finalized = await finishMutation(deps, {
+        ...mutation,
+        routeId,
+        requestPayload: body,
+        statusCode: 201,
+        responseBody,
+        adminAuditAction: 'policy_activation.emergency_frozen',
+        target: lifecycle.appliedRecord.target,
+        metadata: {
+          activationId: lifecycle.appliedRecord.id,
+          previousActivationId: lifecycle.appliedRecord.previousActivationId,
+          targetLabel: lifecycle.targetLabel,
+          auditEntryId: audit.entryId,
+          incidentId: breakGlass.incidentId,
+        },
+      });
+      noStore(c);
+      return c.json(finalized, 201);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+  });
+
+  app.post('/api/v1/admin/release-policy/emergency/rollback', async (c) => {
+    const unauthorized = deps.currentAdminAuthorized(c);
+    if (unauthorized) return unauthorized;
+
+    const body = await parseJsonBody(c);
+    if (body instanceof Response) return body;
+    const breakGlass = requireBreakGlassAuthorization(c, body);
+    if (breakGlass instanceof Response) return breakGlass;
+    const routeId = 'admin.release_policy.emergency.rollback';
+    const mutation = await beginMutation(c, deps, routeId, body);
+    if (mutation instanceof Response) return mutation;
+
+    try {
+      const rollbackTargetId = requiredString(body, 'rollbackTargetActivationId');
+      const rollbackTarget = store.getActivation(rollbackTargetId);
+      if (!rollbackTarget) {
+        return c.json({ error: `Policy activation '${rollbackTargetId}' not found.` }, 404);
+      }
+      const lifecycle = rollbackPolicyActivation(store, {
+        id: optionalString(body, 'activationId') ?? `emergency_rollback_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
+        target: rollbackTarget.target,
+        rollbackTargetActivationId: rollbackTarget.id,
+        activatedBy: breakGlass.actor,
+        activatedAt: optionalString(body, 'activatedAt') ?? new Date().toISOString(),
+        reasonCode: breakGlass.reasonCode,
+        rationale: breakGlass.rationale,
+      });
+      const bundle = findRequiredBundle(
+        store,
+        lifecycle.appliedRecord.bundle.packId,
+        lifecycle.appliedRecord.bundle.bundleId,
+      );
+      if (bundle) {
+        publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
+      }
+      const audit = auditLog.append({
+        occurredAt: new Date().toISOString(),
+        action: 'rollback-activation',
+        actor: breakGlass.actor,
+        subject: createPolicyMutationAuditSubjectFromActivation(lifecycle.appliedRecord),
+        reasonCode: lifecycle.appliedRecord.reasonCode,
+        rationale: lifecycle.appliedRecord.rationale,
+        mutationSnapshot: {
+          lifecycle,
+          breakGlass: {
+            actor: breakGlass.actor,
+            reasonCode: breakGlass.reasonCode,
+            incidentId: breakGlass.incidentId,
+          },
+        },
+      });
+      const responseBody = {
+        activation: activationView(lifecycle.appliedRecord),
+        lifecycle,
+        breakGlass: {
+          actor: breakGlass.actor,
+          reasonCode: breakGlass.reasonCode,
+          incidentId: breakGlass.incidentId,
+        },
+        audit: auditEntryView(audit, false),
+      };
+      const finalized = await finishMutation(deps, {
+        ...mutation,
+        routeId,
+        requestPayload: body,
+        statusCode: 201,
+        responseBody,
+        adminAuditAction: 'policy_activation.emergency_rolled_back',
+        target: lifecycle.appliedRecord.target,
+        metadata: {
+          rollbackTargetActivationId: rollbackTarget.id,
+          activationId: lifecycle.appliedRecord.id,
+          replacedActivationId: lifecycle.currentActiveRecord?.id ?? null,
+          targetLabel: lifecycle.targetLabel,
+          auditEntryId: audit.entryId,
+          incidentId: breakGlass.incidentId,
         },
       });
       noStore(c);

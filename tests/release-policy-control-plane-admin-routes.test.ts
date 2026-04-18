@@ -441,6 +441,101 @@ async function testActivationAndRollbackSurfaces(): Promise<void> {
   );
 }
 
+async function testEmergencyFreezeAndRollbackRequireBreakGlassAndFailClosed(): Promise<void> {
+  const fixture = createFixture({ idempotency: true });
+  await publishBundleThroughRoutes(fixture);
+  const approvalRequestId = await requestAndApproveActivation(fixture);
+  await requestJson(fixture.app, '/api/v1/admin/release-policy/activations', {
+    method: 'POST',
+    body: {
+      activationId: 'activation_prod_current',
+      packId: 'finance-core',
+      bundleId: 'bundle_finance_core_2026_04_18',
+      approvalRequestId,
+      target: sampleTarget(),
+      rationale: 'Promote finance record release policy.',
+    },
+  });
+
+  const blockedFreeze = await requestJson(fixture.app, '/api/v1/admin/release-policy/emergency/freeze', {
+    method: 'POST',
+    headers: adminHeaders({
+      'x-attestor-admin-actor-id': 'ordinary_policy_admin',
+      'x-attestor-admin-actor-role': 'policy-admin',
+    }),
+    body: {
+      activationId: 'freeze_blocked',
+      target: sampleTarget(),
+      breakGlass: true,
+      reasonCode: 'incident-freeze',
+      rationale: 'Attempt emergency freeze with the wrong role.',
+    },
+  });
+  const freeze = await requestJson(fixture.app, '/api/v1/admin/release-policy/emergency/freeze', {
+    method: 'POST',
+    headers: adminHeaders({
+      'x-attestor-admin-actor-id': 'incident_commander',
+      'x-attestor-admin-actor-role': 'policy-break-glass',
+      'x-attestor-break-glass': 'true',
+    }),
+    body: {
+      activationId: 'freeze_prod_current',
+      target: sampleTarget(),
+      breakGlass: true,
+      reasonCode: 'incident-freeze',
+      rationale: 'Freeze policy resolution while the rollout is investigated.',
+      freezeReason: 'Suspected bad policy rollout.',
+      incidentId: 'INC-2026-04-18-001',
+    },
+  });
+  const frozenResolution = await requestJson(fixture.app, '/api/v1/admin/release-policy/resolve', {
+    method: 'POST',
+    body: { resolverInput: sampleResolverInput() },
+  });
+  const rollback = await requestJson(fixture.app, '/api/v1/admin/release-policy/emergency/rollback', {
+    method: 'POST',
+    headers: adminHeaders({
+      'x-attestor-admin-actor-id': 'incident_commander',
+      'x-attestor-admin-actor-role': 'policy-break-glass',
+      'x-attestor-break-glass': 'true',
+    }),
+    body: {
+      activationId: 'activation_prod_emergency_rollback',
+      rollbackTargetActivationId: 'activation_prod_current',
+      breakGlass: true,
+      reasonCode: 'incident-rollback',
+      rationale: 'Restore last known good policy after emergency freeze.',
+      incidentId: 'INC-2026-04-18-001',
+    },
+  });
+  const restoredResolution = await requestJson(fixture.app, '/api/v1/admin/release-policy/resolve', {
+    method: 'POST',
+    body: { resolverInput: sampleResolverInput() },
+  });
+
+  assert.equal(blockedFreeze.status, 403);
+  assert.equal(freeze.status, 201);
+  assert.equal(freeze.body.activation.state, 'frozen');
+  assert.equal(freeze.body.activation.operationType, 'freeze-scope');
+  assert.equal(frozenResolution.body.resolution.status, 'policy-scope-frozen');
+  assert.equal(rollback.status, 201);
+  assert.equal(rollback.body.activation.operationType, 'rollback-activation');
+  assert.equal(fixture.store.getActivation('freeze_prod_current')?.state, 'rolled-back');
+  assert.equal(restoredResolution.body.resolution.status, 'resolved');
+  assert.equal(
+    fixture.adminAuditRecords.some((record) => record.action === 'policy_activation.emergency_frozen'),
+    true,
+  );
+  assert.equal(
+    fixture.adminAuditRecords.some((record) => record.action === 'policy_activation.emergency_rolled_back'),
+    true,
+  );
+  assert.equal(
+    fixture.auditLog.entries().some((entry) => entry.action === 'freeze-scope'),
+    true,
+  );
+}
+
 async function testResolveAndSimulationSurfaces(): Promise<void> {
   const fixture = createFixture();
   await publishBundleThroughRoutes(fixture);
@@ -531,10 +626,11 @@ async function run(): Promise<void> {
   await testActivationRequiresApprovalForR4();
   await testApprovalRoutesEnforceDualReview();
   await testActivationAndRollbackSurfaces();
+  await testEmergencyFreezeAndRollbackRequireBreakGlassAndFailClosed();
   await testResolveAndSimulationSurfaces();
   await testAuditSurfaceFiltersAndSnapshotDisclosure();
   await testIdempotentMutationReplayDoesNotAppendAuditTwice();
-  console.log('Release policy control-plane admin-route tests: 8 passed, 0 failed');
+  console.log('Release policy control-plane admin-route tests: 9 passed, 0 failed');
 }
 
 await run();

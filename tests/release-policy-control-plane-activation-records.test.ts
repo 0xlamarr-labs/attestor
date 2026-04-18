@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   activatePolicyBundle,
   findLatestActiveExactTargetActivation,
+  freezePolicyActivationScope,
   rollbackPolicyActivation,
   stagePolicyActivationCandidate,
 } from '../src/release-policy-control-plane/activation-records.js';
@@ -171,9 +172,78 @@ function testRollbackRequiresExactTargetMatch(): void {
   );
 }
 
+function testFreezeCreatesFailClosedRecordAndSupersedesCurrent(): void {
+  const store = createInMemoryPolicyControlPlaneStore();
+  activatePolicyBundle(store, {
+    id: 'activation_record_v1',
+    target: sampleTarget(),
+    bundle: bundle('bundle_record_v1'),
+    activatedBy: actor('anne'),
+    activatedAt: '2026-04-17T15:40:00.000Z',
+    rolloutMode: 'enforce',
+    rationale: 'Activate record policy v1.',
+  });
+
+  const freeze = freezePolicyActivationScope(store, {
+    id: 'activation_record_freeze',
+    target: sampleTarget(),
+    activatedBy: actor('incident_commander'),
+    activatedAt: '2026-04-17T15:45:00.000Z',
+    reasonCode: 'incident-policy-freeze',
+    rationale: 'Freeze the record release policy during an incident.',
+    freezeReason: 'Suspected bad policy rollout.',
+  });
+
+  assert.equal(freeze.appliedRecord.state, 'frozen');
+  assert.equal(freeze.appliedRecord.operationType, 'freeze-scope');
+  assert.equal(freeze.appliedRecord.rolloutMode, 'rolled-back');
+  assert.equal(freeze.appliedRecord.freezeReason, 'Suspected bad policy rollout.');
+  assert.equal(freeze.appliedRecord.previousActivationId, 'activation_record_v1');
+  assert.equal(freeze.updatedHistoricalRecord?.state, 'superseded');
+  assert.equal(findLatestActiveExactTargetActivation(store, sampleTarget()), null);
+}
+
+function testRollbackAfterFreezeClearsTheFrozenBarrier(): void {
+  const store = createInMemoryPolicyControlPlaneStore();
+  activatePolicyBundle(store, {
+    id: 'activation_record_v1',
+    target: sampleTarget(),
+    bundle: bundle('bundle_record_v1'),
+    activatedBy: actor('anne'),
+    activatedAt: '2026-04-17T15:50:00.000Z',
+    rolloutMode: 'enforce',
+    rationale: 'Activate record policy v1.',
+  });
+  freezePolicyActivationScope(store, {
+    id: 'activation_record_freeze',
+    target: sampleTarget(),
+    activatedBy: actor('incident_commander'),
+    activatedAt: '2026-04-17T15:55:00.000Z',
+    rationale: 'Freeze the record release policy during an incident.',
+    freezeReason: 'Bad policy rollout.',
+  });
+
+  const rollback = rollbackPolicyActivation(store, {
+    id: 'activation_record_emergency_rollback',
+    target: sampleTarget(),
+    rollbackTargetActivationId: 'activation_record_v1',
+    activatedBy: actor('incident_commander'),
+    activatedAt: '2026-04-17T16:00:00.000Z',
+    rationale: 'Restore last known good policy after freeze.',
+    reasonCode: 'emergency-rollback',
+  });
+
+  assert.equal(rollback.currentActiveRecord?.id, 'activation_record_freeze');
+  assert.equal(rollback.updatedHistoricalRecord?.state, 'rolled-back');
+  assert.equal(rollback.appliedRecord.rollbackOfActivationId, 'activation_record_v1');
+  assert.equal(findLatestActiveExactTargetActivation(store, sampleTarget())?.id, 'activation_record_emergency_rollback');
+}
+
 testStageCandidateRecord();
 testActivateSupersedesCurrentExactTargetOnly();
 testRollbackCreatesReplacementAndMarksCurrentRolledBack();
 testRollbackRequiresExactTargetMatch();
+testFreezeCreatesFailClosedRecordAndSupersedesCurrent();
+testRollbackAfterFreezeClearsTheFrozenBarrier();
 
-console.log('Release policy control-plane activation-record tests: 21 passed, 0 failed');
+console.log('Release policy control-plane activation-record tests: 33 passed, 0 failed');
