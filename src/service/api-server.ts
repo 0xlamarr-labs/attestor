@@ -78,14 +78,12 @@ import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { decisionLog, evidence, introspection, review, shadow, token, verification } from '../release-layer/index.js';
 import { action as financeActionRelease, communication as financeCommunicationRelease, record as financeRecordRelease } from '../release-layer/finance.js';
-import { createFileBackedPolicyActivationApprovalStore } from '../release-policy-control-plane/activation-approvals.js';
 import {
-  createFinanceControlPlaneReleaseDecisionEngine,
-  ensureFinanceProvingPolicies,
-  FINANCE_PROVING_POLICY_ENVIRONMENT,
-} from '../release-policy-control-plane/finance-proving.js';
-import { createFileBackedPolicyControlPlaneStore } from '../release-policy-control-plane/store.js';
-import { createFileBackedPolicyMutationAuditLogWriter } from '../release-policy-control-plane/audit-log.js';
+  activationApprovals as controlPlaneActivationApprovals,
+  auditLog as controlPlaneAuditLog,
+  financeProving as controlPlaneFinanceProving,
+  store as controlPlaneStore,
+} from '../release-policy-control-plane/index.js';
 import {
   canEnqueueTenantAsyncJob,
   createPipelineQueue,
@@ -131,6 +129,15 @@ const { createReleaseTokenIssuer } = token;
 const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
 const { ReleaseVerificationError, resolveReleaseTokenFromRequest, verifyReleaseAuthorization } =
   verification;
+const { createFileBackedPolicyActivationApprovalStore } =
+  controlPlaneActivationApprovals;
+const {
+  createFinanceControlPlaneReleaseDecisionEngine,
+  ensureFinanceProvingPolicies,
+  FINANCE_PROVING_POLICY_ENVIRONMENT,
+} = controlPlaneFinanceProving;
+const { createFileBackedPolicyControlPlaneStore } = controlPlaneStore;
+const { createFileBackedPolicyMutationAuditLogWriter } = controlPlaneAuditLog;
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 import {
   configureTenantRateLimiter,

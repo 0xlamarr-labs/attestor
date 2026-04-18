@@ -1,59 +1,68 @@
 import { randomUUID } from 'node:crypto';
 import type { Context, Hono } from 'hono';
 import {
-  activatePolicyBundle,
-  findLatestActiveExactTargetActivation,
-  freezePolicyActivationScope,
-  rollbackPolicyActivation,
-} from '../../../release-policy-control-plane/activation-records.js';
-import {
-  evaluatePolicyActivationApprovalGate,
-  recordPolicyActivationApprovalDecision,
-  requestPolicyActivationApproval,
+  activationApprovals as controlPlaneActivationApprovals,
+  activationRecords as controlPlaneActivationRecords,
+  auditLog as controlPlaneAuditLog,
+  bundleCache as controlPlaneBundleCache,
+  impactSummary as controlPlaneImpactSummary,
+  objectModel as controlPlaneObjectModel,
+  simulation as controlPlaneSimulation,
+  types as controlPlaneTypes,
   type PolicyActivationApprovalGateResult,
   type PolicyActivationApprovalRequest,
   type PolicyActivationApprovalState,
   type PolicyActivationApprovalStore,
-} from '../../../release-policy-control-plane/activation-approvals.js';
-import {
-  createPolicyMutationAuditSubjectFromActivation,
-  createPolicyMutationAuditSubjectFromBundle,
-  createPolicyMutationAuditSubjectFromPack,
   type PolicyMutationAuditEntry,
   type PolicyMutationAuditLogWriter,
-} from '../../../release-policy-control-plane/audit-log.js';
-import {
-  createPolicyBundleConditionalResponse,
-  policyBundleCacheHeaders,
   type PolicyBundleCacheDescriptor,
-} from '../../../release-policy-control-plane/bundle-cache.js';
-import { createPolicyImpactApi } from '../../../release-policy-control-plane/impact-summary.js';
-import {
-  createPolicyControlPlaneMetadata,
-  createPolicyPackMetadata,
   type PolicyActivationRecord,
   type PolicyPackMetadata,
-} from '../../../release-policy-control-plane/object-model.js';
-import { createPolicySimulationApi } from '../../../release-policy-control-plane/simulation.js';
-import type {
-  PolicyControlPlaneStore,
-  StoredPolicyBundleRecord,
-  UpsertStoredPolicyBundleInput,
-} from '../../../release-policy-control-plane/store.js';
-import {
-  POLICY_PACK_LIFECYCLE_STATES,
-  createPolicyActivationTarget,
+  type PolicyControlPlaneStore,
+  type StoredPolicyBundleRecord,
+  type UpsertStoredPolicyBundleInput,
   type PolicyActivationTarget,
   type PolicyBundleReference,
   type PolicyPackLifecycleState,
   type PolicyMutationAction,
-} from '../../../release-policy-control-plane/types.js';
+} from '../../../release-policy-control-plane/index.js';
 import type {
   ReleaseActorReference,
   ReleasePolicyRolloutMode,
 } from '../../../release-layer/index.js';
 import { vocabulary } from '../../../release-layer/index.js';
 import type { AdminAuditAction } from '../../admin-audit-log.js';
+
+const {
+  activatePolicyBundle,
+  findLatestActiveExactTargetActivation,
+  freezePolicyActivationScope,
+  rollbackPolicyActivation,
+} = controlPlaneActivationRecords;
+const {
+  evaluatePolicyActivationApprovalGate,
+  recordPolicyActivationApprovalDecision,
+  requestPolicyActivationApproval,
+} = controlPlaneActivationApprovals;
+const {
+  createPolicyMutationAuditSubjectFromActivation,
+  createPolicyMutationAuditSubjectFromBundle,
+  createPolicyMutationAuditSubjectFromPack,
+} = controlPlaneAuditLog;
+const {
+  createPolicyBundleConditionalResponse,
+  policyBundleCacheHeaders,
+} = controlPlaneBundleCache;
+const { createPolicyImpactApi } = controlPlaneImpactSummary;
+const {
+  createPolicyControlPlaneMetadata,
+  createPolicyPackMetadata,
+} = controlPlaneObjectModel;
+const { createPolicySimulationApi } = controlPlaneSimulation;
+const {
+  POLICY_PACK_LIFECYCLE_STATES,
+  createPolicyActivationTarget,
+} = controlPlaneTypes;
 
 type JsonRecord = Record<string, unknown>;
 
