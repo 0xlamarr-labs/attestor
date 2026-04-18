@@ -37,6 +37,7 @@ function sampleRequestTarget() {
     wedgeId: 'finance.record.release',
     consequenceType: 'record',
     riskClass: 'R4',
+    cohortId: 'wave-a',
     planId: 'enterprise',
   });
 }
@@ -210,7 +211,28 @@ function testPlanIsLowestOptionalPrecedence(): void {
   );
 
   assert.equal(comparePolicyScopeMatches(consequenceScoped, planScoped) < 0, true);
-  assert.equal(planScoped.precedenceVector[6], 1);
+  assert.equal(planScoped.precedenceVector[7], 1);
+}
+
+function testCohortPrecedenceSitsAbovePlanDefaults(): void {
+  const request = sampleRequestTarget();
+  const cohortScoped = matchPolicyScope(
+    request,
+    createPolicyActivationTarget({
+      environment: 'prod-eu',
+      cohortId: 'wave-a',
+    }),
+  );
+  const planScoped = matchPolicyScope(
+    request,
+    createPolicyActivationTarget({
+      environment: 'prod-eu',
+      planId: 'enterprise',
+    }),
+  );
+
+  assert.equal(comparePolicyScopeMatches(cohortScoped, planScoped) < 0, true);
+  assert.equal(cohortScoped.precedenceVector[6], 1);
 }
 
 function testResolutionNoMatch(): void {
@@ -315,9 +337,10 @@ testIdentityPrecedenceBeatsBroaderOperationalScope();
 testWedgePrecedenceBeatsDomain();
 testRiskPrecedenceBeatsConsequence();
 testPlanIsLowestOptionalPrecedence();
+testCohortPrecedenceSitsAbovePlanDefaults();
 testResolutionNoMatch();
 testResolutionPicksMostSpecificWinner();
 testResolutionDetectsAmbiguousSameSelector();
 testDescriptorAndManifestAlignment();
 
-console.log('Release policy control-plane scoping tests: 24 passed, 0 failed');
+console.log('Release policy control-plane scoping tests: 26 passed, 0 failed');

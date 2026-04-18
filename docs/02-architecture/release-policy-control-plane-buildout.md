@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 18 |
+| Completed | 19 |
 | In progress | 0 |
-| Not started | 2 |
+| Not started | 1 |
 
 ## Frozen Step List
 
@@ -84,9 +84,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | 16 | complete | Add emergency rollback and freeze switch | `src/release-policy-control-plane/activation-records.ts`, `src/release-policy-control-plane/discovery.ts`, `src/release-policy-control-plane/resolver.ts`, `src/service/http/routes/release-policy-control-routes.ts`, `tests/release-policy-control-plane-activation-records.test.ts`, `tests/release-policy-control-plane-discovery.test.ts`, `tests/release-policy-control-plane-resolver.test.ts`, `tests/release-policy-control-plane-admin-routes.test.ts` | Control-plane operations now have an explicit break-glass freeze and emergency rollback path. Frozen scopes fail closed in bundle discovery and active policy resolution, emergency routes require break-glass acknowledgement, privileged actor role, reason code, rationale, and audit metadata, and emergency rollback can restore a last-known-good activation after a freeze. |
 | 17 | complete | Add bundle caching, persistence, and freshness controls | `src/release-policy-control-plane/bundle-cache.ts`, `src/release-policy-control-plane/discovery.ts`, `src/service/http/routes/release-policy-control-routes.ts`, `tests/release-policy-control-plane-bundle-cache.test.ts`, `tests/release-policy-control-plane-admin-routes.test.ts` | Policy bundles now expose strong ETag validators, explicit cache-control/freshness windows, stale-if-error expiry, fail-closed stale policy semantics, file-backed restart stability, discovery resource cache descriptors, and admin conditional GET support with `304 Not Modified`. |
 | 18 | complete | Migrate the finance proving policies onto the control plane | `src/release-policy-control-plane/runtime.ts`, `src/release-policy-control-plane/finance-proving.ts`, `src/service/api-server.ts`, `tests/release-policy-control-plane-finance-proving.test.ts` | The finance record, communication, and action proving policies now live in a seeded signed control-plane bundle with scoped activations, and the API runtime resolves those policies through bundle discovery and active-policy resolution instead of direct in-process factory selection. Emergency freeze on the finance record scope now fails the runtime closed through the same control-plane path. |
-| 19 | not_started | Add tenant-scoped progressive rollout | Pending | Enable bundle rollout by tenant/account/cohort so policy migration can move from global activation to controlled deployment. |
+| 19 | complete | Add tenant-scoped progressive rollout | `src/release-kernel/release-policy-rollout.ts`, `src/release-policy-control-plane/types.ts`, `src/release-policy-control-plane/scoping.ts`, `src/release-policy-control-plane/discovery.ts`, `src/release-policy-control-plane/runtime.ts`, `src/release-policy-control-plane/finance-proving.ts`, `src/service/api-server.ts`, `src/service/http/routes/pipeline-routes.ts`, `tests/release-kernel-release-policy-rollout.test.ts`, `tests/release-policy-control-plane-types.test.ts`, `tests/release-policy-control-plane-scoping.test.ts`, `tests/release-policy-control-plane-discovery.test.ts`, `tests/release-policy-control-plane-finance-proving.test.ts` | Progressive rollout is now first-class across the live control-plane path: rollout bucketing supports tenant/account/plan/cohort keys with fail-closed missing-context handling, policy activations and discovery labels now carry cohort scope, finance runtime requests project tenant/account/plan/cohort context into active-policy resolution, and scoped finance bundle overrides can now be activated progressively by tenant or cohort instead of only globally. |
 | 20 | not_started | Package the policy control plane as a reusable platform surface | Pending | Expose the stable public subpath and extraction criteria for the policy control plane just as the release layer itself now has a packaged surface. |
 
 ## Immediate Next Step
 
-Step 19 is next. The goal is to add tenant-scoped progressive rollout so the newly migrated finance proving policies can move from one global seeded activation posture to controlled cohort-by-cohort deployment.
+Step 20 is next. The goal is to package the policy control plane behind a reusable public surface with explicit subpath boundaries and extraction criteria, matching the release-layer packaging discipline already in place.

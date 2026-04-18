@@ -618,6 +618,20 @@ function currentReleaseRequester(
   };
 }
 
+function currentReleaseEvaluationContext(c: Context) {
+  const tenant = currentTenant(c);
+  const account = currentAccountAccess(c);
+  const cohortHeader = c.req.header('x-attestor-release-cohort');
+  const cohortId = cohortHeader?.trim() ? cohortHeader.trim() : null;
+
+  return {
+    tenantId: tenant.tenantId !== 'default' ? tenant.tenantId : null,
+    accountId: account?.accountId ?? null,
+    planId: tenant.planId ?? null,
+    cohortId,
+  } as const;
+}
+
 function currentAccountAccess(c: Context): AccountAccessContext | null {
   return getAccountAccessContextFromHeaders(c.req.raw.headers);
 }
@@ -1864,6 +1878,7 @@ const routeDeps = {
   financeReleaseDecisionLog,
   buildFinanceFilingReleaseObservation,
   currentReleaseRequester,
+  currentReleaseEvaluationContext,
   finalizeFinanceFilingReleaseDecision,
   createFinanceReviewerQueueItem,
   apiReleaseReviewerQueueStore,

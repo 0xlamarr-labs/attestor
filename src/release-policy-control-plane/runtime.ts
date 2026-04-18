@@ -44,6 +44,10 @@ function buildRolloutContext(request: ReleaseEvaluationRequest) {
     outputHash: request.outputHash,
     requesterId: request.requester.id,
     targetId: request.target.id,
+    tenantId: request.context?.tenantId ?? null,
+    accountId: request.context?.accountId ?? null,
+    planId: request.context?.planId ?? null,
+    cohortId: request.context?.cohortId ?? null,
   } as const;
 }
 

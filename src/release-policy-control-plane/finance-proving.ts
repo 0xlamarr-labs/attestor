@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto';
 import { generateKeyPair } from '../signing/keys.js';
 import { policy, type ReleaseActorReference } from '../release-layer/index.js';
-import type { ReleaseDecisionEngine } from '../release-kernel/release-decision-engine.js';
+import type {
+  ReleaseDecisionEngine,
+  ReleaseEvaluationRequest,
+} from '../release-kernel/release-decision-engine.js';
 import type { ReleaseDecisionLogWriter } from '../release-kernel/release-decision-log.js';
 import {
   activatePolicyBundle,
@@ -78,6 +81,13 @@ export interface CreateFinanceControlPlaneReleaseDecisionEngineInput {
   readonly decisionLog?: ReleaseDecisionLogWriter;
 }
 
+export interface FinancePolicyScopeOverrides {
+  readonly tenantId?: string | null;
+  readonly accountId?: string | null;
+  readonly cohortId?: string | null;
+  readonly planId?: string | null;
+}
+
 function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -121,14 +131,63 @@ function financePolicyFlows(): readonly FinanceProvingFlow[] {
 function financePolicyTarget(
   flow: FinanceProvingFlow,
   environment = FINANCE_PROVING_POLICY_ENVIRONMENT,
+  scopeOverrides: FinancePolicyScopeOverrides = {},
 ): PolicyActivationTarget {
   const definition = financePolicyDefinition(flow);
   return createPolicyActivationTarget({
     environment,
+    tenantId: scopeOverrides.tenantId,
+    accountId: scopeOverrides.accountId,
     domainId: 'finance',
     wedgeId: definition.scope.wedgeId,
     consequenceType: definition.scope.consequenceType,
     riskClass: definition.scope.riskClass,
+    cohortId: scopeOverrides.cohortId,
+    planId: scopeOverrides.planId,
+  });
+}
+
+function normalizeOptionalScopeValue(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function resolveTenantIdFromRequester(request: ReleaseEvaluationRequest): string | null {
+  if (
+    request.requester.type === 'service' &&
+    request.requester.id.startsWith('tenant:')
+  ) {
+    return normalizeOptionalScopeValue(request.requester.id.slice('tenant:'.length));
+  }
+
+  return null;
+}
+
+function resolvePlanIdFromRequester(request: ReleaseEvaluationRequest): string | null {
+  if (request.requester.type !== 'service') {
+    return null;
+  }
+
+  const normalizedRole = normalizeOptionalScopeValue(request.requester.role);
+  return normalizedRole && normalizedRole !== 'service' ? normalizedRole : null;
+}
+
+function resolveFinancePolicyScopeFromRequest(
+  request: ReleaseEvaluationRequest,
+): FinancePolicyScopeOverrides {
+  return Object.freeze({
+    tenantId:
+      normalizeOptionalScopeValue(request.context?.tenantId) ??
+      resolveTenantIdFromRequester(request),
+    accountId: normalizeOptionalScopeValue(request.context?.accountId),
+    cohortId: normalizeOptionalScopeValue(request.context?.cohortId),
+    planId:
+      normalizeOptionalScopeValue(request.context?.planId) ??
+      resolvePlanIdFromRequester(request),
   });
 }
 
@@ -274,8 +333,9 @@ function publishFinanceProvingBundle(
 export function createFinancePolicyActivationTarget(
   flow: FinanceProvingFlow,
   environment = FINANCE_PROVING_POLICY_ENVIRONMENT,
+  scopeOverrides: FinancePolicyScopeOverrides = {},
 ): PolicyActivationTarget {
-  return financePolicyTarget(flow, environment);
+  return financePolicyTarget(flow, environment, scopeOverrides);
 }
 
 export function ensureFinanceProvingPolicies(
@@ -363,6 +423,11 @@ export function createFinanceControlPlaneReleaseDecisionEngine(
   return createControlPlaneBackedReleaseDecisionEngine({
     store: input.store,
     decisionLog: input.decisionLog,
-    resolveTarget: () => financePolicyTarget(input.flow, environment),
+    resolveTarget: (request) =>
+      financePolicyTarget(
+        input.flow,
+        environment,
+        resolveFinancePolicyScopeFromRequest(request),
+      ),
   });
 }

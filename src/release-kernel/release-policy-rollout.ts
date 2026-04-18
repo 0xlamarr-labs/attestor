@@ -18,7 +18,11 @@ export type ReleasePolicyRolloutCohortKey =
   | 'request-id'
   | 'output-hash'
   | 'requester-id'
-  | 'target-id';
+  | 'target-id'
+  | 'tenant-id'
+  | 'account-id'
+  | 'plan-id'
+  | 'cohort-id';
 
 export interface ReleasePolicyRolloutDefinition {
   readonly version: typeof RELEASE_POLICY_ROLLOUT_SPEC_VERSION;
@@ -46,6 +50,10 @@ export interface ReleasePolicyRolloutEvaluationContext {
   readonly outputHash: string;
   readonly requesterId: string;
   readonly targetId: string;
+  readonly tenantId?: string | null;
+  readonly accountId?: string | null;
+  readonly planId?: string | null;
+  readonly cohortId?: string | null;
 }
 
 export interface ReleasePolicyRolloutResolution {
@@ -55,6 +63,7 @@ export interface ReleasePolicyRolloutResolution {
     | 'dry-run'
     | 'canary-enforce'
     | 'canary-shadow'
+    | 'canary-missing-context'
     | 'enforce'
     | 'rolled-back';
   readonly canaryBucket: number | null;
@@ -93,7 +102,7 @@ export function createReleasePolicyRollout(
 function rolloutCohortMaterial(
   rollout: ReleasePolicyRolloutDefinition,
   context: ReleasePolicyRolloutEvaluationContext,
-): string {
+): string | null {
   switch (rollout.cohortKey) {
     case 'request-id':
       return context.requestId;
@@ -103,6 +112,14 @@ function rolloutCohortMaterial(
       return context.requesterId;
     case 'target-id':
       return context.targetId;
+    case 'tenant-id':
+      return context.tenantId?.trim() || null;
+    case 'account-id':
+      return context.accountId?.trim() || null;
+    case 'plan-id':
+      return context.planId?.trim() || null;
+    case 'cohort-id':
+      return context.cohortId?.trim() || null;
   }
 }
 
@@ -110,7 +127,13 @@ export function computeReleasePolicyCanaryBucket(
   rollout: ReleasePolicyRolloutDefinition,
   context: ReleasePolicyRolloutEvaluationContext,
 ): number {
-  const material = `${rollout.cohortSalt}:${rollout.mode}:${rolloutCohortMaterial(rollout, context)}`;
+  const cohortMaterial = rolloutCohortMaterial(rollout, context);
+  if (cohortMaterial === null) {
+    throw new Error(
+      `Release policy rollout cohortKey '${rollout.cohortKey}' requires matching rollout context.`,
+    );
+  }
+  const material = `${rollout.cohortSalt}:${rollout.mode}:${cohortMaterial}`;
   const digest = createHash('sha256').update(material).digest('hex');
   const basis = Number.parseInt(digest.slice(0, 8), 16);
   return basis % 10000;
@@ -143,6 +166,14 @@ export function resolveReleasePolicyRollout(
         canaryBucket: null,
       };
     case 'canary': {
+      if (rolloutCohortMaterial(rollout, context) === null) {
+        return {
+          rolloutMode: rollout.mode,
+          evaluationMode: 'shadow',
+          reason: 'canary-missing-context',
+          canaryBucket: null,
+        };
+      }
       const bucket = computeReleasePolicyCanaryBucket(rollout, context);
       const threshold = Math.round(rollout.canaryPercentage * 100);
       const evaluationMode = bucket < threshold ? 'enforce' : 'shadow';

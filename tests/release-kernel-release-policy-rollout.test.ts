@@ -23,6 +23,10 @@ const context = {
   outputHash: 'sha256:output-001',
   requesterId: 'svc.reporting-bot',
   targetId: 'finance.reporting.record-store',
+  tenantId: 'tenant-finance',
+  accountId: 'account-major',
+  planId: 'enterprise',
+  cohortId: 'wave-a',
 };
 
 async function main(): Promise<void> {
@@ -95,6 +99,52 @@ async function main(): Promise<void> {
     resolveReleasePolicyRollout(canaryFull, context).evaluationMode,
     'enforce',
     'Release policy rollout: a 100% canary behaves as effective enforcement',
+  );
+
+  const tenantCanary = createReleasePolicyRollout({
+    mode: 'canary',
+    canaryPercentage: 33,
+    cohortKey: 'tenant-id',
+    cohortSalt: 'attestor.test.tenant-rollout',
+  });
+  equal(
+    computeReleasePolicyCanaryBucket(tenantCanary, context),
+    computeReleasePolicyCanaryBucket(tenantCanary, {
+      ...context,
+      requestId: 'release-request-002',
+      outputHash: 'sha256:output-002',
+    }),
+    'Release policy rollout: tenant-scoped canaries stay sticky across request-level variance',
+  );
+
+  const cohortCanary = createReleasePolicyRollout({
+    mode: 'canary',
+    canaryPercentage: 50,
+    cohortKey: 'cohort-id',
+    cohortSalt: 'attestor.test.cohort-rollout',
+  });
+  equal(
+    computeReleasePolicyCanaryBucket(cohortCanary, context),
+    computeReleasePolicyCanaryBucket(cohortCanary, {
+      ...context,
+      requesterId: 'svc.other-bot',
+    }),
+    'Release policy rollout: explicit rollout cohorts remain deterministic regardless of requester identity',
+  );
+
+  const missingCohortResolution = resolveReleasePolicyRollout(cohortCanary, {
+    ...context,
+    cohortId: null,
+  });
+  equal(
+    missingCohortResolution.evaluationMode,
+    'shadow',
+    'Release policy rollout: missing tenant/account/cohort context fails closed back to shadow mode',
+  );
+  equal(
+    missingCohortResolution.reason,
+    'canary-missing-context',
+    'Release policy rollout: missing canary context produces an explicit rollout reason',
   );
 
   const rolledBack = createReleasePolicyRollout({

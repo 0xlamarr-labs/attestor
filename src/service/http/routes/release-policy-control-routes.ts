@@ -210,6 +210,7 @@ function parseActivationTarget(value: unknown): PolicyActivationTarget {
     wedgeId: optionalString(value, 'wedgeId'),
     consequenceType: (optionalConsequenceType(value) ?? undefined) as never,
     riskClass: (optionalRiskClass(value) ?? undefined) as never,
+    cohortId: optionalString(value, 'cohortId'),
     planId: optionalString(value, 'planId'),
   });
 }

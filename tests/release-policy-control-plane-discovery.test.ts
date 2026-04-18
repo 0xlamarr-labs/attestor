@@ -139,6 +139,7 @@ function testDiscoveryLabelsCarryReservedAndCustomValues(): void {
     wedgeId: 'finance.record.release',
     consequenceType: 'record',
     riskClass: 'R4',
+    cohortId: 'wave-a',
     planId: 'enterprise',
   });
 
@@ -153,6 +154,7 @@ function testDiscoveryLabelsCarryReservedAndCustomValues(): void {
 
   assert.equal(labels.values['attestor.environment'], 'prod-eu');
   assert.equal(labels.values['attestor.account'], 'account-123');
+  assert.equal(labels.values['attestor.cohort'], 'wave-a');
   assert.equal(labels.values['attestor.plan'], 'enterprise');
   assert.equal(labels.values['attestor.store_kind'], 'file-backed');
   assert.equal(labels.values['cohort'], 'wave-a');
@@ -329,6 +331,62 @@ function testFrozenScopeFailsClosedEvenWithMoreSpecificActiveBundle(): void {
   assert.equal(result.matchedCandidates.length, 2);
 }
 
+function testCohortScopedBundleSelectionOverridesBroaderDefaults(): void {
+  const store = createInMemoryPolicyControlPlaneStore();
+  const defaultBundle = createSignedBundle('bundle_finance_default_wave', {
+    environment: 'prod-eu',
+    domainId: 'finance',
+    consequenceType: 'record',
+  });
+  const cohortBundle = createSignedBundle('bundle_finance_wave_a', {
+    environment: 'prod-eu',
+    domainId: 'finance',
+    consequenceType: 'record',
+    cohortId: 'wave-a',
+  });
+
+  store.upsertPack(defaultBundle.pack);
+  store.upsertBundle({
+    manifest: defaultBundle.manifest,
+    artifact: defaultBundle.artifact,
+    signedBundle: defaultBundle.signedBundle,
+  });
+  store.upsertBundle({
+    manifest: cohortBundle.manifest,
+    artifact: cohortBundle.artifact,
+    signedBundle: cohortBundle.signedBundle,
+  });
+  store.upsertActivation(
+    createActivation('activation-default-wave', defaultBundle.artifact.bundleId, {
+      environment: 'prod-eu',
+      domainId: 'finance',
+      consequenceType: 'record',
+    }),
+  );
+  store.upsertActivation(
+    createActivation('activation-wave-a', cohortBundle.artifact.bundleId, {
+      environment: 'prod-eu',
+      domainId: 'finance',
+      consequenceType: 'record',
+      cohortId: 'wave-a',
+    }),
+  );
+
+  const result = resolvePolicyBundleForTarget(store, {
+    target: createPolicyActivationTarget({
+      environment: 'prod-eu',
+      tenantId: 'tenant-finance',
+      domainId: 'finance',
+      consequenceType: 'record',
+      cohortId: 'wave-a',
+    }),
+  });
+
+  assert.equal(result.status, 'resolved');
+  assert.equal(result.selectedCandidate?.bundleRef.bundleId, 'bundle_finance_wave_a');
+  assert.equal(result.labels.values['attestor.cohort'], 'wave-a');
+}
+
 function testStaticResolutionUsesMetadataActiveBundle(): void {
   const { store, bundle } = seedStoreWithBundle('bundle_finance_static', {
     environment: 'prod-eu',
@@ -498,11 +556,12 @@ function run(): void {
   testReservedDiscoveryLabelsCannotBeOverridden();
   testScopedActiveResolutionSelectsMostSpecificBundle();
   testFrozenScopeFailsClosedEvenWithMoreSpecificActiveBundle();
+  testCohortScopedBundleSelectionOverridesBroaderDefaults();
   testStaticResolutionUsesMetadataActiveBundle();
   testAmbiguousTopCandidatesStayExplicit();
   testMissingBundleIsFailClosed();
   testDiscoveryDocumentCarriesResolutionContext();
-  console.log('Release policy control-plane discovery tests: 8 passed, 0 failed');
+  console.log('Release policy control-plane discovery tests: 10 passed, 0 failed');
 }
 
 run();

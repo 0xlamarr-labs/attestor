@@ -31,6 +31,7 @@ export const POLICY_SCOPE_PRECEDENCE_ORDER = Object.freeze([
   'domain',
   'risk-class',
   'consequence-type',
+  'cohort',
   'plan',
 ] as const satisfies readonly PolicyScopeDimension[]);
 
@@ -77,6 +78,7 @@ const PRECEDENCE_DIMENSION_ACCESSORS: Readonly<
   domain: (selector) => selector.domainId,
   'risk-class': (selector) => selector.riskClass,
   'consequence-type': (selector) => selector.consequenceType,
+  cohort: (selector) => selector.cohortId,
   plan: (selector) => selector.planId,
 });
 
@@ -99,6 +101,8 @@ function selectorValue(
       return selector.consequenceType;
     case 'risk-class':
       return selector.riskClass;
+    case 'cohort':
+      return selector.cohortId;
     case 'plan':
       return selector.planId;
   }
@@ -131,7 +135,8 @@ export function policyScopePrecedenceDescriptor(): PolicyScopePrecedenceDescript
       'Account scope requires tenant scope and overrides broader tenant-wide matches when both apply.',
       'Wedge scope requires domain scope and overrides broader domain-wide matches when both apply.',
       'Risk-class scope requires consequence-type scope and overrides broader consequence-wide matches when both apply.',
-      'Plan scope is optional and acts as the lowest-precedence optional discriminator after identity, wedge/domain, and consequence scope.',
+      'Cohort scope is an optional rollout discriminator that can narrow a bundle without overriding explicit identity or domain/consequence-specific matches.',
+      'Plan scope is optional and acts as the lowest-precedence optional discriminator after identity, wedge/domain, consequence scope, and cohort selection.',
       'If two matching activations have identical precedence vectors, resolution is ambiguous and must be treated as a control-plane conflict rather than resolved implicitly.',
     ]),
   });

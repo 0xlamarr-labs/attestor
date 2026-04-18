@@ -52,6 +52,7 @@ export const POLICY_SCOPE_DIMENSIONS = [
   'wedge',
   'consequence-type',
   'risk-class',
+  'cohort',
   'plan',
 ] as const;
 export type PolicyScopeDimension = typeof POLICY_SCOPE_DIMENSIONS[number];
@@ -87,6 +88,7 @@ export interface PolicyActivationTarget {
   readonly wedgeId: string | null;
   readonly consequenceType: PolicyControlConsequenceType | null;
   readonly riskClass: PolicyControlRiskClass | null;
+  readonly cohortId: string | null;
   readonly planId: string | null;
 }
 
@@ -148,6 +150,7 @@ export interface CreatePolicyActivationTargetInput {
   readonly wedgeId?: string | null;
   readonly consequenceType?: PolicyControlConsequenceType | null;
   readonly riskClass?: PolicyControlRiskClass | null;
+  readonly cohortId?: string | null;
   readonly planId?: string | null;
 }
 
@@ -162,6 +165,7 @@ export function createPolicyActivationTarget(
     wedgeId: normalizeOptionalIdentifier(input.wedgeId, 'wedgeId'),
     consequenceType: input.consequenceType ?? null,
     riskClass: input.riskClass ?? null,
+    cohortId: normalizeOptionalIdentifier(input.cohortId, 'cohortId'),
     planId: normalizeOptionalIdentifier(input.planId, 'planId'),
   });
 
@@ -191,6 +195,9 @@ export function policyScopeDimensionsForTarget(
   }
   if (target.riskClass) {
     dimensions.push('risk-class');
+  }
+  if (target.cohortId) {
+    dimensions.push('cohort');
   }
   if (target.planId) {
     dimensions.push('plan');
@@ -228,6 +235,9 @@ export function policyActivationTargetLabel(target: PolicyActivationTarget): str
   }
   if (target.riskClass) {
     segments.push(`risk:${target.riskClass}`);
+  }
+  if (target.cohortId) {
+    segments.push(`cohort:${target.cohortId}`);
   }
   if (target.planId) {
     segments.push(`plan:${target.planId}`);

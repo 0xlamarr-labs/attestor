@@ -137,6 +137,7 @@ export type ReleasePolicyRolloutEvaluationContext =
   policyRollout.ReleasePolicyRolloutEvaluationContext;
 export type ReleasePolicyRolloutResolution =
   policyRollout.ReleasePolicyRolloutResolution;
+export type ReleaseEvaluationScopeContext = decision.ReleaseEvaluationScopeContext;
 
 export function releaseLayerPublicSurface(): ReleaseLayerPublicSurfaceDescriptor {
   return Object.freeze({

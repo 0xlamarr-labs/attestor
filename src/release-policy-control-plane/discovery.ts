@@ -132,6 +132,7 @@ const RESERVED_DISCOVERY_LABEL_KEYS = Object.freeze([
   'attestor.wedge',
   'attestor.consequence_type',
   'attestor.risk_class',
+  'attestor.cohort',
   'attestor.plan',
   'attestor.discovery_mode',
   'attestor.store_kind',
@@ -201,6 +202,9 @@ function discoveryLabelEntries(
   }
   if (input.target.riskClass) {
     entries.set('attestor.risk_class', input.target.riskClass);
+  }
+  if (input.target.cohortId) {
+    entries.set('attestor.cohort', input.target.cohortId);
   }
   if (input.target.planId) {
     entries.set('attestor.plan', input.target.planId);

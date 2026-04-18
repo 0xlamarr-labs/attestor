@@ -35,6 +35,7 @@ function testActivationTargetNormalization(): void {
     wedgeId: 'finance.record.release',
     consequenceType: 'record',
     riskClass: 'R4',
+    cohortId: 'wave-a',
     planId: 'enterprise',
   });
 
@@ -46,6 +47,7 @@ function testActivationTargetNormalization(): void {
     wedgeId: 'finance.record.release',
     consequenceType: 'record',
     riskClass: 'R4',
+    cohortId: 'wave-a',
     planId: 'enterprise',
   });
 }
@@ -57,6 +59,7 @@ function testScopeDimensionsAndLabels(): void {
     domainId: 'finance',
     consequenceType: 'record',
     riskClass: 'R4',
+    cohortId: 'wave-a',
   });
 
   assert.deepEqual(policyScopeDimensionsForTarget(target), [
@@ -65,6 +68,7 @@ function testScopeDimensionsAndLabels(): void {
     'domain',
     'consequence-type',
     'risk-class',
+    'cohort',
   ]);
 
   const selector = createPolicyScopeSelector(target);
@@ -74,11 +78,12 @@ function testScopeDimensionsAndLabels(): void {
     'domain',
     'consequence-type',
     'risk-class',
+    'cohort',
   ]);
 
   assert.equal(
     policyActivationTargetLabel(target),
-    'env:prod-eu / tenant:tenant-finance / domain:finance / consequence:record / risk:R4',
+    'env:prod-eu / tenant:tenant-finance / domain:finance / consequence:record / risk:R4 / cohort:wave-a',
   );
 }
 
@@ -115,4 +120,4 @@ testActivationTargetNormalization();
 testScopeDimensionsAndLabels();
 testInvalidTargetsReject();
 
-console.log('Release policy control-plane type tests: 22 passed, 0 failed');
+console.log('Release policy control-plane type tests: 24 passed, 0 failed');

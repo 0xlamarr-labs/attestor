@@ -15,13 +15,31 @@ import {
   createFinanceFilingReleaseCandidateFromReport,
 } from '../src/release-kernel/finance-record-release.js';
 import { createShadowModeReleaseEvaluator } from '../src/release-kernel/release-shadow-mode.js';
-import { freezePolicyActivationScope } from '../src/release-policy-control-plane/activation-records.js';
+import {
+  activatePolicyBundle,
+  freezePolicyActivationScope,
+} from '../src/release-policy-control-plane/activation-records.js';
+import {
+  computePolicyBundleEntryDigest,
+  createSignablePolicyBundleArtifact,
+} from '../src/release-policy-control-plane/bundle-format.js';
+import { createPolicyBundleSigner } from '../src/release-policy-control-plane/bundle-signing.js';
 import {
   createFinanceControlPlaneReleaseDecisionEngine,
+  type FinancePolicyScopeOverrides,
+  type FinanceProvingFlow,
   createFinancePolicyActivationTarget,
   ensureFinanceProvingPolicies,
+  FINANCE_PROVING_POLICY_PACK_ID,
 } from '../src/release-policy-control-plane/finance-proving.js';
+import {
+  createPolicyBundleEntry,
+  createPolicyBundleManifest,
+  createPolicyPackMetadata,
+} from '../src/release-policy-control-plane/object-model.js';
 import { createInMemoryPolicyControlPlaneStore } from '../src/release-policy-control-plane/store.js';
+import { generateKeyPair } from '../src/signing/keys.js';
+import { policy } from '../src/release-layer/index.js';
 
 let passed = 0;
 
@@ -110,6 +128,121 @@ function recordEvaluationInput() {
       target: material.target,
     },
   };
+}
+
+function scopedFinanceOverrideBundle(
+  flow: FinanceProvingFlow,
+  scope: FinancePolicyScopeOverrides,
+  bundleId: string,
+  policyId: string,
+) {
+  const baseDefinition = policy.createFirstHardGatewayReleasePolicy();
+  const overrideDefinition = policy.createReleasePolicyDefinition({
+    id: policyId,
+    name: `${baseDefinition.name} scoped override`,
+    status: baseDefinition.status,
+    rollout: {
+      mode: 'enforce',
+      activatedAt: '2026-04-18T12:35:00.000Z',
+      notes: [
+        `Scoped ${flow} rollout override served through the policy control plane.`,
+      ],
+    },
+    scope: baseDefinition.scope,
+    outputContract: baseDefinition.outputContract,
+    capabilityBoundary: baseDefinition.capabilityBoundary,
+    acceptance: baseDefinition.acceptance,
+    release: baseDefinition.release,
+    notes: [...baseDefinition.notes, `Scoped ${flow} override.`],
+  });
+  const target = createFinancePolicyActivationTarget(flow, 'api-runtime', scope);
+  const provisional = createPolicyBundleEntry({
+    id: `${bundleId}-entry`,
+    scopeTarget: target,
+    definition: overrideDefinition,
+    policyHash: 'sha256:placeholder',
+  });
+  const entry = createPolicyBundleEntry({
+    id: provisional.id,
+    scopeTarget: target,
+    definition: overrideDefinition,
+    policyHash: computePolicyBundleEntryDigest(provisional),
+  });
+  const bundle = {
+    packId: FINANCE_PROVING_POLICY_PACK_ID,
+    bundleId,
+    bundleVersion: bundleId.replaceAll('_', '.'),
+    digest: `sha256:${bundleId}`,
+  } as const;
+  const pack = createPolicyPackMetadata({
+    id: FINANCE_PROVING_POLICY_PACK_ID,
+    name: 'Finance proving release policies',
+    description: 'Scoped finance proving rollout overrides.',
+    lifecycleState: 'published',
+    owners: ['attestor-finance'],
+    labels: ['finance', 'proving', 'release-gateway', 'rollout'],
+    createdAt: '2026-04-18T12:34:00.000Z',
+    updatedAt: '2026-04-18T12:35:00.000Z',
+    latestBundleRef: bundle,
+  });
+  const manifest = createPolicyBundleManifest({
+    bundle,
+    pack,
+    generatedAt: '2026-04-18T12:35:00.000Z',
+    bundleLabels: ['finance', 'proving', 'rollout'],
+    entries: [entry],
+  });
+  const artifact = createSignablePolicyBundleArtifact(pack, manifest);
+  const keyPair = generateKeyPair();
+  const signer = createPolicyBundleSigner({
+    issuer: 'attestor.policy-control-plane.finance-proving.test',
+    privateKeyPem: keyPair.privateKeyPem,
+    publicKeyPem: keyPair.publicKeyPem,
+  });
+
+  return {
+    pack,
+    manifest,
+    artifact,
+    signedBundle: signer.sign({
+      artifact,
+      signedAt: '2026-04-18T12:35:30.000Z',
+    }),
+    verificationKey: signer.exportVerificationKey(),
+  };
+}
+
+function activateScopedFinanceOverride(
+  store: ReturnType<typeof createInMemoryPolicyControlPlaneStore>,
+  flow: FinanceProvingFlow,
+  scope: FinancePolicyScopeOverrides,
+  bundleId: string,
+  policyId: string,
+): void {
+  const bundle = scopedFinanceOverrideBundle(flow, scope, bundleId, policyId);
+  store.upsertPack(bundle.pack);
+  store.upsertBundle({
+    manifest: bundle.manifest,
+    artifact: bundle.artifact,
+    signedBundle: bundle.signedBundle,
+    verificationKey: bundle.verificationKey,
+    storedAt: '2026-04-18T12:35:45.000Z',
+  });
+  activatePolicyBundle(store, {
+    id: `activation.${bundleId}`,
+    target: createFinancePolicyActivationTarget(flow, 'api-runtime', scope),
+    bundle: bundle.manifest.bundle,
+    activatedBy: {
+      id: 'policy-rollout-admin',
+      type: 'user',
+      displayName: 'Policy Rollout Admin',
+      role: 'policy-admin',
+    },
+    activatedAt: '2026-04-18T12:36:00.000Z',
+    rolloutMode: 'enforce',
+    reasonCode: 'progressive-rollout',
+    rationale: `Activate scoped finance ${flow} override for controlled rollout.`,
+  });
 }
 
 function testFinanceSeedPublishesBundleAndScopedActivations(): void {
@@ -302,6 +435,112 @@ function testActionShadowStillRequiresNamedReview(): void {
   );
 }
 
+function testRecordFlowUsesTenantScopedBundleOverride(): void {
+  const store = createInMemoryPolicyControlPlaneStore();
+  ensureFinanceProvingPolicies(store, {
+    environment: 'api-runtime',
+    activatedAt: '2026-04-18T11:00:00.000Z',
+  });
+  activateScopedFinanceOverride(
+    store,
+    'record',
+    { tenantId: 'tenant-pilot', planId: 'enterprise' },
+    'bundle_finance_tenant_pilot_record',
+    'finance.structured-record-release.tenant-pilot.v1',
+  );
+
+  const engine = createFinanceControlPlaneReleaseDecisionEngine({
+    store,
+    flow: 'record',
+    environment: 'api-runtime',
+  });
+  const input = recordEvaluationInput();
+  const tenantPilotEvaluation = engine.evaluateWithDeterministicChecks(
+    {
+      ...input.request,
+      context: {
+        tenantId: 'tenant-pilot',
+        planId: 'enterprise',
+      },
+    },
+    input.observation,
+  );
+  const defaultEvaluation = engine.evaluateWithDeterministicChecks(
+    {
+      ...input.request,
+      context: {
+        tenantId: 'tenant-general',
+        planId: 'enterprise',
+      },
+    },
+    input.observation,
+  );
+
+  equal(
+    tenantPilotEvaluation.decision.policyVersion,
+    'finance.structured-record-release.tenant-pilot.v1',
+    'Finance proving runtime: tenant context now selects a tenant-scoped bundle override when one is active',
+  );
+  equal(
+    defaultEvaluation.decision.policyVersion,
+    'finance.structured-record-release.v1',
+    'Finance proving runtime: tenants outside the rollout keep resolving the global proving policy',
+  );
+}
+
+function testRecordFlowUsesCohortScopedBundleOverride(): void {
+  const store = createInMemoryPolicyControlPlaneStore();
+  ensureFinanceProvingPolicies(store, {
+    environment: 'api-runtime',
+    activatedAt: '2026-04-18T11:00:00.000Z',
+  });
+  activateScopedFinanceOverride(
+    store,
+    'record',
+    { cohortId: 'wave-a' },
+    'bundle_finance_wave_a_record',
+    'finance.structured-record-release.wave-a.v1',
+  );
+
+  const engine = createFinanceControlPlaneReleaseDecisionEngine({
+    store,
+    flow: 'record',
+    environment: 'api-runtime',
+  });
+  const input = recordEvaluationInput();
+  const waveAEvaluation = engine.evaluateWithDeterministicChecks(
+    {
+      ...input.request,
+      context: {
+        tenantId: 'tenant-finance',
+        cohortId: 'wave-a',
+      },
+    },
+    input.observation,
+  );
+  const waveBEvaluation = engine.evaluateWithDeterministicChecks(
+    {
+      ...input.request,
+      context: {
+        tenantId: 'tenant-finance',
+        cohortId: 'wave-b',
+      },
+    },
+    input.observation,
+  );
+
+  equal(
+    waveAEvaluation.decision.policyVersion,
+    'finance.structured-record-release.wave-a.v1',
+    'Finance proving runtime: cohort context now selects a cohort-scoped bundle override during progressive rollout',
+  );
+  equal(
+    waveBEvaluation.decision.policyVersion,
+    'finance.structured-record-release.v1',
+    'Finance proving runtime: requests outside the rollout cohort keep the default bundle selection',
+  );
+}
+
 function run(): void {
   testFinanceSeedPublishesBundleAndScopedActivations();
   testFinanceSeedIsIdempotentForExistingExactTargets();
@@ -309,6 +548,8 @@ function run(): void {
   testCommunicationShadowStillResolvesDryRunPolicy();
   testFrozenRecordScopeFailsClosedAtRuntime();
   testActionShadowStillRequiresNamedReview();
+  testRecordFlowUsesTenantScopedBundleOverride();
+  testRecordFlowUsesCohortScopedBundleOverride();
   console.log(`Release policy control-plane finance-proving tests: ${passed} passed, 0 failed`);
 }
 

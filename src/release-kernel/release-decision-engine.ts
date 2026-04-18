@@ -47,6 +47,13 @@ export type ReleaseEvaluationPhase =
   | 'terminal-accept'
   | 'terminal-deny';
 
+export interface ReleaseEvaluationScopeContext {
+  readonly tenantId?: string | null;
+  readonly accountId?: string | null;
+  readonly planId?: string | null;
+  readonly cohortId?: string | null;
+}
+
 export interface ReleaseEvaluationRequest {
   readonly id: string;
   readonly createdAt: string;
@@ -56,6 +63,7 @@ export interface ReleaseEvaluationRequest {
   readonly capabilityBoundary: CapabilityBoundaryDescriptor;
   readonly requester: ReleaseActorReference;
   readonly target: ReleaseTargetReference;
+  readonly context?: ReleaseEvaluationScopeContext;
 }
 
 export interface ReleaseEvaluationPlan {
