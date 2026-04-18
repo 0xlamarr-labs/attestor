@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 17 |
+| Completed | 18 |
 | In progress | 0 |
-| Not started | 3 |
+| Not started | 2 |
 
 ## Frozen Step List
 
@@ -83,10 +83,10 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | 15 | complete | Add reviewer approval for policy activation | `src/release-policy-control-plane/activation-approvals.ts`, `tests/release-policy-control-plane-activation-approvals.test.ts`, `src/service/http/routes/release-policy-control-routes.ts` | High-impact policy activations now require a first-class approval request before promotion. R3 changes require named review, R4 changes require dual approval, self-approval is rejected, approval expiry and bundle/target mismatches fail closed, and the admin activation route now enforces the approval gate before mutating active policy state. |
 | 16 | complete | Add emergency rollback and freeze switch | `src/release-policy-control-plane/activation-records.ts`, `src/release-policy-control-plane/discovery.ts`, `src/release-policy-control-plane/resolver.ts`, `src/service/http/routes/release-policy-control-routes.ts`, `tests/release-policy-control-plane-activation-records.test.ts`, `tests/release-policy-control-plane-discovery.test.ts`, `tests/release-policy-control-plane-resolver.test.ts`, `tests/release-policy-control-plane-admin-routes.test.ts` | Control-plane operations now have an explicit break-glass freeze and emergency rollback path. Frozen scopes fail closed in bundle discovery and active policy resolution, emergency routes require break-glass acknowledgement, privileged actor role, reason code, rationale, and audit metadata, and emergency rollback can restore a last-known-good activation after a freeze. |
 | 17 | complete | Add bundle caching, persistence, and freshness controls | `src/release-policy-control-plane/bundle-cache.ts`, `src/release-policy-control-plane/discovery.ts`, `src/service/http/routes/release-policy-control-routes.ts`, `tests/release-policy-control-plane-bundle-cache.test.ts`, `tests/release-policy-control-plane-admin-routes.test.ts` | Policy bundles now expose strong ETag validators, explicit cache-control/freshness windows, stale-if-error expiry, fail-closed stale policy semantics, file-backed restart stability, discovery resource cache descriptors, and admin conditional GET support with `304 Not Modified`. |
-| 18 | not_started | Migrate the finance proving policies onto the control plane | Pending | The current finance record/communication/action policies should be served through the control plane, not through direct in-process factory selection. |
+| 18 | complete | Migrate the finance proving policies onto the control plane | `src/release-policy-control-plane/runtime.ts`, `src/release-policy-control-plane/finance-proving.ts`, `src/service/api-server.ts`, `tests/release-policy-control-plane-finance-proving.test.ts` | The finance record, communication, and action proving policies now live in a seeded signed control-plane bundle with scoped activations, and the API runtime resolves those policies through bundle discovery and active-policy resolution instead of direct in-process factory selection. Emergency freeze on the finance record scope now fails the runtime closed through the same control-plane path. |
 | 19 | not_started | Add tenant-scoped progressive rollout | Pending | Enable bundle rollout by tenant/account/cohort so policy migration can move from global activation to controlled deployment. |
 | 20 | not_started | Package the policy control plane as a reusable platform surface | Pending | Expose the stable public subpath and extraction criteria for the policy control plane just as the release layer itself now has a packaged surface. |
 
 ## Immediate Next Step
 
-Step 18 is next. The goal is to migrate the finance proving policies onto the control plane so finance record, communication, and action policy selection is served through the same signed bundle, discovery, activation, and resolver path instead of direct in-process factory selection.
+Step 19 is next. The goal is to add tenant-scoped progressive rollout so the newly migrated finance proving policies can move from one global seeded activation posture to controlled cohort-by-cohort deployment.

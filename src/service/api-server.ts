@@ -76,9 +76,14 @@ import { xbrlCsvEbaAdapter } from '../filing/xbrl-csv-adapter.js';
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
-import { decision, decisionLog, evidence, introspection, policy, review, shadow, token, verification } from '../release-layer/index.js';
-import { action as financeActionRelease, communication as financeCommunicationRelease, financeReleasePolicies, record as financeRecordRelease } from '../release-layer/finance.js';
+import { decisionLog, evidence, introspection, review, shadow, token, verification } from '../release-layer/index.js';
+import { action as financeActionRelease, communication as financeCommunicationRelease, record as financeRecordRelease } from '../release-layer/finance.js';
 import { createFileBackedPolicyActivationApprovalStore } from '../release-policy-control-plane/activation-approvals.js';
+import {
+  createFinanceControlPlaneReleaseDecisionEngine,
+  ensureFinanceProvingPolicies,
+  FINANCE_PROVING_POLICY_ENVIRONMENT,
+} from '../release-policy-control-plane/finance-proving.js';
 import { createFileBackedPolicyControlPlaneStore } from '../release-policy-control-plane/store.js';
 import { createFileBackedPolicyMutationAuditLogWriter } from '../release-policy-control-plane/audit-log.js';
 import {
@@ -117,7 +122,6 @@ const {
   finalizeFinanceFilingReleaseDecision,
   buildFinanceFilingReleaseObservation,
 } = financeRecordRelease;
-const { createReleaseDecisionEngine } = decision;
 const { createInMemoryReleaseDecisionLogWriter } = decisionLog;
 const { createShadowModeReleaseEvaluator } = shadow;
 const { createInMemoryReleaseTokenIntrospectionStore, createReleaseTokenIntrospector } =
@@ -125,10 +129,6 @@ const { createInMemoryReleaseTokenIntrospectionStore, createReleaseTokenIntrospe
 const { createFinanceReviewerQueueItem, createInMemoryReleaseReviewerQueueStore } = review;
 const { createReleaseTokenIssuer } = token;
 const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
-const {
-  createActionReleasePolicy: createFinanceActionReleasePolicy,
-  createCommunicationReleasePolicy: createFinanceCommunicationReleasePolicy,
-} = financeReleasePolicies;
 const { ReleaseVerificationError, resolveReleaseTokenFromRequest, verifyReleaseAuthorization } =
   verification;
 import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
@@ -539,19 +539,6 @@ app.use('/api/*', tenantMiddleware());
 const pki = generatePkiHierarchy('Attestor Keyless CA', 'API Runtime Signer', 'API Reviewer');
 const pkiReady = true;
 const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
-const financeReleaseDecisionEngine = createReleaseDecisionEngine({
-  decisionLog: financeReleaseDecisionLog,
-});
-const financeCommunicationReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
-  engine: createReleaseDecisionEngine({
-    policies: [createFinanceCommunicationReleasePolicy()],
-  }),
-});
-const financeActionReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
-  engine: createReleaseDecisionEngine({
-    policies: [createFinanceActionReleasePolicy()],
-  }),
-});
 const apiReleaseReviewerQueueStore = createInMemoryReleaseReviewerQueueStore();
 const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
 const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
@@ -570,6 +557,32 @@ const apiReleaseVerificationKeyPromise = apiReleaseTokenIssuer.exportVerificatio
 const policyControlPlaneStore = createFileBackedPolicyControlPlaneStore();
 const policyActivationApprovalStore = createFileBackedPolicyActivationApprovalStore();
 const policyMutationAuditLog = createFileBackedPolicyMutationAuditLogWriter();
+const financePolicyEnvironment =
+  process.env.ATTESTOR_RELEASE_POLICY_ENVIRONMENT?.trim() ||
+  FINANCE_PROVING_POLICY_ENVIRONMENT;
+ensureFinanceProvingPolicies(policyControlPlaneStore, {
+  environment: financePolicyEnvironment,
+});
+const financeReleaseDecisionEngine = createFinanceControlPlaneReleaseDecisionEngine({
+  store: policyControlPlaneStore,
+  flow: 'record',
+  environment: financePolicyEnvironment,
+  decisionLog: financeReleaseDecisionLog,
+});
+const financeCommunicationReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
+  engine: createFinanceControlPlaneReleaseDecisionEngine({
+    store: policyControlPlaneStore,
+    flow: 'communication',
+    environment: financePolicyEnvironment,
+  }),
+});
+const financeActionReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
+  engine: createFinanceControlPlaneReleaseDecisionEngine({
+    store: policyControlPlaneStore,
+    flow: 'action',
+    environment: financePolicyEnvironment,
+  }),
+});
 
 // Keyless signer: per-request ephemeral keys with CA-issued short-lived certs (Sigstore pattern)
 function createRequestSigners(identitySource: string, reviewerName?: string) {
