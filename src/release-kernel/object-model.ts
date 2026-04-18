@@ -151,6 +151,14 @@ export interface ReleaseDecision {
   readonly override: OverrideGrant | null;
 }
 
+export interface ReleaseTokenActorClaim {
+  readonly sub: string;
+  readonly actor_type?: ReleaseActorType;
+  readonly display_name?: string;
+  readonly role?: string;
+  readonly act?: ReleaseTokenActorClaim;
+}
+
 export interface ReleaseTokenClaims {
   readonly version: typeof RELEASE_TOKEN_SPEC_VERSION;
   readonly iss: string;
@@ -170,6 +178,14 @@ export interface ReleaseTokenClaims {
   readonly override: boolean;
   readonly introspection_required: boolean;
   readonly authority_mode: ReviewAuthorityMode;
+  readonly scope?: string;
+  readonly resource?: string;
+  readonly act?: ReleaseTokenActorClaim;
+  readonly parent_jti?: string;
+  readonly exchange_id?: string;
+  readonly exchanged_at?: number;
+  readonly source_aud?: string;
+  readonly token_use?: 'release' | 'exchanged-release';
 }
 
 export interface CreateReleaseDecisionSkeletonInput {
@@ -199,6 +215,15 @@ export interface BuildReleaseTokenClaimsInput {
   readonly issuedAtEpochSeconds: number;
   readonly ttlSeconds: number;
   readonly decision: ReleaseDecision;
+  readonly audience?: string;
+  readonly scope?: string;
+  readonly resource?: string;
+  readonly actor?: ReleaseTokenActorClaim;
+  readonly parentTokenId?: string;
+  readonly exchangeId?: string;
+  readonly exchangedAtEpochSeconds?: number;
+  readonly sourceAudience?: string;
+  readonly tokenUse?: ReleaseTokenClaims['token_use'];
 }
 
 export function retentionClassForRiskClass(riskClass: RiskClass): EvidenceRetentionClass {
@@ -335,7 +360,7 @@ export function buildReleaseTokenClaims(input: BuildReleaseTokenClaimsInput): Re
     version: RELEASE_TOKEN_SPEC_VERSION,
     iss: input.issuer,
     sub: input.subject,
-    aud: input.decision.target.id,
+    aud: input.audience ?? input.decision.target.id,
     jti: input.tokenId,
     iat: input.issuedAtEpochSeconds,
     nbf: input.issuedAtEpochSeconds,
@@ -350,6 +375,16 @@ export function buildReleaseTokenClaims(input: BuildReleaseTokenClaimsInput): Re
     override: input.decision.override !== null || input.decision.status === 'overridden',
     introspection_required: releaseDecisionRequiresIntrospection(input.decision),
     authority_mode: input.decision.reviewAuthority.mode,
+    ...(input.scope ? { scope: input.scope } : {}),
+    ...(input.resource ? { resource: input.resource } : {}),
+    ...(input.actor ? { act: input.actor } : {}),
+    ...(input.parentTokenId ? { parent_jti: input.parentTokenId } : {}),
+    ...(input.exchangeId ? { exchange_id: input.exchangeId } : {}),
+    ...(input.exchangedAtEpochSeconds !== undefined
+      ? { exchanged_at: input.exchangedAtEpochSeconds }
+      : {}),
+    ...(input.sourceAudience ? { source_aud: input.sourceAudience } : {}),
+    ...(input.tokenUse ? { token_use: input.tokenUse } : {}),
   };
 }
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { SignJWT, exportJWK, importPKCS8, importSPKI, jwtVerify, errors as joseErrors } from 'jose';
 import type { JWK, JWTHeaderParameters } from 'jose';
-import type { ReleaseDecision, ReleaseTokenClaims } from './object-model.js';
+import type { ReleaseDecision, ReleaseTokenActorClaim, ReleaseTokenClaims } from './object-model.js';
 import {
   buildReleaseTokenClaims,
   defaultReleaseTokenTtlSecondsForRiskClass,
@@ -39,6 +39,15 @@ export interface ReleaseTokenIssueInput {
   readonly issuedAt?: string;
   readonly tokenId?: string;
   readonly ttlSeconds?: number;
+  readonly audience?: string;
+  readonly scope?: string;
+  readonly resource?: string;
+  readonly actor?: ReleaseTokenActorClaim;
+  readonly parentTokenId?: string;
+  readonly exchangeId?: string;
+  readonly exchangedAt?: string;
+  readonly sourceAudience?: string;
+  readonly tokenUse?: ReleaseTokenClaims['token_use'];
 }
 
 export interface IssuedReleaseToken {
@@ -123,6 +132,19 @@ function parseIssuedAt(issuedAt?: string): Date {
   return value;
 }
 
+function parseOptionalEpochSeconds(value: string | undefined, fieldName: string): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Release token issuance requires a valid ${fieldName} timestamp.`);
+  }
+
+  return Math.floor(parsed.getTime() / 1000);
+}
+
 function resolveTokenTtlSeconds(decision: ReleaseDecision, issuedAt: Date, requestedTtl?: number): number {
   const maxExpiry = releaseDecisionExpiresAt(decision);
 
@@ -172,6 +194,18 @@ export function createReleaseTokenIssuer(
         issuedAtEpochSeconds,
         ttlSeconds,
         decision: issueInput.decision,
+        audience: issueInput.audience,
+        scope: issueInput.scope,
+        resource: issueInput.resource,
+        actor: issueInput.actor,
+        parentTokenId: issueInput.parentTokenId,
+        exchangeId: issueInput.exchangeId,
+        exchangedAtEpochSeconds: parseOptionalEpochSeconds(
+          issueInput.exchangedAt,
+          'exchangedAt',
+        ),
+        sourceAudience: issueInput.sourceAudience,
+        tokenUse: issueInput.tokenUse,
       });
 
       const privateKey = await importPKCS8(input.privateKeyPem, algorithm);

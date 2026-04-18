@@ -150,6 +150,13 @@ export interface ActiveReleaseTokenIntrospectionResult
   readonly override: boolean;
   readonly authority_mode: ReleaseTokenClaims['authority_mode'];
   readonly introspection_required: boolean;
+  readonly resource?: string;
+  readonly act?: ReleaseTokenClaims['act'];
+  readonly parent_jti?: string;
+  readonly exchange_id?: string;
+  readonly exchanged_at?: number;
+  readonly source_aud?: string;
+  readonly token_use?: ReleaseTokenClaims['token_use'];
 }
 
 export type ReleaseTokenIntrospectionResult =
@@ -503,7 +510,7 @@ export async function introspectReleaseToken(
     token_type: DEFAULT_RELEASE_TOKEN_TYPE_HINT,
     checked_at: introspectionTimestamp(input.currentDate),
     resource_server_id: input.resourceServerId ?? null,
-    scope: `release:${verified.claims.consequence_type}`,
+    scope: verified.claims.scope ?? `release:${verified.claims.consequence_type}`,
     iss: verified.claims.iss,
     sub: verified.claims.sub,
     aud: verified.claims.aud,
@@ -521,6 +528,15 @@ export async function introspectReleaseToken(
     override: verified.claims.override,
     authority_mode: verified.claims.authority_mode,
     introspection_required: verified.claims.introspection_required,
+    ...(verified.claims.resource ? { resource: verified.claims.resource } : {}),
+    ...(verified.claims.act ? { act: verified.claims.act } : {}),
+    ...(verified.claims.parent_jti ? { parent_jti: verified.claims.parent_jti } : {}),
+    ...(verified.claims.exchange_id ? { exchange_id: verified.claims.exchange_id } : {}),
+    ...(verified.claims.exchanged_at !== undefined
+      ? { exchanged_at: verified.claims.exchanged_at }
+      : {}),
+    ...(verified.claims.source_aud ? { source_aud: verified.claims.source_aud } : {}),
+    ...(verified.claims.token_use ? { token_use: verified.claims.token_use } : {}),
   });
 }
 
