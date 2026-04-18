@@ -78,6 +78,8 @@ import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { decision, decisionLog, evidence, introspection, policy, review, shadow, token, verification } from '../release-layer/index.js';
 import { action as financeActionRelease, communication as financeCommunicationRelease, financeReleasePolicies, record as financeRecordRelease } from '../release-layer/finance.js';
+import { createFileBackedPolicyControlPlaneStore } from '../release-policy-control-plane/store.js';
+import { createFileBackedPolicyMutationAuditLogWriter } from '../release-policy-control-plane/audit-log.js';
 import {
   canEnqueueTenantAsyncJob,
   createPipelineQueue,
@@ -374,6 +376,7 @@ import { registerAdminRoutes } from './http/routes/admin-routes.js';
 import { registerAccountRoutes } from './http/routes/account-routes.js';
 import { registerPipelineRoutes } from './http/routes/pipeline-routes.js';
 import { registerPublicSiteRoutes } from './http/routes/public-site-routes.js';
+import { registerReleasePolicyControlRoutes } from './http/routes/release-policy-control-routes.js';
 import { registerReleaseReviewRoutes } from './http/routes/release-review-routes.js';
 import { registerWebhookRoutes } from './http/routes/webhook-routes.js';
 
@@ -563,6 +566,8 @@ const apiReleaseEvidencePackIssuer = createReleaseEvidencePackIssuer({
   publicKeyPem: pki.signer.keyPair.publicKeyPem,
 });
 const apiReleaseVerificationKeyPromise = apiReleaseTokenIssuer.exportVerificationKey();
+const policyControlPlaneStore = createFileBackedPolicyControlPlaneStore();
+const policyMutationAuditLog = createFileBackedPolicyMutationAuditLogWriter();
 
 // Keyless signer: per-request ephemeral keys with CA-issued short-lived certs (Sigstore pattern)
 function createRequestSigners(identitySource: string, reviewerName?: string) {
@@ -1851,6 +1856,8 @@ const routeDeps = {
   apiReleaseEvidencePackStore,
   apiReleaseEvidencePackIssuer,
   apiReleaseIntrospectionStore,
+  policyControlPlaneStore,
+  policyMutationAuditLog,
   consumePipelineRunState,
   schemaAttestationSummaryFromFull,
   schemaAttestationSummaryFromConnector,
@@ -1931,6 +1938,7 @@ registerCoreRoutes(app, routeDeps);
 registerAccountRoutes(app, routeDeps);
 registerAdminRoutes(app, routeDeps);
 registerReleaseReviewRoutes(app, routeDeps);
+registerReleasePolicyControlRoutes(app, routeDeps);
 registerWebhookRoutes(app, routeDeps);
 registerPipelineRoutes(app, routeDeps);
 

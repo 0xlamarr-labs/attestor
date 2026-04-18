@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { withFileLock, writeTextFileAtomic } from '../platform/file-store.js';
 import type {
   PolicyActivationRecord,
@@ -386,19 +386,27 @@ function defaultPolicyStorePath(): string {
   );
 }
 
+function ensurePolicyStoreDirectory(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+}
+
 export function createFileBackedPolicyControlPlaneStore(
   path = defaultPolicyStorePath(),
 ): PolicyControlPlaneStore {
   return createPolicyControlPlaneStoreFromAccessors('file-backed', {
-    read: () =>
-      withFileLock(path, () => loadPolicyStoreFile(path)),
-    mutate: (action) =>
-      withFileLock(path, () => {
+    read: () => {
+      ensurePolicyStoreDirectory(path);
+      return withFileLock(path, () => loadPolicyStoreFile(path));
+    },
+    mutate: (action) => {
+      ensurePolicyStoreDirectory(path);
+      return withFileLock(path, () => {
         const store = loadPolicyStoreFile(path);
         const result = action(store);
         savePolicyStoreFile(path, store);
         return result;
-      }),
+      });
+    },
   });
 }
 
