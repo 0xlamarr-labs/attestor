@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 12 |
+| Completed | 13 |
 | In progress | 0 |
-| Not started | 8 |
+| Not started | 7 |
 
 ## Frozen Step List
 
@@ -78,7 +78,7 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | 10 | complete | Add policy simulation and dry-run API | `src/release-policy-control-plane/simulation.ts`, `tests/release-policy-control-plane-simulation.test.ts` | Operators can now resolve the current active policy, clone the control-plane snapshot into an isolated in-memory store, overlay a candidate signed bundle and activation posture, and compute a fail-closed dry-run result with explicit current-versus-simulated status and delta flags without mutating the persistent store. |
 | 11 | complete | Add policy diff and impact summaries | `src/release-policy-control-plane/impact-summary.ts`, `tests/release-policy-control-plane-impact-summary.test.ts` | Operators can now compare current-versus-candidate bundles with structured entry-level semantic diffs, affected scope labels, consequence/risk coverage summaries, rollout/enforcement flags, and dry-run impact previews layered directly on top of the simulation and resolver surfaces. |
 | 12 | complete | Build a policy test-pack format and runner | `src/release-policy-control-plane/test-pack.ts`, `tests/release-policy-control-plane-test-pack.test.ts` | Candidate bundles can now carry executable pre-activation expectations through versioned policy test packs. The runner executes required and advisory cases through the same dry-run preview path as the live control plane and returns a fail-closed run result that can gate activation on reproducible policy checks. |
-| 13 | not_started | Add immutable policy mutation audit logging | Pending | Policy create/update/activate/rollback actions need their own tamper-evident audit chain, separate from release-decision logs. |
+| 13 | complete | Add immutable policy mutation audit logging | `src/release-policy-control-plane/audit-log.ts`, `tests/release-policy-control-plane-audit-log.test.ts` | Policy lifecycle mutations now have a separate hash-linked audit chain with in-memory and file-backed writers, stable mutation snapshots, tamper detection, append-only verification, and subject helpers for pack, bundle, and activation events. |
 | 14 | not_started | Add admin HTTP surfaces for policy control | Pending | Introduce explicit operator routes for policy packs, versions, simulation, activation, rollback, and audit inspection. |
 | 15 | not_started | Add reviewer approval for policy activation | Pending | High-impact policy changes should require named review and, where needed, dual approval before they can become active. |
 | 16 | not_started | Add emergency rollback and freeze switch | Pending | Control-plane operations need an explicit break-glass rollback/freeze path so bad policy rollouts can be contained immediately. |
@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-Step 13 is next. The goal is to add immutable policy mutation audit logging so policy lifecycle changes become tamper-evident, not just stateful.
+Step 14 is next. The goal is to add admin HTTP surfaces for policy control so operators can inspect and manage packs, versions, simulation, activation, rollback, and audit records through explicit routes.
