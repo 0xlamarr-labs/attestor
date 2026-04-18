@@ -38,7 +38,7 @@ That means the control plane can evolve internally without forcing consumers to 
 
 ## Extraction Criteria
 
-The public package surface is ready before full service extraction, but full extraction still requires one criterion to remain true:
+The public package surface is ready before full service extraction, but full extraction still requires one criterion to be satisfied:
 
 1. Policy bundle contract is stable. Status: `ready`
 2. Scope and activation lifecycle are stable. Status: `ready`

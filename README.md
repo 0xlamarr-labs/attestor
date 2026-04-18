@@ -127,7 +127,7 @@ The release layer now has a curated platform surface inside the repository:
 - `attestor/release-layer`
 - `attestor/release-layer/finance`
 
-Those are the stable entrypoints for reuse. Internal `src/release-kernel/*` paths remain implementation detail unless they are explicitly promoted later.
+Those are the stable reuse entrypoints. Internal `src/release-kernel/*` paths remain implementation details unless they are explicitly promoted.
 
 See [release-layer platform surface](docs/02-architecture/release-layer-platform-surface.md) for the current subpaths, SemVer boundary, and extraction criteria.
 
@@ -137,7 +137,7 @@ The policy control plane now also has a curated platform surface inside the repo
 
 - `attestor/release-policy-control-plane`
 
-That subpath is the stable entrypoint for policy vocabulary, bundle lifecycle, scoped activation, discovery, simulation, runtime resolution, audit, and finance proving helpers. Internal `src/release-policy-control-plane/*` paths remain implementation detail unless they are explicitly promoted later.
+That subpath is the stable reuse entrypoint for policy vocabulary, bundle lifecycle, scoped activation, discovery, simulation, runtime resolution, audit, and finance proving helpers. Internal `src/release-policy-control-plane/*` paths remain implementation details unless they are explicitly promoted.
 
 See [release-policy control-plane platform surface](docs/02-architecture/release-policy-control-plane-platform-surface.md) for the current subpath, SemVer boundary, and extraction criteria.
 
@@ -248,7 +248,7 @@ What they should not expect:
 - a drag-and-drop workspace
 - an AI chat shell
 
-The commercial product is best understood as **a hosted release and control layer delivered through APIs**, not as a workspace or chat shell.
+The commercial product is best understood as **a hosted release and control layer delivered through APIs**, not as a workspace product or chat shell.
 
 ```mermaid
 flowchart LR
@@ -341,7 +341,7 @@ Attestor gives customers:
 - hosted billing, usage, and account surfaces
 - operator-ready deployment and promotion paths
 
-That is why the right category is not just "API". It is **release and operating infrastructure**, exposed through APIs and control surfaces.
+That is why the right category is not just "API access". It is **release and operating infrastructure**, exposed through APIs and control surfaces.
 
 ## Plans and Pricing
 
