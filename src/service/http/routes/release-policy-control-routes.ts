@@ -22,6 +22,11 @@ import {
   type PolicyMutationAuditEntry,
   type PolicyMutationAuditLogWriter,
 } from '../../../release-policy-control-plane/audit-log.js';
+import {
+  createPolicyBundleConditionalResponse,
+  policyBundleCacheHeaders,
+  type PolicyBundleCacheDescriptor,
+} from '../../../release-policy-control-plane/bundle-cache.js';
 import { createPolicyImpactApi } from '../../../release-policy-control-plane/impact-summary.js';
 import {
   createPolicyControlPlaneMetadata,
@@ -293,6 +298,15 @@ function bundleDetailView(record: StoredPolicyBundleRecord, c: Context): Record<
     signedBundle: includeSignedBundle ? record.signedBundle : null,
     verificationKey: record.verificationKey,
   };
+}
+
+function applyBundleCacheHeaders(
+  c: Context,
+  descriptor: PolicyBundleCacheDescriptor,
+): void {
+  for (const [key, value] of Object.entries(policyBundleCacheHeaders(descriptor))) {
+    c.header(key, value);
+  }
 }
 
 function activationView(record: PolicyActivationRecord): Record<string, unknown> {
@@ -717,8 +731,22 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: RouteDeps): 
         error: `Policy bundle '${c.req.param('bundleId')}' in pack '${c.req.param('packId')}' not found.`,
       }, 404);
     }
-    noStore(c);
-    return c.json({ bundle: bundleDetailView(record, c) });
+    const conditional = createPolicyBundleConditionalResponse(
+      record,
+      c.req.header('if-none-match'),
+      {
+        now: new Date().toISOString(),
+        persisted: store.kind === 'file-backed',
+      },
+    );
+    applyBundleCacheHeaders(c, conditional.descriptor);
+    if (conditional.status === 'not-modified') {
+      return c.body(null, 304);
+    }
+    return c.json({
+      bundle: bundleDetailView(record, c),
+      cache: conditional.descriptor,
+    });
   });
 
   app.get('/api/v1/admin/release-policy/activation-approvals', (c) => {

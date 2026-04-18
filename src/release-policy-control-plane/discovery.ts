@@ -5,6 +5,11 @@ import type {
   StoredPolicyBundleRecord,
 } from './store.js';
 import {
+  createPolicyBundleCacheDescriptor,
+  createPolicyBundleResourcePath,
+  type PolicyBundleCacheDescriptor,
+} from './bundle-cache.js';
+import {
   comparePolicyScopeMatches,
   matchPolicyScope,
   resolvePolicyActivationPrecedence,
@@ -47,6 +52,7 @@ export interface PolicyBundleResourceDescriptor {
   readonly version: typeof POLICY_BUNDLE_RESOURCE_SPEC_VERSION;
   readonly resource: string;
   readonly etag: string;
+  readonly cache: PolicyBundleCacheDescriptor;
   readonly digest: string;
   readonly packId: string;
   readonly bundleId: string;
@@ -237,12 +243,16 @@ function lookupBundleRecord(
 function createBundleResourceDescriptor(
   record: StoredPolicyBundleRecord,
 ): PolicyBundleResourceDescriptor {
+  const cache = createPolicyBundleCacheDescriptor(record, {
+    now: record.storedAt,
+    validatedAt: record.storedAt,
+  });
+
   return Object.freeze({
     version: POLICY_BUNDLE_RESOURCE_SPEC_VERSION,
-    resource:
-      `policy-bundles/${encodeURIComponent(record.packId)}/` +
-      `${encodeURIComponent(record.bundleId)}`,
-    etag: record.signedBundle?.signatureRecord.payloadDigest ?? record.artifact.payloadDigest,
+    resource: createPolicyBundleResourcePath(record),
+    etag: cache.etag,
+    cache,
     digest: record.manifest.bundle.digest,
     packId: record.packId,
     bundleId: record.bundleId,

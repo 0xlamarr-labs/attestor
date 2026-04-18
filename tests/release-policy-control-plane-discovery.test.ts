@@ -248,7 +248,8 @@ function testScopedActiveResolutionSelectsMostSpecificBundle(): void {
   assert.equal(result.status, 'resolved');
   assert.equal(result.selectedCandidate?.bundleRef.bundleId, 'bundle_finance_account_specific');
   assert.equal(result.selectedCandidate?.resource?.resource, 'policy-bundles/finance-core/bundle_finance_account_specific');
-  assert.equal(result.selectedCandidate?.resource?.etag, accountSpecific.artifact.payloadDigest);
+  assert.equal(result.selectedCandidate?.resource?.etag, `"${accountSpecific.signedBundle.signatureRecord.payloadDigest}"`);
+  assert.equal(result.selectedCandidate?.resource?.cache.cacheControl, 'private, max-age=60, stale-if-error=300');
   assert.equal(result.matchedCandidates.length, 2);
   assert.equal(result.labels.values['cohort'], 'wave-a');
 }

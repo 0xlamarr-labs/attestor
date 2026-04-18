@@ -355,6 +355,30 @@ async function testPackAndBundleSurfaces(): Promise<void> {
   assert.equal(detail.body.bundle.artifact.payloadDigest, bundle.artifact.payloadDigest);
 }
 
+async function testBundleDetailSupportsCacheHeadersAndConditionalRevalidation(): Promise<void> {
+  const fixture = createFixture();
+  const bundle = await publishBundleThroughRoutes(fixture);
+  const path =
+    `/api/v1/admin/release-policy/packs/finance-core/bundles/` +
+    bundle.manifest.bundle.bundleId;
+  const first = await requestJson(fixture.app, path);
+  const etag = first.headers.get('etag');
+  const second = await fixture.app.request(path, {
+    method: 'GET',
+    headers: adminHeaders({
+      'if-none-match': etag ?? '',
+    }),
+  });
+
+  assert.equal(first.status, 200);
+  assert.ok(etag);
+  assert.equal(first.headers.get('cache-control'), 'private, max-age=60, stale-if-error=300');
+  assert.equal(first.headers.get('x-attestor-policy-bundle-freshness'), 'fresh');
+  assert.equal(first.body.cache.etag, etag);
+  assert.equal(second.status, 304);
+  assert.equal(second.headers.get('etag'), etag);
+}
+
 async function testActivationRequiresApprovalForR4(): Promise<void> {
   const fixture = createFixture();
   await publishBundleThroughRoutes(fixture);
@@ -623,6 +647,7 @@ async function testIdempotentMutationReplayDoesNotAppendAuditTwice(): Promise<vo
 async function run(): Promise<void> {
   await testAdminAuthIsRequired();
   await testPackAndBundleSurfaces();
+  await testBundleDetailSupportsCacheHeadersAndConditionalRevalidation();
   await testActivationRequiresApprovalForR4();
   await testApprovalRoutesEnforceDualReview();
   await testActivationAndRollbackSurfaces();
@@ -630,7 +655,7 @@ async function run(): Promise<void> {
   await testResolveAndSimulationSurfaces();
   await testAuditSurfaceFiltersAndSnapshotDisclosure();
   await testIdempotentMutationReplayDoesNotAppendAuditTwice();
-  console.log('Release policy control-plane admin-route tests: 9 passed, 0 failed');
+  console.log('Release policy control-plane admin-route tests: 10 passed, 0 failed');
 }
 
 await run();
