@@ -60,9 +60,9 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 3 |
+| Completed | 4 |
 | In progress | 0 |
-| Not started | 17 |
+| Not started | 16 |
 
 ## Frozen Step List
 
@@ -71,7 +71,7 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | 01 | complete | Codify the enforcement-plane vocabulary | `src/release-enforcement-plane/types.ts`, `tests/release-enforcement-plane-types.test.ts` | The enforcement plane now has a stable first-class grammar for enforcement points, boundary kinds, verification modes, presentation modes, cache states, degraded states, break-glass reasons, enforcement outcomes, failure reasons, and normalized enforcement-point references. |
 | 02 | complete | Define the versioned enforcement object model | `src/release-enforcement-plane/object-model.ts`, `tests/release-enforcement-plane-object-model.test.ts` | The enforcement plane now has versioned first-class objects for `enforcementRequest`, `releasePresentation`, `introspectionSnapshot`, `verificationResult`, `enforcementDecision`, and `enforcementReceipt`, including proof-shape validation for DPoP, mTLS, SPIFFE, HTTP message signatures, and signed JSON envelopes. |
 | 03 | complete | Define the verification-profile matrix | `src/release-enforcement-plane/verification-profiles.ts`, `tests/release-enforcement-plane-verification-profiles.test.ts` | Consequence type, risk class, and boundary kind now deterministically map to verification mode, online introspection requirement, allowed presentation modes, sender-constrained presentation modes, replay protection, cache/freshness budgets, override posture, and fail-closed behavior. |
-| 04 | not started | Define freshness, caching, and replay rules | `src/release-enforcement-plane/freshness.ts`, `tests/release-enforcement-plane-freshness.test.ts` | The enforcement plane now has explicit rules for stale-if-error windows, negative caching, replay windows, `jti` tracking, nonce handling, and fail-closed freshness behavior. |
+| 04 | complete | Define freshness, caching, and replay rules | `src/release-enforcement-plane/freshness.ts`, `tests/release-enforcement-plane-freshness.test.ts` | The enforcement plane now has explicit rules for stale-if-error windows, negative caching, replay windows, `jti` tracking, nonce handling, and fail-closed freshness behavior, grounded in JWT time claims, introspection cache liveness tradeoffs, DPoP replay/nonce semantics, and fail-closed admission patterns. |
 | 05 | not started | Implement the offline verification core | `src/release-enforcement-plane/offline-verifier.ts`, `tests/release-enforcement-plane-offline-verifier.test.ts` | Downstream enforcement points can locally verify signed release authorization, audience binding, consequence binding, risk binding, and evidence/output hash binding without a network call. |
 | 06 | not started | Implement online introspection and revocation checks | `src/release-enforcement-plane/online-verifier.ts`, `tests/release-enforcement-plane-online-verifier.test.ts` | High-risk boundaries now add live active-state, revocation-state, and freshness-state checks on top of offline verification using a release-introspection contract. |
 | 07 | not started | Implement audience-scoped release token exchange | `src/release-enforcement-plane/token-exchange.ts`, `tests/release-enforcement-plane-token-exchange.test.ts` | A general Attestor authorization can now be exchanged for a narrower downstream-specific release credential with explicit audience, scope, and actor history instead of being forwarded everywhere unchanged. |
@@ -91,4 +91,4 @@ Without that, Attestor is a strong policy decision and policy administration sys
 
 ## Immediate Next Step
 
-Step 03 is complete. The next implementation step is Step 04: define freshness, caching, and replay rules so the verifier can enforce cache freshness, negative-cache behavior, stale-if-error posture, nonce windows, and `jti` replay protection from a shared contract.
+Step 04 is complete. The next implementation step is Step 05: implement the offline verification core so downstream enforcement points can locally verify signed release authorization, audience binding, consequence binding, risk binding, and evidence/output hash binding without a network call.
