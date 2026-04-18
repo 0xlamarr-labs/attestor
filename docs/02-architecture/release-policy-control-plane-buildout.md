@@ -58,9 +58,9 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 9 |
+| Completed | 10 |
 | In progress | 0 |
-| Not started | 11 |
+| Not started | 10 |
 
 ## Frozen Step List
 
@@ -75,7 +75,7 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 | 07 | complete | Build activation and rollback records | `src/release-policy-control-plane/activation-records.ts`, `tests/release-policy-control-plane-activation-records.test.ts` | Activation records now carry explicit rollout mode, reason code, operation type, supersession link, and rollback target fields, with lifecycle helpers that stage candidates, supersede prior exact-scope activations, and create rollback replacements on top of the control-plane store. |
 | 08 | complete | Add discovery and bundle-resolution surface | `src/release-policy-control-plane/discovery.ts`, `tests/release-policy-control-plane-discovery.test.ts` | The control plane now has a first-class discovery surface with reserved scope labels, static vs scoped-active discovery handling, explicit bundle resource descriptors, and fail-closed bundle-resolution results for resolved, ambiguous, no-match, and missing-bundle cases. |
 | 09 | complete | Build the active policy resolver | `src/release-policy-control-plane/resolver.ts`, `tests/release-policy-control-plane-resolver.test.ts` | The control plane now resolves the effective active policy for a request by composing bundle discovery, compatibility checks, entry-level scoped precedence, runtime release-policy matching, and rollout evaluation into one fail-closed resolution contract. |
-| 10 | not_started | Add policy simulation and dry-run API | Pending | Operators need to ask “what would this policy do?” before activation; simulation must become a first-class control-plane capability. |
+| 10 | complete | Add policy simulation and dry-run API | `src/release-policy-control-plane/simulation.ts`, `tests/release-policy-control-plane-simulation.test.ts` | Operators can now resolve the current active policy, clone the control-plane snapshot into an isolated in-memory store, overlay a candidate signed bundle and activation posture, and compute a fail-closed dry-run result with explicit current-versus-simulated status and delta flags without mutating the persistent store. |
 | 11 | not_started | Add policy diff and impact summaries | Pending | Show semantic differences between policy versions, affected scopes, and consequence/risk changes before rollout. |
 | 12 | not_started | Build a policy test-pack format and runner | Pending | Policy changes should carry executable checks and example cases so bundle activation depends on verifiable policy tests, not just syntax. |
 | 13 | not_started | Add immutable policy mutation audit logging | Pending | Policy create/update/activate/rollback actions need their own tamper-evident audit chain, separate from release-decision logs. |
@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-Step 10 is next. The goal is to add policy simulation and a dry-run API on top of the new active policy resolver.
+Step 11 is next. The goal is to add policy diff and impact summaries on top of the new simulation and resolver surfaces.

@@ -357,6 +357,28 @@ export function createInMemoryPolicyControlPlaneStore(): PolicyControlPlaneStore
   });
 }
 
+export function createInMemoryPolicyControlPlaneStoreFromSnapshot(
+  snapshot: PolicyStoreSnapshot,
+): PolicyControlPlaneStore {
+  let store: PolicyStoreFile = {
+    version: 1,
+    metadata: snapshot.metadata ? structuredClone(snapshot.metadata) : null,
+    packs: snapshot.packs.map((pack) => structuredClone(pack)),
+    bundles: snapshot.bundles.map((bundle) => structuredClone(bundle)),
+    activations: snapshot.activations.map((activation) => structuredClone(activation)),
+  };
+
+  return createPolicyControlPlaneStoreFromAccessors('embedded-memory', {
+    read: () => store,
+    mutate: (action) => {
+      const workingCopy = structuredClone(store) as PolicyStoreFile;
+      const result = action(workingCopy);
+      store = workingCopy;
+      return result;
+    },
+  });
+}
+
 function defaultPolicyStorePath(): string {
   return resolve(
     process.env.ATTESTOR_POLICY_CONTROL_PLANE_STORE_PATH ??
