@@ -89,4 +89,4 @@ Without that, Attestor has a strong release kernel but not yet a true release-po
 
 ## Immediate Next Step
 
-The frozen policy control-plane buildout track is complete. The next architectural choice is no longer another control-plane primitive, but whether a second proving domain or an external/operator-managed deployment requirement is strong enough to justify extraction beyond the current modular-monolith package surface.
+The frozen policy control-plane buildout track is complete. The research-backed next buildout is now the [release enforcement-plane tracker](release-enforcement-plane-buildout.md): distributed policy enforcement points, sender-constrained release presentation, online liveness checks, and consequence-boundary adapters that make `no release authorization -> no consequence` reusable beyond the first finance paths.
