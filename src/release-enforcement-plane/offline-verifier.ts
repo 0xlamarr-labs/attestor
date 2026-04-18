@@ -30,6 +30,7 @@ import {
   type EnforcementFailureReason,
   type ReleasePresentationMode,
 } from './types.js';
+import { verifyDpopProof } from './dpop.js';
 import {
   resolveVerificationProfile,
   type VerificationProfile,
@@ -284,6 +285,54 @@ function bindingFailureReasons(
   return reasons;
 }
 
+async function dpopBindingFailureReasons(
+  input: OfflineReleaseVerificationInput,
+  claims: ReleaseTokenClaims,
+  checkedAt: string,
+): Promise<readonly EnforcementFailureReason[]> {
+  if (input.presentation.mode !== 'dpop-bound-token') {
+    return [];
+  }
+
+  const proof = input.presentation.proof;
+  const transport = input.request.transport;
+  if (
+    proof?.kind !== 'dpop' ||
+    transport?.kind !== 'http' ||
+    input.presentation.releaseToken === null ||
+    claims.cnf?.jkt === undefined
+  ) {
+    return ['binding-mismatch'];
+  }
+
+  const verified = await verifyDpopProof({
+    proofJwt: proof.proofJwt,
+    httpMethod: transport.method,
+    httpUri: transport.uri,
+    accessToken: input.presentation.releaseToken,
+    expectedJwkThumbprint: claims.cnf.jkt,
+    now: checkedAt,
+    replayLedgerEntry: input.replayLedgerEntry,
+  });
+  const metadataFailures: EnforcementFailureReason[] = [];
+
+  if (
+    verified.proofJti !== proof.proofJti ||
+    verified.httpMethod !== proof.httpMethod ||
+    verified.httpUri !== proof.httpUri ||
+    verified.accessTokenHash !== proof.accessTokenHash ||
+    verified.nonce !== proof.nonce ||
+    verified.publicKeyThumbprint !== proof.keyThumbprint
+  ) {
+    metadataFailures.push('binding-mismatch');
+  }
+
+  return uniqueFailureReasons([
+    ...verified.failureReasons,
+    ...metadataFailures,
+  ]);
+}
+
 function replaySubjectKindForPresentation(
   presentation: ReleasePresentation,
 ): ReplaySubjectKind {
@@ -389,6 +438,7 @@ export async function verifyOfflineReleaseAuthorization(
         ...protectedHeaderFailureReasons(tokenVerification, input.verificationKey),
         ...claimShapeFailureReasons(tokenVerification.claims),
         ...bindingFailureReasons(input, tokenVerification.claims),
+        ...(await dpopBindingFailureReasons(input, tokenVerification.claims, checkedAt)),
       );
     } catch (error) {
       offlineFailures.push(releaseTokenFailureReason(error));

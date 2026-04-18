@@ -157,6 +157,7 @@ export interface ActiveReleaseTokenIntrospectionResult
   readonly exchanged_at?: number;
   readonly source_aud?: string;
   readonly token_use?: ReleaseTokenClaims['token_use'];
+  readonly cnf?: ReleaseTokenClaims['cnf'];
 }
 
 export type ReleaseTokenIntrospectionResult =
@@ -537,6 +538,7 @@ export async function introspectReleaseToken(
       : {}),
     ...(verified.claims.source_aud ? { source_aud: verified.claims.source_aud } : {}),
     ...(verified.claims.token_use ? { token_use: verified.claims.token_use } : {}),
+    ...(verified.claims.cnf ? { cnf: verified.claims.cnf } : {}),
   });
 }
 

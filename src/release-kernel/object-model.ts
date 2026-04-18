@@ -159,6 +159,10 @@ export interface ReleaseTokenActorClaim {
   readonly act?: ReleaseTokenActorClaim;
 }
 
+export interface ReleaseTokenConfirmationClaim {
+  readonly jkt: string;
+}
+
 export interface ReleaseTokenClaims {
   readonly version: typeof RELEASE_TOKEN_SPEC_VERSION;
   readonly iss: string;
@@ -186,6 +190,7 @@ export interface ReleaseTokenClaims {
   readonly exchanged_at?: number;
   readonly source_aud?: string;
   readonly token_use?: 'release' | 'exchanged-release';
+  readonly cnf?: ReleaseTokenConfirmationClaim;
 }
 
 export interface CreateReleaseDecisionSkeletonInput {
@@ -224,6 +229,7 @@ export interface BuildReleaseTokenClaimsInput {
   readonly exchangedAtEpochSeconds?: number;
   readonly sourceAudience?: string;
   readonly tokenUse?: ReleaseTokenClaims['token_use'];
+  readonly confirmation?: ReleaseTokenConfirmationClaim;
 }
 
 export function retentionClassForRiskClass(riskClass: RiskClass): EvidenceRetentionClass {
@@ -385,6 +391,7 @@ export function buildReleaseTokenClaims(input: BuildReleaseTokenClaimsInput): Re
       : {}),
     ...(input.sourceAudience ? { source_aud: input.sourceAudience } : {}),
     ...(input.tokenUse ? { token_use: input.tokenUse } : {}),
+    ...(input.confirmation ? { cnf: input.confirmation } : {}),
   };
 }
 

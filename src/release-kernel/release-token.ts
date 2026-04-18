@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { SignJWT, exportJWK, importPKCS8, importSPKI, jwtVerify, errors as joseErrors } from 'jose';
 import type { JWK, JWTHeaderParameters } from 'jose';
-import type { ReleaseDecision, ReleaseTokenActorClaim, ReleaseTokenClaims } from './object-model.js';
+import type {
+  ReleaseDecision,
+  ReleaseTokenActorClaim,
+  ReleaseTokenClaims,
+  ReleaseTokenConfirmationClaim,
+} from './object-model.js';
 import {
   buildReleaseTokenClaims,
   defaultReleaseTokenTtlSecondsForRiskClass,
@@ -48,6 +53,7 @@ export interface ReleaseTokenIssueInput {
   readonly exchangedAt?: string;
   readonly sourceAudience?: string;
   readonly tokenUse?: ReleaseTokenClaims['token_use'];
+  readonly confirmation?: ReleaseTokenConfirmationClaim;
 }
 
 export interface IssuedReleaseToken {
@@ -206,6 +212,7 @@ export function createReleaseTokenIssuer(
         ),
         sourceAudience: issueInput.sourceAudience,
         tokenUse: issueInput.tokenUse,
+        confirmation: issueInput.confirmation,
       });
 
       const privateKey = await importPKCS8(input.privateKeyPem, algorithm);

@@ -60,9 +60,9 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 7 |
+| Completed | 8 |
 | In progress | 0 |
-| Not started | 13 |
+| Not started | 12 |
 
 ## Frozen Step List
 
@@ -75,7 +75,7 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | 05 | complete | Implement the offline verification core | `src/release-enforcement-plane/offline-verifier.ts`, `tests/release-enforcement-plane-offline-verifier.test.ts` | Downstream enforcement points can locally verify signed release authorization, audience binding, consequence binding, risk binding, policy/output/consequence hash binding, replay freshness, and safe indeterminate posture for online-required releases without a network call. |
 | 06 | complete | Implement online introspection and revocation checks | `src/release-enforcement-plane/online-verifier.ts`, `tests/release-enforcement-plane-online-verifier.test.ts` | High-risk boundaries now add live active-state, revocation-state, freshness-state, unknown/unsupported-token handling, usage exhaustion/replay, and claim-consistency checks on top of offline verification using the release-introspection contract. |
 | 07 | complete | Implement audience-scoped release token exchange | `src/release-enforcement-plane/token-exchange.ts`, `tests/release-enforcement-plane-token-exchange.test.ts` | A general Attestor authorization can now be exchanged for a narrower downstream-specific release credential with explicit audience, resource, scope, actor history, parent-token linkage, source-audience linkage, TTL narrowing, optional subject-token liveness checks, and registry registration for downstream online enforcement. |
-| 08 | not started | Implement DPoP-bound HTTP presentation | `src/release-enforcement-plane/dpop.ts`, `tests/release-enforcement-plane-dpop.test.ts` | HTTP-bound enforcement can now require proof-of-possession on each request through method-, URI-, access-token-, nonce-, and `jti`-bound DPoP proofs. |
+| 08 | complete | Implement DPoP-bound HTTP presentation | `src/release-enforcement-plane/dpop.ts`, `tests/release-enforcement-plane-dpop.test.ts` | HTTP-bound enforcement can now require DPoP proof-of-possession on each request with `typ=dpop+jwt`, public JWK thumbprint binding through `cnf.jkt`, method and normalized URI binding through `htm`/`htu`, release-token hash binding through `ath`, optional nonce checks, and `jti` replay-ledger protection. The offline verifier now enforces the signed proof against the presented release token, and the high-risk online verifier path remains compatible with DPoP-bound presentations. |
 | 09 | not started | Implement workload-bound mTLS and SPIFFE presentation | `src/release-enforcement-plane/workload-binding.ts`, `tests/release-enforcement-plane-workload-binding.test.ts` | Service-to-service enforcement can now bind release authorization to workload certificate material, certificate thumbprints, or SPIFFE/SPIRE-issued identities instead of trusting a replayable bearer alone. |
 | 10 | not started | Implement signed HTTP authorization envelopes | `src/release-enforcement-plane/http-message-signatures.ts`, `tests/release-enforcement-plane-http-message-signatures.test.ts` | Webhook and callback boundaries now have a detached-signature transport for request integrity and authenticity across real HTTP intermediaries. |
 | 11 | not started | Implement signed async consequence envelopes | `src/release-enforcement-plane/async-envelope.ts`, `tests/release-enforcement-plane-async-envelope.test.ts` | Queue, export, file, and artifact boundaries now carry DSSE-style consequence envelopes with expiry, idempotency, and binding fields that survive asynchronous transport. |
@@ -91,4 +91,4 @@ Without that, Attestor is a strong policy decision and policy administration sys
 
 ## Immediate Next Step
 
-Step 07 is complete. The next implementation step is Step 08: implement DPoP-bound HTTP presentation so HTTP-bound enforcement can require proof-of-possession on each request through method-, URI-, access-token-, nonce-, and `jti`-bound DPoP proofs.
+Step 08 is complete. The next implementation step is Step 09: implement workload-bound mTLS and SPIFFE presentation so service-to-service enforcement can bind release authorization to workload certificate material, certificate thumbprints, or SPIFFE/SPIRE-issued identities instead of trusting a replayable bearer alone.
