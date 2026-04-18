@@ -60,15 +60,15 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 0 |
+| Completed | 1 |
 | In progress | 0 |
-| Not started | 20 |
+| Not started | 19 |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
-| 01 | not started | Codify the enforcement-plane vocabulary | `src/release-enforcement-plane/types.ts`, `tests/release-enforcement-plane-types.test.ts` | The enforcement plane gets a stable first-class grammar for enforcement points, boundary kinds, verification modes, presentation modes, cache states, degraded states, and break-glass reasons. |
+| 01 | complete | Codify the enforcement-plane vocabulary | `src/release-enforcement-plane/types.ts`, `tests/release-enforcement-plane-types.test.ts` | The enforcement plane now has a stable first-class grammar for enforcement points, boundary kinds, verification modes, presentation modes, cache states, degraded states, break-glass reasons, enforcement outcomes, failure reasons, and normalized enforcement-point references. |
 | 02 | not started | Define the versioned enforcement object model | `src/release-enforcement-plane/object-model.ts`, `tests/release-enforcement-plane-object-model.test.ts` | The model freezes first-class objects for `enforcementRequest`, `releasePresentation`, `verificationResult`, `enforcementDecision`, `introspectionSnapshot`, and `enforcementReceipt`. |
 | 03 | not started | Define the verification-profile matrix | `src/release-enforcement-plane/verification-profiles.ts`, `tests/release-enforcement-plane-verification-profiles.test.ts` | Consequence type, risk class, and boundary kind now deterministically map to offline verification, online introspection, cache budgets, sender constraint, and override posture. |
 | 04 | not started | Define freshness, caching, and replay rules | `src/release-enforcement-plane/freshness.ts`, `tests/release-enforcement-plane-freshness.test.ts` | The enforcement plane now has explicit rules for stale-if-error windows, negative caching, replay windows, `jti` tracking, nonce handling, and fail-closed freshness behavior. |
@@ -91,4 +91,4 @@ Without that, Attestor is a strong policy decision and policy administration sys
 
 ## Immediate Next Step
 
-The research-backed first implementation step is Step 01: freeze the shared enforcement-plane vocabulary so every later verifier, token-exchange flow, sender-constrained presentation, and boundary adapter builds on one stable grammar instead of inventing local terms.
+Step 01 is complete. The next implementation step is Step 02: define the versioned enforcement object model so the verifier core, online introspection path, and boundary adapters can exchange typed `enforcementRequest`, `releasePresentation`, `verificationResult`, `enforcementDecision`, `introspectionSnapshot`, and `enforcementReceipt` objects instead of passing ad hoc structs.
