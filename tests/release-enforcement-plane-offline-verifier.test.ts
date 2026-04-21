@@ -14,6 +14,7 @@ import {
   verifyOfflineReleaseAuthorization,
 } from '../src/release-enforcement-plane/offline-verifier.js';
 import { resolveVerificationProfile } from '../src/release-enforcement-plane/verification-profiles.js';
+import { createMtlsReleaseTokenConfirmation } from '../src/release-enforcement-plane/workload-binding.js';
 
 let passed = 0;
 
@@ -213,6 +214,10 @@ async function testHighRiskNeedsOnline(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T08:00:00.000Z',
     tokenId: 'rt_r4_record',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: 'cert-thumbprint',
+      spiffeId: 'spiffe://attestor/tests/finance-writer',
+    }),
   });
   const request = makeRequest({
     id: 'erq-r4-record',

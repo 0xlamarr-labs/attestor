@@ -31,6 +31,7 @@ import {
   type ReleasePresentationMode,
 } from './types.js';
 import { verifyDpopProof } from './dpop.js';
+import { verifyWorkloadBoundPresentation } from './workload-binding.js';
 import {
   resolveVerificationProfile,
   type VerificationProfile,
@@ -333,6 +334,27 @@ async function dpopBindingFailureReasons(
   ]);
 }
 
+function workloadBindingFailureReasons(
+  input: OfflineReleaseVerificationInput,
+  claims: ReleaseTokenClaims,
+  checkedAt: string,
+): readonly EnforcementFailureReason[] {
+  if (
+    input.presentation.mode !== 'mtls-bound-token' &&
+    input.presentation.mode !== 'spiffe-bound-token'
+  ) {
+    return [];
+  }
+
+  const verified = verifyWorkloadBoundPresentation({
+    presentation: input.presentation,
+    claims,
+    checkedAt,
+  });
+
+  return verified.failureReasons;
+}
+
 function replaySubjectKindForPresentation(
   presentation: ReleasePresentation,
 ): ReplaySubjectKind {
@@ -439,6 +461,7 @@ export async function verifyOfflineReleaseAuthorization(
         ...claimShapeFailureReasons(tokenVerification.claims),
         ...bindingFailureReasons(input, tokenVerification.claims),
         ...(await dpopBindingFailureReasons(input, tokenVerification.claims, checkedAt)),
+        ...workloadBindingFailureReasons(input, tokenVerification.claims, checkedAt),
       );
     } catch (error) {
       offlineFailures.push(releaseTokenFailureReason(error));

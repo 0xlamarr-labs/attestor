@@ -160,7 +160,10 @@ export interface ReleaseTokenActorClaim {
 }
 
 export interface ReleaseTokenConfirmationClaim {
-  readonly jkt: string;
+  readonly jkt?: string;
+  readonly 'x5t#S256'?: string;
+  readonly spiffe_id?: string;
+  readonly spiffe_trust_domain?: string;
 }
 
 export interface ReleaseTokenClaims {

@@ -60,9 +60,9 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 8 |
+| Completed | 9 |
 | In progress | 0 |
-| Not started | 12 |
+| Not started | 11 |
 
 ## Frozen Step List
 
@@ -76,7 +76,7 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | 06 | complete | Implement online introspection and revocation checks | `src/release-enforcement-plane/online-verifier.ts`, `tests/release-enforcement-plane-online-verifier.test.ts` | High-risk boundaries now add live active-state, revocation-state, freshness-state, unknown/unsupported-token handling, usage exhaustion/replay, and claim-consistency checks on top of offline verification using the release-introspection contract. |
 | 07 | complete | Implement audience-scoped release token exchange | `src/release-enforcement-plane/token-exchange.ts`, `tests/release-enforcement-plane-token-exchange.test.ts` | A general Attestor authorization can now be exchanged for a narrower downstream-specific release credential with explicit audience, resource, scope, actor history, parent-token linkage, source-audience linkage, TTL narrowing, optional subject-token liveness checks, and registry registration for downstream online enforcement. |
 | 08 | complete | Implement DPoP-bound HTTP presentation | `src/release-enforcement-plane/dpop.ts`, `tests/release-enforcement-plane-dpop.test.ts` | HTTP-bound enforcement can now require DPoP proof-of-possession on each request with `typ=dpop+jwt`, public JWK thumbprint binding through `cnf.jkt`, method and normalized URI binding through `htm`/`htu`, release-token hash binding through `ath`, optional nonce checks, and `jti` replay-ledger protection. The offline verifier now enforces the signed proof against the presented release token, and the high-risk online verifier path remains compatible with DPoP-bound presentations. |
-| 09 | not started | Implement workload-bound mTLS and SPIFFE presentation | `src/release-enforcement-plane/workload-binding.ts`, `tests/release-enforcement-plane-workload-binding.test.ts` | Service-to-service enforcement can now bind release authorization to workload certificate material, certificate thumbprints, or SPIFFE/SPIRE-issued identities instead of trusting a replayable bearer alone. |
+| 09 | complete | Implement workload-bound mTLS and SPIFFE presentation | `src/release-enforcement-plane/workload-binding.ts`, `tests/release-enforcement-plane-workload-binding.test.ts` | Service-to-service enforcement now binds release authorization to RFC 8705-style `cnf.x5t#S256` certificate thumbprints and SPIFFE/SPIRE workload identities. The offline and online verifiers now fail closed when an mTLS/SPIFFE presentation is not backed by matching token confirmation, and token exchange preserves workload confirmation so narrowing a release token does not weaken it back into a bearer credential. |
 | 10 | not started | Implement signed HTTP authorization envelopes | `src/release-enforcement-plane/http-message-signatures.ts`, `tests/release-enforcement-plane-http-message-signatures.test.ts` | Webhook and callback boundaries now have a detached-signature transport for request integrity and authenticity across real HTTP intermediaries. |
 | 11 | not started | Implement signed async consequence envelopes | `src/release-enforcement-plane/async-envelope.ts`, `tests/release-enforcement-plane-async-envelope.test.ts` | Queue, export, file, and artifact boundaries now carry DSSE-style consequence envelopes with expiry, idempotency, and binding fields that survive asynchronous transport. |
 | 12 | not started | Build the reference Node and Hono middleware PEP | `src/release-enforcement-plane/middleware.ts`, `tests/release-enforcement-plane-middleware.test.ts` | A reusable middleware path now makes `no release authorization -> no consequence` easy to adopt on ordinary HTTP mutation surfaces. |
@@ -91,4 +91,4 @@ Without that, Attestor is a strong policy decision and policy administration sys
 
 ## Immediate Next Step
 
-Step 08 is complete. The next implementation step is Step 09: implement workload-bound mTLS and SPIFFE presentation so service-to-service enforcement can bind release authorization to workload certificate material, certificate thumbprints, or SPIFFE/SPIRE-issued identities instead of trusting a replayable bearer alone.
+Step 09 is complete. The next implementation step is Step 10: implement signed HTTP authorization envelopes so webhook and callback boundaries can carry detached request integrity and release authorization across real HTTP intermediaries.

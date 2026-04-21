@@ -430,6 +430,7 @@ async function testActivationAndRollbackSurfaces(): Promise<void> {
       bundleId: 'bundle_finance_core_2026_04_18',
       approvalRequestId,
       target: sampleTarget(),
+      activatedAt: '2026-04-18T09:11:00.000Z',
       rationale: 'Promote finance record release policy.',
     },
   });
@@ -477,6 +478,7 @@ async function testEmergencyFreezeAndRollbackRequireBreakGlassAndFailClosed(): P
       bundleId: 'bundle_finance_core_2026_04_18',
       approvalRequestId,
       target: sampleTarget(),
+      activatedAt: '2026-04-18T09:11:00.000Z',
       rationale: 'Promote finance record release policy.',
     },
   });
@@ -572,6 +574,7 @@ async function testResolveAndSimulationSurfaces(): Promise<void> {
       bundleId: 'bundle_finance_core_2026_04_18',
       approvalRequestId,
       target: sampleTarget(),
+      activatedAt: '2026-04-18T09:11:00.000Z',
       rationale: 'Promote finance record release policy.',
     },
   });

@@ -621,6 +621,7 @@ export async function exchangeReleaseToken(
     exchangedAt: requestedAt,
     sourceAudience: claims.aud,
     tokenUse: 'exchanged-release',
+    confirmation: claims.cnf,
   });
 
   input.store?.registerIssuedToken({ issuedToken, decision });

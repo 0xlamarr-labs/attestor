@@ -22,8 +22,11 @@ import {
   ONLINE_RELEASE_VERIFIER_SPEC_VERSION,
   verifyOnlineReleaseAuthorization,
 } from '../src/release-enforcement-plane/online-verifier.js';
+import { createMtlsReleaseTokenConfirmation } from '../src/release-enforcement-plane/workload-binding.js';
 
 let passed = 0;
+const WORKLOAD_CERT_THUMBPRINT = 'cert-thumbprint';
+const WORKLOAD_SPIFFE_ID = 'spiffe://attestor/tests/finance-writer';
 
 function ok(condition: unknown, message: string): void {
   assert.ok(condition, message);
@@ -154,9 +157,9 @@ function mtlsPresentation(input: {
     expiresAt: input.issued.expiresAt,
     proof: {
       kind: 'mtls',
-      certificateThumbprint: 'cert-thumbprint',
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
       subjectDn: 'CN=finance-writer',
-      spiffeId: 'spiffe://attestor/tests/finance-writer',
+      spiffeId: WORKLOAD_SPIFFE_ID,
     },
   });
 }
@@ -255,6 +258,10 @@ async function testHighRiskActiveIntrospectionAllows(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_r4',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   store.registerIssuedToken({ issuedToken: issued, decision });
   const request = makeRequest({
@@ -302,6 +309,10 @@ async function testHighRiskCanConsumeOnSuccess(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_consume',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   store.registerIssuedToken({ issuedToken: issued, decision });
   const request = makeRequest({
@@ -346,6 +357,10 @@ async function testRevokedTokenFails(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_revoked',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   store.registerIssuedToken({ issuedToken: issued, decision });
   store.revokeToken({
@@ -394,6 +409,10 @@ async function testConsumedTokenFailsAsReplay(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_consumed',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   store.registerIssuedToken({ issuedToken: issued, decision });
   store.recordTokenUse({
@@ -438,6 +457,10 @@ async function testUnknownTokenFails(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_unknown',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   const request = makeRequest({
     id: 'erq-online-unknown',
@@ -476,6 +499,10 @@ async function testUnsupportedTokenTypeFails(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_unsupported',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   store.registerIssuedToken({ issuedToken: issued, decision });
   const request = makeRequest({
@@ -514,6 +541,10 @@ async function testActiveClaimMismatchFails(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_mismatch',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   const introspector: ReleaseTokenIntrospector = {
     async introspect() {
@@ -558,6 +589,10 @@ async function testIntrospectionUnavailableFailsClosed(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T09:00:00.000Z',
     tokenId: 'rt_online_unavailable',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   const introspector: ReleaseTokenIntrospector = {
     async introspect() {

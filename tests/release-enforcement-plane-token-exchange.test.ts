@@ -24,8 +24,11 @@ import {
 } from '../src/release-enforcement-plane/token-exchange.js';
 import { verifyOfflineReleaseAuthorization } from '../src/release-enforcement-plane/offline-verifier.js';
 import { verifyOnlineReleaseAuthorization } from '../src/release-enforcement-plane/online-verifier.js';
+import { createMtlsReleaseTokenConfirmation } from '../src/release-enforcement-plane/workload-binding.js';
 
 let passed = 0;
+const WORKLOAD_CERT_THUMBPRINT = 'cert-thumbprint';
+const WORKLOAD_SPIFFE_ID = 'spiffe://attestor/tests/finance-writer';
 
 function ok(condition: unknown, message: string): void {
   assert.ok(condition, message);
@@ -129,9 +132,9 @@ function mtlsPresentation(input: {
     scope: input.issued.claims.scope?.split(/\s+/) ?? [],
     proof: {
       kind: 'mtls',
-      certificateThumbprint: 'cert-thumbprint',
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
       subjectDn: 'CN=finance-writer',
-      spiffeId: 'spiffe://attestor/tests/finance-writer',
+      spiffeId: WORKLOAD_SPIFFE_ID,
     },
   });
 }
@@ -473,6 +476,10 @@ async function testHighRiskExchangeRegistersForOnlineVerifier(): Promise<void> {
     decision,
     issuedAt: '2026-04-18T10:00:00.000Z',
     tokenId: 'rt_parent_r4_exchange',
+    confirmation: createMtlsReleaseTokenConfirmation({
+      certificateThumbprint: WORKLOAD_CERT_THUMBPRINT,
+      spiffeId: WORKLOAD_SPIFFE_ID,
+    }),
   });
   store.registerIssuedToken({ issuedToken: parent, decision });
 
