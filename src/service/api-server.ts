@@ -86,8 +86,6 @@ import {
 } from '../release-policy-control-plane/index.js';
 import {
   canEnqueueTenantAsyncJob,
-  createPipelineQueue,
-  createPipelineWorker,
   getAsyncQueueSummary,
   getAsyncRetryPolicy,
   getJobStatus,
@@ -138,22 +136,15 @@ const {
 } = controlPlaneFinanceProving;
 const { createFileBackedPolicyControlPlaneStore } = controlPlaneStore;
 const { createFileBackedPolicyMutationAuditLogWriter } = controlPlaneAuditLog;
-import { TENANT_SCHEMA_SQL, autoActivateRLS } from './tenant-rls.js';
 import {
-  configureTenantRateLimiter,
   getTenantPipelineRateLimit,
   reserveTenantPipelineRequest,
-  shutdownTenantRateLimiter,
 } from './rate-limit.js';
 import {
-  configureTenantAsyncExecutionCoordinator,
   getTenantAsyncExecutionCoordinatorStatus,
-  shutdownTenantAsyncExecutionCoordinator,
 } from './async-tenant-execution.js';
 import {
-  configureTenantAsyncWeightedDispatchCoordinator,
   getTenantAsyncWeightedDispatchCoordinatorStatus,
-  shutdownTenantAsyncWeightedDispatchCoordinator,
 } from './async-weighted-dispatch.js';
 import {
   evaluateApiHighAvailabilityState,
@@ -387,6 +378,19 @@ import { registerPublicSiteRoutes } from './http/routes/public-site-routes.js';
 import { registerReleasePolicyControlRoutes } from './http/routes/release-policy-control-routes.js';
 import { registerReleaseReviewRoutes } from './http/routes/release-review-routes.js';
 import { registerWebhookRoutes } from './http/routes/webhook-routes.js';
+import {
+  asyncBackendMode,
+  bullmqQueue,
+  configureTenantRuntimeBackends,
+  currentAsyncSubmissionReservations,
+  inProcessJobs,
+  inProcessTenantQueueSnapshot,
+  redisMode,
+  releaseAsyncSubmission,
+  reserveAsyncSubmission,
+  shutdownTenantRuntimeBackends,
+} from './runtime/tenant-runtime.js';
+import { rlsActivationResult } from './runtime/rls-runtime.js';
 
 // Register domain packs
 if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
@@ -1585,128 +1589,6 @@ async function finalizeAdminMutation(options: {
   return options.responseBody;
 }
 
-// ─── Async Pipeline — BullMQ with truthful in-process fallback ──────────────
-
-// Detect async backend at startup
-let asyncBackendMode: 'bullmq' | 'in_process' = 'in_process';
-let bullmqQueue: Awaited<ReturnType<typeof createPipelineQueue>> | null = null;
-let bullmqWorker: Awaited<ReturnType<typeof createPipelineWorker>> | null = null;
-let sharedRedisUrl: string | null = null;
-
-// In-process fallback store
-interface AsyncJob {
-  id: string;
-  status: 'queued' | 'running' | 'completed' | 'failed';
-  submittedAt: string;
-  completedAt: string | null;
-  tenantId: string;
-  planId: string | null;
-  result: Record<string, unknown> | null;
-  error: string | null;
-}
-const inProcessJobs = new Map<string, AsyncJob>();
-const asyncSubmissionReservations = new Map<string, number>();
-
-function currentAsyncSubmissionReservations(tenantId: string): number {
-  return asyncSubmissionReservations.get(tenantId) ?? 0;
-}
-
-function reserveAsyncSubmission(tenantId: string): void {
-  asyncSubmissionReservations.set(tenantId, currentAsyncSubmissionReservations(tenantId) + 1);
-}
-
-function releaseAsyncSubmission(tenantId: string): void {
-  const next = currentAsyncSubmissionReservations(tenantId) - 1;
-  if (next <= 0) {
-    asyncSubmissionReservations.delete(tenantId);
-    return;
-  }
-  asyncSubmissionReservations.set(tenantId, next);
-}
-
-function inProcessTenantQueueSnapshot(tenantId: string, planId: string | null) {
-  const states = {
-    waiting: 0,
-    active: 0,
-    delayed: 0,
-    prioritized: 0,
-    failed: 0,
-  };
-  for (const job of inProcessJobs.values()) {
-    if (job.tenantId !== tenantId) continue;
-    if (job.status === 'queued') states.waiting += 1;
-    if (job.status === 'running') states.active += 1;
-    if (job.status === 'failed') states.failed += 1;
-  }
-  const policy = resolvePlanAsyncQueue(planId);
-  const executionPolicy = resolvePlanAsyncExecution(planId);
-  const dispatchPolicy = resolvePlanAsyncDispatch(planId);
-  return {
-    tenantId,
-    planId,
-    pendingJobs: states.waiting + states.active,
-    pendingLimit: policy.pendingJobsPerTenant,
-    enforced: policy.enforced,
-    activeExecutions: states.active,
-    activeExecutionLimit: executionPolicy.activeJobsPerTenant,
-    activeExecutionEnforced: executionPolicy.enforced,
-    activeExecutionBackend: 'memory' as const,
-    weightedDispatchEnforced: false,
-    weightedDispatchBackend: 'memory' as const,
-    weightedDispatchWeight: dispatchPolicy.dispatchWeight,
-    weightedDispatchWindowMs: dispatchPolicy.dispatchWindowMs,
-    weightedDispatchNextEligibleAt: null,
-    weightedDispatchWaitMs: 0,
-    scanLimit: Number.MAX_SAFE_INTEGER,
-    scanTruncated: false,
-    states,
-  };
-}
-
-// BullMQ initialization via 3-tier Redis auto-resolution:
-// 1. REDIS_URL env var (production)  2. localhost:6379 probe  3. embedded (dev/CI)
-// Falls back to in_process if all tiers fail.
-import { resolveRedis } from './redis-auto.js';
-
-let redisMode: string = 'none';
-try {
-  const resolved = await resolveRedis();
-  const redisUrl = `redis://${resolved.host}:${resolved.port}`;
-  sharedRedisUrl = redisUrl;
-  configureTenantAsyncExecutionCoordinator({ redisUrl, redisMode: resolved.mode });
-  configureTenantAsyncWeightedDispatchCoordinator({ redisUrl, redisMode: resolved.mode });
-  bullmqQueue = createPipelineQueue({ redisUrl });
-  bullmqWorker = createPipelineWorker({ redisUrl });
-  asyncBackendMode = 'bullmq';
-  redisMode = resolved.mode;
-  console.log(`[async] BullMQ active (Redis: ${resolved.mode} @ ${resolved.host}:${resolved.port})`);
-} catch (err: any) {
-  redisMode = 'unavailable';
-  console.log(`[async] Redis unavailable (${err.message}), using in_process fallback`);
-}
-
-// ─── RLS Auto-Activation ─────────────────────────────────────────────────────
-
-let rlsActivationResult = { activated: false, policiesFound: 0, tablesProtected: [] as string[], error: null as string | null };
-
-if (process.env.ATTESTOR_PG_URL) {
-  try {
-    const pg = await (Function('return import("pg")')() as Promise<any>);
-    const Pool = pg.Pool ?? pg.default?.Pool;
-    const pool = new Pool({ connectionString: process.env.ATTESTOR_PG_URL });
-    rlsActivationResult = await autoActivateRLS(pool);
-    if (rlsActivationResult.activated) {
-      console.log(`[rls] Active: ${rlsActivationResult.policiesFound} policies on [${rlsActivationResult.tablesProtected.join(', ')}]`);
-    } else {
-      console.log(`[rls] Not activated: ${rlsActivationResult.error ?? 'unknown'}`);
-    }
-    await pool.end();
-  } catch (err: any) {
-    rlsActivationResult.error = err.message;
-    console.log(`[rls] Skipped: ${err.message}`);
-  }
-}
-
 const routeDeps = {
   committedFinancialPacket,
   renderFinancialReportingLandingPage,
@@ -1985,18 +1867,7 @@ registerPipelineRoutes(app, routeDeps);
 
 export function startServer(port: number = 3700): { port: number; close: () => void } {
   const telemetry = initializeTelemetry('1.0.0');
-  configureTenantAsyncExecutionCoordinator({
-    redisUrl: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() || sharedRedisUrl,
-    redisMode: process.env.ATTESTOR_ASYNC_ACTIVE_REDIS_URL?.trim() ? 'explicit' : redisMode,
-  });
-  configureTenantAsyncWeightedDispatchCoordinator({
-    redisUrl: process.env.ATTESTOR_ASYNC_DISPATCH_REDIS_URL?.trim() || sharedRedisUrl,
-    redisMode: process.env.ATTESTOR_ASYNC_DISPATCH_REDIS_URL?.trim() ? 'explicit' : redisMode,
-  });
-  configureTenantRateLimiter({
-    redisUrl: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() || sharedRedisUrl,
-    redisMode: process.env.ATTESTOR_RATE_LIMIT_REDIS_URL?.trim() ? 'explicit' : redisMode,
-  });
+  configureTenantRuntimeBackends();
   const highAvailability = evaluateApiHighAvailabilityState({
     redisMode: redisMode as 'external' | 'localhost' | 'embedded' | 'none' | 'unavailable',
     asyncBackendMode: asyncBackendMode as 'bullmq' | 'in_process' | 'none',
@@ -2032,9 +1903,7 @@ export function startServer(port: number = 3700): { port: number; close: () => v
         if (server && typeof (server as any).close === 'function') {
           (server as any).close();
         }
-      void shutdownTenantAsyncExecutionCoordinator().catch(() => {});
-      void shutdownTenantAsyncWeightedDispatchCoordinator().catch(() => {});
-      void shutdownTenantRateLimiter().catch(() => {});
+      void shutdownTenantRuntimeBackends().catch(() => {});
       void shutdownTelemetry().catch(() => {});
     },
   };
