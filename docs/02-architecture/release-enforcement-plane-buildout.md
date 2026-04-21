@@ -60,9 +60,9 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 10 |
+| Completed | 11 |
 | In progress | 0 |
-| Not started | 10 |
+| Not started | 9 |
 
 ## Frozen Step List
 
@@ -78,7 +78,7 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | 08 | complete | Implement DPoP-bound HTTP presentation | `src/release-enforcement-plane/dpop.ts`, `tests/release-enforcement-plane-dpop.test.ts` | HTTP-bound enforcement can now require DPoP proof-of-possession on each request with `typ=dpop+jwt`, public JWK thumbprint binding through `cnf.jkt`, method and normalized URI binding through `htm`/`htu`, release-token hash binding through `ath`, optional nonce checks, and `jti` replay-ledger protection. The offline verifier now enforces the signed proof against the presented release token, and the high-risk online verifier path remains compatible with DPoP-bound presentations. |
 | 09 | complete | Implement workload-bound mTLS and SPIFFE presentation | `src/release-enforcement-plane/workload-binding.ts`, `tests/release-enforcement-plane-workload-binding.test.ts` | Service-to-service enforcement now binds release authorization to RFC 8705-style `cnf.x5t#S256` certificate thumbprints and SPIFFE/SPIRE workload identities. The offline and online verifiers now fail closed when an mTLS/SPIFFE presentation is not backed by matching token confirmation, and token exchange preserves workload confirmation so narrowing a release token does not weaken it back into a bearer credential. |
 | 10 | complete | Implement signed HTTP authorization envelopes | `src/release-enforcement-plane/http-message-signatures.ts`, `src/release-enforcement-plane/offline-verifier.ts`, `tests/release-enforcement-plane-http-message-signatures.test.ts` | Webhook and callback boundaries now carry RFC 9421-style detached HTTP message signatures over derived request components, release-token headers, and RFC 9530 `Content-Digest` values. The offline and online verifier paths now fail closed unless the request signature verifies, covers the required Attestor authorization envelope fields, matches the release token `cnf.jkt` sender binding, and passes nonce/replay freshness checks. |
-| 11 | not started | Implement signed async consequence envelopes | `src/release-enforcement-plane/async-envelope.ts`, `tests/release-enforcement-plane-async-envelope.test.ts` | Queue, export, file, and artifact boundaries now carry DSSE-style consequence envelopes with expiry, idempotency, and binding fields that survive asynchronous transport. |
+| 11 | complete | Implement signed async consequence envelopes | `src/release-enforcement-plane/async-envelope.ts`, `src/release-enforcement-plane/offline-verifier.ts`, `tests/release-enforcement-plane-async-envelope.test.ts` | Queue, export, file, and artifact boundaries now carry DSSE-style consequence envelopes with expiry, idempotency, release-token digest, CloudEvents metadata, in-toto Statement-style subject binding, and token `cnf.jkt` sender binding that survive asynchronous transport. Offline and online verifiers now fail closed unless the signed envelope verifies and matches the presented release authorization. |
 | 12 | not started | Build the reference Node and Hono middleware PEP | `src/release-enforcement-plane/middleware.ts`, `tests/release-enforcement-plane-middleware.test.ts` | A reusable middleware path now makes `no release authorization -> no consequence` easy to adopt on ordinary HTTP mutation surfaces. |
 | 13 | not started | Build the reference webhook receiver PEP | `src/release-enforcement-plane/webhook-receiver.ts`, `tests/release-enforcement-plane-webhook-receiver.test.ts` | Receiver-side verification now handles signed HTTP envelopes, release authorization, freshness, replay, and break-glass semantics on inbound webhook boundaries. |
 | 14 | not started | Build the record-write enforcement gateway | `src/release-enforcement-plane/record-write.ts`, `tests/release-enforcement-plane-record-write.test.ts` | Structured record mutations now go through a dedicated enforcement adapter that proves the release authorization matches the target record write before the mutation is admitted. |
@@ -91,4 +91,4 @@ Without that, Attestor is a strong policy decision and policy administration sys
 
 ## Immediate Next Step
 
-Step 10 is complete. The next implementation step is Step 11: implement signed async consequence envelopes so queue, export, file, and artifact boundaries can carry durable consequence authorization across asynchronous transport.
+Step 11 is complete. The next implementation step is Step 12: build the reference Node and Hono middleware PEP so ordinary HTTP mutation surfaces can adopt `no release authorization -> no consequence` with the shared verifier core.

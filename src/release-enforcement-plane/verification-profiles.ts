@@ -95,6 +95,7 @@ export const SENDER_CONSTRAINED_PRESENTATION_MODES = Object.freeze([
   'mtls-bound-token',
   'spiffe-bound-token',
   'http-message-signature',
+  'signed-json-envelope',
 ] as const satisfies readonly ReleasePresentationMode[]);
 
 export const RISK_VERIFICATION_BASELINES: Record<

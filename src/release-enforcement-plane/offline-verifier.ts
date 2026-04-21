@@ -37,6 +37,11 @@ import {
   verifyHttpMessageSignature,
   type HttpMessageForSignature,
 } from './http-message-signatures.js';
+import {
+  verifySignedAsyncConsequenceEnvelope,
+  type DsseEnvelope,
+  type SignedAsyncConsequenceEnvelope,
+} from './async-envelope.js';
 import { verifyWorkloadBoundPresentation } from './workload-binding.js';
 import {
   resolveVerificationProfile,
@@ -83,6 +88,16 @@ export interface OfflineHttpMessageSignatureVerificationContext {
   readonly clockSkewSeconds?: number;
 }
 
+export interface OfflineAsyncEnvelopeVerificationContext {
+  readonly envelope: DsseEnvelope | SignedAsyncConsequenceEnvelope;
+  readonly publicJwk: JWK;
+  readonly expectedIdempotencyKey?: string | null;
+  readonly expectedMessageId?: string | null;
+  readonly expectedQueueOrTopic?: string | null;
+  readonly maxEnvelopeAgeSeconds?: number;
+  readonly clockSkewSeconds?: number;
+}
+
 export interface OfflineReleaseVerificationInput {
   readonly request: EnforcementRequest;
   readonly presentation: ReleasePresentation;
@@ -95,6 +110,7 @@ export interface OfflineReleaseVerificationInput {
   readonly replayLedgerEntry?: ReplayLedgerEntry | null;
   readonly nonceLedgerEntry?: NonceLedgerEntry | null;
   readonly httpMessageSignature?: OfflineHttpMessageSignatureVerificationContext;
+  readonly asyncEnvelope?: OfflineAsyncEnvelopeVerificationContext;
   readonly verificationResultId?: string;
 }
 
@@ -462,6 +478,123 @@ async function httpMessageSignatureBindingFailureReasons(
   ]);
 }
 
+function asyncEnvelopeTransportFailureReasons(input: {
+  readonly request: EnforcementRequest;
+  readonly proofEnvelopeDigest: string;
+  readonly proofSubjectDigest: string;
+}): readonly EnforcementFailureReason[] {
+  const transport = input.request.transport;
+  if (transport?.kind === 'async') {
+    if (
+      transport.envelopeDigest !== null &&
+      transport.envelopeDigest !== input.proofEnvelopeDigest
+    ) {
+      return ['binding-mismatch'];
+    }
+    return [];
+  }
+
+  if (transport?.kind === 'artifact') {
+    if (transport.artifactDigest !== input.proofSubjectDigest) {
+      return ['binding-mismatch'];
+    }
+    return [];
+  }
+
+  return ['binding-mismatch'];
+}
+
+function asyncEnvelopeExpectedMessageId(
+  input: OfflineReleaseVerificationInput,
+  context: OfflineAsyncEnvelopeVerificationContext,
+): string | null {
+  if (context.expectedMessageId !== undefined) {
+    return context.expectedMessageId;
+  }
+  return input.request.transport?.kind === 'async'
+    ? input.request.transport.messageId
+    : null;
+}
+
+function asyncEnvelopeExpectedQueueOrTopic(
+  input: OfflineReleaseVerificationInput,
+  context: OfflineAsyncEnvelopeVerificationContext,
+): string | null {
+  if (context.expectedQueueOrTopic !== undefined) {
+    return context.expectedQueueOrTopic;
+  }
+  return input.request.transport?.kind === 'async'
+    ? input.request.transport.queueOrTopic
+    : null;
+}
+
+async function signedJsonEnvelopeBindingFailureReasons(
+  input: OfflineReleaseVerificationInput,
+  claims: ReleaseTokenClaims,
+  checkedAt: string,
+): Promise<readonly EnforcementFailureReason[]> {
+  if (input.presentation.mode !== 'signed-json-envelope') {
+    return [];
+  }
+
+  const proof = input.presentation.proof;
+  const context = input.asyncEnvelope;
+  if (
+    proof?.kind !== 'signed-json-envelope' ||
+    proof.signatureRef === null ||
+    context === undefined ||
+    input.presentation.releaseToken === null ||
+    claims.cnf?.jkt === undefined
+  ) {
+    return ['binding-mismatch'];
+  }
+
+  const transportFailures = asyncEnvelopeTransportFailureReasons({
+    request: input.request,
+    proofEnvelopeDigest: proof.envelopeDigest,
+    proofSubjectDigest: proof.subjectDigest,
+  });
+  const verified = await verifySignedAsyncConsequenceEnvelope({
+    envelope: context.envelope,
+    publicJwk: context.publicJwk,
+    now: checkedAt,
+    expectedJwkThumbprint: claims.cnf.jkt,
+    expectedReleaseTokenDigest: sha256TokenDigest(input.presentation.releaseToken),
+    expectedReleaseTokenId: claims.jti,
+    expectedReleaseDecisionId: claims.decision_id,
+    expectedAudience: claims.aud,
+    expectedTargetId: input.request.targetId,
+    expectedOutputHash: claims.output_hash,
+    expectedConsequenceHash: claims.consequence_hash,
+    expectedPolicyHash: claims.policy_hash,
+    expectedConsequenceType: claims.consequence_type,
+    expectedRiskClass: claims.risk_class,
+    expectedIdempotencyKey:
+      context.expectedIdempotencyKey ?? input.request.idempotencyKey,
+    expectedMessageId: asyncEnvelopeExpectedMessageId(input, context),
+    expectedQueueOrTopic: asyncEnvelopeExpectedQueueOrTopic(input, context),
+    expectedEnvelopeDigest: proof.envelopeDigest,
+    expectedSubjectDigest: proof.subjectDigest,
+    maxEnvelopeAgeSeconds: context.maxEnvelopeAgeSeconds,
+    clockSkewSeconds: context.clockSkewSeconds,
+    replayLedgerEntry: input.replayLedgerEntry,
+  });
+  const metadataFailures: EnforcementFailureReason[] = [...transportFailures];
+
+  if (
+    verified.envelopeDigest !== proof.envelopeDigest ||
+    verified.subjectDigest !== proof.subjectDigest ||
+    verified.signatureRef !== proof.signatureRef
+  ) {
+    metadataFailures.push('binding-mismatch');
+  }
+
+  return uniqueFailureReasons([
+    ...verified.failureReasons,
+    ...metadataFailures,
+  ]);
+}
+
 function replaySubjectKindForPresentation(
   presentation: ReleasePresentation,
 ): ReplaySubjectKind {
@@ -570,6 +703,11 @@ export async function verifyOfflineReleaseAuthorization(
         ...(await dpopBindingFailureReasons(input, tokenVerification.claims, checkedAt)),
         ...workloadBindingFailureReasons(input, tokenVerification.claims, checkedAt),
         ...(await httpMessageSignatureBindingFailureReasons(
+          input,
+          tokenVerification.claims,
+          checkedAt,
+        )),
+        ...(await signedJsonEnvelopeBindingFailureReasons(
           input,
           tokenVerification.claims,
           checkedAt,
