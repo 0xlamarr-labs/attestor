@@ -66,7 +66,7 @@ const {
 
 type JsonRecord = Record<string, unknown>;
 
-type RouteDeps = {
+export interface ReleasePolicyControlRouteDeps {
   currentAdminAuthorized(c: Context): Response | null;
   policyControlPlaneStore: PolicyControlPlaneStore;
   policyActivationApprovalStore: PolicyActivationApprovalStore;
@@ -90,7 +90,7 @@ type RouteDeps = {
       metadata?: Record<string, unknown>;
     };
   }) => Promise<Record<string, unknown>>;
-};
+}
 
 const ROLLOUT_MODES = ['dry-run', 'canary', 'enforce', 'rolled-back'] as const;
 const BREAK_GLASS_ROLES = Object.freeze([
@@ -475,7 +475,7 @@ function filterAuditEntries(
 
 async function beginMutation(
   c: Context,
-  deps: RouteDeps,
+  deps: ReleasePolicyControlRouteDeps,
   routeId: string,
   body: JsonRecord,
 ): Promise<{ idempotencyKey: string | null; requestHash: string } | Response> {
@@ -489,7 +489,7 @@ async function beginMutation(
 }
 
 async function finishMutation(
-  deps: RouteDeps,
+  deps: ReleasePolicyControlRouteDeps,
   options: {
     idempotencyKey: string | null;
     requestHash: string;
@@ -563,7 +563,7 @@ function parseBundleUpsertInput(body: JsonRecord): UpsertStoredPolicyBundleInput
   };
 }
 
-export function registerReleasePolicyControlRoutes(app: Hono, deps: RouteDeps): void {
+export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolicyControlRouteDeps): void {
   const {
     policyControlPlaneStore: store,
     policyActivationApprovalStore: approvalStore,

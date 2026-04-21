@@ -370,14 +370,17 @@ import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
-import { registerCoreRoutes } from './http/routes/core-routes.js';
-import { registerAdminRoutes } from './http/routes/admin-routes.js';
-import { registerAccountRoutes } from './http/routes/account-routes.js';
-import { registerPipelineRoutes } from './http/routes/pipeline-routes.js';
-import { registerPublicSiteRoutes } from './http/routes/public-site-routes.js';
-import { registerReleasePolicyControlRoutes } from './http/routes/release-policy-control-routes.js';
-import { registerReleaseReviewRoutes } from './http/routes/release-review-routes.js';
-import { registerWebhookRoutes } from './http/routes/webhook-routes.js';
+import { registerCoreRoutes, type CoreRouteDeps } from './http/routes/core-routes.js';
+import { registerAdminRoutes, type AdminRouteDeps } from './http/routes/admin-routes.js';
+import { registerAccountRoutes, type AccountRouteDeps } from './http/routes/account-routes.js';
+import { registerPipelineRoutes, type PipelineRouteDeps } from './http/routes/pipeline-routes.js';
+import { registerPublicSiteRoutes, type PublicSiteRouteDeps } from './http/routes/public-site-routes.js';
+import {
+  registerReleasePolicyControlRoutes,
+  type ReleasePolicyControlRouteDeps,
+} from './http/routes/release-policy-control-routes.js';
+import { registerReleaseReviewRoutes, type ReleaseReviewRouteDeps } from './http/routes/release-review-routes.js';
+import { registerWebhookRoutes, type WebhookRouteDeps } from './http/routes/webhook-routes.js';
 import {
   asyncBackendMode,
   bullmqQueue,
@@ -1589,38 +1592,57 @@ async function finalizeAdminMutation(options: {
   return options.responseBody;
 }
 
-const routeDeps = {
+const publicSiteRouteDeps = {
   committedFinancialPacket,
   renderFinancialReportingLandingPage,
   renderFinancialReportingProofPage,
   renderHostedReturnPage,
   readCommittedEvidence,
   committedEvidenceContentType,
+} satisfies PublicSiteRouteDeps<typeof committedFinancialPacket>;
+
+const coreRouteDeps = {
+  evaluateApiHighAvailabilityState,
+  redisMode,
+  asyncBackendMode,
+  isSharedControlPlaneConfigured,
+  serviceInstanceId,
+  startTime,
+  domainRegistry,
+  connectorRegistry,
+  filingRegistry,
+  pkiReady,
+  pki,
+  rlsActivationResult,
+} satisfies CoreRouteDeps;
+
+const accountRouteDeps = {
   currentHostedAccount,
   countAccountUsersForAccountState,
   createAccountUserState,
   AccountUserStoreError,
   findAccountUserByEmailState,
   deriveSignupTenantId,
+  resolvePlanSpec,
   SELF_HOST_PLAN_ID,
   provisionHostedAccountState,
+  accountStoreErrorResponse,
   tenantKeyStoreErrorResponse,
   issueAccountSessionState,
   recordAccountUserLoginState,
-  syncHostedBillingEntitlement,
   syncHostedBillingEntitlementForTenant,
   setSessionCookieForRecord,
   accountUserView,
   adminAccountView,
+  DEFAULT_HOSTED_PLAN_ID,
   accountApiKeyView,
   resolvePlanStripeTrialDays,
   verifyAccountUserPasswordRecord,
   findHostedAccountByIdState,
-  findHostedAccountByTenantIdState,
   totpSummary,
   issueAccountMfaLoginTokenState,
-  buildHostedPasskeyAuthenticationOptions,
   issueAccountPasskeyChallengeTokenState,
+  buildHostedPasskeyAuthenticationOptions,
   asAuthenticationResponse,
   findAccountUserActionTokenByTokenState,
   parsePasskeyAuthenticationChallenge,
@@ -1668,6 +1690,7 @@ const routeDeps = {
   currentAccountRole,
   findTenantRecordByTenantIdState,
   getUsageContextState,
+  getTenantPipelineRateLimit,
   readHostedBillingEntitlement,
   buildHostedFeatureServiceView,
   listTenantKeyRecordsState,
@@ -1696,23 +1719,39 @@ const routeDeps = {
   revokeAccountSessionByTokenState,
   accountMfaErrorResponse,
   getHostedPlan,
+  listHostedEmailDeliveriesState,
   createHostedCheckoutSession,
   stripeBillingErrorResponse,
   createHostedBillingPortalSession,
   buildHostedBillingExport,
   renderHostedBillingExportCsv,
   buildHostedBillingReconciliation,
-  renderReleaseReviewerQueueInboxPage,
-  renderReleaseReviewerQueueDetailPage,
+  billingEntitlementView,
+  currentTenant,
+} satisfies AccountRouteDeps;
+
+const adminRouteDeps = {
   currentAdminAuthorized,
+  listTenantKeyRecordsState,
   adminTenantKeyView,
+  tenantKeyStorePolicy,
   listHostedAccountsState,
+  adminAccountView,
+  findHostedAccountByIdState,
+  readHostedBillingEntitlement,
+  buildHostedBillingExport,
+  buildHostedBillingReconciliation,
+  renderHostedBillingExportCsv,
+  billingEntitlementView,
+  buildHostedFeatureServiceView,
   getTenantAsyncExecutionCoordinatorStatus,
   getTenantAsyncWeightedDispatchCoordinatorStatus,
   adminPlanView,
+  DEFAULT_HOSTED_PLAN_ID,
   defaultRateLimitWindowSeconds,
   listAdminAuditRecordsState,
   adminAuditView,
+  isBillingEventLedgerConfigured,
   listBillingEvents,
   billingEventView,
   listHostedBillingEntitlementsState,
@@ -1720,49 +1759,87 @@ const routeDeps = {
   currentMetricsAuthorized,
   getTelemetryStatus,
   getHostedEmailDeliveryStatus,
+  getSecretEnvelopeStatus,
+  listHostedEmailDeliveriesState,
+  asyncBackendMode,
+  bullmqQueue,
+  getAsyncQueueSummary,
+  getAsyncRetryPolicy,
+  inProcessJobs,
+  inProcessTenantQueueSnapshot,
   listAsyncDeadLetterRecordsState,
   listFailedPipelineJobs,
   retryFailedPipelineJob,
   adminMutationRequest,
   finalizeAdminMutation,
+  resolvePlanSpec,
+  provisionHostedAccountState,
+  accountStoreErrorResponse,
+  tenantKeyStoreErrorResponse,
+  attachStripeBillingToAccountState,
+  stripeBillingErrorResponse,
+  syncHostedBillingEntitlement,
+  syncHostedBillingEntitlementForTenant,
   parseStripeSubscriptionStatus,
   setHostedAccountStatusState,
   revokeAccountSessionsForAccountState,
+  issueTenantApiKeyState,
+  rotateTenantApiKeyState,
+  setTenantApiKeyStatusState,
   recoverTenantApiKeyState,
+  revokeTenantApiKeyState,
   secretEnvelopeErrorResponse,
   queryUsageLedgerState,
-  evaluateApiHighAvailabilityState,
-  redisMode,
-  asyncBackendMode,
-  isSharedControlPlaneConfigured,
-  serviceInstanceId,
-  startTime,
-  domainRegistry,
-  connectorRegistry,
-  filingRegistry,
-  pkiReady,
-  pki,
-  rlsActivationResult,
+  findTenantRecordByTenantIdState,
+  findHostedAccountByTenantIdState,
+  apiReleaseIntrospectionStore,
+} satisfies AdminRouteDeps;
+
+const releaseReviewRouteDeps = {
+  renderReleaseReviewerQueueInboxPage,
+  renderReleaseReviewerQueueDetailPage,
+  currentAdminAuthorized,
+  apiReleaseReviewerQueueStore,
+  financeReleaseDecisionLog,
+  apiReleaseTokenIssuer,
+  apiReleaseEvidencePackStore,
+  apiReleaseEvidencePackIssuer,
+  apiReleaseIntrospectionStore,
+  adminMutationRequest,
+  finalizeAdminMutation,
+} satisfies ReleaseReviewRouteDeps;
+
+const releasePolicyControlRouteDeps = {
+  currentAdminAuthorized,
+  policyControlPlaneStore,
+  policyActivationApprovalStore,
+  policyMutationAuditLog,
+  adminMutationRequest,
+  finalizeAdminMutation,
+} satisfies ReleasePolicyControlRouteDeps;
+
+const pipelineRouteDeps = {
   currentTenant,
   canConsumePipelineRunState,
   reserveTenantPipelineRequest,
   applyRateLimitHeaders,
+  connectorRegistry,
   verifyOidcToken,
   classifyIdentitySource,
   createRequestSigners,
   runFinancialPipeline,
-    buildVerificationKit,
-    createFinanceCommunicationReleaseCandidateFromReport,
-    buildFinanceCommunicationReleaseMaterial,
-    buildFinanceCommunicationReleaseObservation,
-    financeCommunicationReleaseShadowEvaluator,
-    createFinanceActionReleaseCandidateFromReport,
-    buildFinanceActionReleaseMaterial,
-    buildFinanceActionReleaseObservation,
-    financeActionReleaseShadowEvaluator,
-    createFinanceFilingReleaseCandidateFromReport,
-    FINANCE_FILING_ADAPTER_ID,
-    buildFinanceFilingReleaseMaterial,
+  buildVerificationKit,
+  createFinanceCommunicationReleaseCandidateFromReport,
+  buildFinanceCommunicationReleaseMaterial,
+  buildFinanceCommunicationReleaseObservation,
+  financeCommunicationReleaseShadowEvaluator,
+  createFinanceActionReleaseCandidateFromReport,
+  buildFinanceActionReleaseMaterial,
+  buildFinanceActionReleaseObservation,
+  financeActionReleaseShadowEvaluator,
+  createFinanceFilingReleaseCandidateFromReport,
+  FINANCE_FILING_ADAPTER_ID,
+  buildFinanceFilingReleaseMaterial,
   financeReleaseDecisionEngine,
   financeReleaseDecisionLog,
   buildFinanceFilingReleaseObservation,
@@ -1775,21 +1852,20 @@ const routeDeps = {
   apiReleaseEvidencePackStore,
   apiReleaseEvidencePackIssuer,
   apiReleaseIntrospectionStore,
-  policyControlPlaneStore,
-  policyActivationApprovalStore,
-  policyMutationAuditLog,
   consumePipelineRunState,
   schemaAttestationSummaryFromFull,
   schemaAttestationSummaryFromConnector,
+  filingRegistry,
+  buildCounterpartyEnvelope,
   verifyCertificate,
   verifyTrustChain,
   derivePublicKeyIdentity,
-  buildCounterpartyEnvelope,
   apiReleaseVerificationKeyPromise,
   resolveReleaseTokenFromRequest,
   verifyReleaseAuthorization,
   apiReleaseIntrospector,
   ReleaseVerificationError,
+  asyncBackendMode,
   bullmqQueue,
   canEnqueueTenantAsyncJob,
   currentAsyncSubmissionReservations,
@@ -1801,8 +1877,12 @@ const routeDeps = {
   getTenantPipelineRateLimit,
   inProcessTenantQueueSnapshot,
   inProcessJobs,
+  pki,
   upsertAsyncDeadLetterRecordState,
   getJobStatus,
+} satisfies PipelineRouteDeps;
+
+const webhookRouteDeps = {
   getSendGridWebhookStatus,
   verifySignedSendGridWebhook,
   parseSendGridWebhookEvents,
@@ -1816,6 +1896,7 @@ const routeDeps = {
   stripeClient,
   observeBillingWebhookEvent,
   isBillingEventLedgerConfigured,
+  isSharedControlPlaneConfigured,
   claimStripeBillingEvent,
   claimProcessedStripeWebhookState,
   lookupProcessedStripeWebhookState,
@@ -1839,6 +1920,7 @@ const routeDeps = {
   resolvePlanSpec,
   DEFAULT_HOSTED_PLAN_ID,
   syncTenantPlanByTenantIdState,
+  syncHostedBillingEntitlement,
   revokeAccountSessionsForLifecycleChange,
   appendAdminAuditRecordState,
   billingEntitlementView,
@@ -1848,19 +1930,20 @@ const routeDeps = {
   listHostedStripeInvoiceLineItems,
   upsertStripeInvoiceLineItems,
   parseStripeChargeStatus,
+  getHostedPlan,
   upsertStripeCharges,
   unixSecondsToIso,
   resolvePlanStripePrice,
-};
+} satisfies WebhookRouteDeps;
 
-registerPublicSiteRoutes(app, routeDeps);
-registerCoreRoutes(app, routeDeps);
-registerAccountRoutes(app, routeDeps);
-registerAdminRoutes(app, routeDeps);
-registerReleaseReviewRoutes(app, routeDeps);
-registerReleasePolicyControlRoutes(app, routeDeps);
-registerWebhookRoutes(app, routeDeps);
-registerPipelineRoutes(app, routeDeps);
+registerPublicSiteRoutes(app, publicSiteRouteDeps);
+registerCoreRoutes(app, coreRouteDeps);
+registerAccountRoutes(app, accountRouteDeps);
+registerAdminRoutes(app, adminRouteDeps);
+registerReleaseReviewRoutes(app, releaseReviewRouteDeps);
+registerReleasePolicyControlRoutes(app, releasePolicyControlRouteDeps);
+registerWebhookRoutes(app, webhookRouteDeps);
+registerPipelineRoutes(app, pipelineRouteDeps);
 
 
 // ─── Server Start/Stop ──────────────────────────────────────────────────────

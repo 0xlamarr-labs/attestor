@@ -1,8 +1,22 @@
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 
-type RouteDeps = Record<string, any>;
+export interface PublicSiteRouteDeps<Packet = unknown> {
+  committedFinancialPacket: Packet;
+  renderFinancialReportingLandingPage(packet: Packet): string;
+  renderFinancialReportingProofPage(packet: Packet): string;
+  renderHostedReturnPage(input: {
+    eyebrow: string;
+    title: string;
+    message: string;
+    bullets: string[];
+    note?: string;
+    actions: Array<{ href: string; label: string }>;
+  }): string;
+  readCommittedEvidence(relativePath: string): { path: string; content: string } | null;
+  committedEvidenceContentType(path: string): string;
+}
 
-export function registerPublicSiteRoutes(app: Hono, deps: RouteDeps): void {
+export function registerPublicSiteRoutes<Packet>(app: Hono, deps: PublicSiteRouteDeps<Packet>): void {
   const {
     committedFinancialPacket,
     renderFinancialReportingLandingPage,
@@ -12,7 +26,7 @@ export function registerPublicSiteRoutes(app: Hono, deps: RouteDeps): void {
     committedEvidenceContentType,
   } = deps;
 
-  const serveCommittedEvidence = (relativePath: string, c: any) => {
+  const serveCommittedEvidence = (relativePath: string, c: Context) => {
     const file = readCommittedEvidence(relativePath);
     if (!file) return c.json({ error: 'Proof asset not found' }, 404);
     return c.body(file.content, 200, {

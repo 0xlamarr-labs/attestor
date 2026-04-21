@@ -1,9 +1,73 @@
 import { randomUUID } from 'node:crypto';
 import type { Hono } from 'hono';
 
-type RouteDeps = Record<string, any>;
+type RouteDependency = any;
 
-export function registerPipelineRoutes(app: Hono, deps: RouteDeps): void {
+export interface PipelineRouteDeps {
+  currentTenant: RouteDependency;
+  canConsumePipelineRunState: RouteDependency;
+  reserveTenantPipelineRequest: RouteDependency;
+  applyRateLimitHeaders: RouteDependency;
+  connectorRegistry: RouteDependency;
+  verifyOidcToken: RouteDependency;
+  classifyIdentitySource: RouteDependency;
+  createRequestSigners: RouteDependency;
+  runFinancialPipeline: RouteDependency;
+  buildVerificationKit: RouteDependency;
+  createFinanceCommunicationReleaseCandidateFromReport: RouteDependency;
+  buildFinanceCommunicationReleaseMaterial: RouteDependency;
+  buildFinanceCommunicationReleaseObservation: RouteDependency;
+  financeCommunicationReleaseShadowEvaluator: RouteDependency;
+  createFinanceActionReleaseCandidateFromReport: RouteDependency;
+  buildFinanceActionReleaseMaterial: RouteDependency;
+  buildFinanceActionReleaseObservation: RouteDependency;
+  financeActionReleaseShadowEvaluator: RouteDependency;
+  createFinanceFilingReleaseCandidateFromReport: RouteDependency;
+  FINANCE_FILING_ADAPTER_ID: RouteDependency;
+  buildFinanceFilingReleaseMaterial: RouteDependency;
+  financeReleaseDecisionEngine: RouteDependency;
+  financeReleaseDecisionLog: RouteDependency;
+  buildFinanceFilingReleaseObservation: RouteDependency;
+  currentReleaseRequester: RouteDependency;
+  currentReleaseEvaluationContext: RouteDependency;
+  finalizeFinanceFilingReleaseDecision: RouteDependency;
+  createFinanceReviewerQueueItem: RouteDependency;
+  apiReleaseReviewerQueueStore: RouteDependency;
+  apiReleaseTokenIssuer: RouteDependency;
+  apiReleaseEvidencePackStore: RouteDependency;
+  apiReleaseEvidencePackIssuer: RouteDependency;
+  apiReleaseIntrospectionStore: RouteDependency;
+  consumePipelineRunState: RouteDependency;
+  schemaAttestationSummaryFromFull: RouteDependency;
+  schemaAttestationSummaryFromConnector: RouteDependency;
+  filingRegistry: RouteDependency;
+  buildCounterpartyEnvelope: RouteDependency;
+  verifyCertificate: RouteDependency;
+  verifyTrustChain: RouteDependency;
+  derivePublicKeyIdentity: RouteDependency;
+  apiReleaseVerificationKeyPromise: RouteDependency;
+  resolveReleaseTokenFromRequest: RouteDependency;
+  verifyReleaseAuthorization: RouteDependency;
+  apiReleaseIntrospector: RouteDependency;
+  ReleaseVerificationError: RouteDependency;
+  asyncBackendMode: RouteDependency;
+  bullmqQueue: RouteDependency;
+  canEnqueueTenantAsyncJob: RouteDependency;
+  currentAsyncSubmissionReservations: RouteDependency;
+  reserveAsyncSubmission: RouteDependency;
+  releaseAsyncSubmission: RouteDependency;
+  getAsyncRetryPolicy: RouteDependency;
+  getAsyncQueueSummary: RouteDependency;
+  submitPipelineJob: RouteDependency;
+  getTenantPipelineRateLimit: RouteDependency;
+  inProcessTenantQueueSnapshot: RouteDependency;
+  inProcessJobs: RouteDependency;
+  pki: RouteDependency;
+  upsertAsyncDeadLetterRecordState: RouteDependency;
+  getJobStatus: RouteDependency;
+}
+
+export function registerPipelineRoutes(app: Hono, deps: PipelineRouteDeps): void {
   const {
     currentTenant,
     canConsumePipelineRunState,

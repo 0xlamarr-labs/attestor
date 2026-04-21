@@ -19,7 +19,73 @@ import {
   type ListDegradedModeGrantOptions,
 } from '../../../release-enforcement-plane/degraded-mode.js';
 
-type RouteDeps = Record<string, any>;
+type RouteDependency = any;
+
+export interface AdminRouteDeps {
+  currentAdminAuthorized: RouteDependency;
+  listTenantKeyRecordsState: RouteDependency;
+  adminTenantKeyView: RouteDependency;
+  tenantKeyStorePolicy: RouteDependency;
+  listHostedAccountsState: RouteDependency;
+  adminAccountView: RouteDependency;
+  findHostedAccountByIdState: RouteDependency;
+  readHostedBillingEntitlement: RouteDependency;
+  buildHostedBillingExport: RouteDependency;
+  buildHostedBillingReconciliation: RouteDependency;
+  renderHostedBillingExportCsv: RouteDependency;
+  billingEntitlementView: RouteDependency;
+  buildHostedFeatureServiceView: RouteDependency;
+  getTenantAsyncExecutionCoordinatorStatus: RouteDependency;
+  getTenantAsyncWeightedDispatchCoordinatorStatus: RouteDependency;
+  adminPlanView: RouteDependency;
+  DEFAULT_HOSTED_PLAN_ID: RouteDependency;
+  defaultRateLimitWindowSeconds: RouteDependency;
+  listAdminAuditRecordsState: RouteDependency;
+  adminAuditView: RouteDependency;
+  isBillingEventLedgerConfigured: RouteDependency;
+  listBillingEvents: RouteDependency;
+  billingEventView: RouteDependency;
+  listHostedBillingEntitlementsState: RouteDependency;
+  renderPrometheusMetrics: RouteDependency;
+  currentMetricsAuthorized: RouteDependency;
+  getTelemetryStatus: RouteDependency;
+  getHostedEmailDeliveryStatus: RouteDependency;
+  getSecretEnvelopeStatus: RouteDependency;
+  listHostedEmailDeliveriesState: RouteDependency;
+  asyncBackendMode: RouteDependency;
+  bullmqQueue: RouteDependency;
+  getAsyncQueueSummary: RouteDependency;
+  getAsyncRetryPolicy: RouteDependency;
+  inProcessJobs: RouteDependency;
+  inProcessTenantQueueSnapshot: RouteDependency;
+  listAsyncDeadLetterRecordsState: RouteDependency;
+  listFailedPipelineJobs: RouteDependency;
+  retryFailedPipelineJob: RouteDependency;
+  adminMutationRequest: RouteDependency;
+  finalizeAdminMutation: RouteDependency;
+  resolvePlanSpec: RouteDependency;
+  provisionHostedAccountState: RouteDependency;
+  accountStoreErrorResponse: RouteDependency;
+  tenantKeyStoreErrorResponse: RouteDependency;
+  attachStripeBillingToAccountState: RouteDependency;
+  stripeBillingErrorResponse: RouteDependency;
+  syncHostedBillingEntitlement: RouteDependency;
+  syncHostedBillingEntitlementForTenant: RouteDependency;
+  parseStripeSubscriptionStatus: RouteDependency;
+  setHostedAccountStatusState: RouteDependency;
+  revokeAccountSessionsForAccountState: RouteDependency;
+  issueTenantApiKeyState: RouteDependency;
+  rotateTenantApiKeyState: RouteDependency;
+  setTenantApiKeyStatusState: RouteDependency;
+  recoverTenantApiKeyState: RouteDependency;
+  revokeTenantApiKeyState: RouteDependency;
+  secretEnvelopeErrorResponse: RouteDependency;
+  queryUsageLedgerState: RouteDependency;
+  findTenantRecordByTenantIdState: RouteDependency;
+  findHostedAccountByTenantIdState: RouteDependency;
+  apiReleaseIntrospectionStore: RouteDependency;
+  releaseDegradedModeGrantStore?: RouteDependency;
+}
 
 function adminDegradedModeActor(value: unknown): ReleaseActorReference {
   if (value && typeof value === 'object') {
@@ -95,7 +161,7 @@ function adminDegradedModeError(error: unknown): string {
   return error instanceof Error ? error.message : 'Release enforcement degraded mode request failed.';
 }
 
-export function registerAdminRoutes(app: Hono, deps: RouteDeps): void {
+export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
   const {
     currentAdminAuthorized,
     listTenantKeyRecordsState,

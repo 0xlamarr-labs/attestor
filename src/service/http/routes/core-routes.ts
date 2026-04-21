@@ -1,8 +1,64 @@
 import type { Hono } from 'hono';
 
-type RouteDeps = Record<string, any>;
+type DomainRegistryLike = {
+  listIds(): string[];
+  list(): Array<{
+    id: string;
+    version: string;
+    displayName: string;
+    description: string;
+    clauses: readonly unknown[];
+    guardrails: readonly unknown[];
+  }>;
+};
+type ConnectorRegistryLike = {
+  listIds(): string[];
+  list(): Array<{
+    id: string;
+    displayName: string;
+    loadConfig(): unknown;
+    isAvailable(): Promise<boolean>;
+  }>;
+};
+type FilingRegistryLike = {
+  list(): Array<{ id: string }>;
+};
+type HighAvailabilityState = {
+  enabled: boolean;
+  publicHosted: boolean;
+  ready: boolean;
+};
 
-export function registerCoreRoutes(app: Hono, deps: RouteDeps): void {
+export interface CoreRouteDeps {
+  evaluateApiHighAvailabilityState(input: {
+    redisMode: 'external' | 'localhost' | 'embedded' | 'none' | 'unavailable';
+    asyncBackendMode: 'bullmq' | 'in_process' | 'none';
+    sharedControlPlane: boolean;
+    sharedBillingLedger: boolean;
+  }): HighAvailabilityState;
+  redisMode: string;
+  asyncBackendMode: 'bullmq' | 'in_process' | 'none';
+  isSharedControlPlaneConfigured(): boolean;
+  serviceInstanceId: string;
+  startTime: number;
+  domainRegistry: DomainRegistryLike;
+  connectorRegistry: ConnectorRegistryLike;
+  filingRegistry: FilingRegistryLike;
+  pkiReady: boolean;
+  pki: {
+    ca: { certificate: { name: string; fingerprint: string } };
+    signer: { certificate: { subject: string } };
+    reviewer: { certificate: { subject: string } };
+  };
+  rlsActivationResult: {
+    activated: boolean;
+    policiesFound: number;
+    tablesProtected: string[];
+    error: string | null;
+  };
+}
+
+export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
   const {
     evaluateApiHighAvailabilityState,
     redisMode,
@@ -32,7 +88,7 @@ export function registerCoreRoutes(app: Hono, deps: RouteDeps): void {
       uptime: Math.floor((Date.now() - startTime) / 1000),
       domains: domainRegistry.listIds(),
       connectors: connectorRegistry.listIds(),
-      filingAdapters: filingRegistry.list().map((a: any) => a.id),
+      filingAdapters: filingRegistry.list().map((adapter) => adapter.id),
       pki: {
         ready: pkiReady,
         caName: pki.ca.certificate.name,
@@ -58,13 +114,13 @@ export function registerCoreRoutes(app: Hono, deps: RouteDeps): void {
   });
 
   app.get('/api/v1/domains', (c) => {
-    const domains = domainRegistry.list().map((d: any) => ({
-      id: d.id,
-      version: d.version,
-      displayName: d.displayName,
-      description: d.description,
-      clauseCount: d.clauses.length,
-      guardrailCount: d.guardrails.length,
+    const domains = domainRegistry.list().map((domain) => ({
+      id: domain.id,
+      version: domain.version,
+      displayName: domain.displayName,
+      description: domain.description,
+      clauseCount: domain.clauses.length,
+      guardrailCount: domain.guardrails.length,
     }));
     return c.json({ domains });
   });

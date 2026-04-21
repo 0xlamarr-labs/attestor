@@ -1,9 +1,63 @@
 import type { Hono } from 'hono';
 import Stripe from 'stripe';
 
-type RouteDeps = Record<string, any>;
+type RouteDependency = any;
 
-export function registerWebhookRoutes(app: Hono, deps: RouteDeps): void {
+export interface WebhookRouteDeps {
+  getSendGridWebhookStatus: RouteDependency;
+  verifySignedSendGridWebhook: RouteDependency;
+  parseSendGridWebhookEvents: RouteDependency;
+  listHostedEmailDeliveriesState: RouteDependency;
+  recordHostedEmailProviderEventState: RouteDependency;
+  sendGridEventTypeToStatusHint: RouteDependency;
+  getMailgunWebhookStatus: RouteDependency;
+  parseMailgunWebhookEvent: RouteDependency;
+  verifySignedMailgunWebhook: RouteDependency;
+  mailgunEventTypeToStatusHint: RouteDependency;
+  stripeClient: RouteDependency;
+  observeBillingWebhookEvent: RouteDependency;
+  isBillingEventLedgerConfigured: RouteDependency;
+  isSharedControlPlaneConfigured: RouteDependency;
+  claimStripeBillingEvent: RouteDependency;
+  claimProcessedStripeWebhookState: RouteDependency;
+  lookupProcessedStripeWebhookState: RouteDependency;
+  finalizeProcessedStripeWebhookState: RouteDependency;
+  recordProcessedStripeWebhookState: RouteDependency;
+  releaseProcessedStripeWebhookClaimState: RouteDependency;
+  finalizeStripeBillingEvent: RouteDependency;
+  releaseStripeBillingEventClaim: RouteDependency;
+  isSupportedStripeWebhookEvent: RouteDependency;
+  stripeReferenceId: RouteDependency;
+  parseStripeInvoiceStatus: RouteDependency;
+  stripeInvoicePriceId: RouteDependency;
+  metadataStringValue: RouteDependency;
+  accountStoreErrorResponse: RouteDependency;
+  applyStripeSubscriptionStateState: RouteDependency;
+  applyStripeInvoiceStateState: RouteDependency;
+  applyStripeCheckoutCompletionState: RouteDependency;
+  attachStripeBillingToAccountState: RouteDependency;
+  findHostedAccountByStripeRefs: RouteDependency;
+  findHostedPlanByStripePriceId: RouteDependency;
+  resolvePlanSpec: RouteDependency;
+  DEFAULT_HOSTED_PLAN_ID: RouteDependency;
+  syncTenantPlanByTenantIdState: RouteDependency;
+  syncHostedBillingEntitlement: RouteDependency;
+  revokeAccountSessionsForLifecycleChange: RouteDependency;
+  appendAdminAuditRecordState: RouteDependency;
+  billingEntitlementView: RouteDependency;
+  extractInvoiceLineItemSnapshotsFromInvoice: RouteDependency;
+  listHostedStripeActiveEntitlements: RouteDependency;
+  extractActiveEntitlementsFromSummary: RouteDependency;
+  listHostedStripeInvoiceLineItems: RouteDependency;
+  upsertStripeInvoiceLineItems: RouteDependency;
+  parseStripeChargeStatus: RouteDependency;
+  getHostedPlan: RouteDependency;
+  upsertStripeCharges: RouteDependency;
+  unixSecondsToIso: RouteDependency;
+  resolvePlanStripePrice: RouteDependency;
+}
+
+export function registerWebhookRoutes(app: Hono, deps: WebhookRouteDeps): void {
   const {
     getSendGridWebhookStatus,
     verifySignedSendGridWebhook,

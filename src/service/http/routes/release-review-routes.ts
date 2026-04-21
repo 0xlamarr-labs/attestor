@@ -9,7 +9,21 @@ const {
   attachIssuedTokenToReviewerQueueRecord,
 } = review;
 
-type RouteDeps = Record<string, any>;
+type RouteDependency = any;
+
+export interface ReleaseReviewRouteDeps {
+  currentAdminAuthorized: RouteDependency;
+  apiReleaseReviewerQueueStore: RouteDependency;
+  renderReleaseReviewerQueueInboxPage: RouteDependency;
+  renderReleaseReviewerQueueDetailPage: RouteDependency;
+  financeReleaseDecisionLog: RouteDependency;
+  apiReleaseTokenIssuer: RouteDependency;
+  apiReleaseEvidencePackStore: RouteDependency;
+  apiReleaseEvidencePackIssuer: RouteDependency;
+  apiReleaseIntrospectionStore: RouteDependency;
+  adminMutationRequest: RouteDependency;
+  finalizeAdminMutation: RouteDependency;
+}
 
 function parsePositiveLimit(value: string | undefined): number | null {
   if (!value?.trim()) return null;
@@ -111,7 +125,7 @@ function appendReviewerTimelineToDecisionLog(
   });
 }
 
-export function registerReleaseReviewRoutes(app: Hono, deps: RouteDeps): void {
+export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteDeps): void {
   const {
     currentAdminAuthorized,
     apiReleaseReviewerQueueStore,
