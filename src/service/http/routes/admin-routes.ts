@@ -3,10 +3,17 @@ import type { AdminAuditAction, AdminAuditRecord } from '../../admin-audit-log.j
 import type { AsyncDeadLetterRecord } from '../../async-dead-letter-store.js';
 import type * as AsyncPipeline from '../../async-pipeline.js';
 import type {
+  AdminControlService,
+  AdminControlBillingEventInput,
+} from '../../application/admin-control-service.js';
+import {
+  AdminControlServiceError as AdminControlServiceErrorValue,
+} from '../../application/admin-control-service.js';
+import type {
   AdminMutationReadyResult,
   AdminMutationService,
 } from '../../application/admin-mutation-service.js';
-import type { HostedAccountRecord, StripeSubscriptionStatus } from '../../account-store.js';
+import type { HostedAccountRecord } from '../../account-store.js';
 import type * as BillingEventLedger from '../../billing-event-ledger.js';
 import type { HostedBillingEntitlementRecord, HostedBillingEntitlementStatus } from '../../billing-entitlement-store.js';
 import type * as BillingExport from '../../billing-export.js';
@@ -48,6 +55,7 @@ type AdminAsyncQueue = Parameters<typeof AsyncPipeline.getAsyncQueueSummary>[0];
 export interface AdminRouteDeps {
   currentAdminAuthorized(context: Context): Response | null;
   adminMutationService: AdminMutationService;
+  adminControlService: AdminControlService;
   listTenantKeyRecordsState: typeof ControlPlaneStore.listTenantKeyRecordsState;
   adminTenantKeyView(record: TenantKeyRecord): AdminRouteResponseBody;
   tenantKeyStorePolicy(): { maxActiveKeysPerTenant: number };
@@ -86,43 +94,6 @@ export interface AdminRouteDeps {
   listAsyncDeadLetterRecordsState: typeof ControlPlaneStore.listAsyncDeadLetterRecordsState;
   listFailedPipelineJobs: typeof AsyncPipeline.listFailedPipelineJobs;
   retryFailedPipelineJob: typeof AsyncPipeline.retryFailedPipelineJob;
-  resolvePlanSpec: typeof PlanCatalog.resolvePlanSpec;
-  provisionHostedAccountState: typeof ControlPlaneStore.provisionHostedAccountState;
-  accountStoreErrorResponse(context: Context, error: unknown): Response | null;
-  tenantKeyStoreErrorResponse(context: Context, error: unknown): Response | null;
-  attachStripeBillingToAccountState: typeof ControlPlaneStore.attachStripeBillingToAccountState;
-  stripeBillingErrorResponse(context: Context, error: unknown): Response | null;
-  syncHostedBillingEntitlement(
-    account: HostedAccountRecord,
-    options?: {
-      lastEventId?: string | null;
-      lastEventType?: string | null;
-      lastEventAt?: string | null;
-      stripeEntitlementLookupKeys?: string[] | null;
-      stripeEntitlementFeatureIds?: string[] | null;
-      stripeEntitlementSummaryUpdatedAt?: string | null;
-    },
-  ): Promise<HostedBillingEntitlementRecord>;
-  syncHostedBillingEntitlementForTenant(
-    tenantId: string,
-    options?: {
-      lastEventId?: string | null;
-      lastEventType?: string | null;
-      lastEventAt?: string | null;
-      stripeEntitlementLookupKeys?: string[] | null;
-      stripeEntitlementFeatureIds?: string[] | null;
-      stripeEntitlementSummaryUpdatedAt?: string | null;
-    },
-  ): Promise<HostedBillingEntitlementRecord | null>;
-  parseStripeSubscriptionStatus(raw: unknown): StripeSubscriptionStatus;
-  setHostedAccountStatusState: typeof ControlPlaneStore.setHostedAccountStatusState;
-  revokeAccountSessionsForAccountState: typeof ControlPlaneStore.revokeAccountSessionsForAccountState;
-  issueTenantApiKeyState: typeof ControlPlaneStore.issueTenantApiKeyState;
-  rotateTenantApiKeyState: typeof ControlPlaneStore.rotateTenantApiKeyState;
-  setTenantApiKeyStatusState: typeof ControlPlaneStore.setTenantApiKeyStatusState;
-  recoverTenantApiKeyState: typeof ControlPlaneStore.recoverTenantApiKeyState;
-  revokeTenantApiKeyState: typeof ControlPlaneStore.revokeTenantApiKeyState;
-  secretEnvelopeErrorResponse(context: Context, error: unknown): Response | null;
   queryUsageLedgerState: typeof ControlPlaneStore.queryUsageLedgerState;
   findTenantRecordByTenantIdState: typeof ControlPlaneStore.findTenantRecordByTenantIdState;
   findHostedAccountByTenantIdState: typeof ControlPlaneStore.findHostedAccountByTenantIdState;
@@ -206,6 +177,22 @@ function adminDegradedModeError(error: unknown): string {
 
 function adminRouteErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function adminControlServiceErrorResponse(c: Context, error: unknown): Response | null {
+  if (!(error instanceof AdminControlServiceErrorValue)) return null;
+  return c.json({ error: error.message }, error.statusCode);
+}
+
+function adminControlBillingEvent(
+  mutation: AdminMutationReadyResult,
+  routeId: string,
+): AdminControlBillingEventInput {
+  return {
+    idempotencyKey: mutation.idempotencyKey,
+    routeId,
+    occurredAt: new Date().toISOString(),
+  };
 }
 
 function adminAuditActionFilter(value: string | undefined): AdminAuditAction | null {
@@ -306,6 +293,7 @@ export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
   const {
     currentAdminAuthorized,
     adminMutationService,
+    adminControlService,
     listTenantKeyRecordsState,
     adminTenantKeyView,
     tenantKeyStorePolicy,
@@ -344,23 +332,6 @@ export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
     listAsyncDeadLetterRecordsState,
     listFailedPipelineJobs,
     retryFailedPipelineJob,
-    resolvePlanSpec,
-    provisionHostedAccountState,
-    accountStoreErrorResponse,
-    tenantKeyStoreErrorResponse,
-    attachStripeBillingToAccountState,
-    stripeBillingErrorResponse,
-    syncHostedBillingEntitlement,
-    syncHostedBillingEntitlementForTenant,
-    parseStripeSubscriptionStatus,
-    setHostedAccountStatusState,
-    revokeAccountSessionsForAccountState,
-    issueTenantApiKeyState,
-    rotateTenantApiKeyState,
-    setTenantApiKeyStatusState,
-    recoverTenantApiKeyState,
-    revokeTenantApiKeyState,
-    secretEnvelopeErrorResponse,
     queryUsageLedgerState,
     findTenantRecordByTenantIdState,
     findHostedAccountByTenantIdState,
@@ -896,40 +867,21 @@ app.post('/api/v1/admin/accounts', async (c) => {
   const adminMutation = await beginAdminMutation(c, 'admin.accounts.create', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
-  let resolvedPlan;
-  try {
-    resolvedPlan = resolvePlanSpec({
-      planId: requestedPlanId,
-      monthlyRunQuota,
-      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
-    });
-  } catch (err) {
-    return c.json({ error: adminRouteErrorMessage(err) }, 400);
-  }
-
   let provisioned;
   try {
-    provisioned = await provisionHostedAccountState({
-      account: {
-        accountName,
-        contactEmail,
-        primaryTenantId: tenantId,
-      },
-      key: {
-        tenantId,
-        tenantName,
-        planId: resolvedPlan.planId,
-        monthlyRunQuota: resolvedPlan.monthlyRunQuota,
-      },
+    provisioned = await adminControlService.provisionHostedAccount({
+      accountName,
+      contactEmail,
+      tenantId,
+      tenantName,
+      planId: requestedPlanId,
+      monthlyRunQuota,
     });
   } catch (err) {
-    const mappedAccount = accountStoreErrorResponse(c, err);
-    if (mappedAccount) return mappedAccount;
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlement(provisioned.account);
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -966,18 +918,13 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
   if (unauthorized) return unauthorized;
 
   const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
-  let stripeSubscriptionStatus: StripeSubscriptionStatus;
-  try {
-    stripeSubscriptionStatus = parseStripeSubscriptionStatus(body.stripeSubscriptionStatus);
-  } catch (err) {
-    return c.json({ error: adminRouteErrorMessage(err) }, 400);
-  }
-
   const requestPayload = {
     id: c.req.param('id'),
     stripeCustomerId: typeof body.stripeCustomerId === 'string' ? body.stripeCustomerId.trim() : '',
     stripeSubscriptionId: typeof body.stripeSubscriptionId === 'string' ? body.stripeSubscriptionId.trim() : '',
-    stripeSubscriptionStatus,
+    stripeSubscriptionStatus: typeof body.stripeSubscriptionStatus === 'string'
+      ? body.stripeSubscriptionStatus.trim()
+      : null,
     stripePriceId: typeof body.stripePriceId === 'string' ? body.stripePriceId.trim() : '',
   };
   if (!requestPayload.stripeCustomerId && !requestPayload.stripeSubscriptionId) {
@@ -989,18 +936,18 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
 
   let attached;
   try {
-    attached = await attachStripeBillingToAccountState(c.req.param('id'), {
+    attached = await adminControlService.attachStripeBilling({
+      accountId: c.req.param('id'),
       stripeCustomerId: requestPayload.stripeCustomerId || null,
       stripeSubscriptionId: requestPayload.stripeSubscriptionId || null,
-      stripeSubscriptionStatus,
+      stripeSubscriptionStatus: requestPayload.stripeSubscriptionStatus,
       stripePriceId: requestPayload.stripePriceId || null,
     });
   } catch (err) {
-    const mapped = accountStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlement(attached.record);
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1041,14 +988,15 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
 
   let result;
   try {
-    result = await setHostedAccountStatusState(c.req.param('id'), 'suspended');
+    result = await adminControlService.setHostedAccountStatus({
+      accountId: c.req.param('id'),
+      status: 'suspended',
+    });
   } catch (err) {
-    const mapped = accountStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  const revokedSessions = await revokeAccountSessionsForAccountState(result.record.id);
-  await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1066,7 +1014,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
       metadata: {
         reason: requestPayload.reason || null,
         suspendedAt: result.record.suspendedAt,
-        revokedSessionCount: revokedSessions.revokedCount,
+        revokedSessionCount: result.revokedSessionCount,
       },
     },
   });
@@ -1088,13 +1036,15 @@ app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
 
   let result;
   try {
-    result = await setHostedAccountStatusState(c.req.param('id'), 'active');
+    result = await adminControlService.setHostedAccountStatus({
+      accountId: c.req.param('id'),
+      status: 'active',
+    });
   } catch (err) {
-    const mapped = accountStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1132,14 +1082,15 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
 
   let result;
   try {
-    result = await setHostedAccountStatusState(c.req.param('id'), 'archived');
+    result = await adminControlService.setHostedAccountStatus({
+      accountId: c.req.param('id'),
+      status: 'archived',
+    });
   } catch (err) {
-    const mapped = accountStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  const revokedSessions = await revokeAccountSessionsForAccountState(result.record.id);
-  await syncHostedBillingEntitlement(result.record);
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1157,7 +1108,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
       metadata: {
         reason: requestPayload.reason || null,
         archivedAt: result.record.archivedAt,
-        revokedSessionCount: revokedSessions.revokedCount,
+        revokedSessionCount: result.revokedSessionCount,
       },
     },
   });
@@ -1190,35 +1141,20 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
   const adminMutation = await beginAdminMutation(c, 'admin.tenant_keys.issue', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
-  let resolvedPlan;
-  try {
-    resolvedPlan = resolvePlanSpec({
-      planId: requestedPlanId,
-      monthlyRunQuota,
-      defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
-    });
-  } catch (err) {
-    return c.json({ error: adminRouteErrorMessage(err) }, 400);
-  }
-
   let issued;
   try {
-    issued = await issueTenantApiKeyState({
+    issued = await adminControlService.issueTenantApiKey({
       tenantId,
       tenantName,
-      planId: resolvedPlan.planId,
-      monthlyRunQuota: resolvedPlan.monthlyRunQuota,
+      planId: requestedPlanId,
+      monthlyRunQuota,
+      billingEvent: adminControlBillingEvent(adminMutation, 'admin.tenant_keys.issue'),
     });
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlementForTenant(issued.record.tenantId, {
-    lastEventId: adminMutation.idempotencyKey,
-    lastEventType: 'admin.tenant_keys.issue',
-    lastEventAt: new Date().toISOString(),
-  });
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1266,20 +1202,17 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
 
   let rotated;
   try {
-    rotated = await rotateTenantApiKeyState(c.req.param('id'), {
+    rotated = await adminControlService.rotateTenantApiKey({
+      id: c.req.param('id'),
       planId: requestedPlanId,
       monthlyRunQuota,
+      billingEvent: adminControlBillingEvent(adminMutation, 'admin.tenant_keys.rotate'),
     });
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
-    return c.json({ error: adminRouteErrorMessage(err) }, 400);
+    throw err;
   }
-  await syncHostedBillingEntitlementForTenant(rotated.record.tenantId, {
-    lastEventId: adminMutation.idempotencyKey,
-    lastEventType: 'admin.tenant_keys.rotate',
-    lastEventAt: new Date().toISOString(),
-  });
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1322,17 +1255,16 @@ app.post('/api/v1/admin/tenant-keys/:id/deactivate', async (c) => {
 
   let result;
   try {
-    result = await setTenantApiKeyStatusState(c.req.param('id'), 'inactive');
+    result = await adminControlService.setTenantApiKeyStatus({
+      id: c.req.param('id'),
+      status: 'inactive',
+      billingEvent: adminControlBillingEvent(adminMutation, 'admin.tenant_keys.deactivate'),
+    });
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlementForTenant(result.record.tenantId, {
-    lastEventId: adminMutation.idempotencyKey,
-    lastEventType: 'admin.tenant_keys.deactivate',
-    lastEventAt: new Date().toISOString(),
-  });
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1369,17 +1301,16 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', async (c) => {
 
   let result;
   try {
-    result = await setTenantApiKeyStatusState(c.req.param('id'), 'active');
+    result = await adminControlService.setTenantApiKeyStatus({
+      id: c.req.param('id'),
+      status: 'active',
+      billingEvent: adminControlBillingEvent(adminMutation, 'admin.tenant_keys.reactivate'),
+    });
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = adminControlServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlementForTenant(result.record.tenantId, {
-    lastEventId: adminMutation.idempotencyKey,
-    lastEventType: 'admin.tenant_keys.reactivate',
-    lastEventAt: new Date().toISOString(),
-  });
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,
@@ -1419,12 +1350,12 @@ app.post('/api/v1/admin/tenant-keys/:id/recover', async (c) => {
 
   let recovered;
   try {
-    recovered = await recoverTenantApiKeyState(c.req.param('id'));
+    recovered = await adminControlService.recoverTenantApiKey({
+      id: c.req.param('id'),
+    });
   } catch (err) {
-    const tenantError = tenantKeyStoreErrorResponse(c, err);
-    if (tenantError) return tenantError;
-    const secretError = secretEnvelopeErrorResponse(c, err);
-    if (secretError) return secretError;
+    const mapped = adminControlServiceErrorResponse(c, err);
+    if (mapped) return mapped;
     throw err;
   }
 
@@ -1466,15 +1397,17 @@ app.post('/api/v1/admin/tenant-keys/:id/revoke', async (c) => {
   const adminMutation = await beginAdminMutation(c, 'admin.tenant_keys.revoke', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
-  const result = await revokeTenantApiKeyState(c.req.param('id'));
-  if (!result.record) {
-    return c.json({ error: 'Tenant key record not found' }, 404);
+  let result;
+  try {
+    result = await adminControlService.revokeTenantApiKey({
+      id: c.req.param('id'),
+      billingEvent: adminControlBillingEvent(adminMutation, 'admin.tenant_keys.revoke'),
+    });
+  } catch (err) {
+    const mapped = adminControlServiceErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
   }
-  await syncHostedBillingEntitlementForTenant(result.record.tenantId, {
-    lastEventId: adminMutation.idempotencyKey,
-    lastEventType: 'admin.tenant_keys.revoke',
-    lastEventAt: new Date().toISOString(),
-  });
 
   const responseBody = await adminMutationService.finalize({
     idempotencyKey: adminMutation.idempotencyKey,

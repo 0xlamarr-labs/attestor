@@ -171,6 +171,36 @@ function testAdminRouteDelegatesMutationUseCase(): void {
   assert.match(adminMutationService, /finalize\(input: AdminMutationFinalizationInput\)/u);
 }
 
+function testAdminRouteDelegatesControlUseCases(): void {
+  const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
+  const adminControlService = readProjectFile('src', 'service', 'application', 'admin-control-service.ts');
+
+  assert.match(adminRoute, /adminControlService: AdminControlService/u);
+  assert.match(adminRoute, /adminControlService\.provisionHostedAccount/u);
+  assert.match(adminRoute, /adminControlService\.attachStripeBilling/u);
+  assert.match(adminRoute, /adminControlService\.setHostedAccountStatus/u);
+  assert.match(adminRoute, /adminControlService\.issueTenantApiKey/u);
+  assert.match(adminRoute, /adminControlService\.rotateTenantApiKey/u);
+  assert.match(adminRoute, /adminControlService\.setTenantApiKeyStatus/u);
+  assert.match(adminRoute, /adminControlService\.recoverTenantApiKey/u);
+  assert.match(adminRoute, /adminControlService\.revokeTenantApiKey/u);
+  assert.doesNotMatch(adminRoute, /provisionHostedAccountState/u);
+  assert.doesNotMatch(adminRoute, /attachStripeBillingToAccountState/u);
+  assert.doesNotMatch(adminRoute, /setHostedAccountStatusState/u);
+  assert.doesNotMatch(adminRoute, /revokeAccountSessionsForAccountState/u);
+  assert.doesNotMatch(adminRoute, /issueTenantApiKeyState/u);
+  assert.doesNotMatch(adminRoute, /rotateTenantApiKeyState/u);
+  assert.doesNotMatch(adminRoute, /setTenantApiKeyStatusState/u);
+  assert.doesNotMatch(adminRoute, /recoverTenantApiKeyState/u);
+  assert.doesNotMatch(adminRoute, /revokeTenantApiKeyState/u);
+
+  assert.match(adminControlService, /export interface AdminControlService/u);
+  assert.match(adminControlService, /provisionHostedAccount\(input: AdminControlProvisionAccountInput\)/u);
+  assert.match(adminControlService, /attachStripeBilling\(input: AdminControlAttachStripeBillingInput\)/u);
+  assert.match(adminControlService, /setHostedAccountStatus\(input: AdminControlSetHostedAccountStatusInput\)/u);
+  assert.match(adminControlService, /recoverTenantApiKey\(input: AdminControlRecoverTenantKeyInput\)/u);
+}
+
 function testAccountRouteIsStronglyTyped(): void {
   const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
 
@@ -244,8 +274,9 @@ testStripeWebhookRouteDelegatesIngressUseCase();
 testStripeWebhookBillingProcessorUsesNamedEventProcessors();
 testAdminRouteIsStronglyTyped();
 testAdminRouteDelegatesMutationUseCase();
+testAdminRouteDelegatesControlUseCases();
 testAccountRouteIsStronglyTyped();
 testAccountRouteDelegatesAuthUseCases();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 12 passed, 0 failed');
+console.log('Service route boundary tests: 13 passed, 0 failed');

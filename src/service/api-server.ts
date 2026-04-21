@@ -150,7 +150,6 @@ import {
 import {
   AccountStoreError,
   type HostedAccountRecord,
-  type StripeSubscriptionStatus,
 } from './account-store.js';
 import {
   AccountUserStoreError,
@@ -331,7 +330,7 @@ import {
   sendGridEventTypeToStatusHint,
   verifySignedSendGridWebhook,
 } from './sendgrid-email-webhook.js';
-import { getSecretEnvelopeStatus, SecretEnvelopeError } from './secret-envelope.js';
+import { getSecretEnvelopeStatus } from './secret-envelope.js';
 import {
   StripeBillingError,
   createHostedBillingPortalSession,
@@ -358,6 +357,7 @@ import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
+import { createAdminControlService } from './application/admin-control-service.js';
 import { createAdminMutationService } from './application/admin-mutation-service.js';
 import { createAccountAuthService } from './application/account-auth-service.js';
 import { createStripeWebhookBillingProcessor } from './application/stripe-webhook-billing-processor.js';
@@ -1003,26 +1003,6 @@ function stripeClient(): Stripe {
   return new Stripe(process.env.STRIPE_API_KEY?.trim() || 'sk_test_attestor_local');
 }
 
-function parseStripeSubscriptionStatus(raw: unknown): StripeSubscriptionStatus {
-  if (typeof raw !== 'string' || raw.trim() === '') return null;
-  const value = raw.trim();
-  switch (value) {
-    case 'trialing':
-    case 'active':
-    case 'incomplete':
-    case 'incomplete_expired':
-    case 'past_due':
-    case 'canceled':
-    case 'unpaid':
-    case 'paused':
-      return value as StripeSubscriptionStatus;
-    default:
-      throw new Error(
-        "stripeSubscriptionStatus must be one of: trialing, active, incomplete, incomplete_expired, past_due, canceled, unpaid, paused.",
-      );
-  }
-}
-
 function parseStripeInvoiceStatus(
   raw: unknown,
 ): 'draft' | 'open' | 'paid' | 'uncollectible' | 'void' | null {
@@ -1194,14 +1174,6 @@ function accountMfaErrorResponse(c: Context, err: unknown): Response | null {
     return c.json({ error: err.message }, 503);
   }
   return null;
-}
-
-function secretEnvelopeErrorResponse(c: Context, err: unknown): Response | null {
-  if (!(err instanceof SecretEnvelopeError)) return null;
-  if (err.code === 'DISABLED') {
-    return c.json({ error: err.message }, 409);
-  }
-  return c.json({ error: err.message }, 503);
 }
 
 function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
@@ -1493,6 +1465,23 @@ const adminMutationService = createAdminMutationService({
   appendAdminAuditRecordState,
 });
 
+const adminControlService = createAdminControlService({
+  resolvePlanSpec,
+  DEFAULT_HOSTED_PLAN_ID,
+  provisionHostedAccountState,
+  attachStripeBillingToAccountState,
+  setHostedAccountStatusState,
+  revokeAccountSessionsForAccountState,
+  issueTenantApiKeyState,
+  rotateTenantApiKeyState,
+  setTenantApiKeyStatusState,
+  recoverTenantApiKeyState,
+  revokeTenantApiKeyState,
+  syncHostedBillingEntitlement,
+  syncHostedBillingEntitlementForTenant,
+  now: () => new Date().toISOString(),
+});
+
 async function adminMutationRequest(c: Context, routeId: string, requestPayload: unknown):
   Promise<{ idempotencyKey: string | null; requestHash: string } | Response> {
   const mutation = await adminMutationService.begin({
@@ -1689,6 +1678,7 @@ const accountRouteDeps = {
 const adminRouteDeps = {
   currentAdminAuthorized,
   adminMutationService,
+  adminControlService,
   listTenantKeyRecordsState,
   adminTenantKeyView,
   tenantKeyStorePolicy,
@@ -1727,23 +1717,6 @@ const adminRouteDeps = {
   listAsyncDeadLetterRecordsState,
   listFailedPipelineJobs,
   retryFailedPipelineJob,
-  resolvePlanSpec,
-  provisionHostedAccountState,
-  accountStoreErrorResponse,
-  tenantKeyStoreErrorResponse,
-  attachStripeBillingToAccountState,
-  stripeBillingErrorResponse,
-  syncHostedBillingEntitlement,
-  syncHostedBillingEntitlementForTenant,
-  parseStripeSubscriptionStatus,
-  setHostedAccountStatusState,
-  revokeAccountSessionsForAccountState,
-  issueTenantApiKeyState,
-  rotateTenantApiKeyState,
-  setTenantApiKeyStatusState,
-  recoverTenantApiKeyState,
-  revokeTenantApiKeyState,
-  secretEnvelopeErrorResponse,
   queryUsageLedgerState,
   findTenantRecordByTenantIdState,
   findHostedAccountByTenantIdState,
