@@ -46,7 +46,6 @@ function testRemainingRouteAnyDebtIsExplicit(): void {
 
   assert.deepEqual(offenders, [
     'src/service/http/routes/account-routes.ts',
-    'src/service/http/routes/admin-routes.ts',
   ]);
 }
 
@@ -78,6 +77,15 @@ function testWebhookRoutesAreSplitByProviderBoundary(): void {
   assert.doesNotMatch(stripeWebhookRoute, /type RouteDependency = any/u);
   assert.doesNotMatch(stripeWebhookRoute, /:\s*any\b/u);
   assert.doesNotMatch(stripeWebhookRoute, /\bas any\b/u);
+}
+
+function testAdminRouteIsStronglyTyped(): void {
+  const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
+
+  assert.match(adminRoute, /export interface AdminRouteDeps/u);
+  assert.doesNotMatch(adminRoute, /type RouteDependency = any/u);
+  assert.doesNotMatch(adminRoute, /:\s*any\b/u);
+  assert.doesNotMatch(adminRoute, /\bas any\b/u);
 }
 
 function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
@@ -121,6 +129,7 @@ testReleaseReviewRouteIsStronglyTyped();
 testRemainingRouteAnyDebtIsExplicit();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
+testAdminRouteIsStronglyTyped();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 5 passed, 0 failed');
+console.log('Service route boundary tests: 6 passed, 0 failed');

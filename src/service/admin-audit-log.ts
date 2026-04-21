@@ -31,6 +31,8 @@ export type AdminAuditAction =
   | 'policy_bundle.published'
   | 'policy_pack.upserted'
   | 'release_break_glass.issued'
+  | 'release_enforcement.degraded_mode.grant_created'
+  | 'release_enforcement.degraded_mode.grant_revoked'
   | 'release_review.approved'
   | 'release_review.rejected'
   | 'release_token.revoked'

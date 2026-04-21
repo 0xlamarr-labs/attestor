@@ -1,5 +1,22 @@
-import type { Hono } from 'hono';
-import type { ReleaseActorReference } from '../../../release-layer/index.js';
+import type { Context, Hono } from 'hono';
+import type { AdminAuditAction, AdminAuditRecord } from '../../admin-audit-log.js';
+import type { AsyncDeadLetterRecord } from '../../async-dead-letter-store.js';
+import type * as AsyncPipeline from '../../async-pipeline.js';
+import type { HostedAccountRecord, StripeSubscriptionStatus } from '../../account-store.js';
+import type * as BillingEventLedger from '../../billing-event-ledger.js';
+import type { HostedBillingEntitlementRecord, HostedBillingEntitlementStatus } from '../../billing-entitlement-store.js';
+import type * as BillingExport from '../../billing-export.js';
+import type * as BillingFeatureService from '../../billing-feature-service.js';
+import type * as BillingReconciliation from '../../billing-reconciliation.js';
+import type * as ControlPlaneStore from '../../control-plane-store.js';
+import type * as EmailDelivery from '../../email-delivery.js';
+import type { HostedEmailDeliveryProvider, HostedEmailDeliveryStatus } from '../../email-delivery-event-store.js';
+import type * as Observability from '../../observability.js';
+import type * as PlanCatalog from '../../plan-catalog.js';
+import type { TenantKeyRecord } from '../../tenant-key-store.js';
+import type { InProcessAsyncJob, TenantAsyncBackendMode } from '../../runtime/tenant-runtime.js';
+import type * as TenantRuntime from '../../runtime/tenant-runtime.js';
+import type { ReleaseActorReference, ReleaseTokenIntrospectionStore } from '../../../release-layer/index.js';
 import type {
   EnforcementBoundaryKind,
   EnforcementBreakGlassReason,
@@ -19,72 +36,122 @@ import {
   type ListDegradedModeGrantOptions,
 } from '../../../release-enforcement-plane/degraded-mode.js';
 
-type RouteDependency = any;
+type BillingEventProviderFilter = BillingEventLedger.BillingEventProvider | null;
+type BillingEventOutcomeFilter = Exclude<BillingEventLedger.BillingEventOutcome, 'pending'> | null;
+type AdminRouteResponseBody = Record<string, unknown>;
+type AdminAsyncQueue = Parameters<typeof AsyncPipeline.getAsyncQueueSummary>[0];
+
+interface AdminMutationRequestResult {
+  idempotencyKey: string | null;
+  requestHash: string;
+}
+
+interface AdminMutationFinalizeInput {
+  idempotencyKey: string | null;
+  routeId: string;
+  requestPayload: unknown;
+  statusCode: number;
+  responseBody: AdminRouteResponseBody;
+  audit: {
+    action: AdminAuditAction;
+    accountId?: string | null;
+    tenantId?: string | null;
+    tenantKeyId?: string | null;
+    planId?: string | null;
+    monthlyRunQuota?: number | null;
+    requestHash?: string;
+    metadata?: Record<string, unknown>;
+  };
+}
 
 export interface AdminRouteDeps {
-  currentAdminAuthorized: RouteDependency;
-  listTenantKeyRecordsState: RouteDependency;
-  adminTenantKeyView: RouteDependency;
-  tenantKeyStorePolicy: RouteDependency;
-  listHostedAccountsState: RouteDependency;
-  adminAccountView: RouteDependency;
-  findHostedAccountByIdState: RouteDependency;
-  readHostedBillingEntitlement: RouteDependency;
-  buildHostedBillingExport: RouteDependency;
-  buildHostedBillingReconciliation: RouteDependency;
-  renderHostedBillingExportCsv: RouteDependency;
-  billingEntitlementView: RouteDependency;
-  buildHostedFeatureServiceView: RouteDependency;
-  getTenantAsyncExecutionCoordinatorStatus: RouteDependency;
-  getTenantAsyncWeightedDispatchCoordinatorStatus: RouteDependency;
-  adminPlanView: RouteDependency;
-  DEFAULT_HOSTED_PLAN_ID: RouteDependency;
-  defaultRateLimitWindowSeconds: RouteDependency;
-  listAdminAuditRecordsState: RouteDependency;
-  adminAuditView: RouteDependency;
-  isBillingEventLedgerConfigured: RouteDependency;
-  listBillingEvents: RouteDependency;
-  billingEventView: RouteDependency;
-  listHostedBillingEntitlementsState: RouteDependency;
-  renderPrometheusMetrics: RouteDependency;
-  currentMetricsAuthorized: RouteDependency;
-  getTelemetryStatus: RouteDependency;
-  getHostedEmailDeliveryStatus: RouteDependency;
-  getSecretEnvelopeStatus: RouteDependency;
-  listHostedEmailDeliveriesState: RouteDependency;
-  asyncBackendMode: RouteDependency;
-  bullmqQueue: RouteDependency;
-  getAsyncQueueSummary: RouteDependency;
-  getAsyncRetryPolicy: RouteDependency;
-  inProcessJobs: RouteDependency;
-  inProcessTenantQueueSnapshot: RouteDependency;
-  listAsyncDeadLetterRecordsState: RouteDependency;
-  listFailedPipelineJobs: RouteDependency;
-  retryFailedPipelineJob: RouteDependency;
-  adminMutationRequest: RouteDependency;
-  finalizeAdminMutation: RouteDependency;
-  resolvePlanSpec: RouteDependency;
-  provisionHostedAccountState: RouteDependency;
-  accountStoreErrorResponse: RouteDependency;
-  tenantKeyStoreErrorResponse: RouteDependency;
-  attachStripeBillingToAccountState: RouteDependency;
-  stripeBillingErrorResponse: RouteDependency;
-  syncHostedBillingEntitlement: RouteDependency;
-  syncHostedBillingEntitlementForTenant: RouteDependency;
-  parseStripeSubscriptionStatus: RouteDependency;
-  setHostedAccountStatusState: RouteDependency;
-  revokeAccountSessionsForAccountState: RouteDependency;
-  issueTenantApiKeyState: RouteDependency;
-  rotateTenantApiKeyState: RouteDependency;
-  setTenantApiKeyStatusState: RouteDependency;
-  recoverTenantApiKeyState: RouteDependency;
-  revokeTenantApiKeyState: RouteDependency;
-  secretEnvelopeErrorResponse: RouteDependency;
-  queryUsageLedgerState: RouteDependency;
-  findTenantRecordByTenantIdState: RouteDependency;
-  findHostedAccountByTenantIdState: RouteDependency;
-  apiReleaseIntrospectionStore: RouteDependency;
-  releaseDegradedModeGrantStore?: RouteDependency;
+  currentAdminAuthorized(context: Context): Response | null;
+  listTenantKeyRecordsState: typeof ControlPlaneStore.listTenantKeyRecordsState;
+  adminTenantKeyView(record: TenantKeyRecord): AdminRouteResponseBody;
+  tenantKeyStorePolicy(): { maxActiveKeysPerTenant: number };
+  listHostedAccountsState: typeof ControlPlaneStore.listHostedAccountsState;
+  adminAccountView(record: HostedAccountRecord): AdminRouteResponseBody;
+  findHostedAccountByIdState: typeof ControlPlaneStore.findHostedAccountByIdState;
+  readHostedBillingEntitlement(account: HostedAccountRecord): Promise<HostedBillingEntitlementRecord>;
+  buildHostedBillingExport: typeof BillingExport.buildHostedBillingExport;
+  buildHostedBillingReconciliation: typeof BillingReconciliation.buildHostedBillingReconciliation;
+  renderHostedBillingExportCsv: typeof BillingExport.renderHostedBillingExportCsv;
+  billingEntitlementView(record: HostedBillingEntitlementRecord): AdminRouteResponseBody;
+  buildHostedFeatureServiceView: typeof BillingFeatureService.buildHostedFeatureServiceView;
+  getTenantAsyncExecutionCoordinatorStatus(): { shared: boolean; backend: 'memory' | 'redis' };
+  getTenantAsyncWeightedDispatchCoordinatorStatus(): { shared: boolean; backend: 'memory' | 'redis' };
+  adminPlanView(): AdminRouteResponseBody[];
+  DEFAULT_HOSTED_PLAN_ID: typeof PlanCatalog.DEFAULT_HOSTED_PLAN_ID;
+  defaultRateLimitWindowSeconds: typeof PlanCatalog.defaultRateLimitWindowSeconds;
+  listAdminAuditRecordsState: typeof ControlPlaneStore.listAdminAuditRecordsState;
+  adminAuditView(record: AdminAuditRecord): AdminRouteResponseBody;
+  isBillingEventLedgerConfigured: typeof BillingEventLedger.isBillingEventLedgerConfigured;
+  listBillingEvents: typeof BillingEventLedger.listBillingEvents;
+  billingEventView(record: BillingEventLedger.BillingEventRecord): AdminRouteResponseBody;
+  listHostedBillingEntitlementsState: typeof ControlPlaneStore.listHostedBillingEntitlementsState;
+  renderPrometheusMetrics: typeof Observability.renderPrometheusMetrics;
+  currentMetricsAuthorized(context: Context): Response | null;
+  getTelemetryStatus: typeof Observability.getTelemetryStatus;
+  getHostedEmailDeliveryStatus: typeof EmailDelivery.getHostedEmailDeliveryStatus;
+  getSecretEnvelopeStatus(): unknown;
+  listHostedEmailDeliveriesState: typeof ControlPlaneStore.listHostedEmailDeliveriesState;
+  asyncBackendMode: TenantAsyncBackendMode;
+  bullmqQueue: AdminAsyncQueue | null;
+  getAsyncQueueSummary: typeof AsyncPipeline.getAsyncQueueSummary;
+  getAsyncRetryPolicy: typeof AsyncPipeline.getAsyncRetryPolicy;
+  inProcessJobs: Map<string, InProcessAsyncJob>;
+  inProcessTenantQueueSnapshot: typeof TenantRuntime.inProcessTenantQueueSnapshot;
+  listAsyncDeadLetterRecordsState: typeof ControlPlaneStore.listAsyncDeadLetterRecordsState;
+  listFailedPipelineJobs: typeof AsyncPipeline.listFailedPipelineJobs;
+  retryFailedPipelineJob: typeof AsyncPipeline.retryFailedPipelineJob;
+  adminMutationRequest(
+    context: Context,
+    routeId: string,
+    requestPayload: unknown,
+  ): Promise<AdminMutationRequestResult | Response>;
+  finalizeAdminMutation(input: AdminMutationFinalizeInput): Promise<AdminRouteResponseBody>;
+  resolvePlanSpec: typeof PlanCatalog.resolvePlanSpec;
+  provisionHostedAccountState: typeof ControlPlaneStore.provisionHostedAccountState;
+  accountStoreErrorResponse(context: Context, error: unknown): Response | null;
+  tenantKeyStoreErrorResponse(context: Context, error: unknown): Response | null;
+  attachStripeBillingToAccountState: typeof ControlPlaneStore.attachStripeBillingToAccountState;
+  stripeBillingErrorResponse(context: Context, error: unknown): Response | null;
+  syncHostedBillingEntitlement(
+    account: HostedAccountRecord,
+    options?: {
+      lastEventId?: string | null;
+      lastEventType?: string | null;
+      lastEventAt?: string | null;
+      stripeEntitlementLookupKeys?: string[] | null;
+      stripeEntitlementFeatureIds?: string[] | null;
+      stripeEntitlementSummaryUpdatedAt?: string | null;
+    },
+  ): Promise<HostedBillingEntitlementRecord>;
+  syncHostedBillingEntitlementForTenant(
+    tenantId: string,
+    options?: {
+      lastEventId?: string | null;
+      lastEventType?: string | null;
+      lastEventAt?: string | null;
+      stripeEntitlementLookupKeys?: string[] | null;
+      stripeEntitlementFeatureIds?: string[] | null;
+      stripeEntitlementSummaryUpdatedAt?: string | null;
+    },
+  ): Promise<HostedBillingEntitlementRecord | null>;
+  parseStripeSubscriptionStatus(raw: unknown): StripeSubscriptionStatus;
+  setHostedAccountStatusState: typeof ControlPlaneStore.setHostedAccountStatusState;
+  revokeAccountSessionsForAccountState: typeof ControlPlaneStore.revokeAccountSessionsForAccountState;
+  issueTenantApiKeyState: typeof ControlPlaneStore.issueTenantApiKeyState;
+  rotateTenantApiKeyState: typeof ControlPlaneStore.rotateTenantApiKeyState;
+  setTenantApiKeyStatusState: typeof ControlPlaneStore.setTenantApiKeyStatusState;
+  recoverTenantApiKeyState: typeof ControlPlaneStore.recoverTenantApiKeyState;
+  revokeTenantApiKeyState: typeof ControlPlaneStore.revokeTenantApiKeyState;
+  secretEnvelopeErrorResponse(context: Context, error: unknown): Response | null;
+  queryUsageLedgerState: typeof ControlPlaneStore.queryUsageLedgerState;
+  findTenantRecordByTenantIdState: typeof ControlPlaneStore.findTenantRecordByTenantIdState;
+  findHostedAccountByTenantIdState: typeof ControlPlaneStore.findHostedAccountByTenantIdState;
+  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
+  releaseDegradedModeGrantStore?: DegradedModeGrantStore;
 }
 
 function adminDegradedModeActor(value: unknown): ReleaseActorReference {
@@ -159,6 +226,104 @@ function adminDegradedModeText(value: unknown): string {
 
 function adminDegradedModeError(error: unknown): string {
   return error instanceof Error ? error.message : 'Release enforcement degraded mode request failed.';
+}
+
+function adminRouteErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function adminAuditActionFilter(value: string | undefined): AdminAuditAction | null {
+  switch (value) {
+    case 'account.created':
+    case 'account.suspended':
+    case 'account.reactivated':
+    case 'account.archived':
+    case 'account.billing.attached':
+    case 'async_job.retried':
+    case 'billing.stripe.webhook_applied':
+    case 'policy_activation.approval_approved':
+    case 'policy_activation.approval_rejected':
+    case 'policy_activation.approval_requested':
+    case 'policy_activation.activated':
+    case 'policy_activation.emergency_frozen':
+    case 'policy_activation.emergency_rolled_back':
+    case 'policy_activation.rolled_back':
+    case 'policy_bundle.published':
+    case 'policy_pack.upserted':
+    case 'release_break_glass.issued':
+    case 'release_enforcement.degraded_mode.grant_created':
+    case 'release_enforcement.degraded_mode.grant_revoked':
+    case 'release_review.approved':
+    case 'release_review.rejected':
+    case 'release_token.revoked':
+    case 'tenant_key.issued':
+    case 'tenant_key.rotated':
+    case 'tenant_key.deactivated':
+    case 'tenant_key.reactivated':
+    case 'tenant_key.recovered':
+    case 'tenant_key.revoked':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function billingEventProviderFilter(value: string | undefined): BillingEventProviderFilter {
+  return value === 'stripe' ? value : null;
+}
+
+function billingEventOutcomeFilter(value: string | undefined): BillingEventOutcomeFilter {
+  switch (value) {
+    case 'applied':
+    case 'ignored':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function billingEntitlementStatusFilter(value: string | null): HostedBillingEntitlementStatus | null {
+  switch (value) {
+    case 'provisioned':
+    case 'checkout_completed':
+    case 'active':
+    case 'trialing':
+    case 'delinquent':
+    case 'suspended':
+    case 'archived':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function hostedEmailDeliveryStatusFilter(value: string | undefined): HostedEmailDeliveryStatus | null {
+  switch (value) {
+    case 'manual_delivered':
+    case 'smtp_sent':
+    case 'processed':
+    case 'delivered':
+    case 'deferred':
+    case 'bounced':
+    case 'dropped':
+    case 'failed':
+    case 'unknown':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function hostedEmailDeliveryProviderFilter(value: string | undefined): HostedEmailDeliveryProvider | null {
+  switch (value) {
+    case 'manual':
+    case 'smtp':
+    case 'sendgrid_smtp':
+    case 'mailgun_smtp':
+      return value;
+    default:
+      return null;
+  }
 }
 
 export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
@@ -379,7 +544,7 @@ app.get('/api/v1/admin/audit', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const action = c.req.query('action')?.trim() as any | undefined;
+  const action = adminAuditActionFilter(c.req.query('action')?.trim());
   const tenantId = c.req.query('tenantId')?.trim() || null;
   const accountId = c.req.query('accountId')?.trim() || null;
   const limitRaw = c.req.query('limit')?.trim() || '';
@@ -416,11 +581,11 @@ app.get('/api/v1/admin/billing/events', async (c) => {
     }, 503);
   }
 
-  const provider = c.req.query('provider')?.trim() as 'stripe' | undefined;
+  const provider = billingEventProviderFilter(c.req.query('provider')?.trim());
   const accountId = c.req.query('accountId')?.trim() || null;
   const tenantId = c.req.query('tenantId')?.trim() || null;
   const eventType = c.req.query('eventType')?.trim() || null;
-  const outcome = c.req.query('outcome')?.trim() as 'applied' | 'ignored' | undefined;
+  const outcome = billingEventOutcomeFilter(c.req.query('outcome')?.trim());
   const limitRaw = c.req.query('limit')?.trim() || '';
   const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
@@ -443,9 +608,9 @@ app.get('/api/v1/admin/billing/events', async (c) => {
       eventTypeFilter: eventType,
       outcomeFilter: outcome ?? null,
       recordCount: records.length,
-      appliedCount: records.filter((record: any) => record.outcome === 'applied').length,
-      ignoredCount: records.filter((record: any) => record.outcome === 'ignored').length,
-      pendingCount: records.filter((record: any) => record.outcome === 'pending').length,
+      appliedCount: records.filter((record) => record.outcome === 'applied').length,
+      ignoredCount: records.filter((record) => record.outcome === 'ignored').length,
+      pendingCount: records.filter((record) => record.outcome === 'pending').length,
     },
   });
 });
@@ -457,18 +622,7 @@ app.get('/api/v1/admin/billing/entitlements', async (c) => {
   const accountId = c.req.query('accountId')?.trim() || null;
   const tenantId = c.req.query('tenantId')?.trim() || null;
   const statusValue = c.req.query('status')?.trim() || null;
-  const allowedStatuses = new Set<any>([
-    'provisioned',
-    'checkout_completed',
-    'active',
-    'trialing',
-    'delinquent',
-    'suspended',
-    'archived',
-  ]);
-  const status = statusValue && allowedStatuses.has(statusValue as any)
-    ? statusValue as any
-    : null;
+  const status = billingEntitlementStatusFilter(statusValue);
   if (statusValue && !status) {
     return c.json({ error: 'status filter is invalid.' }, 400);
   }
@@ -491,10 +645,10 @@ app.get('/api/v1/admin/billing/entitlements', async (c) => {
       tenantFilter: tenantId,
       statusFilter: status,
       recordCount: result.records.length,
-      accessEnabledCount: result.records.filter((entry: any) => entry.accessEnabled).length,
+      accessEnabledCount: result.records.filter((entry) => entry.accessEnabled).length,
       providerCounts: {
-        manual: result.records.filter((entry: any) => entry.provider === 'manual').length,
-        stripe: result.records.filter((entry: any) => entry.provider === 'stripe').length,
+        manual: result.records.filter((entry) => entry.provider === 'manual').length,
+        stripe: result.records.filter((entry) => entry.provider === 'stripe').length,
       },
     },
   });
@@ -543,8 +697,8 @@ app.get('/api/v1/admin/email/deliveries', async (c) => {
   const deliveries = await listHostedEmailDeliveriesState({
     accountId: accountId || null,
     purpose: purpose === 'invite' || purpose === 'password_reset' ? purpose : null,
-    status: status ? status as any : null,
-    provider: provider ? provider as any : null,
+    status: hostedEmailDeliveryStatusFilter(status),
+    provider: hostedEmailDeliveryProviderFilter(provider),
     recipient: recipient || null,
     limit: Number.isFinite(limit) ? limit : undefined,
   });
@@ -584,12 +738,12 @@ app.get('/api/v1/admin/queue', async (c) => {
     backendMode: 'in_process',
     queueName: null,
     counts: {
-      waiting: Array.from((inProcessJobs as Map<string, any>).values()).filter((job) => job.status === 'queued').length,
-      active: Array.from((inProcessJobs as Map<string, any>).values()).filter((job) => job.status === 'running').length,
+      waiting: Array.from(inProcessJobs.values()).filter((job) => job.status === 'queued').length,
+      active: Array.from(inProcessJobs.values()).filter((job) => job.status === 'running').length,
       delayed: 0,
       prioritized: 0,
-      completed: Array.from((inProcessJobs as Map<string, any>).values()).filter((job) => job.status === 'completed').length,
-      failed: Array.from((inProcessJobs as Map<string, any>).values()).filter((job) => job.status === 'failed').length,
+      completed: Array.from(inProcessJobs.values()).filter((job) => job.status === 'completed').length,
+      failed: Array.from(inProcessJobs.values()).filter((job) => job.status === 'failed').length,
       paused: 0,
     },
     retryPolicy: {
@@ -616,7 +770,7 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
     const live = persisted.records.length < limit
       ? await listFailedPipelineJobs(bullmqQueue, { tenantId, limit: limit * 2 })
       : [];
-    const merged = new Map<string, any>();
+    const merged = new Map<string, AsyncDeadLetterRecord>();
     for (const record of persisted.records) merged.set(record.jobId, record);
     for (const record of live) {
       if (merged.size >= limit && merged.has(record.jobId)) continue;
@@ -636,7 +790,7 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
   }
 
   const persisted = await listAsyncDeadLetterRecordsState({ tenantId, backendMode: 'in_process', limit });
-  const live = Array.from((inProcessJobs as Map<string, any>).values())
+  const live = Array.from(inProcessJobs.values())
     .filter((job) => job.status === 'failed')
     .filter((job) => !tenantId || job.tenantId === tenantId)
     .slice(0, limit)
@@ -656,7 +810,7 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
       failedAt: job.completedAt,
       recordedAt: job.completedAt ?? job.submittedAt,
     }));
-  const merged = new Map<string, any>();
+  const merged = new Map<string, AsyncDeadLetterRecord>();
   for (const record of persisted.records) merged.set(record.jobId, record);
   for (const record of live) {
     if (!merged.has(record.jobId)) merged.set(record.jobId, record);
@@ -690,8 +844,8 @@ app.post('/api/v1/admin/queue/jobs/:id/retry', async (c) => {
   let retried;
   try {
     retried = await retryFailedPipelineJob(bullmqQueue, c.req.param('id'));
-  } catch (err: any) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+  } catch (err) {
+    return c.json({ error: adminRouteErrorMessage(err) }, 409);
   }
 
   const responseBody = await finalizeAdminMutation({
@@ -722,7 +876,7 @@ app.post('/api/v1/admin/accounts', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json();
+  const body = await c.req.json() as Record<string, unknown>;
   const accountName = typeof body.accountName === 'string' ? body.accountName.trim() : '';
   const contactEmail = typeof body.contactEmail === 'string' ? body.contactEmail.trim() : '';
   const tenantId = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
@@ -754,8 +908,8 @@ app.post('/api/v1/admin/accounts', async (c) => {
       monthlyRunQuota,
       defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
     });
-  } catch (err: any) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  } catch (err) {
+    return c.json({ error: adminRouteErrorMessage(err) }, 400);
   }
 
   let provisioned;
@@ -773,7 +927,7 @@ app.post('/api/v1/admin/accounts', async (c) => {
         monthlyRunQuota: resolvedPlan.monthlyRunQuota,
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     const mappedAccount = accountStoreErrorResponse(c, err);
     if (mappedAccount) return mappedAccount;
     const mapped = tenantKeyStoreErrorResponse(c, err);
@@ -816,12 +970,12 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json().catch(() => ({}));
-  let stripeSubscriptionStatus: any;
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  let stripeSubscriptionStatus: StripeSubscriptionStatus;
   try {
     stripeSubscriptionStatus = parseStripeSubscriptionStatus(body.stripeSubscriptionStatus);
-  } catch (err: any) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  } catch (err) {
+    return c.json({ error: adminRouteErrorMessage(err) }, 400);
   }
 
   const requestPayload = {
@@ -846,7 +1000,7 @@ app.post('/api/v1/admin/accounts/:id/billing/stripe', async (c) => {
       stripeSubscriptionStatus,
       stripePriceId: requestPayload.stripePriceId || null,
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -882,7 +1036,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   const requestPayload = {
     id: c.req.param('id'),
     reason: typeof body.reason === 'string' ? body.reason.trim() : '',
@@ -893,7 +1047,7 @@ app.post('/api/v1/admin/accounts/:id/suspend', async (c) => {
   let result;
   try {
     result = await setHostedAccountStatusState(c.req.param('id'), 'suspended');
-  } catch (err: any) {
+  } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -929,7 +1083,7 @@ app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   const requestPayload = {
     id: c.req.param('id'),
     reason: typeof body.reason === 'string' ? body.reason.trim() : '',
@@ -940,7 +1094,7 @@ app.post('/api/v1/admin/accounts/:id/reactivate', async (c) => {
   let result;
   try {
     result = await setHostedAccountStatusState(c.req.param('id'), 'active');
-  } catch (err: any) {
+  } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -973,7 +1127,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   const requestPayload = {
     id: c.req.param('id'),
     reason: typeof body.reason === 'string' ? body.reason.trim() : '',
@@ -984,7 +1138,7 @@ app.post('/api/v1/admin/accounts/:id/archive', async (c) => {
   let result;
   try {
     result = await setHostedAccountStatusState(c.req.param('id'), 'archived');
-  } catch (err: any) {
+  } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1020,7 +1174,7 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json();
+  const body = await c.req.json() as Record<string, unknown>;
   const tenantId = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
   const tenantName = typeof body.tenantName === 'string' ? body.tenantName.trim() : '';
   const requestedPlanId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : DEFAULT_HOSTED_PLAN_ID;
@@ -1048,8 +1202,8 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
       monthlyRunQuota,
       defaultPlanId: DEFAULT_HOSTED_PLAN_ID,
     });
-  } catch (err: any) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  } catch (err) {
+    return c.json({ error: adminRouteErrorMessage(err) }, 400);
   }
 
   let issued;
@@ -1060,7 +1214,7 @@ app.post('/api/v1/admin/tenant-keys', async (c) => {
       planId: resolvedPlan.planId,
       monthlyRunQuota: resolvedPlan.monthlyRunQuota,
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1102,7 +1256,7 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   const requestedPlanId = typeof body.planId === 'string' && body.planId.trim() !== '' ? body.planId.trim() : null;
   const monthlyRunQuota = typeof body.monthlyRunQuota === 'number' && body.monthlyRunQuota >= 0
     ? body.monthlyRunQuota
@@ -1121,10 +1275,10 @@ app.post('/api/v1/admin/tenant-keys/:id/rotate', async (c) => {
       planId: requestedPlanId,
       monthlyRunQuota,
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    return c.json({ error: adminRouteErrorMessage(err) }, 400);
   }
   await syncHostedBillingEntitlementForTenant(rotated.record.tenantId, {
     lastEventId: adminMutation.idempotencyKey,
@@ -1174,7 +1328,7 @@ app.post('/api/v1/admin/tenant-keys/:id/deactivate', async (c) => {
   let result;
   try {
     result = await setTenantApiKeyStatusState(c.req.param('id'), 'inactive');
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1221,7 +1375,7 @@ app.post('/api/v1/admin/tenant-keys/:id/reactivate', async (c) => {
   let result;
   try {
     result = await setTenantApiKeyStatusState(c.req.param('id'), 'active');
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1260,7 +1414,7 @@ app.post('/api/v1/admin/tenant-keys/:id/recover', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   const requestPayload = {
     id: c.req.param('id'),
     reason: typeof body.reason === 'string' ? body.reason.trim() : '',
@@ -1271,7 +1425,7 @@ app.post('/api/v1/admin/tenant-keys/:id/recover', async (c) => {
   let recovered;
   try {
     recovered = await recoverTenantApiKeyState(c.req.param('id'));
-  } catch (err: any) {
+  } catch (err) {
     const tenantError = tenantKeyStoreErrorResponse(c, err);
     if (tenantError) return tenantError;
     const secretError = secretEnvelopeErrorResponse(c, err);
@@ -1356,7 +1510,7 @@ app.post('/api/v1/admin/release-tokens/:id/revoke', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
   const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
   const requestPayload = {
     id: c.req.param('id'),
@@ -1601,7 +1755,7 @@ app.get('/api/v1/admin/usage', async (c) => {
   const tenantId = c.req.query('tenantId')?.trim() || null;
   const period = c.req.query('period')?.trim() || null;
   const usageRecords = await queryUsageLedgerState({ tenantId, period });
-  const records = await Promise.all(usageRecords.map(async (entry: any) => {
+  const records = await Promise.all(usageRecords.map(async (entry) => {
     const tenantRecord = await findTenantRecordByTenantIdState(entry.tenantId);
     const accountRecord = await findHostedAccountByTenantIdState(entry.tenantId);
     const quota = tenantRecord?.monthlyRunQuota ?? null;
@@ -1627,7 +1781,7 @@ app.get('/api/v1/admin/usage', async (c) => {
       tenantFilter: tenantId,
       periodFilter: period,
       recordCount: records.length,
-      tenantCount: new Set(records.map((entry: any) => entry.tenantId)).size,
+      tenantCount: new Set(records.map((entry) => entry.tenantId)).size,
       totalUsed: records.reduce((sum, entry) => sum + entry.used, 0),
     },
   });
