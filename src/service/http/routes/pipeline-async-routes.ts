@@ -1,31 +1,98 @@
-import type { Hono } from 'hono';
+import type { Queue } from 'bullmq';
+import type { Context, Hono } from 'hono';
+import type { FinancialPipelineInput } from '../../../financial/pipeline.js';
+import type { FinancialRunReport } from '../../../financial/types.js';
+import type { AttestorKeyPair } from '../../../signing/keys.js';
+import type { KeylessSigner } from '../../../signing/keyless-signer.js';
+import type { VerificationKit } from '../../../signing/bundle.js';
+import type {
+  AsyncQueueSummary,
+  AsyncRetryPolicy,
+  PipelineJobData,
+  PipelineJobResult,
+  PipelineJobTenantContext,
+  TenantAsyncQueueSnapshot,
+} from '../../async-pipeline.js';
+import type { AsyncDeadLetterRecord } from '../../async-dead-letter-store.js';
+import type { TenantRateLimitContext, TenantRateLimitDecision } from '../../rate-limit.js';
+import type { TenantContext } from '../../tenant-isolation.js';
+import type { InProcessAsyncJob, TenantAsyncBackendMode } from '../../runtime/tenant-runtime.js';
+import type { UsageContext } from '../../usage-meter.js';
 
-type RouteDependency = any;
+interface RequestSignerPair {
+  signer: KeylessSigner;
+  reviewer: KeylessSigner;
+}
 
 export interface PipelineAsyncRoutesDeps {
-  currentTenant: RouteDependency;
-  canConsumePipelineRunState: RouteDependency;
-  reserveTenantPipelineRequest: RouteDependency;
-  applyRateLimitHeaders: RouteDependency;
-  createRequestSigners: RouteDependency;
-  runFinancialPipeline: RouteDependency;
-  buildVerificationKit: RouteDependency;
-  consumePipelineRunState: RouteDependency;
-  asyncBackendMode: RouteDependency;
-  bullmqQueue: RouteDependency;
-  canEnqueueTenantAsyncJob: RouteDependency;
-  currentAsyncSubmissionReservations: RouteDependency;
-  reserveAsyncSubmission: RouteDependency;
-  releaseAsyncSubmission: RouteDependency;
-  getAsyncRetryPolicy: RouteDependency;
-  getAsyncQueueSummary: RouteDependency;
-  submitPipelineJob: RouteDependency;
-  getTenantPipelineRateLimit: RouteDependency;
-  inProcessTenantQueueSnapshot: RouteDependency;
-  inProcessJobs: RouteDependency;
-  pki: RouteDependency;
-  upsertAsyncDeadLetterRecordState: RouteDependency;
-  getJobStatus: RouteDependency;
+  currentTenant(context: Context): TenantContext;
+  canConsumePipelineRunState(
+    tenantId: string,
+    planId: string | null | undefined,
+    quota: number | null | undefined,
+  ): Promise<{ allowed: boolean; usage: UsageContext }>;
+  reserveTenantPipelineRequest(
+    tenantId: string,
+    planId: string | null | undefined,
+  ): Promise<TenantRateLimitDecision>;
+  applyRateLimitHeaders(
+    context: Context,
+    rateLimit: TenantRateLimitContext,
+    options?: { includeRetryAfter?: boolean },
+  ): void;
+  createRequestSigners(identitySource: string, reviewerName?: string): RequestSignerPair;
+  runFinancialPipeline(input: FinancialPipelineInput): FinancialRunReport;
+  buildVerificationKit(report: FinancialRunReport, publicKeyPem: string): VerificationKit | null;
+  consumePipelineRunState(
+    tenantId: string,
+    planId: string | null | undefined,
+    quota: number | null | undefined,
+  ): Promise<UsageContext>;
+  asyncBackendMode: TenantAsyncBackendMode;
+  bullmqQueue: Queue<PipelineJobData, PipelineJobResult> | null;
+  canEnqueueTenantAsyncJob(
+    queue: Queue<PipelineJobData, PipelineJobResult>,
+    tenantId: string,
+    planId: string | null,
+  ): Promise<{ allowed: boolean; snapshot: TenantAsyncQueueSnapshot }>;
+  currentAsyncSubmissionReservations(tenantId: string): number;
+  reserveAsyncSubmission(tenantId: string): void;
+  releaseAsyncSubmission(tenantId: string): void;
+  getAsyncRetryPolicy(): AsyncRetryPolicy;
+  getAsyncQueueSummary(
+    queue: Queue<PipelineJobData, PipelineJobResult>,
+    tenantId?: string,
+    planId?: string | null,
+  ): Promise<AsyncQueueSummary>;
+  submitPipelineJob(
+    queue: Queue<PipelineJobData, PipelineJobResult>,
+    input: FinancialPipelineInput,
+    tenant: PipelineJobTenantContext,
+    sign?: boolean,
+  ): Promise<{ jobId: string }>;
+  getTenantPipelineRateLimit(
+    tenantId: string,
+    planId: string | null | undefined,
+  ): Promise<TenantRateLimitContext>;
+  inProcessTenantQueueSnapshot(tenantId: string, planId: string | null): TenantAsyncQueueSnapshot;
+  inProcessJobs: Map<string, InProcessAsyncJob>;
+  pki: { signer: { keyPair: AttestorKeyPair } };
+  upsertAsyncDeadLetterRecordState(
+    input: AsyncDeadLetterRecord,
+  ): Promise<{ record: AsyncDeadLetterRecord; path: string | null }>;
+  getJobStatus(
+    queue: Queue<PipelineJobData, PipelineJobResult>,
+    jobId: string,
+  ): Promise<{
+    status: 'waiting' | 'active' | 'completed' | 'failed' | 'delayed' | 'prioritized' | 'not_found';
+    result: PipelineJobResult | null;
+    error: string | null;
+    submittedAt: string | null;
+    attemptsMade: number;
+    maxAttempts: number;
+    tenant: PipelineJobTenantContext | null;
+    failedAt: string | null;
+  }>;
 }
 
 export function registerPipelineAsyncRoutes(app: Hono, deps: PipelineAsyncRoutesDeps): void {
@@ -228,7 +295,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
     applyRateLimitHeaders(c, rateLimit);
     const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
     const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const job: any = {
+    const job: InProcessAsyncJob = {
       id: jobId,
       status: 'queued',
       submittedAt,
@@ -270,9 +337,9 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         };
         job.status = 'completed';
         job.completedAt = new Date().toISOString();
-      } catch (err: any) {
+      } catch (err) {
         job.status = 'failed';
-        job.error = err.message ?? String(err);
+        job.error = err instanceof Error ? err.message : String(err);
         job.completedAt = new Date().toISOString();
         await upsertAsyncDeadLetterRecordState({
           jobId: job.id,
