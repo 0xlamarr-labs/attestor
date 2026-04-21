@@ -62,6 +62,27 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   assert.match(runtime, /export interface AppRuntime<Packet = unknown>/u);
 }
 
+function testRuntimeUsesStructuredComposition(): void {
+  const apiServer = readFileSync(API_SERVER, 'utf8');
+  const routes = readFileSync(join(BOOTSTRAP_ROOT, 'routes.ts'), 'utf8');
+  const runtime = readFileSync(join(BOOTSTRAP_ROOT, 'runtime.ts'), 'utf8');
+
+  assert.match(runtime, /export interface AppRuntimeInfra/u);
+  assert.match(runtime, /export interface AppRuntimeServices<Packet = unknown>/u);
+  assert.match(runtime, /infra: AppRuntimeInfra/u);
+  assert.match(runtime, /stores: AppRuntimeStores/u);
+  assert.match(runtime, /services: AppRuntimeServices<Packet>/u);
+  assert.doesNotMatch(runtime, /routeDeps: AppRouteDeps/u);
+
+  assert.match(routes, /runtime\.services\.httpRoutes\.publicSite/u);
+  assert.match(routes, /runtime\.services\.httpRoutes\.account/u);
+  assert.doesNotMatch(routes, /runtime\.routeDeps/u);
+
+  assert.match(apiServer, /const apiRuntimeInfra = \{/u);
+  assert.match(apiServer, /services:\s*\{\s*httpRoutes:/u);
+  assert.doesNotMatch(apiServer, /routeDeps:\s*\{/u);
+}
+
 function testRegistriesOwnStaticPlatformRegistration(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
   const registries = readProjectFile('src', 'service', 'bootstrap', 'registries.ts');
@@ -90,6 +111,7 @@ testApiServerUsesBootstrapComposition();
 testApiServerDoesNotOwnNodeServerLifecycle();
 testApiServerDoesNotRegisterRoutesDirectly();
 testBootstrapModulesOwnTheirBoundaries();
+testRuntimeUsesStructuredComposition();
 testRegistriesOwnStaticPlatformRegistration();
 
-console.log('Service bootstrap boundary tests: 5 passed, 0 failed');
+console.log('Service bootstrap boundary tests: 6 passed, 0 failed');

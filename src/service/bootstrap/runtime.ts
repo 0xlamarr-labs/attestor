@@ -8,6 +8,8 @@ import type { ReleaseReviewRouteDeps } from '../http/routes/release-review-route
 import type { WebhookRouteDeps } from '../http/routes/webhook-routes.js';
 import type { AppRegistries } from './registries.js';
 
+export type AppRuntimeResourceMap = Readonly<Record<string, unknown>>;
+
 export interface AppRouteDeps<Packet = unknown> {
   publicSite: PublicSiteRouteDeps<Packet>;
   core: CoreRouteDeps;
@@ -19,11 +21,43 @@ export interface AppRouteDeps<Packet = unknown> {
   webhook: WebhookRouteDeps;
 }
 
-export interface AppRuntime<Packet = unknown> {
-  registries: AppRegistries;
-  routeDeps: AppRouteDeps<Packet>;
+export interface AppRuntimeServiceIdentity {
+  instanceId: string;
+  startedAtEpochMs: number;
 }
 
-export function createRuntime<Packet>(input: AppRuntime<Packet>): AppRuntime<Packet> {
-  return input;
+export interface AppRuntimeInfra {
+  service: AppRuntimeServiceIdentity;
+  asyncExecution?: AppRuntimeResourceMap;
+  telemetry?: AppRuntimeResourceMap;
+  security?: AppRuntimeResourceMap;
+}
+
+export type AppRuntimeStores = AppRuntimeResourceMap;
+
+export interface AppRuntimeServices<Packet = unknown> extends AppRuntimeResourceMap {
+  httpRoutes: AppRouteDeps<Packet>;
+}
+
+export interface AppRuntime<Packet = unknown> {
+  registries: AppRegistries;
+  infra: AppRuntimeInfra;
+  stores: AppRuntimeStores;
+  services: AppRuntimeServices<Packet>;
+}
+
+export interface CreateAppRuntimeInput<Packet = unknown> {
+  registries: AppRegistries;
+  infra: AppRuntimeInfra;
+  stores?: AppRuntimeStores;
+  services: AppRuntimeServices<Packet>;
+}
+
+export function createRuntime<Packet>(input: CreateAppRuntimeInput<Packet>): AppRuntime<Packet> {
+  return {
+    registries: input.registries,
+    infra: input.infra,
+    stores: input.stores ?? {},
+    services: input.services,
+  };
 }

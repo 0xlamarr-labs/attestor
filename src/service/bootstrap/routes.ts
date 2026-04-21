@@ -10,35 +10,35 @@ import { registerWebhookRoutes } from '../http/routes/webhook-routes.js';
 import type { AppRuntime } from './runtime.js';
 
 export function createPublicSiteRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.publicSite;
+  return runtime.services.httpRoutes.publicSite;
 }
 
 export function createCoreRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.core;
+  return runtime.services.httpRoutes.core;
 }
 
 export function createAccountRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.account;
+  return runtime.services.httpRoutes.account;
 }
 
 export function createAdminRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.admin;
+  return runtime.services.httpRoutes.admin;
 }
 
 export function createPipelineRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.pipeline;
+  return runtime.services.httpRoutes.pipeline;
 }
 
 export function createWebhookRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.webhook;
+  return runtime.services.httpRoutes.webhook;
 }
 
 export function createReleaseReviewRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.releaseReview;
+  return runtime.services.httpRoutes.releaseReview;
 }
 
 export function createReleasePolicyControlRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
-  return runtime.routeDeps.releasePolicyControl;
+  return runtime.services.httpRoutes.releasePolicyControl;
 }
 
 export function registerAllRoutes<Packet>(app: Hono, runtime: AppRuntime<Packet>): void {

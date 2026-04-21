@@ -47,6 +47,19 @@ function testAllServiceRoutesHaveClosedAnyDebt(): void {
   assert.deepEqual(offenders, []);
 }
 
+function testDirectStoreRouteDebtIsExplicitlyBounded(): void {
+  const offenders = collectRouteFiles(ROUTE_ROOT)
+    .filter((filePath) => readFileSync(filePath, 'utf8').includes("control-plane-store.js"))
+    .map(normalizePath)
+    .sort();
+
+  assert.deepEqual(offenders, [
+    'src/service/http/routes/account-routes.ts',
+    'src/service/http/routes/admin-routes.ts',
+    'src/service/http/routes/stripe-webhook-routes.ts',
+  ]);
+}
+
 function testReleaseReviewRouteUsesPublicReleaseLayerTypes(): void {
   const releaseReviewRoute = readFileSync(
     join(ROUTE_ROOT, 'release-review-routes.ts'),
@@ -134,10 +147,11 @@ function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
 
 testReleaseReviewRouteIsStronglyTyped();
 testAllServiceRoutesHaveClosedAnyDebt();
+testDirectStoreRouteDebtIsExplicitlyBounded();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
 testAdminRouteIsStronglyTyped();
 testAccountRouteIsStronglyTyped();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 7 passed, 0 failed');
+console.log('Service route boundary tests: 8 passed, 0 failed');

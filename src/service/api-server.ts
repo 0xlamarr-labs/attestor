@@ -359,7 +359,7 @@ import {
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
 import { createRegistries } from './bootstrap/registries.js';
-import { createRuntime, type AppRouteDeps } from './bootstrap/runtime.js';
+import { createRuntime, type AppRouteDeps, type AppRuntimeInfra } from './bootstrap/runtime.js';
 import { registerAllRoutes } from './bootstrap/routes.js';
 import {
   installGracefulShutdown,
@@ -1911,17 +1911,35 @@ const webhookRouteDeps = {
   resolvePlanStripePrice,
 } satisfies ApiRouteDeps['webhook'];
 
+const apiRuntimeInfra = {
+  service: {
+    instanceId: serviceInstanceId,
+    startedAtEpochMs: startTime,
+  },
+  asyncExecution: {
+    backendMode: asyncBackendMode,
+    redisMode,
+  },
+  security: {
+    rlsActivationResult,
+    pkiReady,
+  },
+} satisfies AppRuntimeInfra;
+
 const runtime = createRuntime({
   registries,
-  routeDeps: {
-    publicSite: publicSiteRouteDeps,
-    core: coreRouteDeps,
-    account: accountRouteDeps,
-    admin: adminRouteDeps,
-    releaseReview: releaseReviewRouteDeps,
-    releasePolicyControl: releasePolicyControlRouteDeps,
-    pipeline: pipelineRouteDeps,
-    webhook: webhookRouteDeps,
+  infra: apiRuntimeInfra,
+  services: {
+    httpRoutes: {
+      publicSite: publicSiteRouteDeps,
+      core: coreRouteDeps,
+      account: accountRouteDeps,
+      admin: adminRouteDeps,
+      releaseReview: releaseReviewRouteDeps,
+      releasePolicyControl: releasePolicyControlRouteDeps,
+      pipeline: pipelineRouteDeps,
+      webhook: webhookRouteDeps,
+    },
   },
 });
 
