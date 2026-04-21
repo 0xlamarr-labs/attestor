@@ -100,7 +100,7 @@ Attestor is intentionally organized as layered platform modules instead of one l
 | Release layer | Decides whether outputs can become communication, records, actions, or decision support | `24 / 24` complete, packaged |
 | Release policy control plane | Stores, signs, scopes, activates, rolls out, simulates, and audits policy | `20 / 20` complete, packaged |
 | Release enforcement plane | Verifies authorization at downstream boundaries and fails closed without it | `20 / 20` complete, packaged |
-| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `1 / 20` started |
+| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `2 / 20` complete |
 | Domain and adapter layers | Finance, healthcare, filing, connector, wallet/account/custody adapters | Expanded by tracker, not by ad hoc README growth |
 
 Reusable package surfaces:
@@ -142,10 +142,10 @@ The design rule is **core first, adapter second**:
 Current crypto authorization status:
 
 - tracker: [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md)
-- completed: Step 01, crypto authorization vocabulary
-- code: `src/crypto-authorization-core/types.ts`
-- tests: `tests/crypto-authorization-core-types.test.ts`
-- next: Step 02, versioned crypto authorization object model
+- completed: Step 01, crypto authorization vocabulary; Step 02, versioned authorization object model
+- code: `src/crypto-authorization-core/types.ts`, `src/crypto-authorization-core/object-model.ts`
+- tests: `tests/crypto-authorization-core-types.test.ts`, `tests/crypto-authorization-core-object-model.test.ts`
+- next: Step 03, canonical chain/account/asset/counterparty references
 
 ## What Ships
 
@@ -157,7 +157,7 @@ Current crypto authorization status:
 | Enforcement platform | offline/online verification, DPoP, mTLS/SPIFFE, HTTP message signatures, async envelopes, middleware, webhook receiver, record/communication/action gateways, Envoy ext_authz, degraded mode, telemetry, conformance |
 | Product surface | bounded API + worker topology, hosted auth/RBAC, billing, tenant/runtime policy, observability, HA, DR, secret-manager bootstrap, promotion packets |
 | Domain depth | finance as the deepest slice, healthcare as a second slice, PostgreSQL + Snowflake connectors, filing adapters |
-| Crypto core | first vocabulary layer for chain/account/asset/consequence/policy/adapter modeling |
+| Crypto core | vocabulary and object-model layers for chain/account/asset/consequence/policy/adapter modeling |
 
 ## Proof and Verification
 
@@ -271,10 +271,10 @@ Detailed API inventories, environment-specific setup, and long operational refer
 | Release layer | `24 / 24` complete |
 | Release policy control plane | `20 / 20` complete |
 | Release enforcement plane | `20 / 20` complete |
-| Crypto authorization core | `1 / 20` complete |
-| Core verification gate | `2243` checks via `npm test` |
-| Expanded verification surface | `3794` checks across `105` suites via local, live, and env-gated integration paths |
-| Latest crypto artifact | `src/crypto-authorization-core/types.ts` with `52` focused checks |
+| Crypto authorization core | `2 / 20` complete |
+| Core verification gate | `2302` checks via `npm test` |
+| Expanded verification surface | `3853` checks across `106` suites via local, live, and env-gated integration paths |
+| Latest crypto artifact | `src/crypto-authorization-core/object-model.ts` with `59` focused checks |
 | Package probes | release layer, policy control plane, and enforcement plane package surfaces all covered |
 | License | Business Source License 1.1, Change License `GPL-2.0-or-later` on 2030-04-13 |
 

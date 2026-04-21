@@ -63,16 +63,16 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 1 |
+| Completed | 2 |
 | In progress | 0 |
-| Not started | 19 |
+| Not started | 18 |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
 | 01 | complete | Codify the crypto authorization vocabulary | `src/crypto-authorization-core/types.ts`, `tests/crypto-authorization-core-types.test.ts` | The crypto authorization core now has a stable first-class grammar for chain namespaces, runtime families, account kinds, asset kinds, consequence kinds, execution adapter kinds, authorization artifact kinds, policy dimensions, consequence-risk profiles, and normalized chain/account/asset/adapter references. |
-| 02 | not-started | Define the versioned crypto authorization object model |  | Model the first versioned authorization objects for intent, decision, receipt, signer authority, policy scope, and execution target without binding the core to a single wallet or chain adapter. |
+| 02 | complete | Define the versioned crypto authorization object model | `src/crypto-authorization-core/object-model.ts`, `tests/crypto-authorization-core-object-model.test.ts` | The crypto authorization core now has versioned first-class objects for authorization intent, decision, receipt, execution projection, signer authority, policy scope, execution target, validity constraints, replay posture, digest modes, and signature-validation modes without binding the core to a single wallet, account, custody, or chain adapter. |
 | 03 | not-started | Define canonical chain, account, asset, and counterparty references |  | Promote the Step 01 references into canonical cross-adapter identifiers with explicit normalization, display, and digest rules. |
 | 04 | not-started | Define crypto consequence risk mapping |  | Turn consequence kind, account kind, asset kind, amount, counterparty, and execution context into deterministic Attestor risk classes and review requirements. |
 | 05 | not-started | Define EIP-712 typed authorization envelopes |  | Project Attestor crypto authorization into typed structured data with domain separation, expiry, nonce, chain binding, signer binding, and digest coverage. |
@@ -94,4 +94,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 02 is next: define the versioned crypto authorization object model while keeping the core adapter-neutral. The object model should make Safe, ERC-4337, ERC-7579/ERC-6900, EIP-7702, x402, and custody adapters possible later, but none of those adapters should own the core.
+Step 03 is next: promote the Step 01 and Step 02 chain/account/asset/counterparty references into canonical cross-adapter identifiers with explicit normalization, display, and digest rules.
