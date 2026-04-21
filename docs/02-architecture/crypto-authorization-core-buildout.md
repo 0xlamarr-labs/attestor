@@ -1,0 +1,97 @@
+# Crypto Authorization Core Buildout Tracker
+
+This file is the frozen implementation list for turning Attestor from a finance-proven release, policy, and enforcement platform into a reusable **crypto execution authorization core**: a policy-bound layer that can decide whether programmable-money movement, smart-account execution, delegation, permission grants, and agent payments may proceed.
+
+## Guardrails For This Tracker
+
+- The numbered step list below is **frozen** for this buildout track.
+- Step ids and titles do **not** get rewritten or renumbered later.
+- We may append clarifying notes, acceptance criteria, or sub-notes.
+- We may only change the `Status`, `Evidence`, and `Notes` columns as work progresses.
+
+## Repository and Service Shape Decision
+
+**Decision:** keep the crypto authorization core inside the main `attestor` repository as a **modular monolith extension of the packaged release layer, policy control plane, and enforcement plane**, not as a standalone chain-specific service yet.
+
+**Why this is the right starting point**
+
+- The existing `attestor/release-layer`, `attestor/release-policy-control-plane`, and `attestor/release-enforcement-plane` surfaces already define decision, policy lifecycle, verification, sender-constrained presentation, replay, online liveness, and fail-closed enforcement.
+- The next missing capability is not a single Safe integration. It is a stable crypto authorization language that can survive multiple account models, wallet standards, custody surfaces, and payment protocols.
+- Splitting into a separate service before the authorization object model, digest rules, and first adapter contracts are proven would freeze unstable protocol and SDK boundaries too early.
+
+**What has to become true before extracting it later**
+
+1. The crypto authorization object model is stable.
+2. EIP-712 and ERC-1271 verification projections are stable enough to sign and verify outside the main runtime.
+3. At least two independent execution adapters reuse the same authorization core.
+4. The same policy dimensions work across wallet, custody, and programmable-payment paths.
+5. Latency, chain-adjacent deployment, customer custody requirements, or verification environment requirements clearly justify a separate deployable boundary.
+
+## Why This Track Is Next
+
+The release, policy, and enforcement planes are now real:
+
+- release decisions and release tokens are versioned
+- policy bundles are signed, scoped, activated, rolled out, cached, audited, and packaged
+- enforcement points can fail closed at HTTP, webhook, async, record-write, communication-send, action-dispatch, and proxy boundaries
+- sender-constrained presentation, online introspection, replay defense, break-glass, telemetry, and conformance now exist behind a stable surface
+
+What is still missing is the **programmable-money authorization substrate**:
+
+- how Attestor describes a crypto consequence before it reaches a wallet, smart account, custody system, payment rail, bridge, or intent solver
+- how an Attestor decision becomes a typed authorization artifact that wallets and contracts can verify
+- how account-level authorization, wallet permissions, delegation, payment requirements, and custody approval policy fit into one model
+- how the core stays adapter-neutral while still giving Safe, ERC-4337, ERC-7579, ERC-6900, EIP-7702, x402, and custody paths concrete integration points
+
+Without this, Attestor can govern high-consequence software actions, but it is not yet positioned as the layer that sits before programmable money moves.
+
+## Research Anchors
+
+- EIP-712 defines deterministic typed structured data hashing and signing with domain separation, while explicitly leaving replay protection to protocol designers: [EIP-712](https://eips.ethereum.org/EIPS/eip-712)
+- ERC-1271 defines contract signature validation so smart accounts, DAOs, and multisigs can validate signed actions without EOA private keys: [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271)
+- ERC-4337 defines the UserOperation and EntryPoint flow for account abstraction and programmable smart wallets: [ERC-4337 docs](https://docs.erc4337.io/core-standards/erc-4337.html)
+- EIP-5792 defines wallet batch-call and capability discovery RPCs, which makes wallet capabilities an explicit app-wallet negotiation surface: [EIP-5792](https://eips.ethereum.org/EIPS/eip-5792)
+- ERC-7715 defines wallet execution permission requests with permissions and rules such as expiry constraints: [ERC-7715](https://eips.ethereum.org/EIPS/eip-7715)
+- ERC-7579 and ERC-6900 define modular smart-account and plugin/module standards, keeping validator, executor, fallback, hook, and module logic interoperable across account implementations: [ERC-7579](https://eips.ethereum.org/EIPS/eip-7579), [ERC-6900](https://eips.ethereum.org/EIPS/eip-6900)
+- EIP-7702 introduces EOA authorization tuples for delegated execution, making explicit authorization-list handling a first-class account concern: [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+- Safe documents guards and module guards as execution-blocking smart-account hooks, with explicit warning that guards can block transaction execution: [Safe smart account overview](https://docs.safe.global/advanced/smart-account-overview), [Safe setModuleGuard](https://docs.safe.global/reference-smart-account/guards/setModuleGuard)
+- x402 activates HTTP 402 for programmatic payments, especially machine-to-machine and agentic pay-per-use flows: [Coinbase x402 HTTP 402](https://docs.cdp.coinbase.com/x402/core-concepts/http-402)
+- Custody and wallet infrastructure already treat authorization policy as a first-class control surface: [Turnkey policy engine](https://docs.turnkey.com/products/embedded-wallets/features/policy-engine), [Fireblocks authorization policy](https://developers.fireblocks.com/docs/set-transaction-authorization-policy)
+
+## Progress Summary
+
+| Metric | Value |
+|---|---|
+| Total frozen steps | 20 |
+| Completed | 1 |
+| In progress | 0 |
+| Not started | 19 |
+
+## Frozen Step List
+
+| Step | Status | Deliverable | Evidence | Notes |
+|---|---|---|---|---|
+| 01 | complete | Codify the crypto authorization vocabulary | `src/crypto-authorization-core/types.ts`, `tests/crypto-authorization-core-types.test.ts` | The crypto authorization core now has a stable first-class grammar for chain namespaces, runtime families, account kinds, asset kinds, consequence kinds, execution adapter kinds, authorization artifact kinds, policy dimensions, consequence-risk profiles, and normalized chain/account/asset/adapter references. |
+| 02 | not-started | Define the versioned crypto authorization object model |  | Model the first versioned authorization objects for intent, decision, receipt, signer authority, policy scope, and execution target without binding the core to a single wallet or chain adapter. |
+| 03 | not-started | Define canonical chain, account, asset, and counterparty references |  | Promote the Step 01 references into canonical cross-adapter identifiers with explicit normalization, display, and digest rules. |
+| 04 | not-started | Define crypto consequence risk mapping |  | Turn consequence kind, account kind, asset kind, amount, counterparty, and execution context into deterministic Attestor risk classes and review requirements. |
+| 05 | not-started | Define EIP-712 typed authorization envelopes |  | Project Attestor crypto authorization into typed structured data with domain separation, expiry, nonce, chain binding, signer binding, and digest coverage. |
+| 06 | not-started | Define ERC-1271 smart-account validation projection |  | Specify how contract accounts validate Attestor-backed authorization digests and how verifier code distinguishes EOA signatures from smart-account signatures. |
+| 07 | not-started | Define replay, nonce, expiry, and revocation rules |  | Bind crypto authorization to freshness, one-time use, online liveness, replay ledger, and revocation semantics already proven in the enforcement plane. |
+| 08 | not-started | Bind crypto authorization to release-layer decisions |  | Connect crypto authorization results to release decisions, consequence hashes, evidence packs, reviewer authority, and release-token posture. |
+| 09 | not-started | Bind crypto authorization to policy-control-plane scopes |  | Add chain/account/asset/counterparty/spender/protocol/budget scope dimensions to signed policy packs, activation targeting, rollout, simulation, and audit. |
+| 10 | not-started | Bind crypto authorization to enforcement-plane verification |  | Reuse offline/online verification, sender-constrained presentation, replay protection, degraded mode, and conformance for crypto execution boundaries. |
+| 11 | not-started | Build the crypto authorization simulation surface |  | Let operators and integrations preview allow/deny/review outcomes for candidate crypto actions before any wallet, custody, or contract path is touched. |
+| 12 | not-started | Add the Safe transaction guard adapter |  | Use the core authorization model to gate ordinary Safe transaction execution through a guard path without making Safe part of the core vocabulary. |
+| 13 | not-started | Add the Safe module guard adapter |  | Gate module-initiated Safe transactions with Attestor authorization and explicit recovery/fail-closed posture. |
+| 14 | not-started | Add approval and allowance consequence support |  | Treat token approvals, spender allowances, and permission-like grants as high-risk consequences with budget, expiry, revocation, and spender constraints. |
+| 15 | not-started | Add the ERC-4337 UserOperation adapter |  | Project Attestor authorization into UserOperation validation and bundler/paymaster-aware execution paths. |
+| 16 | not-started | Add ERC-7579 and ERC-6900 modular account adapters |  | Map Attestor authorization into validator, executor, hook, and plugin/module surfaces for modular smart accounts. |
+| 17 | not-started | Add the EIP-7702 delegation-aware adapter |  | Model delegated EOA execution as an authorization-list-sensitive consequence with signer, code target, nonce, and runtime-context binding. |
+| 18 | not-started | Add the x402 agentic payment adapter |  | Gate programmatic HTTP 402 payment flows and agent payments with Attestor budget, cadence, recipient, and evidence requirements. |
+| 19 | not-started | Add the custody co-signer and policy-engine adapter |  | Integrate custody approval paths as Attestor-backed authorization evidence without replacing the custody platform's own key management or policy layer. |
+| 20 | not-started | Package crypto authorization as a reusable platform surface |  | Promote the finished crypto authorization core behind a stable package subpath, extraction criteria, package-boundary probes, and platform-surface docs. |
+
+## Immediate Next Step
+
+Step 02 is next: define the versioned crypto authorization object model while keeping the core adapter-neutral. The object model should make Safe, ERC-4337, ERC-7579/ERC-6900, EIP-7702, x402, and custody adapters possible later, but none of those adapters should own the core.

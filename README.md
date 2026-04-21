@@ -1,17 +1,17 @@
 # Attestor
 
-**AI output release and acceptance infrastructure for high-consequence AI systems, proven first on financial reporting workflows.**
+**Policy-bound release and execution-authorization infrastructure for high-consequence AI, finance, and programmable money.**
 
-Most AI systems can produce something useful before a team knows whether that output may safely enter a real consequence. That is the gap Attestor is built to close.
+Attestor sits before consequence.
 
-Attestor sits between AI output and consequence. It does not try to be the model, the agent runtime, or the orchestration layer. It decides whether an output may be released into communication, record, action, or decision-support, under what conditions, with what authority, and with what evidence left behind.
+It decides whether an AI-assisted output, operational action, financial record, or programmable-money movement may proceed; under what policy; with what authority; and with what evidence left behind.
 
-That release discipline is not only about safety. It also reduces unnecessary review and release friction: low-risk outputs can move faster, high-risk outputs get routed to the right authority, and teams keep a durable record of why something was accepted, held, or denied.
+Attestor is not the model, agent runtime, wallet, custody platform, or orchestration layer. It is the authorization and evidence layer between a proposed consequence and the system that would carry it out.
 
-The current proving wedge is financial: reporting, treasury, risk, reconciliation, and filing-oriented evidence. The architectural pattern can travel beyond finance, but the repo should be read first as a finance-proven release and consequence-gateway product, not as a generic AI platform claim.
+The deepest proven wedge today is still financial reporting and finance operations. That matters because finance gives the architecture hard constraints: evidence, reviewer authority, auditability, replayability, and fail-closed release discipline. The platform direction is broader: Attestor is becoming a modular release, policy, enforcement, and crypto authorization substrate.
 
 > [!IMPORTANT]
-> Attestor does not try to prove that AI is universally trustworthy. It gives teams a disciplined way to decide when AI-assisted work can be accepted, and when it must still be blocked, reviewed, or bounded more tightly.
+> Attestor does not try to prove that AI or programmable execution is universally trustworthy. It gives teams a disciplined way to decide when a proposed consequence can be accepted, and when it must be blocked, reviewed, narrowed, or bounded more tightly.
 
 > [!NOTE]
 > This repository is source-available under the Business Source License 1.1. Public source access is allowed, non-production use is allowed, and production use requires a commercial license until the Change Date listed in [LICENSE](/C:/Users/thedi/attestor/LICENSE).
@@ -20,15 +20,23 @@ The current proving wedge is financial: reporting, treasury, risk, reconciliatio
 
 | If you need to... | Attestor gives you... |
 |---|---|
-| decide whether AI-assisted output may safely move into consequence | typed contracts, bounded execution, release discipline, deterministic evidence |
+| decide whether a proposed consequence may proceed | release decisions, policy checks, authority binding, deterministic evidence |
+| release AI-assisted output into real workflows | typed contracts, bounded execution, reviewer routing, signed release artifacts |
 | reduce review churn and informal approval loops | risk-based auto-accept, reviewer routing, signed release artifacts |
 | prove later why a reporting output was accepted | signed certificates, verification kits, audit trail, schema/data-state attestation |
+| enforce the decision downstream | fail-closed HTTP, webhook, async, record, communication, action, and proxy enforcement points |
+| prepare for programmable-money authorization | chain/account/asset/consequence vocabulary, wallet and custody adapter path, crypto authorization tracker |
 | run it as an actual product surface | hosted auth, billing, observability, HA, DR, promotion packets |
-| expand the same release model later | finance-proven depth, healthcare slice, connector + filing adapter model |
+| expand without turning the repo into a monolith | modular platform surfaces, frozen buildout trackers, domain and adapter boundaries |
 
 ## Quick Navigation
 
+- [The step change](#the-step-change)
 - [Why this exists](#why-this-exists)
+- [Core category](#core-category)
+- [Modular architecture](#modular-architecture)
+- [Current proving ground](#current-proving-ground)
+- [Crypto authorization platform direction](#crypto-authorization-platform-direction)
 - [How customers buy and use Attestor](#how-customers-buy-and-use-attestor)
 - [Hosted customer journey](#hosted-customer-journey)
 - [Plans and pricing](#plans-and-pricing)
@@ -41,6 +49,7 @@ The current proving wedge is financial: reporting, treasury, risk, reconciliatio
 - [Reusable release-layer surface](docs/02-architecture/release-layer-platform-surface.md)
 - [Release policy control-plane tracker](docs/02-architecture/release-policy-control-plane-buildout.md)
 - [Release enforcement-plane tracker](docs/02-architecture/release-enforcement-plane-buildout.md)
+- [Crypto authorization core tracker](docs/02-architecture/crypto-authorization-core-buildout.md)
 - [Reusable release-policy control-plane surface](docs/02-architecture/release-policy-control-plane-platform-surface.md)
 - [Reusable release-enforcement-plane surface](docs/02-architecture/release-enforcement-plane-platform-surface.md)
 - [Financial reporting acceptance wedge](docs/01-overview/financial-reporting-acceptance.md)
@@ -52,53 +61,83 @@ The current proving wedge is financial: reporting, treasury, risk, reconciliatio
 
 ## The Step Change
 
-The practical jump is not from "no AI" to "AI". It is from "AI can suggest" to "AI output may enter consequence only after a release decision with evidence, policy, and authority."
+The practical jump is not from "no AI" to "AI". It is from "systems can suggest or initiate" to "a proposed consequence may proceed only after a policy-bound authorization decision with evidence."
 
 ```mermaid
 flowchart LR
-  M["Models / Agents"] --> A["Attestor: release decision, acceptance, proof"]
-  A --> C["Communication, record, action, decision-support"]
+  P["Models, agents, apps, wallets"] --> A["Attestor: policy, authority, evidence"]
+  A --> C["Communication, record, action, decision-support, programmable-money movement"]
 ```
 
-Without that middle layer, many AI systems stay advisory or get pushed forward informally. With it, teams can treat consequence as something that must be authorized, not merely hoped for.
+Without that middle layer, high-consequence work either stays advisory or gets pushed forward informally. With it, teams can treat consequence as something that must be authorized, not merely hoped for.
 
 ## Why This Exists
 
-The deepest AI bottleneck in serious workflows is no longer generation. It is release into consequence.
+The deepest bottleneck in serious AI and programmable execution workflows is no longer generation. It is authorized release into consequence.
 
-In serious reporting and control workflows, the key questions are not only "can the model say something helpful?" but also:
+In serious reporting, control, and programmable-money workflows, the key questions are not only "can the system produce or initiate something useful?" but also:
 
-- may this output be released at all?
+- may this proposed consequence proceed at all?
 - under what conditions may it move forward?
 - who is allowed to authorize that release?
 - what evidence survives after the release decision?
 
-Attestor answers those questions with a release layer:
+Attestor answers those questions with modular control layers:
 
 - output contracts define what kind of consequence is even in scope
 - capability boundaries constrain what the system may touch before release
 - acceptance policy turns findings into a governed release decision
 - proof becomes portable instead of trapped inside one runtime
 - authority is explicit instead of implied
+- enforcement points fail closed when authorization is missing or stale
 
 Many teams try to solve this today with ad hoc review, side messages, and scattered evidence. That is slow, hard to audit, and hard to scale. Attestor turns that informal release step into a product surface.
 
 ## Core Category
 
-Attestor should not primarily mean "AI platform."
+Attestor should not primarily mean "AI platform", "wallet", or "finance app."
 
 It should mean:
 
-**the layer that decides whether AI output may enter consequence**
+**the layer that decides whether a proposed consequence may proceed**
 
-In practice, that means Attestor sits before four consequence types:
+In the release layer, that currently means four consequence types:
 
 - `communication`
 - `record`
 - `action`
 - `decision-support`
 
-The first proving wedge remains financial:
+In the crypto authorization core, the same idea extends toward programmable-money consequences such as:
+
+- `transfer`
+- `approval`
+- `permission-grant`
+- `account-delegation`
+- `user-operation`
+- `agent-payment`
+- `custody-withdrawal`
+- `governance-action`
+
+The category is consistent across both: a proposed consequence becomes acceptable only if policy, authority, evidence, and enforcement all line up.
+
+## Modular Architecture
+
+Attestor is intentionally organized as layered platform modules instead of one giant product blob.
+
+| Module | Role | Status |
+|---|---|---|
+| Release layer | Decides whether outputs can become communication, records, actions, or decision support | `24 / 24` complete, packaged |
+| Release policy control plane | Stores, signs, scopes, activates, rolls out, simulates, and audits policy | `20 / 20` complete, packaged |
+| Release enforcement plane | Verifies authorization at downstream boundaries and fails closed without it | `20 / 20` complete, packaged |
+| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `1 / 20` started |
+| Domain and adapter layers | Finance, healthcare, filing, connector, crypto wallet/account/custody adapters | Expanded by tracker, not by ad hoc monolith growth |
+
+The rule is simple: core modules define reusable contracts; adapters translate those contracts into domain-specific systems.
+
+## Current Proving Ground
+
+The deepest proven wedge remains financial:
 
 **AI-assisted financial reporting acceptance.**
 
@@ -116,15 +155,26 @@ That wedge means:
 
 For the detailed wedge framing and current official anchors, see [AI-assisted financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 
-## Why Finance Is First
-
 Finance is where weak acceptance models break fastest. Silent errors are expensive, controls must be legible, auditability is mandatory, and reviewer authority matters. If the architecture survives here, it has earned the right to expand elsewhere.
 
 Finance is the proving ground, not the ceiling.
 
-## Reusable Release-Layer Surface
+## Crypto Authorization Platform Direction
 
-The release layer now has a curated platform surface inside the repository:
+The next platform expansion is not "add a crypto feature." It is to make Attestor a core authorization substrate before programmable money moves.
+
+The design rule is **core first, adapter second**:
+
+- the crypto authorization core defines chain, account, asset, consequence, policy, artifact, and adapter vocabulary
+- Safe, ERC-4337, ERC-7579, ERC-6900, EIP-7702, x402, custody, and intent paths become adapters to that core
+- adapters know about the core, but the core does not become a Safe-specific or vendor-specific model
+- release-layer decisions, policy-control-plane scope, and enforcement-plane verification remain the reusable backbone
+
+The first crypto authorization buildout tracker is now open at [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md). Step 01 codifies the vocabulary in `src/crypto-authorization-core/types.ts`; Step 02 will define the versioned authorization object model.
+
+## Reusable Platform Surfaces
+
+The release layer has a curated platform surface inside the repository:
 
 - `attestor/release-layer`
 - `attestor/release-layer/finance`
@@ -132,8 +182,6 @@ The release layer now has a curated platform surface inside the repository:
 Those are the stable reuse entrypoints. Internal `src/release-kernel/*` paths remain implementation details unless they are explicitly promoted.
 
 See [release-layer platform surface](docs/02-architecture/release-layer-platform-surface.md) for the current subpaths, SemVer boundary, and extraction criteria.
-
-## Reusable Release-Policy Control-Plane Surface
 
 The policy control plane now also has a curated platform surface inside the repository:
 
@@ -143,8 +191,6 @@ That subpath is the stable reuse entrypoint for policy vocabulary, bundle lifecy
 
 See [release-policy control-plane platform surface](docs/02-architecture/release-policy-control-plane-platform-surface.md) for the current subpath, SemVer boundary, and extraction criteria.
 
-## Reusable Release-Enforcement Plane Surface
-
 The enforcement plane now also has a curated platform surface inside the repository:
 
 - `attestor/release-enforcement-plane`
@@ -152,6 +198,8 @@ The enforcement plane now also has a curated platform surface inside the reposit
 That subpath is the stable reuse entrypoint for enforcement vocabulary, object-model contracts, verification profiles, freshness and replay posture, offline and online verification, sender-constrained presentation modes, gateway and proxy adapters, degraded-mode control, telemetry, and conformance helpers. Internal `src/release-enforcement-plane/*` paths remain implementation details unless they are explicitly promoted.
 
 See [release-enforcement-plane platform surface](docs/02-architecture/release-enforcement-plane-platform-surface.md) for the current subpath, SemVer boundary, and extraction criteria.
+
+The crypto authorization core is deliberately not packaged yet. It starts as an internal buildout track until the object model, verification projection, adapters, and package boundary are stable enough for Step 20.
 
 ## Proof Maturity Today
 
@@ -222,11 +270,11 @@ That is the real jump: not only generating reporting work with AI, but making AI
 
 ## What Attestor Is
 
-Attestor is the release layer and operating layer for high-consequence AI workflows.
+Attestor is the release, policy, enforcement, and execution-authorization layer for high-consequence workflows.
 
-It does not generate the answer. It governs whether the output may move forward automatically, under review, or not at all; how that release is evidenced; who may authorize it; and what a third party can verify afterward.
+It does not generate the answer, hold the wallet, or replace a customer's execution system. It governs whether a proposed output, action, record, or programmable-money movement may move forward automatically, under review, or not at all; how that release is evidenced; who may authorize it; and what a third party can verify afterward.
 
-The main missing infrastructure in many AI systems is not more intelligence. It is better release discipline.
+The main missing infrastructure in many serious systems is not more generation. It is better authorization discipline before consequence.
 
 ## What Changes in Practice
 
@@ -496,6 +544,7 @@ the missing layer is not another cheap generation API. It is the acceptance and 
 - Not a BI dashboard
 - Not a customer-facing automated decision engine
 - Not a regulatory submission platform
+- Not a wallet or custody platform
 - Not a fully general enterprise control plane
 - Not proof that AI is inherently trustworthy
 
@@ -1229,11 +1278,12 @@ The full reference table stays below, but the fastest way to think about the sur
 |---|---|
 | Version | 1.0.0 |
 | Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
-| Core verification gate | 2191 checks (`npm test`: 461 financial + 96 signing + 5 account session cookie security + 12 Stripe commercial config + 8 Stripe webhook events + 24 proof showcase + 16 financial reporting acceptance surface + 19 release-kernel types + 20 release-kernel object model + 18 consequence rollout + 20 risk controls + 11 first hard gateway wedge + 15 release policy rollout + 16 release policy + 23 release decision engine + 15 deterministic checks + 10 release decision log + 19 release shadow mode + 13 release canonicalization + 17 release token + 23 release verification + 14 release-kernel finance-record-release + 10 release-kernel finance-communication-release + 10 release-kernel finance-action-release + 20 release-kernel introspection + 19 release-kernel release-evidence-pack + 33 release-kernel reviewer queue + 18 release-layer platform surface + 1 release-layer service adoption + 24 release-policy control-plane types + 31 release-policy control-plane object model + 26 release-policy control-plane scoping + 23 release-policy control-plane bundle format + 22 release-policy control-plane bundle signing + 27 release-policy control-plane store + 6 release-policy control-plane bundle cache + 33 release-policy control-plane activation records + 10 release-policy control-plane discovery + 6 release-policy control-plane resolver + 4 release-policy control-plane simulation + 4 release-policy control-plane impact summary + 4 release-policy control-plane test pack + 4 release-policy control-plane audit log + 6 release-policy control-plane activation approvals + 14 release-policy control-plane finance proving + 18 release-policy control-plane platform surface + 1 release-policy control-plane service adoption + 10 release-policy control-plane admin routes + 37 release-enforcement-plane types + 53 release-enforcement-plane object model + 46 release-enforcement-plane verification profiles + 64 release-enforcement-plane freshness + 41 release-enforcement-plane offline verifier + 37 release-enforcement-plane online verifier + 42 release-enforcement-plane token exchange + 35 release-enforcement-plane DPoP + 33 release-enforcement-plane workload binding + 44 release-enforcement-plane HTTP message signatures + 42 release-enforcement-plane async envelopes + 40 release-enforcement-plane middleware + 56 release-enforcement-plane webhook receiver + 44 release-enforcement-plane record write + 53 release-enforcement-plane communication send + 57 release-enforcement-plane action dispatch + 84 release-enforcement-plane Envoy ext_authz + 50 release-enforcement-plane degraded mode + 47 release-enforcement-plane conformance + 27 release-enforcement-plane platform surface) |
-| Expanded verification surface | 3742 checks across 104 suites: 461 financial + 96 signing + 5 account session cookie security + 12 Stripe commercial config + 8 Stripe webhook events + 24 proof showcase + 16 financial reporting acceptance surface + 19 release-kernel types + 20 release-kernel object model + 18 consequence rollout + 20 risk controls + 11 first hard gateway wedge + 15 release policy rollout + 16 release policy + 23 release decision engine + 15 deterministic checks + 10 release decision log + 19 release shadow mode + 13 release canonicalization + 17 release token + 23 release verification + 14 release-kernel finance-record-release + 10 release-kernel finance-communication-release + 10 release-kernel finance-action-release + 20 release-kernel introspection + 19 release-kernel release-evidence-pack + 33 release-kernel reviewer queue + 18 release-layer platform surface + 1 release-layer service adoption + 24 release-policy control-plane types + 31 release-policy control-plane object model + 26 release-policy control-plane scoping + 23 release-policy control-plane bundle format + 22 release-policy control-plane bundle signing + 27 release-policy control-plane store + 6 release-policy control-plane bundle cache + 33 release-policy control-plane activation records + 10 release-policy control-plane discovery + 6 release-policy control-plane resolver + 4 release-policy control-plane simulation + 4 release-policy control-plane impact summary + 4 release-policy control-plane test pack + 4 release-policy control-plane audit log + 6 release-policy control-plane activation approvals + 14 release-policy control-plane finance proving + 18 release-policy control-plane platform surface + 1 release-policy control-plane service adoption + 10 release-policy control-plane admin routes + 37 release-enforcement-plane types + 53 release-enforcement-plane object model + 46 release-enforcement-plane verification profiles + 64 release-enforcement-plane freshness + 41 release-enforcement-plane offline verifier + 37 release-enforcement-plane online verifier + 42 release-enforcement-plane token exchange + 35 release-enforcement-plane DPoP + 33 release-enforcement-plane workload binding + 44 release-enforcement-plane HTTP message signatures + 42 release-enforcement-plane async envelopes + 40 release-enforcement-plane middleware + 56 release-enforcement-plane webhook receiver + 44 release-enforcement-plane record write + 53 release-enforcement-plane communication send + 57 release-enforcement-plane action dispatch + 84 release-enforcement-plane Envoy ext_authz + 50 release-enforcement-plane degraded mode + 47 release-enforcement-plane conformance + 27 release-enforcement-plane platform surface + 777 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 59 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 49 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 GKE domain cutover render + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
+| Core verification gate | 2243 checks (`npm test`: 461 financial + 96 signing + 5 account session cookie security + 12 Stripe commercial config + 8 Stripe webhook events + 24 proof showcase + 16 financial reporting acceptance surface + 19 release-kernel types + 20 release-kernel object model + 18 consequence rollout + 20 risk controls + 11 first hard gateway wedge + 15 release policy rollout + 16 release policy + 23 release decision engine + 15 deterministic checks + 10 release decision log + 19 release shadow mode + 13 release canonicalization + 17 release token + 23 release verification + 14 release-kernel finance-record-release + 10 release-kernel finance-communication-release + 10 release-kernel finance-action-release + 20 release-kernel introspection + 19 release-kernel release-evidence-pack + 33 release-kernel reviewer queue + 18 release-layer platform surface + 1 release-layer service adoption + 24 release-policy control-plane types + 31 release-policy control-plane object model + 26 release-policy control-plane scoping + 23 release-policy control-plane bundle format + 22 release-policy control-plane bundle signing + 27 release-policy control-plane store + 6 release-policy control-plane bundle cache + 33 release-policy control-plane activation records + 10 release-policy control-plane discovery + 6 release-policy control-plane resolver + 4 release-policy control-plane simulation + 4 release-policy control-plane impact summary + 4 release-policy control-plane test pack + 4 release-policy control-plane audit log + 6 release-policy control-plane activation approvals + 14 release-policy control-plane finance proving + 18 release-policy control-plane platform surface + 1 release-policy control-plane service adoption + 10 release-policy control-plane admin routes + 37 release-enforcement-plane types + 53 release-enforcement-plane object model + 46 release-enforcement-plane verification profiles + 64 release-enforcement-plane freshness + 41 release-enforcement-plane offline verifier + 37 release-enforcement-plane online verifier + 42 release-enforcement-plane token exchange + 35 release-enforcement-plane DPoP + 33 release-enforcement-plane workload binding + 44 release-enforcement-plane HTTP message signatures + 42 release-enforcement-plane async envelopes + 40 release-enforcement-plane middleware + 56 release-enforcement-plane webhook receiver + 44 release-enforcement-plane record write + 53 release-enforcement-plane communication send + 57 release-enforcement-plane action dispatch + 84 release-enforcement-plane Envoy ext_authz + 50 release-enforcement-plane degraded mode + 47 release-enforcement-plane conformance + 27 release-enforcement-plane platform surface + 52 crypto authorization core types) |
+| Expanded verification surface | 3794 checks across 105 suites: 461 financial + 96 signing + 5 account session cookie security + 12 Stripe commercial config + 8 Stripe webhook events + 24 proof showcase + 16 financial reporting acceptance surface + 19 release-kernel types + 20 release-kernel object model + 18 consequence rollout + 20 risk controls + 11 first hard gateway wedge + 15 release policy rollout + 16 release policy + 23 release decision engine + 15 deterministic checks + 10 release decision log + 19 release shadow mode + 13 release canonicalization + 17 release token + 23 release verification + 14 release-kernel finance-record-release + 10 release-kernel finance-communication-release + 10 release-kernel finance-action-release + 20 release-kernel introspection + 19 release-kernel release-evidence-pack + 33 release-kernel reviewer queue + 18 release-layer platform surface + 1 release-layer service adoption + 24 release-policy control-plane types + 31 release-policy control-plane object model + 26 release-policy control-plane scoping + 23 release-policy control-plane bundle format + 22 release-policy control-plane bundle signing + 27 release-policy control-plane store + 6 release-policy control-plane bundle cache + 33 release-policy control-plane activation records + 10 release-policy control-plane discovery + 6 release-policy control-plane resolver + 4 release-policy control-plane simulation + 4 release-policy control-plane impact summary + 4 release-policy control-plane test pack + 4 release-policy control-plane audit log + 6 release-policy control-plane activation approvals + 14 release-policy control-plane finance proving + 18 release-policy control-plane platform surface + 1 release-policy control-plane service adoption + 10 release-policy control-plane admin routes + 37 release-enforcement-plane types + 53 release-enforcement-plane object model + 46 release-enforcement-plane verification profiles + 64 release-enforcement-plane freshness + 41 release-enforcement-plane offline verifier + 37 release-enforcement-plane online verifier + 42 release-enforcement-plane token exchange + 35 release-enforcement-plane DPoP + 33 release-enforcement-plane workload binding + 44 release-enforcement-plane HTTP message signatures + 42 release-enforcement-plane async envelopes + 40 release-enforcement-plane middleware + 56 release-enforcement-plane webhook receiver + 44 release-enforcement-plane record write + 53 release-enforcement-plane communication send + 57 release-enforcement-plane action dispatch + 84 release-enforcement-plane Envoy ext_authz + 50 release-enforcement-plane degraded mode + 47 release-enforcement-plane conformance + 27 release-enforcement-plane platform surface + 52 crypto authorization core types + 777 live API + 64 live PostgreSQL + 48 connector/filing + 21 live OTLP export + 59 observability bundle + 15 Alertmanager config render + 9 alert routing probe + 9 observability credentials render + 7 observability profile render + 8 observability benchmark + 17 observability release bundle render + 7 observability receiver probe + 12 observability release input probe + 9 observability promotion packet + 28 Kubernetes observability bundle + 15 DR bundle + 49 Kubernetes HA bundle + 7 HA calibration + 9 HA profile render + 19 HA credentials render + 8 HA runtime connectivity probe + 10 HA release bundle render + 12 HA release input probe + 7 HA promotion packet + 9 GKE domain cutover render + 9 production readiness packet + 13 secret manager bootstrap render + 32 live account email delivery + 30 live account email provider webhook + 33 live account email Mailgun webhook + 27 live account OIDC SSO + 62 live account SAML SSO + 35 live account passkeys + 24 live tenant-key Vault recovery + 12 live shared Redis rate-limit + 11 live async tenant execution Redis + 13 live async weighted dispatch Redis + 12 live multi-node HA proxy + 12 live worker health + 3 live VSAC connectivity + 3 live Cypress connectivity, plus env-gated live Snowflake and full ONC/VSAC credential runs |
 | Scripts | `npm run verify` (safe local, now including all three package-surface probes), `npm run test:release-layer-package-surface`, `npm run test:release-policy-control-plane-package-surface`, `npm run test:release-enforcement-plane-package-surface`, and `npm run verify:full` (safe local + live/integration suites) |
 | Release-layer buildout | Frozen implementation tracker in [docs/02-architecture/release-layer-buildout.md](docs/02-architecture/release-layer-buildout.md); Steps 01-24 complete. The shared consequence gateway now lives behind stable package subpaths in [`attestor/release-layer`](docs/02-architecture/release-layer-platform-surface.md) and [`attestor/release-layer/finance`](docs/02-architecture/release-layer-platform-surface.md), while the first real fail-closed finance filing export path continues to run through `src/service/http/routes/pipeline-routes.ts`. Record, communication, and action now reuse the same release kernel, high-risk release tokens require active introspection, filing-export tokens are single-use with replay-ledger enforcement, reviewer authority covers named review, dual approval, and break-glass, durable DSSE-signed evidence bundles export separately from short-lived release tokens, policies carry staged rollout posture, the package `exports` map blocks direct `src/release-kernel/*` deep imports behind the curated platform surface, and the `src/service` layer now consumes that public release-layer surface under test instead of reaching into kernel internals directly. |
-| Next enforcement-plane track | The frozen [release enforcement-plane tracker](docs/02-architecture/release-enforcement-plane-buildout.md) is now `20 / 20` complete. The finished enforcement plane now ships behind the stable [`attestor/release-enforcement-plane`](docs/02-architecture/release-enforcement-plane-platform-surface.md) subpath, with the package `exports` map blocking direct `src/release-enforcement-plane/*` deep imports behind the curated platform surface, explicit extraction criteria, and package-boundary probes. |
+| Release enforcement-plane buildout | The frozen [release enforcement-plane tracker](docs/02-architecture/release-enforcement-plane-buildout.md) is now `20 / 20` complete. The finished enforcement plane now ships behind the stable [`attestor/release-enforcement-plane`](docs/02-architecture/release-enforcement-plane-platform-surface.md) subpath, with the package `exports` map blocking direct `src/release-enforcement-plane/*` deep imports behind the curated platform surface, explicit extraction criteria, and package-boundary probes. |
+| Crypto authorization core buildout | New frozen tracker in [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md); Step 01 is complete. The first vocabulary module lives in `src/crypto-authorization-core/types.ts` with 52 checks covering chain/account/asset/consequence vocabulary, policy dimensions, adapter kinds, consequence-risk profiles, and normalized references. |
 | Public GKE HTTPS proof | Live `sslip.io` Gateway API + cert-manager path verified (`http` 301 -> `https` 200) |
 | License | Business Source License 1.1 (`LICENSE`), Change License `GPL-2.0-or-later` on 2030-04-13 |
 
