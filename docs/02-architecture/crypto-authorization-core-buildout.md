@@ -67,9 +67,9 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 9 |
+| Completed | 10 |
 | In progress | 0 |
-| Not started | 11 |
+| Not started | 10 |
 
 ## Frozen Step List
 
@@ -84,7 +84,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | 07 | complete | Define replay, nonce, expiry, and revocation rules | `src/crypto-authorization-core/replay-freshness-rules.ts`, `tests/crypto-authorization-core-replay-freshness.test.ts` | The crypto authorization core now binds Attestor EIP-712 envelopes, intents, and decisions to deterministic validity windows, max-age limits, replay ledger keys, consume-on-allow posture, chain-authoritative adapter nonce checks for ERC-4337 and EIP-7702 paths, online revocation/liveness requirements, and fail-closed freshness evaluation. |
 | 08 | complete | Bind crypto authorization to release-layer decisions | `src/crypto-authorization-core/release-decision-binding.ts`, `tests/crypto-authorization-core-release-binding.test.ts` | The crypto authorization core now projects crypto authorization outputs into real release-layer hash bundles, release decisions, reviewer authority checks, evidence artifact requirements, evidence-pack validation, and release-token posture while failing closed on mismatched hashes, weak authority, invalid signatures, replayed freshness, or inconsistent token claims. |
 | 09 | complete | Bind crypto authorization to policy-control-plane scopes | `src/crypto-authorization-core/policy-control-plane-scope-binding.ts`, `tests/crypto-authorization-core-policy-scope-binding.test.ts` | Crypto authorization now projects chain/account/asset/counterparty/spender/protocol/function/budget scope into policy-control-plane activation targets, selectors, signed policy-pack artifacts, bundle records, activation records, simulation overlays, and audit append inputs while failing closed on missing risk-required dimensions, missing amount/budget/cadence/spender/protocol values, or mismatched release bindings. |
-| 10 | not-started | Bind crypto authorization to enforcement-plane verification |  | Reuse offline/online verification, sender-constrained presentation, replay protection, degraded mode, and conformance for crypto execution boundaries. |
+| 10 | complete | Bind crypto authorization to enforcement-plane verification | `src/crypto-authorization-core/enforcement-plane-verification.ts`, `tests/crypto-authorization-core-enforcement-verification.test.ts` | Crypto authorization now projects release-bound programmable-money decisions into enforcement-plane requests, verification profiles, expected binding claims, presentation defaults, offline/online verifier wrappers, degraded-mode reuse, and conformance-ready receipts without coupling the core to a specific Safe, ERC-4337, ERC-6900, or custody adapter. |
 | 11 | not-started | Build the crypto authorization simulation surface |  | Let operators and integrations preview allow/deny/review outcomes for candidate crypto actions before any wallet, custody, or contract path is touched. |
 | 12 | not-started | Add the Safe transaction guard adapter |  | Use the core authorization model to gate ordinary Safe transaction execution through a guard path without making Safe part of the core vocabulary. |
 | 13 | not-started | Add the Safe module guard adapter |  | Gate module-initiated Safe transactions with Attestor authorization and explicit recovery/fail-closed posture. |
@@ -98,4 +98,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 10 is next: bind crypto authorization to enforcement-plane verification.
+Step 11 is next: build the crypto authorization simulation surface.
