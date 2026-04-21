@@ -38,6 +38,19 @@ export {
 
 export type ReleaseReviewerQueueDetail = review.ReleaseReviewerQueueDetail;
 export type ReleaseReviewerQueueListResult = review.ReleaseReviewerQueueListResult;
+export type ReleaseReviewerQueueListOptions = review.ReleaseReviewerQueueListOptions;
+export type ReleaseReviewerQueueRecord = review.ReleaseReviewerQueueRecord;
+export type ReleaseReviewerQueueStore = review.ReleaseReviewerQueueStore;
+export type ReleaseDecision = model.ReleaseDecision;
+export type ReleaseDecisionLogEntry = decisionLog.ReleaseDecisionLogEntry;
+export type ReleaseDecisionLogPhase = decisionLog.ReleaseDecisionLogPhase;
+export type ReleaseDecisionLogWriter = decisionLog.ReleaseDecisionLogWriter;
+export type IssuedReleaseToken = token.IssuedReleaseToken;
+export type ReleaseTokenIssuer = token.ReleaseTokenIssuer;
+export type ReleaseTokenIntrospectionStore = introspection.ReleaseTokenIntrospectionStore;
+export type IssuedReleaseEvidencePack = evidence.IssuedReleaseEvidencePack;
+export type ReleaseEvidencePackIssuer = evidence.ReleaseEvidencePackIssuer;
+export type ReleaseEvidencePackStore = evidence.ReleaseEvidencePackStore;
 
 /**
  * Curated public platform surface for the Attestor release layer.

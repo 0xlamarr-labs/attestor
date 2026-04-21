@@ -1,6 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import type { Hono } from 'hono';
-import { review } from '../../../release-layer/index.js';
+import type { Context, Hono } from 'hono';
+import {
+  review,
+  type IssuedReleaseEvidencePack,
+  type IssuedReleaseToken,
+  type ReleaseDecision,
+  type ReleaseDecisionLogPhase,
+  type ReleaseDecisionLogWriter,
+  type ReleaseEvidencePackIssuer,
+  type ReleaseEvidencePackStore,
+  type ReleaseReviewerQueueDetail,
+  type ReleaseReviewerQueueListOptions,
+  type ReleaseReviewerQueueListResult,
+  type ReleaseReviewerQueueRecord,
+  type ReleaseReviewerQueueStore,
+  type ReleaseTokenIntrospectionStore,
+  type ReleaseTokenIssuer,
+} from '../../../release-layer/index.js';
+import type { AdminAuditAction } from '../../admin-audit-log.js';
 
 const {
   ReleaseReviewerQueueError,
@@ -9,20 +26,64 @@ const {
   attachIssuedTokenToReviewerQueueRecord,
 } = review;
 
-type RouteDependency = any;
+type AdminMutationRequestResult = {
+  idempotencyKey: string | null;
+  requestHash: string;
+};
+
+interface AdminMutationFinalizationInput {
+  idempotencyKey: string | null;
+  routeId: string;
+  requestPayload: unknown;
+  statusCode: number;
+  responseBody: Record<string, unknown>;
+  audit: {
+    action: AdminAuditAction;
+    accountId?: string | null;
+    tenantId?: string | null;
+    tenantKeyId?: string | null;
+    planId?: string | null;
+    monthlyRunQuota?: number | null;
+    requestHash?: string;
+    metadata?: Record<string, unknown>;
+  };
+}
 
 export interface ReleaseReviewRouteDeps {
-  currentAdminAuthorized: RouteDependency;
-  apiReleaseReviewerQueueStore: RouteDependency;
-  renderReleaseReviewerQueueInboxPage: RouteDependency;
-  renderReleaseReviewerQueueDetailPage: RouteDependency;
-  financeReleaseDecisionLog: RouteDependency;
-  apiReleaseTokenIssuer: RouteDependency;
-  apiReleaseEvidencePackStore: RouteDependency;
-  apiReleaseEvidencePackIssuer: RouteDependency;
-  apiReleaseIntrospectionStore: RouteDependency;
-  adminMutationRequest: RouteDependency;
-  finalizeAdminMutation: RouteDependency;
+  currentAdminAuthorized(c: Context): Response | null;
+  apiReleaseReviewerQueueStore: ReleaseReviewerQueueStore;
+  renderReleaseReviewerQueueInboxPage(result: ReleaseReviewerQueueListResult): string;
+  renderReleaseReviewerQueueDetailPage(detail: ReleaseReviewerQueueDetail): string;
+  financeReleaseDecisionLog: ReleaseDecisionLogWriter;
+  apiReleaseTokenIssuer: ReleaseTokenIssuer;
+  apiReleaseEvidencePackStore: ReleaseEvidencePackStore;
+  apiReleaseEvidencePackIssuer: ReleaseEvidencePackIssuer;
+  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
+  adminMutationRequest(
+    c: Context,
+    routeId: string,
+    requestPayload: unknown,
+  ): Promise<AdminMutationRequestResult | Response>;
+  finalizeAdminMutation(input: AdminMutationFinalizationInput): Promise<Record<string, unknown>>;
+}
+
+interface IssuedReleaseTokenResponse extends Record<string, unknown> {
+  tokenId: string;
+  token: string;
+  expiresAt: string;
+  targetId: string;
+  decisionId: string;
+  ttlSeconds: number;
+  override: boolean;
+}
+
+interface IssuedEvidencePackResponse extends Record<string, unknown> {
+  evidencePackId: string;
+  exportPath: string;
+  bundleDigest: string;
+  predicateType: string;
+  retentionClass: string;
+  subjectCount: number;
 }
 
 function parsePositiveLimit(value: string | undefined): number | null {
@@ -44,10 +105,27 @@ function readReviewField(
   return trimmed.length > 0 ? trimmed : null;
 }
 
-async function parseReviewActionBody(c: any): Promise<Record<string, unknown>> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readReviewListOptions(c: Context): ReleaseReviewerQueueListOptions {
+  return {
+    limit: parsePositiveLimit(c.req.query('limit')) ?? undefined,
+    riskClass: (c.req.query('riskClass')?.trim() || undefined) as
+      | ReleaseReviewerQueueListOptions['riskClass']
+      | undefined,
+    consequenceType: (c.req.query('consequenceType')?.trim() || undefined) as
+      | ReleaseReviewerQueueListOptions['consequenceType']
+      | undefined,
+  };
+}
+
+async function parseReviewActionBody(c: Context): Promise<Record<string, unknown>> {
   const contentType = c.req.header('content-type') ?? '';
   if (contentType.includes('application/json')) {
-    return await c.req.json();
+    const parsed = await c.req.json();
+    return isRecord(parsed) ? parsed : {};
   }
 
   const parsed = await c.req.parseBody();
@@ -57,9 +135,9 @@ async function parseReviewActionBody(c: any): Promise<Record<string, unknown>> {
 }
 
 function buildReviewActionResponse(
-  review: any,
-  releaseToken: any,
-  evidencePack: any,
+  review: ReleaseReviewerQueueDetail,
+  releaseToken: IssuedReleaseTokenResponse | null,
+  evidencePack: IssuedEvidencePackResponse | null,
 ): Record<string, unknown> {
   return {
     review,
@@ -76,8 +154,8 @@ function buildReviewActionResponse(
 }
 
 function buildIssuedReleaseTokenResponse(
-  issuedToken: any,
-): Record<string, unknown> {
+  issuedToken: IssuedReleaseToken,
+): IssuedReleaseTokenResponse {
   return {
     tokenId: issuedToken.tokenId,
     token: issuedToken.token,
@@ -90,8 +168,8 @@ function buildIssuedReleaseTokenResponse(
 }
 
 function buildIssuedEvidencePackResponse(
-  issuedEvidencePack: any,
-): Record<string, unknown> {
+  issuedEvidencePack: IssuedReleaseEvidencePack,
+): IssuedEvidencePackResponse {
   return {
     evidencePackId: issuedEvidencePack.evidencePack.id,
     exportPath: `/api/v1/admin/release-evidence/${issuedEvidencePack.evidencePack.id}`,
@@ -103,11 +181,14 @@ function buildIssuedEvidencePackResponse(
 }
 
 function appendReviewerTimelineToDecisionLog(
-  writer: any,
-  decision: any,
+  writer: ReleaseDecisionLogWriter,
+  decision: ReleaseDecision,
   occurredAt: string,
   requestId: string,
-  phase: 'review' | 'override' | 'evidence-pack' | 'terminal-accept' | 'terminal-deny',
+  phase: Extract<
+    ReleaseDecisionLogPhase,
+    'review' | 'override' | 'evidence-pack' | 'terminal-accept' | 'terminal-deny'
+  >,
 ): void {
   writer.append({
     occurredAt,
@@ -121,6 +202,12 @@ function appendReviewerTimelineToDecisionLog(
       pendingEvidenceKinds: [],
       requiresReview: decision.status === 'hold' || decision.status === 'review-required',
       deterministicChecksCompleted: true,
+      effectivePolicyId: null,
+      rolloutMode: null,
+      rolloutEvaluationMode: null,
+      rolloutReason: null,
+      rolloutCanaryBucket: null,
+      rolloutFallbackPolicyId: null,
     },
   });
 }
@@ -162,11 +249,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       return c.json({ error: 'limit must be a positive integer.' }, 400);
     }
 
-    const result = apiReleaseReviewerQueueStore.listPending({
-      limit: limit ?? undefined,
-      riskClass: (c.req.query('riskClass')?.trim() || undefined) as any,
-      consequenceType: (c.req.query('consequenceType')?.trim() || undefined) as any,
-    });
+    const result = apiReleaseReviewerQueueStore.listPending(readReviewListOptions(c));
 
     c.header('cache-control', 'no-store');
     return c.json({
@@ -186,11 +269,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       return c.json({ error: 'limit must be a positive integer.' }, 400);
     }
 
-    const result = apiReleaseReviewerQueueStore.listPending({
-      limit: limit ?? undefined,
-      riskClass: (c.req.query('riskClass')?.trim() || undefined) as any,
-      consequenceType: (c.req.query('consequenceType')?.trim() || undefined) as any,
-    });
+    const result = apiReleaseReviewerQueueStore.listPending(readReviewListOptions(c));
 
     c.header('content-type', 'text/html; charset=utf-8');
     c.header('cache-control', 'no-store');
@@ -260,9 +339,9 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         'review',
       );
 
-      let finalRecord = transition.record;
-      let responseToken: Record<string, unknown> | null = null;
-      let responseEvidencePack: Record<string, unknown> | null = null;
+      let finalRecord: ReleaseReviewerQueueRecord = transition.record;
+      let responseToken: IssuedReleaseTokenResponse | null = null;
+      let responseEvidencePack: IssuedEvidencePackResponse | null = null;
       if (transition.record.detail.authorityState === 'approved') {
         appendReviewerTimelineToDecisionLog(
           financeReleaseDecisionLog,
@@ -285,7 +364,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         });
         responseToken = buildIssuedReleaseTokenResponse(issuedToken);
         const evidencePackId = `ep_${randomUUID()}`;
-        const releaseDecisionWithEvidence = {
+        const releaseDecisionWithEvidence: ReleaseDecision = {
           ...finalRecord.releaseDecision,
           evidencePackId,
         };
@@ -302,7 +381,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
           issuedAt: decidedAt,
           decisionLogEntries: financeReleaseDecisionLog
             .entries()
-            .filter((entry: any) => entry.decisionId === releaseDecisionWithEvidence.id),
+            .filter((entry) => entry.decisionId === releaseDecisionWithEvidence.id),
           decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
           review: finalRecord.detail,
           releaseToken: issuedToken,
@@ -317,7 +396,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
               ...finalRecord.detail.timeline,
               {
                 occurredAt: decidedAt,
-                phase: 'evidence-pack',
+                phase: 'evidence-pack' as const,
                 decisionStatus: finalRecord.releaseDecision.status,
                 requiresReview: false,
                 deterministicChecksCompleted: true,
@@ -513,7 +592,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         issuedToken,
       });
       const evidencePackId = `ep_${randomUUID()}`;
-      const releaseDecisionWithEvidence = {
+      const releaseDecisionWithEvidence: ReleaseDecision = {
         ...finalRecord.releaseDecision,
         evidencePackId,
       };
@@ -530,13 +609,13 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         issuedAt: decidedAt,
         decisionLogEntries: financeReleaseDecisionLog
           .entries()
-          .filter((entry: any) => entry.decisionId === releaseDecisionWithEvidence.id),
+          .filter((entry) => entry.decisionId === releaseDecisionWithEvidence.id),
         decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
         review: finalRecord.detail,
         releaseToken: issuedToken,
       });
       apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
-      const finalRecordWithEvidence = {
+      const finalRecordWithEvidence: ReleaseReviewerQueueRecord = {
         detail: {
           ...finalRecord.detail,
           updatedAt: decidedAt,
@@ -545,7 +624,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
             ...finalRecord.detail.timeline,
             {
               occurredAt: decidedAt,
-              phase: 'evidence-pack',
+              phase: 'evidence-pack' as const,
               decisionStatus: finalRecord.releaseDecision.status,
               requiresReview: false,
               deterministicChecksCompleted: true,
