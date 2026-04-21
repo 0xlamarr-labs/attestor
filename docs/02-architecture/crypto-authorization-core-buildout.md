@@ -67,9 +67,9 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 12 |
+| Completed | 13 |
 | In progress | 0 |
-| Not started | 8 |
+| Not started | 7 |
 
 ## Frozen Step List
 
@@ -87,7 +87,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | 10 | complete | Bind crypto authorization to enforcement-plane verification | `src/crypto-authorization-core/enforcement-plane-verification.ts`, `tests/crypto-authorization-core-enforcement-verification.test.ts` | Crypto authorization now projects release-bound programmable-money decisions into enforcement-plane requests, verification profiles, expected binding claims, presentation defaults, offline/online verifier wrappers, degraded-mode reuse, and conformance-ready receipts without coupling the core to a specific Safe, ERC-4337, ERC-6900, or custody adapter. |
 | 11 | complete | Build the crypto authorization simulation surface | `src/crypto-authorization-core/authorization-simulation.ts`, `tests/crypto-authorization-core-authorization-simulation.test.ts` | Operators and integrations can now deterministically preview allow/review/deny outcomes before a wallet, custody system, contract, Safe guard, bundler, payment rail, or intent solver is touched. The surface binds intent/risk consistency, policy dimension coverage, release/policy/enforcement readiness, adapter preflight evidence, and required next artifacts across Safe, ERC-4337/ERC-7562, ERC-7715, EIP-7702, wallet-call, x402, custody, module, and intent-settlement paths. |
 | 12 | complete | Add the Safe transaction guard adapter | `src/crypto-authorization-core/safe-transaction-guard-adapter.ts`, `tests/crypto-authorization-core-safe-transaction-guard-adapter.test.ts` | Ordinary owner-approved Safe transactions now have an adapter-level guard preflight that binds Safe account, chain, operation, target, function selector, native-value posture, nonce, release readiness, policy activation, enforcement binding, transaction hash, and post-execution status into a Safe guard simulation signal. Delegatecall, target mismatch, failed post-execution hooks, non-Safe accounts, and non-ordinary Safe adapter paths fail closed without making Safe-specific hook fields part of the core object model. |
-| 13 | not-started | Add the Safe module guard adapter |  | Gate module-initiated Safe transactions with Attestor authorization and explicit recovery/fail-closed posture. |
+| 13 | complete | Add the Safe module guard adapter | `src/crypto-authorization-core/safe-module-guard-adapter.ts`, `tests/crypto-authorization-core-safe-module-guard-adapter.test.ts` | Module-initiated Safe transactions now have an adapter-level module guard preflight that binds Safe account, module identity, chain, operation, target, function selector, native-value posture, module nonce, release readiness, policy activation, enforcement binding, module transaction hash, owner-controlled recovery posture, and post-execution status into Safe guard and module-hook simulation signals. Disabled modules, missing module guards, delegatecall without explicit evidence, target mismatch, missing recovery, failed post-execution hooks, non-Safe accounts, and ordinary Safe guard adapter paths fail closed without moving module-specific hook fields into the core object model. |
 | 14 | not-started | Add approval and allowance consequence support |  | Treat token approvals, spender allowances, and permission-like grants as high-risk consequences with budget, expiry, revocation, and spender constraints. |
 | 15 | not-started | Add the ERC-4337 UserOperation adapter |  | Project Attestor authorization into UserOperation validation and bundler/paymaster-aware execution paths. |
 | 16 | not-started | Add ERC-7579 and ERC-6900 modular account adapters |  | Map Attestor authorization into validator, executor, hook, and plugin/module surfaces for modular smart accounts. |
@@ -98,4 +98,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 13 is next: add the Safe module guard adapter.
+Step 14 is next: add approval and allowance consequence support.
