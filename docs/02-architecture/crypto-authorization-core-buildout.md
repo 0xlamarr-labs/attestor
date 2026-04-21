@@ -48,6 +48,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 ## Research Anchors
 
 - EIP-712 defines deterministic typed structured data hashing and signing with domain separation, while explicitly leaving replay protection to protocol designers: [EIP-712](https://eips.ethereum.org/EIPS/eip-712)
+- EIP-191 defines the signed-data envelope family that EIP-712 uses with version byte `0x01`; ERC-5267 standardizes retrieval of EIP-712 domain fields; ERC-7739's draft defensive rehashing pattern reinforces that smart-account signatures need explicit account, chain, and domain binding to avoid replay across accounts: [EIP-191](https://eips.ethereum.org/EIPS/eip-191), [ERC-5267](https://eips.ethereum.org/EIPS/eip-5267), [ERC-7739](https://eips.ethereum.org/EIPS/eip-7739)
 - ERC-1271 defines contract signature validation so smart accounts, DAOs, and multisigs can validate signed actions without EOA private keys: [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271)
 - ERC-4337 defines the UserOperation and EntryPoint flow for account abstraction and programmable smart wallets: [ERC-4337 docs](https://docs.erc4337.io/core-standards/erc-4337.html)
 - EIP-5792 defines wallet batch-call and capability discovery RPCs, which makes wallet capabilities an explicit app-wallet negotiation surface: [EIP-5792](https://eips.ethereum.org/EIPS/eip-5792)
@@ -65,9 +66,9 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 4 |
+| Completed | 5 |
 | In progress | 0 |
-| Not started | 16 |
+| Not started | 15 |
 
 ## Frozen Step List
 
@@ -77,7 +78,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | 02 | complete | Define the versioned crypto authorization object model | `src/crypto-authorization-core/object-model.ts`, `tests/crypto-authorization-core-object-model.test.ts` | The crypto authorization core now has versioned first-class objects for authorization intent, decision, receipt, execution projection, signer authority, policy scope, execution target, validity constraints, replay posture, digest modes, and signature-validation modes without binding the core to a single wallet, account, custody, or chain adapter. |
 | 03 | complete | Define canonical chain, account, asset, and counterparty references | `src/crypto-authorization-core/canonical-references.ts`, `tests/crypto-authorization-core-canonical-references.test.ts` | The crypto authorization core now has CAIP-2 chain, CAIP-10 account, CAIP-19 asset, and counterparty references with explicit canonical JSON, SHA-256 digests, display separation, EVM address normalization, bundle binding, parser helpers, and invalid-reference rejection. |
 | 04 | complete | Define crypto consequence risk mapping | `src/crypto-authorization-core/consequence-risk-mapping.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts` | The crypto authorization core now maps consequence kind, account kind, asset kind, amount, counterparty, adapter, and execution-context signals into deterministic Attestor risk classes, review authority, required artifacts, policy dimensions, canonical assessment digests, and fail-closed review requirements. |
-| 05 | not-started | Define EIP-712 typed authorization envelopes |  | Project Attestor crypto authorization into typed structured data with domain separation, expiry, nonce, chain binding, signer binding, and digest coverage. |
+| 05 | complete | Define EIP-712 typed authorization envelopes | `src/crypto-authorization-core/eip712-authorization-envelope.ts`, `tests/crypto-authorization-core-eip712-envelope.test.ts` | The crypto authorization core now projects allowed Attestor decisions into EIP-712 typed data with explicit domain fields, ERC-5267-style domain metadata, EIP-191 structured-data prefix exposure, signer/account/chain binding, validity windows, nonce binding, and bytes32 digest coverage for references, intent, decision, risk assessment, and evidence. |
 | 06 | not-started | Define ERC-1271 smart-account validation projection |  | Specify how contract accounts validate Attestor-backed authorization digests and how verifier code distinguishes EOA signatures from smart-account signatures. |
 | 07 | not-started | Define replay, nonce, expiry, and revocation rules |  | Bind crypto authorization to freshness, one-time use, online liveness, replay ledger, and revocation semantics already proven in the enforcement plane. |
 | 08 | not-started | Bind crypto authorization to release-layer decisions |  | Connect crypto authorization results to release decisions, consequence hashes, evidence packs, reviewer authority, and release-token posture. |
@@ -96,4 +97,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 05 is next: project Attestor crypto authorization into EIP-712 typed structured data with domain separation, expiry, nonce, chain binding, signer binding, and digest coverage.
+Step 06 is next: specify how contract accounts validate Attestor-backed authorization digests and how verifier code distinguishes EOA signatures from smart-account signatures.
