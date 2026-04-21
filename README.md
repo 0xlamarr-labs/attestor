@@ -100,7 +100,7 @@ Attestor is intentionally organized as layered platform modules instead of one l
 | Release layer | Decides whether outputs can become communication, records, actions, or decision support | `24 / 24` complete, packaged |
 | Release policy control plane | Stores, signs, scopes, activates, rolls out, simulates, and audits policy | `20 / 20` complete, packaged |
 | Release enforcement plane | Verifies authorization at downstream boundaries and fails closed without it | `20 / 20` complete, packaged |
-| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `8 / 20` complete |
+| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `9 / 20` complete |
 | Domain and adapter layers | Finance, healthcare, filing, connector, wallet/account/custody adapters | Expanded by tracker, not by ad hoc README growth |
 
 Reusable package surfaces:
@@ -142,10 +142,10 @@ The design rule is **core first, adapter second**:
 Current crypto authorization status:
 
 - tracker: [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md)
-- completed: Step 01, crypto authorization vocabulary; Step 02, versioned authorization object model; Step 03, canonical chain/account/asset/counterparty references; Step 04, deterministic consequence risk mapping; Step 05, EIP-712 typed authorization envelopes; Step 06, ERC-1271 smart-account validation projection; Step 07, replay, nonce, expiry, and revocation rules; Step 08, release-layer decision binding
-- code: `src/crypto-authorization-core/types.ts`, `src/crypto-authorization-core/object-model.ts`, `src/crypto-authorization-core/canonical-references.ts`, `src/crypto-authorization-core/consequence-risk-mapping.ts`, `src/crypto-authorization-core/eip712-authorization-envelope.ts`, `src/crypto-authorization-core/erc1271-validation-projection.ts`, `src/crypto-authorization-core/replay-freshness-rules.ts`, `src/crypto-authorization-core/release-decision-binding.ts`
-- tests: `tests/crypto-authorization-core-types.test.ts`, `tests/crypto-authorization-core-object-model.test.ts`, `tests/crypto-authorization-core-canonical-references.test.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts`, `tests/crypto-authorization-core-eip712-envelope.test.ts`, `tests/crypto-authorization-core-erc1271-validation.test.ts`, `tests/crypto-authorization-core-replay-freshness.test.ts`, `tests/crypto-authorization-core-release-binding.test.ts`
-- next: Step 09, bind crypto authorization to policy-control-plane scopes
+- completed: Step 01, crypto authorization vocabulary; Step 02, versioned authorization object model; Step 03, canonical chain/account/asset/counterparty references; Step 04, deterministic consequence risk mapping; Step 05, EIP-712 typed authorization envelopes; Step 06, ERC-1271 smart-account validation projection; Step 07, replay, nonce, expiry, and revocation rules; Step 08, release-layer decision binding; Step 09, policy-control-plane scope binding
+- code: `src/crypto-authorization-core/types.ts`, `src/crypto-authorization-core/object-model.ts`, `src/crypto-authorization-core/canonical-references.ts`, `src/crypto-authorization-core/consequence-risk-mapping.ts`, `src/crypto-authorization-core/eip712-authorization-envelope.ts`, `src/crypto-authorization-core/erc1271-validation-projection.ts`, `src/crypto-authorization-core/replay-freshness-rules.ts`, `src/crypto-authorization-core/release-decision-binding.ts`, `src/crypto-authorization-core/policy-control-plane-scope-binding.ts`
+- tests: `tests/crypto-authorization-core-types.test.ts`, `tests/crypto-authorization-core-object-model.test.ts`, `tests/crypto-authorization-core-canonical-references.test.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts`, `tests/crypto-authorization-core-eip712-envelope.test.ts`, `tests/crypto-authorization-core-erc1271-validation.test.ts`, `tests/crypto-authorization-core-replay-freshness.test.ts`, `tests/crypto-authorization-core-release-binding.test.ts`, `tests/crypto-authorization-core-policy-scope-binding.test.ts`
+- next: Step 10, bind crypto authorization to enforcement-plane verification
 
 ## What Ships
 
@@ -157,7 +157,7 @@ Current crypto authorization status:
 | Enforcement platform | offline/online verification, DPoP, mTLS/SPIFFE, HTTP message signatures, async envelopes, middleware, webhook receiver, record/communication/action gateways, Envoy ext_authz, degraded mode, telemetry, conformance |
 | Product surface | bounded API + worker topology, hosted auth/RBAC, billing, tenant/runtime policy, observability, HA, DR, secret-manager bootstrap, promotion packets |
 | Domain depth | finance as the deepest slice, healthcare as a second slice, PostgreSQL + Snowflake connectors, filing adapters |
-| Crypto core | vocabulary, object-model, canonical-reference, risk-mapping, EIP-712 envelope, ERC-1271 validation-projection, replay/freshness, and release-decision binding layers for chain/account/asset/counterparty/consequence/policy/adapter modeling |
+| Crypto core | vocabulary, object-model, canonical-reference, risk-mapping, EIP-712 envelope, ERC-1271 validation-projection, replay/freshness, release-decision binding, and policy-control-plane scope binding layers for chain/account/asset/counterparty/consequence/policy/adapter modeling |
 
 ## Proof and Verification
 
@@ -271,10 +271,10 @@ Detailed API inventories, environment-specific setup, and long operational refer
 | Release layer | `24 / 24` complete |
 | Release policy control plane | `20 / 20` complete |
 | Release enforcement plane | `20 / 20` complete |
-| Crypto authorization core | `8 / 20` complete |
-| Core verification gate | `2816` checks via `npm test` |
-| Expanded verification surface | `4367` checks across `112` suites via local, live, and env-gated integration paths |
-| Latest crypto artifact | `src/crypto-authorization-core/release-decision-binding.ts` with `91` focused checks |
+| Crypto authorization core | `9 / 20` complete |
+| Core verification gate | `2897` checks via `npm test` |
+| Expanded verification surface | `4448` checks across `113` suites via local, live, and env-gated integration paths |
+| Latest crypto artifact | `src/crypto-authorization-core/policy-control-plane-scope-binding.ts` with `81` focused checks |
 | Package probes | release layer, policy control plane, and enforcement plane package surfaces all covered |
 | License | Business Source License 1.1, Change License `GPL-2.0-or-later` on 2030-04-13 |
 
