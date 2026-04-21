@@ -94,6 +94,24 @@ function testWebhookRoutesAreSplitByProviderBoundary(): void {
   assert.doesNotMatch(stripeWebhookRoute, /\bas any\b/u);
 }
 
+function testStripeWebhookRouteDelegatesIngressUseCase(): void {
+  const stripeWebhookRoute = readFileSync(join(ROUTE_ROOT, 'stripe-webhook-routes.ts'), 'utf8');
+  const stripeWebhookService = readProjectFile('src', 'service', 'application', 'stripe-webhook-service.ts');
+
+  assert.match(stripeWebhookRoute, /stripeWebhookService: StripeWebhookService/u);
+  assert.match(stripeWebhookRoute, /stripeWebhookService\.begin/u);
+  assert.doesNotMatch(stripeWebhookRoute, /claimStripeBillingEvent/u);
+  assert.doesNotMatch(stripeWebhookRoute, /claimProcessedStripeWebhookState/u);
+  assert.doesNotMatch(stripeWebhookRoute, /lookupProcessedStripeWebhookState/u);
+  assert.doesNotMatch(stripeWebhookRoute, /finalizeProcessedStripeWebhookState/u);
+  assert.doesNotMatch(stripeWebhookRoute, /recordProcessedStripeWebhookState/u);
+  assert.doesNotMatch(stripeWebhookRoute, /releaseProcessedStripeWebhookClaimState/u);
+
+  assert.match(stripeWebhookService, /export interface StripeWebhookService/u);
+  assert.match(stripeWebhookService, /begin\(input: StripeWebhookBeginInput\)/u);
+  assert.match(stripeWebhookService, /releaseClaim\(\)/u);
+}
+
 function testAdminRouteIsStronglyTyped(): void {
   const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
 
@@ -187,10 +205,11 @@ testAllServiceRoutesHaveClosedAnyDebt();
 testDirectStoreRouteDebtIsExplicitlyBounded();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
+testStripeWebhookRouteDelegatesIngressUseCase();
 testAdminRouteIsStronglyTyped();
 testAdminRouteDelegatesMutationUseCase();
 testAccountRouteIsStronglyTyped();
 testAccountRouteDelegatesAuthUseCases();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 10 passed, 0 failed');
+console.log('Service route boundary tests: 11 passed, 0 failed');

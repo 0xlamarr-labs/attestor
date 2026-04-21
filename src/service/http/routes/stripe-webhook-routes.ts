@@ -4,15 +4,12 @@ import type * as BillingEventLedger from '../../billing-event-ledger.js';
 import type * as ControlPlaneStore from '../../control-plane-store.js';
 import type * as PlanCatalog from '../../plan-catalog.js';
 import type * as StripeBilling from '../../stripe-billing.js';
+import type {
+  BillingWebhookMetricOutcome,
+  StripeWebhookService,
+} from '../../application/stripe-webhook-service.js';
 import type { HostedAccountRecord, StripeInvoiceStatus } from '../../account-store.js';
 import type { HostedBillingEntitlementRecord } from '../../billing-entitlement-store.js';
-
-type BillingWebhookMetricOutcome =
-  | 'applied'
-  | 'ignored'
-  | 'duplicate'
-  | 'conflict'
-  | 'signature_invalid';
 
 interface SyncHostedBillingEntitlementOptions {
   lastEventId?: string | null;
@@ -42,18 +39,8 @@ type StripeInvoiceWebhookObject = Stripe.Invoice & {
 };
 
 export interface StripeWebhookRouteDeps {
-  stripeClient(): Stripe;
+  stripeWebhookService: StripeWebhookService;
   observeBillingWebhookEvent(eventType: string, outcome: BillingWebhookMetricOutcome): void;
-  isBillingEventLedgerConfigured(): boolean;
-  isSharedControlPlaneConfigured(): boolean;
-  claimStripeBillingEvent: typeof BillingEventLedger.claimStripeBillingEvent;
-  claimProcessedStripeWebhookState: typeof ControlPlaneStore.claimProcessedStripeWebhookState;
-  lookupProcessedStripeWebhookState: typeof ControlPlaneStore.lookupProcessedStripeWebhookState;
-  finalizeProcessedStripeWebhookState: typeof ControlPlaneStore.finalizeProcessedStripeWebhookState;
-  recordProcessedStripeWebhookState: typeof ControlPlaneStore.recordProcessedStripeWebhookState;
-  releaseProcessedStripeWebhookClaimState: typeof ControlPlaneStore.releaseProcessedStripeWebhookClaimState;
-  finalizeStripeBillingEvent: typeof BillingEventLedger.finalizeStripeBillingEvent;
-  releaseStripeBillingEventClaim: typeof BillingEventLedger.releaseStripeBillingEventClaim;
   isSupportedStripeWebhookEvent(eventType: string): boolean;
   stripeReferenceId(value: unknown): string | null;
   parseStripeInvoiceStatus(raw: unknown): StripeInvoiceStatus;
@@ -101,18 +88,8 @@ export interface StripeWebhookRouteDeps {
 
 export function registerStripeWebhookRoutes(app: Hono, deps: StripeWebhookRouteDeps): void {
   const {
-    stripeClient,
+    stripeWebhookService,
     observeBillingWebhookEvent,
-    isBillingEventLedgerConfigured,
-    isSharedControlPlaneConfigured,
-    claimStripeBillingEvent,
-    claimProcessedStripeWebhookState,
-    lookupProcessedStripeWebhookState,
-    finalizeProcessedStripeWebhookState,
-    recordProcessedStripeWebhookState,
-    releaseProcessedStripeWebhookClaimState,
-    finalizeStripeBillingEvent,
-    releaseStripeBillingEventClaim,
     isSupportedStripeWebhookEvent,
     stripeReferenceId,
     parseStripeInvoiceStatus,
@@ -145,111 +122,28 @@ export function registerStripeWebhookRoutes(app: Hono, deps: StripeWebhookRouteD
   } = deps;
 
 app.post('/api/v1/billing/stripe/webhook', async (c) => {
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
-  if (!webhookSecret) {
-    return c.json({
-      error: 'Stripe webhook disabled. Set STRIPE_WEBHOOK_SECRET to enable billing reconciliation.',
-    }, 503);
-  }
-
-  const signature = c.req.header('stripe-signature')?.trim() ?? '';
-  if (!signature) {
-    return c.json({ error: 'Stripe-Signature header is required.' }, 400);
-  }
-
   const rawPayload = await c.req.text();
-  let event: Stripe.Event;
-  try {
-    event = stripeClient().webhooks.constructEvent(rawPayload, signature, webhookSecret);
-  } catch (err) {
-    observeBillingWebhookEvent('signature_verification', 'signature_invalid');
-    return c.json({
-      error: 'Stripe webhook signature verification failed.',
-      detail: err instanceof Error ? err.message : String(err),
-    }, 400);
-  }
-
-  c.header('x-attestor-stripe-event-id', event.id);
-  const sharedBillingLedger = isBillingEventLedgerConfigured();
-  const sharedControlPlaneWebhookState = !sharedBillingLedger && isSharedControlPlaneConfigured();
-  const dedupe = sharedBillingLedger
-    ? await claimStripeBillingEvent({
-      providerEventId: event.id,
-      eventType: event.type,
-      rawPayload,
-    })
-    : sharedControlPlaneWebhookState
-      ? await claimProcessedStripeWebhookState({
-        eventId: event.id,
-        eventType: event.type,
-        rawPayload,
-      })
-    : await lookupProcessedStripeWebhookState(event.id, rawPayload);
-  const controlPlaneClaimId = dedupe.kind === 'claimed' && 'claimId' in dedupe ? dedupe.claimId : null;
-  if (dedupe.kind === 'conflict') {
-    observeBillingWebhookEvent(event.type, 'conflict');
-    return c.json({
-      error: `Stripe event '${event.id}' was already recorded with a different payload hash.`,
-      eventType: dedupe.record.eventType,
-      recordedAt: dedupe.record.receivedAt,
-    }, 409);
-  }
-  if (dedupe.kind === 'duplicate') {
-    observeBillingWebhookEvent(dedupe.record.eventType, 'duplicate');
-    c.header('x-attestor-stripe-replay', 'true');
-    return c.json({
-      received: true,
-      duplicate: true,
-      eventId: event.id,
-      eventType: dedupe.record.eventType,
-      outcome: dedupe.record.outcome,
-      accountId: dedupe.record.accountId,
-      reason: dedupe.record.reason,
-    });
-  }
-
-  let finalizedSharedEvent = false;
-  let finalizedControlPlaneEvent = false;
-  const finalizeWebhookDedupe = async (input: {
-    eventType: string;
-    accountId: string | null;
-    stripeCustomerId: string | null;
-    stripeSubscriptionId: string | null;
-    outcome: 'applied' | 'ignored';
-    reason: string | null;
-  }): Promise<void> => {
-    if (sharedBillingLedger) return;
-    if (sharedControlPlaneWebhookState && controlPlaneClaimId) {
-      await finalizeProcessedStripeWebhookState({
-        claimId: controlPlaneClaimId,
-        eventId: event.id,
-        eventType: input.eventType,
-        accountId: input.accountId,
-        stripeCustomerId: input.stripeCustomerId,
-        stripeSubscriptionId: input.stripeSubscriptionId,
-        outcome: input.outcome,
-        reason: input.reason,
-        rawPayload,
-      });
-      finalizedControlPlaneEvent = true;
-      return;
+  const stripeWebhookBegin = await stripeWebhookService.begin({
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    signature: c.req.header('stripe-signature'),
+    rawPayload,
+  });
+  if (stripeWebhookBegin.kind === 'rejected') {
+    for (const [key, value] of Object.entries(stripeWebhookBegin.headers ?? {})) {
+      c.header(key, value);
     }
-    await recordProcessedStripeWebhookState({
-      eventId: event.id,
-      eventType: input.eventType,
-      accountId: input.accountId,
-      stripeCustomerId: input.stripeCustomerId,
-      stripeSubscriptionId: input.stripeSubscriptionId,
-      outcome: input.outcome,
-      reason: input.reason,
-      rawPayload,
-    });
-  };
+    return c.json(stripeWebhookBegin.responseBody, stripeWebhookBegin.statusCode);
+  }
+
+  const stripeWebhook = stripeWebhookBegin.webhook;
+  const { event } = stripeWebhook;
+  c.header('x-attestor-stripe-event-id', event.id);
+  const sharedBillingLedger = stripeWebhook.sharedBillingLedger;
   try {
     if (!isSupportedStripeWebhookEvent(event.type)) {
       observeBillingWebhookEvent(event.type, 'ignored');
       if (sharedBillingLedger) {
-        await finalizeStripeBillingEvent({
+        await stripeWebhook.finalizeSharedEvent({
           providerEventId: event.id,
           outcome: 'ignored',
           reason: 'unsupported_event_type',
@@ -257,9 +151,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             eventType: event.type,
           },
         });
-        finalizedSharedEvent = true;
       } else {
-        await finalizeWebhookDedupe({
+        await stripeWebhook.finalizeDedupe({
           eventType: event.type,
           accountId: null,
           stripeCustomerId: null,
@@ -295,7 +188,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
       let applied;
       try {
-      applied = await applyStripeSubscriptionStateState({
+        applied = await applyStripeSubscriptionStateState({
           accountId: accountIdFromMetadata,
           stripeCustomerId,
           stripeSubscriptionId,
@@ -305,18 +198,10 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           eventType: event.type,
         });
       } catch (err) {
-        if (sharedBillingLedger && !finalizedSharedEvent) {
-          try {
-            await releaseStripeBillingEventClaim(event.id);
-          } catch {
-            // allow original error mapping to surface
-          }
-        } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
-          try {
-            await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
-          } catch {
-            // allow original error mapping to surface
-          }
+        try {
+          await stripeWebhook.releaseClaim();
+        } catch {
+          // allow original failure to surface
         }
         const mapped = accountStoreErrorResponse(c, err);
         if (mapped) return mapped;
@@ -326,7 +211,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       if (!applied.record) {
         observeBillingWebhookEvent(event.type, 'ignored');
         if (sharedBillingLedger) {
-          await finalizeStripeBillingEvent({
+          await stripeWebhook.finalizeSharedEvent({
             providerEventId: event.id,
             outcome: 'ignored',
             reason: 'no_account_match',
@@ -338,9 +223,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
               eventType: event.type,
             },
           });
-          finalizedSharedEvent = true;
         } else {
-          await finalizeWebhookDedupe({
+          await stripeWebhook.finalizeDedupe({
             eventType: event.type,
             accountId: null,
             stripeCustomerId,
@@ -389,7 +273,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       c.set('obs.planId', mappedPlan?.id ?? null);
 
       if (sharedBillingLedger) {
-        await finalizeStripeBillingEvent({
+        await stripeWebhook.finalizeSharedEvent({
           providerEventId: event.id,
           outcome: 'applied',
           accountId: applied.record.id,
@@ -411,9 +295,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             revokedSessionCount: revokedSessions,
           },
         });
-        finalizedSharedEvent = true;
       } else {
-        await finalizeWebhookDedupe({
+        await stripeWebhook.finalizeDedupe({
           eventType: event.type,
           accountId: applied.record.id,
           stripeCustomerId,
@@ -436,7 +319,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         planId: mappedPlan?.id ?? null,
         monthlyRunQuota: null,
         idempotencyKey: event.id,
-        requestHash: dedupe.payloadHash,
+        requestHash: stripeWebhook.payloadHash,
         metadata: {
           eventType: event.type,
           matchReason: applied.matchReason,
@@ -484,7 +367,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
 
       let applied;
       try {
-      applied = await applyStripeCheckoutCompletionState({
+        applied = await applyStripeCheckoutCompletionState({
           accountId: accountIdFromMetadata,
           stripeCustomerId,
           stripeSubscriptionId,
@@ -496,18 +379,10 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           eventType: event.type,
         });
       } catch (err) {
-        if (sharedBillingLedger && !finalizedSharedEvent) {
-          try {
-            await releaseStripeBillingEventClaim(event.id);
-          } catch {
-            // allow original error mapping to surface
-          }
-        } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
-          try {
-            await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
-          } catch {
-            // allow original error mapping to surface
-          }
+        try {
+          await stripeWebhook.releaseClaim();
+        } catch {
+          // allow original failure to surface
         }
         const mapped = accountStoreErrorResponse(c, err);
         if (mapped) return mapped;
@@ -517,7 +392,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       if (!applied.record) {
         observeBillingWebhookEvent(event.type, 'ignored');
         if (sharedBillingLedger) {
-          await finalizeStripeBillingEvent({
+          await stripeWebhook.finalizeSharedEvent({
             providerEventId: event.id,
             outcome: 'ignored',
             reason: 'no_account_match',
@@ -531,9 +406,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
               checkoutMode: session.mode ?? null,
             },
           });
-          finalizedSharedEvent = true;
         } else {
-          await finalizeWebhookDedupe({
+          await stripeWebhook.finalizeDedupe({
             eventType: event.type,
             accountId: null,
             stripeCustomerId,
@@ -577,7 +451,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       c.set('obs.planId', mappedPlan?.id ?? planIdFromMetadata ?? null);
 
       if (sharedBillingLedger) {
-        await finalizeStripeBillingEvent({
+        await stripeWebhook.finalizeSharedEvent({
           providerEventId: event.id,
           outcome: 'applied',
           accountId: applied.record.id,
@@ -601,9 +475,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             effectivePlanId: entitlement.effectivePlanId,
           },
         });
-        finalizedSharedEvent = true;
       } else {
-        await finalizeWebhookDedupe({
+        await stripeWebhook.finalizeDedupe({
           eventType: event.type,
           accountId: applied.record.id,
           stripeCustomerId,
@@ -626,7 +499,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         planId: mappedPlan?.id ?? planIdFromMetadata ?? null,
         monthlyRunQuota: null,
         idempotencyKey: event.id,
-        requestHash: dedupe.payloadHash,
+        requestHash: stripeWebhook.payloadHash,
         metadata: {
           eventType: event.type,
           matchReason: applied.matchReason,
@@ -698,7 +571,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       if (!account) {
         observeBillingWebhookEvent(event.type, 'ignored');
         if (sharedBillingLedger) {
-          await finalizeStripeBillingEvent({
+          await stripeWebhook.finalizeSharedEvent({
             providerEventId: event.id,
             outcome: 'ignored',
             reason: 'no_account_match',
@@ -712,9 +585,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
               chargeCreatedAt,
             },
           });
-          finalizedSharedEvent = true;
         } else {
-          await finalizeWebhookDedupe({
+          await stripeWebhook.finalizeDedupe({
             eventType: event.type,
             accountId: null,
             stripeCustomerId,
@@ -748,7 +620,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       c.set('obs.planId', account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null);
 
       if (sharedBillingLedger) {
-        await finalizeStripeBillingEvent({
+        await stripeWebhook.finalizeSharedEvent({
           providerEventId: event.id,
           outcome: 'applied',
           accountId: account.id,
@@ -768,9 +640,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             effectivePlanId: entitlement.effectivePlanId,
           },
         });
-        finalizedSharedEvent = true;
       } else {
-        await finalizeWebhookDedupe({
+        await stripeWebhook.finalizeDedupe({
           eventType: event.type,
           accountId: account.id,
           stripeCustomerId,
@@ -793,7 +664,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         planId: account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null,
         monthlyRunQuota: null,
         idempotencyKey: event.id,
-        requestHash: dedupe.payloadHash,
+        requestHash: stripeWebhook.payloadHash,
         metadata: {
           eventType: event.type,
           matchReason: matched.matchReason,
@@ -848,7 +719,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       if (!account) {
         observeBillingWebhookEvent(event.type, 'ignored');
         if (sharedBillingLedger) {
-          await finalizeStripeBillingEvent({
+          await stripeWebhook.finalizeSharedEvent({
             providerEventId: event.id,
             outcome: 'ignored',
             reason: 'no_account_match',
@@ -861,9 +732,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
               entitlementSummaryUpdatedAt: summaryUpdatedAt,
             },
           });
-          finalizedSharedEvent = true;
         } else {
-          await finalizeWebhookDedupe({
+          await stripeWebhook.finalizeDedupe({
             eventType: event.type,
             accountId: null,
             stripeCustomerId,
@@ -898,7 +768,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       c.set('obs.planId', account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null);
 
       if (sharedBillingLedger) {
-        await finalizeStripeBillingEvent({
+        await stripeWebhook.finalizeSharedEvent({
           providerEventId: event.id,
           outcome: 'applied',
           accountId: account.id,
@@ -917,9 +787,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             effectivePlanId: entitlement.effectivePlanId,
           },
         });
-        finalizedSharedEvent = true;
       } else {
-        await finalizeWebhookDedupe({
+        await stripeWebhook.finalizeDedupe({
           eventType: event.type,
           accountId: account.id,
           stripeCustomerId,
@@ -942,7 +811,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         planId: account.billing.lastCheckoutPlanId ?? entitlement.effectivePlanId ?? null,
         monthlyRunQuota: null,
         idempotencyKey: event.id,
-        requestHash: dedupe.payloadHash,
+        requestHash: stripeWebhook.payloadHash,
         metadata: {
           eventType: event.type,
           matchReason: matched.matchReason,
@@ -1008,18 +877,10 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         eventType: event.type,
       });
     } catch (err) {
-      if (sharedBillingLedger && !finalizedSharedEvent) {
-        try {
-          await releaseStripeBillingEventClaim(event.id);
-        } catch {
-          // allow original error mapping to surface
-        }
-      } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
-        try {
-          await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
-        } catch {
-          // allow original error mapping to surface
-        }
+      try {
+        await stripeWebhook.releaseClaim();
+      } catch {
+        // allow original failure to surface
       }
       const mapped = accountStoreErrorResponse(c, err);
       if (mapped) return mapped;
@@ -1029,7 +890,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     if (!applied.record) {
       observeBillingWebhookEvent(event.type, 'ignored');
       if (sharedBillingLedger) {
-        await finalizeStripeBillingEvent({
+        await stripeWebhook.finalizeSharedEvent({
           providerEventId: event.id,
           outcome: 'ignored',
           reason: 'no_account_match',
@@ -1046,9 +907,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
             billingReason: invoice.billing_reason ?? null,
           },
         });
-        finalizedSharedEvent = true;
       } else {
-        await finalizeWebhookDedupe({
+        await stripeWebhook.finalizeDedupe({
           eventType: event.type,
           accountId: null,
           stripeCustomerId,
@@ -1156,7 +1016,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     c.set('obs.planId', mappedPlan?.id ?? null);
 
     if (sharedBillingLedger) {
-      await finalizeStripeBillingEvent({
+      await stripeWebhook.finalizeSharedEvent({
         providerEventId: event.id,
         outcome: 'applied',
         accountId: applied.record.id,
@@ -1186,9 +1046,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
           invoiceLineItemCaptureMode: persistedInvoiceLineItemCaptureMode,
         },
       });
-      finalizedSharedEvent = true;
     } else {
-      await finalizeWebhookDedupe({
+      await stripeWebhook.finalizeDedupe({
         eventType: event.type,
         accountId: applied.record.id,
         stripeCustomerId,
@@ -1211,7 +1070,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       planId: mappedPlan?.id ?? null,
       monthlyRunQuota: null,
       idempotencyKey: event.id,
-      requestHash: dedupe.payloadHash,
+      requestHash: stripeWebhook.payloadHash,
       metadata: {
         eventType: event.type,
         matchReason: applied.matchReason,
@@ -1249,18 +1108,10 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       billing: applied.record.billing,
     });
   } catch (err) {
-    if (sharedBillingLedger && !finalizedSharedEvent) {
-      try {
-        await releaseStripeBillingEventClaim(event.id);
-      } catch {
-        // allow original failure to surface
-      }
-    } else if (sharedControlPlaneWebhookState && controlPlaneClaimId && !finalizedControlPlaneEvent) {
-      try {
-        await releaseProcessedStripeWebhookClaimState(event.id, controlPlaneClaimId);
-      } catch {
-        // allow original failure to surface
-      }
+    try {
+      await stripeWebhook.releaseClaim();
+    } catch {
+      // allow original failure to surface
     }
     throw err;
   }

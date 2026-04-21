@@ -360,6 +360,7 @@ import {
 } from './release-review-site.js';
 import { createAdminMutationService } from './application/admin-mutation-service.js';
 import { createAccountAuthService } from './application/account-auth-service.js';
+import { createStripeWebhookService } from './application/stripe-webhook-service.js';
 import { createRegistries } from './bootstrap/registries.js';
 import { createRuntime, type AppRouteDeps, type AppRuntimeInfra } from './bootstrap/runtime.js';
 import { registerAllRoutes } from './bootstrap/routes.js';
@@ -1835,17 +1836,7 @@ const pipelineRouteDeps = {
   getJobStatus,
 } satisfies ApiRouteDeps['pipeline'];
 
-const webhookRouteDeps = {
-  getSendGridWebhookStatus,
-  verifySignedSendGridWebhook,
-  parseSendGridWebhookEvents,
-  listHostedEmailDeliveriesState,
-  recordHostedEmailProviderEventState,
-  sendGridEventTypeToStatusHint,
-  getMailgunWebhookStatus,
-  parseMailgunWebhookEvent,
-  verifySignedMailgunWebhook,
-  mailgunEventTypeToStatusHint,
+const stripeWebhookService = createStripeWebhookService({
   stripeClient,
   observeBillingWebhookEvent,
   isBillingEventLedgerConfigured,
@@ -1858,6 +1849,21 @@ const webhookRouteDeps = {
   releaseProcessedStripeWebhookClaimState,
   finalizeStripeBillingEvent,
   releaseStripeBillingEventClaim,
+});
+
+const webhookRouteDeps = {
+  getSendGridWebhookStatus,
+  verifySignedSendGridWebhook,
+  parseSendGridWebhookEvents,
+  listHostedEmailDeliveriesState,
+  recordHostedEmailProviderEventState,
+  sendGridEventTypeToStatusHint,
+  getMailgunWebhookStatus,
+  parseMailgunWebhookEvent,
+  verifySignedMailgunWebhook,
+  mailgunEventTypeToStatusHint,
+  stripeWebhookService,
+  observeBillingWebhookEvent,
   isSupportedStripeWebhookEvent,
   stripeReferenceId,
   parseStripeInvoiceStatus,
