@@ -50,6 +50,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 - EIP-712 defines deterministic typed structured data hashing and signing with domain separation, while explicitly leaving replay protection to protocol designers: [EIP-712](https://eips.ethereum.org/EIPS/eip-712)
 - EIP-191 defines the signed-data envelope family that EIP-712 uses with version byte `0x01`; ERC-5267 standardizes retrieval of EIP-712 domain fields; ERC-7739's draft defensive rehashing pattern reinforces that smart-account signatures need explicit account, chain, and domain binding to avoid replay across accounts: [EIP-191](https://eips.ethereum.org/EIPS/eip-191), [ERC-5267](https://eips.ethereum.org/EIPS/eip-5267), [ERC-7739](https://eips.ethereum.org/EIPS/eip-7739)
 - ERC-1271 defines contract signature validation so smart accounts, DAOs, and multisigs can validate signed actions without EOA private keys: [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271)
+- ERC-6492 extends ERC-1271 validation to predeploy/counterfactual smart accounts by wrapping factory preparation data and requiring wrapper detection before normal contract or EOA validation: [ERC-6492](https://eips.ethereum.org/EIPS/eip-6492)
 - ERC-4337 defines the UserOperation and EntryPoint flow for account abstraction and programmable smart wallets: [ERC-4337 docs](https://docs.erc4337.io/core-standards/erc-4337.html)
 - EIP-5792 defines wallet batch-call and capability discovery RPCs, which makes wallet capabilities an explicit app-wallet negotiation surface: [EIP-5792](https://eips.ethereum.org/EIPS/eip-5792)
 - ERC-7715 defines wallet execution permission requests with permissions and rules such as expiry constraints: [ERC-7715](https://eips.ethereum.org/EIPS/eip-7715)
@@ -66,9 +67,9 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 5 |
+| Completed | 6 |
 | In progress | 0 |
-| Not started | 15 |
+| Not started | 14 |
 
 ## Frozen Step List
 
@@ -79,7 +80,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | 03 | complete | Define canonical chain, account, asset, and counterparty references | `src/crypto-authorization-core/canonical-references.ts`, `tests/crypto-authorization-core-canonical-references.test.ts` | The crypto authorization core now has CAIP-2 chain, CAIP-10 account, CAIP-19 asset, and counterparty references with explicit canonical JSON, SHA-256 digests, display separation, EVM address normalization, bundle binding, parser helpers, and invalid-reference rejection. |
 | 04 | complete | Define crypto consequence risk mapping | `src/crypto-authorization-core/consequence-risk-mapping.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts` | The crypto authorization core now maps consequence kind, account kind, asset kind, amount, counterparty, adapter, and execution-context signals into deterministic Attestor risk classes, review authority, required artifacts, policy dimensions, canonical assessment digests, and fail-closed review requirements. |
 | 05 | complete | Define EIP-712 typed authorization envelopes | `src/crypto-authorization-core/eip712-authorization-envelope.ts`, `tests/crypto-authorization-core-eip712-envelope.test.ts` | The crypto authorization core now projects allowed Attestor decisions into EIP-712 typed data with explicit domain fields, ERC-5267-style domain metadata, EIP-191 structured-data prefix exposure, signer/account/chain binding, validity windows, nonce binding, and bytes32 digest coverage for references, intent, decision, risk assessment, and evidence. |
-| 06 | not-started | Define ERC-1271 smart-account validation projection |  | Specify how contract accounts validate Attestor-backed authorization digests and how verifier code distinguishes EOA signatures from smart-account signatures. |
+| 06 | complete | Define ERC-1271 smart-account validation projection | `src/crypto-authorization-core/erc1271-validation-projection.ts`, `tests/crypto-authorization-core-erc1271-validation.test.ts` | The crypto authorization core now distinguishes EOA and smart-account signature validation paths, projects ERC-1271 `isValidSignature(bytes32,bytes)` STATICCALL plans with magic-value result interpretation, and carries ERC-6492 counterfactual, ERC-7579 modular-validator, Safe guard, and ERC-7739 defensive-rehashing readiness without binding the core to a single adapter. |
 | 07 | not-started | Define replay, nonce, expiry, and revocation rules |  | Bind crypto authorization to freshness, one-time use, online liveness, replay ledger, and revocation semantics already proven in the enforcement plane. |
 | 08 | not-started | Bind crypto authorization to release-layer decisions |  | Connect crypto authorization results to release decisions, consequence hashes, evidence packs, reviewer authority, and release-token posture. |
 | 09 | not-started | Bind crypto authorization to policy-control-plane scopes |  | Add chain/account/asset/counterparty/spender/protocol/budget scope dimensions to signed policy packs, activation targeting, rollout, simulation, and audit. |
@@ -97,4 +98,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 06 is next: specify how contract accounts validate Attestor-backed authorization digests and how verifier code distinguishes EOA signatures from smart-account signatures.
+Step 07 is next: bind crypto authorization to replay, nonce, expiry, and revocation rules.
