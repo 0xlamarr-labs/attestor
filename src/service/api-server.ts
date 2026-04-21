@@ -50,7 +50,6 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { Hono, type Context } from 'hono';
-import { serve } from '@hono/node-server';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import Stripe from 'stripe';
 import type {
@@ -61,18 +60,11 @@ import { runFinancialPipeline } from '../financial/pipeline.js';
 import { generateKeyPair } from '../signing/keys.js';
 import { verifyCertificate } from '../signing/certificate.js';
 import { buildVerificationKit } from '../signing/bundle.js';
-import { domainRegistry } from '../domains/domain-pack.js';
-import { financeDomainPack } from '../domains/finance-pack.js';
-import { healthcareDomainPack } from '../domains/healthcare-pack.js';
 import { verifyOidcToken, classifyIdentitySource } from '../identity/oidc-identity.js';
 import type { FinancialPipelineInput } from '../financial/pipeline.js';
 import type { ReviewerIdentity } from '../financial/types.js';
 
-import { connectorRegistry } from '../connectors/connector-interface.js';
-import { snowflakeConnector } from '../connectors/snowflake-connector.js';
-import { filingRegistry } from '../filing/filing-adapter.js';
-import { xbrlUsGaapAdapter, buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
-import { xbrlCsvEbaAdapter } from '../filing/xbrl-csv-adapter.js';
+import { buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
 import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
@@ -315,21 +307,17 @@ import {
   appendStructuredRequestLog,
   beginRequestTrace,
   completeRequestTrace,
-  forceFlushTelemetry,
   getTelemetryStatus,
-  initializeTelemetry,
   observeBillingWebhookEvent,
   observeRequestComplete,
   observeRequestStart,
   renderPrometheusMetrics,
-  shutdownTelemetry,
 } from './observability.js';
 import {
   deliverHostedInviteEmail,
   deliverHostedPasswordResetEmail,
   getHostedEmailDeliveryStatus,
   HostedEmailDeliveryError,
-  shutdownHostedEmailDelivery,
 } from './email-delivery.js';
 import {
   getMailgunWebhookStatus,
@@ -370,41 +358,28 @@ import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
-import { registerCoreRoutes, type CoreRouteDeps } from './http/routes/core-routes.js';
-import { registerAdminRoutes, type AdminRouteDeps } from './http/routes/admin-routes.js';
-import { registerAccountRoutes, type AccountRouteDeps } from './http/routes/account-routes.js';
-import { registerPipelineRoutes, type PipelineRouteDeps } from './http/routes/pipeline-routes.js';
-import { registerPublicSiteRoutes, type PublicSiteRouteDeps } from './http/routes/public-site-routes.js';
+import { createRegistries } from './bootstrap/registries.js';
+import { createRuntime, type AppRouteDeps } from './bootstrap/runtime.js';
+import { registerAllRoutes } from './bootstrap/routes.js';
 import {
-  registerReleasePolicyControlRoutes,
-  type ReleasePolicyControlRouteDeps,
-} from './http/routes/release-policy-control-routes.js';
-import { registerReleaseReviewRoutes, type ReleaseReviewRouteDeps } from './http/routes/release-review-routes.js';
-import { registerWebhookRoutes, type WebhookRouteDeps } from './http/routes/webhook-routes.js';
+  installGracefulShutdown,
+  startHttpServer,
+  type HttpServerHandle,
+} from './bootstrap/server.js';
 import {
   asyncBackendMode,
   bullmqQueue,
-  configureTenantRuntimeBackends,
   currentAsyncSubmissionReservations,
   inProcessJobs,
   inProcessTenantQueueSnapshot,
   redisMode,
   releaseAsyncSubmission,
   reserveAsyncSubmission,
-  shutdownTenantRuntimeBackends,
 } from './runtime/tenant-runtime.js';
 import { rlsActivationResult } from './runtime/rls-runtime.js';
 
-// Register domain packs
-if (!domainRegistry.has('finance')) domainRegistry.register(financeDomainPack);
-if (!domainRegistry.has('healthcare')) domainRegistry.register(healthcareDomainPack);
-
-// Register connectors
-if (!connectorRegistry.has('snowflake')) connectorRegistry.register(snowflakeConnector);
-
-// Register filing adapters
-if (!filingRegistry.has('xbrl-us-gaap-2024')) filingRegistry.register(xbrlUsGaapAdapter);
-if (!filingRegistry.has('xbrl-csv-eba-dpm2')) filingRegistry.register(xbrlCsvEbaAdapter);
+const registries = createRegistries();
+const { domainRegistry, connectorRegistry, filingRegistry } = registries;
 
 const app = new Hono();
 const startTime = Date.now();
@@ -441,6 +416,7 @@ function readCommittedEvidence(relativePath: string): { path: string; content: s
 }
 
 const committedFinancialPacket = loadCommittedFinancialReportingPacket();
+type ApiRouteDeps = AppRouteDeps<typeof committedFinancialPacket>;
 
 
 app.use('/api/*', async (c, next) => {
@@ -1599,7 +1575,7 @@ const publicSiteRouteDeps = {
   renderHostedReturnPage,
   readCommittedEvidence,
   committedEvidenceContentType,
-} satisfies PublicSiteRouteDeps<typeof committedFinancialPacket>;
+} satisfies ApiRouteDeps['publicSite'];
 
 const coreRouteDeps = {
   evaluateApiHighAvailabilityState,
@@ -1614,7 +1590,7 @@ const coreRouteDeps = {
   pkiReady,
   pki,
   rlsActivationResult,
-} satisfies CoreRouteDeps;
+} satisfies ApiRouteDeps['core'];
 
 const accountRouteDeps = {
   currentHostedAccount,
@@ -1728,7 +1704,7 @@ const accountRouteDeps = {
   buildHostedBillingReconciliation,
   billingEntitlementView,
   currentTenant,
-} satisfies AccountRouteDeps;
+} satisfies ApiRouteDeps['account'];
 
 const adminRouteDeps = {
   currentAdminAuthorized,
@@ -1793,7 +1769,7 @@ const adminRouteDeps = {
   findTenantRecordByTenantIdState,
   findHostedAccountByTenantIdState,
   apiReleaseIntrospectionStore,
-} satisfies AdminRouteDeps;
+} satisfies ApiRouteDeps['admin'];
 
 const releaseReviewRouteDeps = {
   renderReleaseReviewerQueueInboxPage,
@@ -1807,7 +1783,7 @@ const releaseReviewRouteDeps = {
   apiReleaseIntrospectionStore,
   adminMutationRequest,
   finalizeAdminMutation,
-} satisfies ReleaseReviewRouteDeps;
+} satisfies ApiRouteDeps['releaseReview'];
 
 const releasePolicyControlRouteDeps = {
   currentAdminAuthorized,
@@ -1816,7 +1792,7 @@ const releasePolicyControlRouteDeps = {
   policyMutationAuditLog,
   adminMutationRequest,
   finalizeAdminMutation,
-} satisfies ReleasePolicyControlRouteDeps;
+} satisfies ApiRouteDeps['releasePolicyControl'];
 
 const pipelineRouteDeps = {
   currentTenant,
@@ -1880,7 +1856,7 @@ const pipelineRouteDeps = {
   pki,
   upsertAsyncDeadLetterRecordState,
   getJobStatus,
-} satisfies PipelineRouteDeps;
+} satisfies ApiRouteDeps['pipeline'];
 
 const webhookRouteDeps = {
   getSendGridWebhookStatus,
@@ -1934,62 +1910,29 @@ const webhookRouteDeps = {
   upsertStripeCharges,
   unixSecondsToIso,
   resolvePlanStripePrice,
-} satisfies WebhookRouteDeps;
+} satisfies ApiRouteDeps['webhook'];
 
-registerPublicSiteRoutes(app, publicSiteRouteDeps);
-registerCoreRoutes(app, coreRouteDeps);
-registerAccountRoutes(app, accountRouteDeps);
-registerAdminRoutes(app, adminRouteDeps);
-registerReleaseReviewRoutes(app, releaseReviewRouteDeps);
-registerReleasePolicyControlRoutes(app, releasePolicyControlRouteDeps);
-registerWebhookRoutes(app, webhookRouteDeps);
-registerPipelineRoutes(app, pipelineRouteDeps);
+const runtime = createRuntime({
+  registries,
+  routeDeps: {
+    publicSite: publicSiteRouteDeps,
+    core: coreRouteDeps,
+    account: accountRouteDeps,
+    admin: adminRouteDeps,
+    releaseReview: releaseReviewRouteDeps,
+    releasePolicyControl: releasePolicyControlRouteDeps,
+    pipeline: pipelineRouteDeps,
+    webhook: webhookRouteDeps,
+  },
+});
+
+registerAllRoutes(app, runtime);
 
 
 // ─── Server Start/Stop ──────────────────────────────────────────────────────
 
-export function startServer(port: number = 3700): { port: number; close: () => void } {
-  const telemetry = initializeTelemetry('1.0.0');
-  configureTenantRuntimeBackends();
-  const highAvailability = evaluateApiHighAvailabilityState({
-    redisMode: redisMode as 'external' | 'localhost' | 'embedded' | 'none' | 'unavailable',
-    asyncBackendMode: asyncBackendMode as 'bullmq' | 'in_process' | 'none',
-    sharedControlPlane: isSharedControlPlaneConfigured(),
-    sharedBillingLedger: !!process.env.ATTESTOR_BILLING_LEDGER_PG_URL?.trim(),
-  });
-  if (!highAvailability.ready) {
-    if (highAvailability.enabled) {
-      throw new Error(`ATTESTOR_HA_MODE startup guard failed for instance '${highAvailability.instanceId}': ${highAvailability.issues.join(' ')}`);
-    }
-    if (highAvailability.publicHosted) {
-      throw new Error(`Public hosted startup guard failed for instance '${highAvailability.instanceId}': ${highAvailability.issues.join(' ')}`);
-    }
-  }
-  if (highAvailability.enabled) {
-    console.log(`[ha] Multi-node first slice enabled for instance '${highAvailability.instanceId}' (redis=${highAvailability.redisMode}, sharedControlPlane=${highAvailability.sharedControlPlane}, sharedBillingLedger=${highAvailability.sharedBillingLedger})`);
-  }
-  if (telemetry.traces.enabled && telemetry.traces.endpoint) {
-    console.log(`[telemetry] OTLP traces enabled (${telemetry.traces.protocol}) -> ${telemetry.traces.endpoint}`);
-  }
-  if (telemetry.metrics.enabled && telemetry.metrics.endpoint) {
-    console.log(`[telemetry] OTLP metrics enabled (${telemetry.metrics.protocol}) -> ${telemetry.metrics.endpoint} @ ${telemetry.metrics.exportIntervalMillis ?? 1000}ms`);
-  }
-  if (!telemetry.traces.enabled && !telemetry.metrics.enabled && telemetry.disabledReason) {
-    console.log(`[telemetry] Disabled: ${telemetry.disabledReason}`);
-  }
-  const server = serve({ fetch: app.fetch, port });
-  return {
-    port,
-      close: () => {
-        void forceFlushTelemetry().catch(() => {});
-        shutdownHostedEmailDelivery();
-        if (server && typeof (server as any).close === 'function') {
-          (server as any).close();
-        }
-      void shutdownTenantRuntimeBackends().catch(() => {});
-      void shutdownTelemetry().catch(() => {});
-    },
-  };
+export function startServer(port: number = 3700): HttpServerHandle {
+  return startHttpServer(app, port);
 }
 
 export { app };
@@ -2000,13 +1943,5 @@ if (process.argv[1]?.endsWith('api-server.ts') || process.argv[1]?.endsWith('api
   const handle = startServer(port);
   console.log(`[attestor] API server running on port ${port}`);
 
-  // Graceful shutdown: drain connections on SIGTERM/SIGINT (container orchestration)
-  const shutdown = (signal: string) => {
-    console.log(`[attestor] ${signal} received — shutting down gracefully...`);
-    handle.close();
-    // Give in-flight requests 5s to complete, then force exit
-    setTimeout(() => { console.log('[attestor] Force exit after timeout'); process.exit(0); }, 5000).unref();
-  };
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  installGracefulShutdown(handle);
 }

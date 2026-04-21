@@ -127,7 +127,7 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
 
   app.get('/api/v1/connectors', async (c) => {
     const connectors = await Promise.all(
-      connectorRegistry.list().map(async (connector: any) => ({
+      connectorRegistry.list().map(async (connector) => ({
         id: connector.id,
         displayName: connector.displayName,
         configured: connector.loadConfig() !== null,
