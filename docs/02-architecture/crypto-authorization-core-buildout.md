@@ -58,15 +58,16 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 - x402 activates HTTP 402 for programmatic payments, especially machine-to-machine and agentic pay-per-use flows: [Coinbase x402 HTTP 402](https://docs.cdp.coinbase.com/x402/core-concepts/http-402)
 - Custody and wallet infrastructure already treat authorization policy as a first-class control surface: [Turnkey policy engine](https://docs.turnkey.com/products/embedded-wallets/features/policy-engine), [Fireblocks authorization policy](https://developers.fireblocks.com/docs/set-transaction-authorization-policy)
 - CAIP-2, CAIP-10, and CAIP-19 define chain-agnostic chain, account, and asset identifiers; EIP-55 and ERC-3770 remain useful display/adapter concerns rather than replacing the canonical core identity backbone: [CAIP-2](https://chainagnostic.org/CAIPs/caip-2), [CAIP-10](https://chainagnostic.org/CAIPs/caip-10), [CAIP-19](https://chainagnostic.org/CAIPs/caip-19), [EIP-55](https://eips.ethereum.org/EIPS/eip-55), [ERC-3770](https://eips.ethereum.org/EIPS/eip-3770)
+- Recent crypto-risk data reinforces that authorization risk is concentrated around private-key compromise, personal-wallet compromise, bridge movement, high-value service compromise, and delegated/permissioned execution, so the core risk mapper must treat amount, counterparty, custody, bridge, approval, delegation, budget, expiry, and revocation posture as first-class signals: [Chainalysis 2025 Crypto Crime Trends](https://www.chainalysis.com/blog/2025-crypto-crime-report-introduction/), [Chainalysis 2025 Mid-Year Update](https://www.chainalysis.com/blog/2025-crypto-crime-mid-year-update/), [Chainalysis 2025 Crypto Theft](https://www.chainalysis.com/blog/crypto-hacking-stolen-funds-2026/), [Accounting-based Bridge Defenses](https://arxiv.org/abs/2410.01107)
 
 ## Progress Summary
 
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 3 |
+| Completed | 4 |
 | In progress | 0 |
-| Not started | 17 |
+| Not started | 16 |
 
 ## Frozen Step List
 
@@ -75,7 +76,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | 01 | complete | Codify the crypto authorization vocabulary | `src/crypto-authorization-core/types.ts`, `tests/crypto-authorization-core-types.test.ts` | The crypto authorization core now has a stable first-class grammar for chain namespaces, runtime families, account kinds, asset kinds, consequence kinds, execution adapter kinds, authorization artifact kinds, policy dimensions, consequence-risk profiles, and normalized chain/account/asset/adapter references. |
 | 02 | complete | Define the versioned crypto authorization object model | `src/crypto-authorization-core/object-model.ts`, `tests/crypto-authorization-core-object-model.test.ts` | The crypto authorization core now has versioned first-class objects for authorization intent, decision, receipt, execution projection, signer authority, policy scope, execution target, validity constraints, replay posture, digest modes, and signature-validation modes without binding the core to a single wallet, account, custody, or chain adapter. |
 | 03 | complete | Define canonical chain, account, asset, and counterparty references | `src/crypto-authorization-core/canonical-references.ts`, `tests/crypto-authorization-core-canonical-references.test.ts` | The crypto authorization core now has CAIP-2 chain, CAIP-10 account, CAIP-19 asset, and counterparty references with explicit canonical JSON, SHA-256 digests, display separation, EVM address normalization, bundle binding, parser helpers, and invalid-reference rejection. |
-| 04 | not-started | Define crypto consequence risk mapping |  | Turn consequence kind, account kind, asset kind, amount, counterparty, and execution context into deterministic Attestor risk classes and review requirements. |
+| 04 | complete | Define crypto consequence risk mapping | `src/crypto-authorization-core/consequence-risk-mapping.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts` | The crypto authorization core now maps consequence kind, account kind, asset kind, amount, counterparty, adapter, and execution-context signals into deterministic Attestor risk classes, review authority, required artifacts, policy dimensions, canonical assessment digests, and fail-closed review requirements. |
 | 05 | not-started | Define EIP-712 typed authorization envelopes |  | Project Attestor crypto authorization into typed structured data with domain separation, expiry, nonce, chain binding, signer binding, and digest coverage. |
 | 06 | not-started | Define ERC-1271 smart-account validation projection |  | Specify how contract accounts validate Attestor-backed authorization digests and how verifier code distinguishes EOA signatures from smart-account signatures. |
 | 07 | not-started | Define replay, nonce, expiry, and revocation rules |  | Bind crypto authorization to freshness, one-time use, online liveness, replay ledger, and revocation semantics already proven in the enforcement plane. |
@@ -95,4 +96,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 04 is next: turn consequence kind, account kind, asset kind, amount, counterparty, and execution context into deterministic Attestor risk classes and review requirements.
+Step 05 is next: project Attestor crypto authorization into EIP-712 typed structured data with domain separation, expiry, nonce, chain binding, signer binding, and digest coverage.
