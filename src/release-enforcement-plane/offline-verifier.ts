@@ -31,11 +31,18 @@ import {
   type ReleasePresentationMode,
 } from './types.js';
 import { verifyDpopProof } from './dpop.js';
+import {
+  HTTP_MESSAGE_SIGNATURE_TAG,
+  normalizeHttpSignatureTargetUri,
+  verifyHttpMessageSignature,
+  type HttpMessageForSignature,
+} from './http-message-signatures.js';
 import { verifyWorkloadBoundPresentation } from './workload-binding.js';
 import {
   resolveVerificationProfile,
   type VerificationProfile,
 } from './verification-profiles.js';
+import type { JWK } from 'jose';
 
 /**
  * Offline release verification core.
@@ -65,6 +72,17 @@ export interface OfflineVerifierExpectedBinding {
   readonly policyHash?: string;
 }
 
+export interface OfflineHttpMessageSignatureVerificationContext {
+  readonly message: HttpMessageForSignature;
+  readonly publicJwk: JWK;
+  readonly label?: string;
+  readonly expectedNonce?: string | null;
+  readonly expectedTag?: string | null;
+  readonly requiredCoveredComponents?: readonly string[];
+  readonly maxSignatureAgeSeconds?: number;
+  readonly clockSkewSeconds?: number;
+}
+
 export interface OfflineReleaseVerificationInput {
   readonly request: EnforcementRequest;
   readonly presentation: ReleasePresentation;
@@ -76,6 +94,7 @@ export interface OfflineReleaseVerificationInput {
   readonly replaySubjectKind?: ReplaySubjectKind;
   readonly replayLedgerEntry?: ReplayLedgerEntry | null;
   readonly nonceLedgerEntry?: NonceLedgerEntry | null;
+  readonly httpMessageSignature?: OfflineHttpMessageSignatureVerificationContext;
   readonly verificationResultId?: string;
 }
 
@@ -355,6 +374,94 @@ function workloadBindingFailureReasons(
   return verified.failureReasons;
 }
 
+function componentSetsMatch(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  const normalize = (components: readonly string[]) =>
+    components.map((component) => component.trim().toLowerCase()).sort();
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((value, index) => value === normalizedRight[index])
+  );
+}
+
+function httpMessageMatchesRequestTransport(input: {
+  readonly request: EnforcementRequest;
+  readonly message: HttpMessageForSignature;
+}): boolean {
+  const transport = input.request.transport;
+  if (transport?.kind !== 'http') {
+    return false;
+  }
+
+  return (
+    input.message.method.trim().toUpperCase() === transport.method &&
+    normalizeHttpSignatureTargetUri(input.message.uri) ===
+      normalizeHttpSignatureTargetUri(transport.uri)
+  );
+}
+
+async function httpMessageSignatureBindingFailureReasons(
+  input: OfflineReleaseVerificationInput,
+  claims: ReleaseTokenClaims,
+  checkedAt: string,
+): Promise<readonly EnforcementFailureReason[]> {
+  if (input.presentation.mode !== 'http-message-signature') {
+    return [];
+  }
+
+  const proof = input.presentation.proof;
+  const context = input.httpMessageSignature;
+  if (
+    proof?.kind !== 'http-message-signature' ||
+    context === undefined ||
+    input.presentation.releaseToken === null ||
+    claims.cnf?.jkt === undefined ||
+    !httpMessageMatchesRequestTransport({
+      request: input.request,
+      message: context.message,
+    })
+  ) {
+    return ['binding-mismatch'];
+  }
+
+  const verified = await verifyHttpMessageSignature({
+    message: context.message,
+    signatureInput: proof.signatureInput,
+    signature: proof.signature,
+    publicJwk: context.publicJwk,
+    label: context.label,
+    expectedKeyId: proof.keyId,
+    expectedJwkThumbprint: claims.cnf.jkt,
+    expectedNonce: context.expectedNonce,
+    expectedTag: context.expectedTag ?? HTTP_MESSAGE_SIGNATURE_TAG,
+    requiredCoveredComponents: context.requiredCoveredComponents,
+    now: checkedAt,
+    maxSignatureAgeSeconds: context.maxSignatureAgeSeconds,
+    clockSkewSeconds: context.clockSkewSeconds,
+    replayLedgerEntry: input.replayLedgerEntry,
+  });
+  const metadataFailures: EnforcementFailureReason[] = [];
+
+  if (
+    verified.keyId !== proof.keyId ||
+    verified.createdAt !== proof.createdAt ||
+    verified.expiresAt !== proof.expiresAt ||
+    verified.nonce !== proof.nonce ||
+    !componentSetsMatch(verified.coveredComponents, proof.coveredComponents)
+  ) {
+    metadataFailures.push('binding-mismatch');
+  }
+
+  return uniqueFailureReasons([
+    ...verified.failureReasons,
+    ...metadataFailures,
+  ]);
+}
+
 function replaySubjectKindForPresentation(
   presentation: ReleasePresentation,
 ): ReplaySubjectKind {
@@ -462,6 +569,11 @@ export async function verifyOfflineReleaseAuthorization(
         ...bindingFailureReasons(input, tokenVerification.claims),
         ...(await dpopBindingFailureReasons(input, tokenVerification.claims, checkedAt)),
         ...workloadBindingFailureReasons(input, tokenVerification.claims, checkedAt),
+        ...(await httpMessageSignatureBindingFailureReasons(
+          input,
+          tokenVerification.claims,
+          checkedAt,
+        )),
       );
     } catch (error) {
       offlineFailures.push(releaseTokenFailureReason(error));
