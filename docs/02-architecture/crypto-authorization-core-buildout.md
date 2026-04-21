@@ -67,9 +67,9 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 10 |
+| Completed | 11 |
 | In progress | 0 |
-| Not started | 10 |
+| Not started | 9 |
 
 ## Frozen Step List
 
@@ -85,7 +85,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | 08 | complete | Bind crypto authorization to release-layer decisions | `src/crypto-authorization-core/release-decision-binding.ts`, `tests/crypto-authorization-core-release-binding.test.ts` | The crypto authorization core now projects crypto authorization outputs into real release-layer hash bundles, release decisions, reviewer authority checks, evidence artifact requirements, evidence-pack validation, and release-token posture while failing closed on mismatched hashes, weak authority, invalid signatures, replayed freshness, or inconsistent token claims. |
 | 09 | complete | Bind crypto authorization to policy-control-plane scopes | `src/crypto-authorization-core/policy-control-plane-scope-binding.ts`, `tests/crypto-authorization-core-policy-scope-binding.test.ts` | Crypto authorization now projects chain/account/asset/counterparty/spender/protocol/function/budget scope into policy-control-plane activation targets, selectors, signed policy-pack artifacts, bundle records, activation records, simulation overlays, and audit append inputs while failing closed on missing risk-required dimensions, missing amount/budget/cadence/spender/protocol values, or mismatched release bindings. |
 | 10 | complete | Bind crypto authorization to enforcement-plane verification | `src/crypto-authorization-core/enforcement-plane-verification.ts`, `tests/crypto-authorization-core-enforcement-verification.test.ts` | Crypto authorization now projects release-bound programmable-money decisions into enforcement-plane requests, verification profiles, expected binding claims, presentation defaults, offline/online verifier wrappers, degraded-mode reuse, and conformance-ready receipts without coupling the core to a specific Safe, ERC-4337, ERC-6900, or custody adapter. |
-| 11 | not-started | Build the crypto authorization simulation surface |  | Let operators and integrations preview allow/deny/review outcomes for candidate crypto actions before any wallet, custody, or contract path is touched. |
+| 11 | complete | Build the crypto authorization simulation surface | `src/crypto-authorization-core/authorization-simulation.ts`, `tests/crypto-authorization-core-authorization-simulation.test.ts` | Operators and integrations can now deterministically preview allow/review/deny outcomes before a wallet, custody system, contract, Safe guard, bundler, payment rail, or intent solver is touched. The surface binds intent/risk consistency, policy dimension coverage, release/policy/enforcement readiness, adapter preflight evidence, and required next artifacts across Safe, ERC-4337/ERC-7562, ERC-7715, EIP-7702, wallet-call, x402, custody, module, and intent-settlement paths. |
 | 12 | not-started | Add the Safe transaction guard adapter |  | Use the core authorization model to gate ordinary Safe transaction execution through a guard path without making Safe part of the core vocabulary. |
 | 13 | not-started | Add the Safe module guard adapter |  | Gate module-initiated Safe transactions with Attestor authorization and explicit recovery/fail-closed posture. |
 | 14 | not-started | Add approval and allowance consequence support |  | Treat token approvals, spender allowances, and permission-like grants as high-risk consequences with budget, expiry, revocation, and spender constraints. |
@@ -98,4 +98,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 11 is next: build the crypto authorization simulation surface.
+Step 12 is next: add the Safe transaction guard adapter.
