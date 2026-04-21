@@ -57,10 +57,26 @@ function testDirectStoreRouteDebtIsExplicitlyBounded(): void {
     .map(normalizePath)
     .sort();
 
-  assert.deepEqual(offenders, [
-    'src/service/http/routes/account-routes.ts',
-    'src/service/http/routes/admin-routes.ts',
-  ]);
+  assert.deepEqual(offenders, []);
+}
+
+function testRoutesDoNotExposeLegacyStateFunctionPorts(): void {
+  const legacyStatePorts = [
+    'canConsumePipelineRunState',
+    'consumePipelineRunState',
+    'upsertAsyncDeadLetterRecordState',
+    'listHostedEmailDeliveriesState',
+    'recordHostedEmailProviderEventState',
+  ];
+  const offenders = collectRouteFiles(ROUTE_ROOT)
+    .filter((filePath) => {
+      const content = readFileSync(filePath, 'utf8');
+      return legacyStatePorts.some((port) => content.includes(port));
+    })
+    .map(normalizePath)
+    .sort();
+
+  assert.deepEqual(offenders, []);
 }
 
 function testReleaseReviewRouteUsesPublicReleaseLayerTypes(): void {
@@ -91,6 +107,24 @@ function testWebhookRoutesAreSplitByProviderBoundary(): void {
   assert.doesNotMatch(stripeWebhookRoute, /type RouteDependency = any/u);
   assert.doesNotMatch(stripeWebhookRoute, /:\s*any\b/u);
   assert.doesNotMatch(stripeWebhookRoute, /\bas any\b/u);
+}
+
+function testEmailWebhookRouteDelegatesProviderUseCase(): void {
+  const emailWebhookRoute = readFileSync(join(ROUTE_ROOT, 'email-webhook-routes.ts'), 'utf8');
+  const emailWebhookService = readProjectFile('src', 'service', 'application', 'email-webhook-service.ts');
+
+  assert.match(emailWebhookRoute, /emailWebhookService: EmailWebhookService/u);
+  assert.match(emailWebhookRoute, /emailWebhookService\.handleSendGrid/u);
+  assert.match(emailWebhookRoute, /emailWebhookService\.handleMailgun/u);
+  assert.doesNotMatch(emailWebhookRoute, /verifySignedSendGridWebhook/u);
+  assert.doesNotMatch(emailWebhookRoute, /parseSendGridWebhookEvents/u);
+  assert.doesNotMatch(emailWebhookRoute, /recordHostedEmailProviderEventState/u);
+  assert.doesNotMatch(emailWebhookRoute, /listHostedEmailDeliveriesState/u);
+
+  assert.match(emailWebhookService, /export interface EmailWebhookService/u);
+  assert.match(emailWebhookService, /handleSendGrid\(input: SendGridWebhookInput\)/u);
+  assert.match(emailWebhookService, /handleMailgun\(input: MailgunWebhookInput\)/u);
+  assert.match(emailWebhookService, /recordEmailProviderEvent/u);
 }
 
 function testStripeWebhookRouteDelegatesIngressUseCase(): void {
@@ -201,6 +235,34 @@ function testAdminRouteDelegatesControlUseCases(): void {
   assert.match(adminControlService, /recoverTenantApiKey\(input: AdminControlRecoverTenantKeyInput\)/u);
 }
 
+function testAdminRouteDelegatesQueryUseCases(): void {
+  const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
+  const adminQueryService = readProjectFile('src', 'service', 'application', 'admin-query-service.ts');
+
+  assert.match(adminRoute, /adminQueryService: AdminQueryService/u);
+  assert.match(adminRoute, /adminQueryService\.listTenantKeys/u);
+  assert.match(adminRoute, /adminQueryService\.listHostedAccounts/u);
+  assert.match(adminRoute, /adminQueryService\.findHostedAccountById/u);
+  assert.match(adminRoute, /adminQueryService\.listAdminAuditRecords/u);
+  assert.match(adminRoute, /adminQueryService\.listHostedBillingEntitlements/u);
+  assert.match(adminRoute, /adminQueryService\.listHostedEmailDeliveries/u);
+  assert.match(adminRoute, /adminQueryService\.listAsyncDeadLetters/u);
+  assert.match(adminRoute, /adminQueryService\.listUsage/u);
+  assert.doesNotMatch(adminRoute, /control-plane-store/u);
+  assert.doesNotMatch(adminRoute, /listTenantKeyRecordsState/u);
+  assert.doesNotMatch(adminRoute, /listHostedAccountsState/u);
+  assert.doesNotMatch(adminRoute, /findHostedAccountByIdState/u);
+  assert.doesNotMatch(adminRoute, /listAdminAuditRecordsState/u);
+  assert.doesNotMatch(adminRoute, /listHostedBillingEntitlementsState/u);
+  assert.doesNotMatch(adminRoute, /listHostedEmailDeliveriesState/u);
+  assert.doesNotMatch(adminRoute, /listAsyncDeadLetterRecordsState/u);
+  assert.doesNotMatch(adminRoute, /queryUsageLedgerState/u);
+
+  assert.match(adminQueryService, /export interface AdminQueryService/u);
+  assert.match(adminQueryService, /listTenantKeys\(\)/u);
+  assert.match(adminQueryService, /listUsage/u);
+}
+
 function testAccountRouteIsStronglyTyped(): void {
   const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
 
@@ -226,6 +288,85 @@ function testAccountRouteDelegatesAuthUseCases(): void {
   assert.match(accountAuthService, /bootstrapFirstUser/u);
   assert.match(accountAuthService, /signup/u);
   assert.match(accountAuthService, /login/u);
+}
+
+function testAccountRouteDelegatesApiKeyUseCases(): void {
+  const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
+  const accountApiKeyService = readProjectFile('src', 'service', 'application', 'account-api-key-service.ts');
+
+  assert.match(accountRoute, /apiKeyService: AccountApiKeyService/u);
+  assert.match(accountRoute, /apiKeyService\.list/u);
+  assert.match(accountRoute, /apiKeyService\.issue/u);
+  assert.match(accountRoute, /apiKeyService\.rotate/u);
+  assert.match(accountRoute, /apiKeyService\.setStatus/u);
+  assert.match(accountRoute, /apiKeyService\.revoke/u);
+  assert.doesNotMatch(accountRoute, /findTenantRecordByTenantIdState/u);
+  assert.doesNotMatch(accountRoute, /listTenantKeyRecordsState/u);
+  assert.doesNotMatch(accountRoute, /issueTenantApiKeyState/u);
+  assert.doesNotMatch(accountRoute, /rotateTenantApiKeyState/u);
+  assert.doesNotMatch(accountRoute, /setTenantApiKeyStatusState/u);
+  assert.doesNotMatch(accountRoute, /revokeTenantApiKeyState/u);
+
+  assert.match(accountApiKeyService, /export interface AccountApiKeyService/u);
+  assert.match(accountApiKeyService, /list\(accountId: string\)/u);
+  assert.match(accountApiKeyService, /issue\(accountId: string\)/u);
+  assert.match(accountApiKeyService, /rotate\(accountId: string, keyId: string\)/u);
+}
+
+function testAccountRouteDelegatesUserManagementUseCases(): void {
+  const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
+  const accountUserManagementService = readProjectFile(
+    'src',
+    'service',
+    'application',
+    'account-user-management-service.ts',
+  );
+
+  assert.match(accountRoute, /userManagementService: AccountUserManagementService/u);
+  assert.match(accountRoute, /userManagementService\.listUsers/u);
+  assert.match(accountRoute, /userManagementService\.createUser/u);
+  assert.match(accountRoute, /userManagementService\.issueInvite/u);
+  assert.match(accountRoute, /userManagementService\.revokeInvite/u);
+  assert.match(accountRoute, /userManagementService\.acceptInvite/u);
+  assert.match(accountRoute, /userManagementService\.setUserStatus/u);
+  assert.match(accountRoute, /userManagementService\.issuePasswordReset/u);
+  assert.match(accountRoute, /userManagementService\.consumePasswordReset/u);
+  assert.doesNotMatch(accountRoute, /createAccountUserState/u);
+  assert.doesNotMatch(accountRoute, /listAccountUsersByAccountIdState/u);
+  assert.doesNotMatch(accountRoute, /listAccountUserActionTokensByAccountIdState/u);
+  assert.doesNotMatch(accountRoute, /issueAccountInviteTokenState/u);
+  assert.doesNotMatch(accountRoute, /issuePasswordResetTokenState/u);
+  assert.doesNotMatch(accountRoute, /setAccountUserStatusState/u);
+  assert.doesNotMatch(accountRoute, /deliverHostedInviteEmail/u);
+  assert.doesNotMatch(accountRoute, /deliverHostedPasswordResetEmail/u);
+
+  assert.match(accountUserManagementService, /export interface AccountUserManagementService/u);
+  assert.match(accountUserManagementService, /createUser\(input: AccountUserCreateInput\)/u);
+  assert.match(accountUserManagementService, /acceptInvite\(input: AccountUserInviteAcceptInput\)/u);
+  assert.match(accountUserManagementService, /consumePasswordReset\(input: AccountUserPasswordResetConsumeInput\)/u);
+}
+
+function testAccountRouteUsesStateServicePort(): void {
+  const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
+  const accountStateService = readProjectFile('src', 'service', 'application', 'account-state-service.ts');
+
+  assert.match(accountRoute, /stateService: AccountStateService/u);
+  assert.match(accountRoute, /stateService\.findAccountUserByEmail/u);
+  assert.match(accountRoute, /stateService\.issueAccountSession/u);
+  assert.match(accountRoute, /stateService\.findHostedAccountById/u);
+  assert.match(accountRoute, /stateService\.saveAccountUserRecord/u);
+  assert.match(accountRoute, /stateService\.recordHostedSamlReplay/u);
+  assert.match(accountRoute, /stateService\.listHostedEmailDeliveries/u);
+  assert.doesNotMatch(accountRoute, /control-plane-store/u);
+  assert.doesNotMatch(accountRoute, /findAccountUserByEmailState/u);
+  assert.doesNotMatch(accountRoute, /issueAccountSessionState/u);
+  assert.doesNotMatch(accountRoute, /findHostedAccountByIdState/u);
+  assert.doesNotMatch(accountRoute, /saveAccountUserRecordState/u);
+  assert.doesNotMatch(accountRoute, /recordHostedSamlReplayState/u);
+  assert.doesNotMatch(accountRoute, /listHostedEmailDeliveriesState/u);
+
+  assert.match(accountStateService, /export interface AccountStateService/u);
+  assert.match(accountStateService, /createAccountStateService/u);
 }
 
 function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
@@ -265,18 +406,53 @@ function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
   assert.doesNotMatch(executionRoute, /\bas any\b/u);
 }
 
+function testPipelineRoutesDelegateUsageAndDeadLetterUseCases(): void {
+  const asyncRoute = readFileSync(join(ROUTE_ROOT, 'pipeline-async-routes.ts'), 'utf8');
+  const executionRoute = readFileSync(join(ROUTE_ROOT, 'pipeline-execution-routes.ts'), 'utf8');
+  const usageService = readProjectFile('src', 'service', 'application', 'pipeline-usage-service.ts');
+  const deadLetterService = readProjectFile('src', 'service', 'application', 'pipeline-dead-letter-service.ts');
+
+  assert.match(asyncRoute, /pipelineUsageService: PipelineUsageService/u);
+  assert.match(asyncRoute, /pipelineUsageService\.check/u);
+  assert.match(asyncRoute, /pipelineUsageService\.consume/u);
+  assert.match(asyncRoute, /pipelineDeadLetterService: PipelineDeadLetterService/u);
+  assert.match(asyncRoute, /pipelineDeadLetterService\.record/u);
+  assert.doesNotMatch(asyncRoute, /canConsumePipelineRunState/u);
+  assert.doesNotMatch(asyncRoute, /consumePipelineRunState/u);
+  assert.doesNotMatch(asyncRoute, /upsertAsyncDeadLetterRecordState/u);
+
+  assert.match(executionRoute, /pipelineUsageService: PipelineUsageService/u);
+  assert.match(executionRoute, /pipelineUsageService\.check/u);
+  assert.match(executionRoute, /pipelineUsageService\.consume/u);
+  assert.doesNotMatch(executionRoute, /canConsumePipelineRunState/u);
+  assert.doesNotMatch(executionRoute, /consumePipelineRunState/u);
+
+  assert.match(usageService, /export interface PipelineUsageService/u);
+  assert.match(usageService, /check\(tenant: PipelineUsageTenant\)/u);
+  assert.match(usageService, /consume\(tenant: PipelineUsageTenant\)/u);
+  assert.match(deadLetterService, /export interface PipelineDeadLetterService/u);
+  assert.match(deadLetterService, /record\(input: AsyncDeadLetterRecord\)/u);
+}
+
 testReleaseReviewRouteIsStronglyTyped();
 testAllServiceRoutesHaveClosedAnyDebt();
 testDirectStoreRouteDebtIsExplicitlyBounded();
+testRoutesDoNotExposeLegacyStateFunctionPorts();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
+testEmailWebhookRouteDelegatesProviderUseCase();
 testStripeWebhookRouteDelegatesIngressUseCase();
 testStripeWebhookBillingProcessorUsesNamedEventProcessors();
 testAdminRouteIsStronglyTyped();
 testAdminRouteDelegatesMutationUseCase();
 testAdminRouteDelegatesControlUseCases();
+testAdminRouteDelegatesQueryUseCases();
 testAccountRouteIsStronglyTyped();
 testAccountRouteDelegatesAuthUseCases();
+testAccountRouteDelegatesApiKeyUseCases();
+testAccountRouteDelegatesUserManagementUseCases();
+testAccountRouteUsesStateServicePort();
 testPipelineRoutesAreSplitByUseCaseBoundary();
+testPipelineRoutesDelegateUsageAndDeadLetterUseCases();
 
-console.log('Service route boundary tests: 13 passed, 0 failed');
+console.log('Service route boundary tests: 20 passed, 0 failed');

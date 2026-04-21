@@ -144,7 +144,6 @@ import {
 } from './high-availability.js';
 import {
   tenantKeyStorePolicy,
-  TenantKeyStoreError,
   type TenantKeyRecord,
 } from './tenant-key-store.js';
 import {
@@ -152,7 +151,6 @@ import {
   type HostedAccountRecord,
 } from './account-store.js';
 import {
-  AccountUserStoreError,
   type AccountUserRecord,
   type AccountUserRole,
   verifyAccountUserPasswordRecord,
@@ -316,7 +314,6 @@ import {
   deliverHostedInviteEmail,
   deliverHostedPasswordResetEmail,
   getHostedEmailDeliveryStatus,
-  HostedEmailDeliveryError,
 } from './email-delivery.js';
 import {
   getMailgunWebhookStatus,
@@ -357,9 +354,16 @@ import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
+import { createAccountApiKeyService } from './application/account-api-key-service.js';
 import { createAdminControlService } from './application/admin-control-service.js';
 import { createAdminMutationService } from './application/admin-mutation-service.js';
+import { createAdminQueryService } from './application/admin-query-service.js';
 import { createAccountAuthService } from './application/account-auth-service.js';
+import { createAccountStateService } from './application/account-state-service.js';
+import { createAccountUserManagementService } from './application/account-user-management-service.js';
+import { createEmailWebhookService } from './application/email-webhook-service.js';
+import { createPipelineDeadLetterService } from './application/pipeline-dead-letter-service.js';
+import { createPipelineUsageService } from './application/pipeline-usage-service.js';
 import { createStripeWebhookBillingProcessor } from './application/stripe-webhook-billing-processor.js';
 import { createStripeWebhookService } from './application/stripe-webhook-service.js';
 import { createRegistries } from './bootstrap/registries.js';
@@ -1152,14 +1156,6 @@ function adminPlanView() {
   }));
 }
 
-function tenantKeyStoreErrorResponse(c: Context, err: unknown): Response | null {
-  if (!(err instanceof TenantKeyStoreError)) return null;
-  if (err.code === 'NOT_FOUND') {
-    return c.json({ error: err.message }, 404);
-  }
-  return c.json({ error: err.message }, 409);
-}
-
 function accountStoreErrorResponse(c: Context, err: unknown): Response | null {
   if (!(err instanceof AccountStoreError)) return null;
   if (err.code === 'NOT_FOUND') {
@@ -1181,12 +1177,6 @@ function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
   if (err.code === 'DISABLED') return c.json({ error: err.message }, 503);
   if (err.code === 'NO_CUSTOMER') return c.json({ error: err.message }, 409);
   return c.json({ error: err.message }, 400);
-}
-
-function hostedEmailDeliveryErrorResponse(c: Context, err: unknown): Response | null {
-  if (!(err instanceof HostedEmailDeliveryError)) return null;
-  if (err.code === 'CONFIG') return c.json({ error: err.message }, 503);
-  return c.json({ error: err.message }, 502);
 }
 
 async function currentHostedAccount(c: Context): Promise<{
@@ -1482,6 +1472,19 @@ const adminControlService = createAdminControlService({
   now: () => new Date().toISOString(),
 });
 
+const adminQueryService = createAdminQueryService({
+  listTenantKeyRecordsState,
+  listHostedAccountsState,
+  findHostedAccountByIdState,
+  listAdminAuditRecordsState,
+  listHostedBillingEntitlementsState,
+  listHostedEmailDeliveriesState,
+  listAsyncDeadLetterRecordsState,
+  queryUsageLedgerState,
+  findTenantRecordByTenantIdState,
+  findHostedAccountByTenantIdState,
+});
+
 async function adminMutationRequest(c: Context, routeId: string, requestPayload: unknown):
   Promise<{ idempotencyKey: string | null; requestHash: string } | Response> {
   const mutation = await adminMutationService.begin({
@@ -1567,48 +1570,90 @@ const accountAuthService = createAccountAuthService({
   issueAccountMfaLoginTokenState,
 });
 
+const accountApiKeyService = createAccountApiKeyService({
+  findHostedAccountByIdState,
+  findTenantRecordByTenantIdState,
+  listTenantKeyRecordsState,
+  tenantKeyStorePolicy,
+  SELF_HOST_PLAN_ID,
+  issueTenantApiKeyState,
+  rotateTenantApiKeyState,
+  setTenantApiKeyStatusState,
+  revokeTenantApiKeyState,
+  syncHostedBillingEntitlementForTenant,
+  now: () => new Date().toISOString(),
+});
+
+const accountUserManagementService = createAccountUserManagementService({
+  listAccountUsersByAccountIdState,
+  createAccountUserState,
+  findAccountUserByEmailState,
+  listAccountUserActionTokensByAccountIdState,
+  findAccountUserActionTokenByTokenState,
+  issueAccountInviteTokenState,
+  revokeAccountUserActionTokenState,
+  consumeAccountUserActionTokenState,
+  findHostedAccountByIdState,
+  findAccountUserByIdState,
+  recordAccountUserLoginState,
+  issueAccountSessionState,
+  setAccountUserStatusState,
+  revokeAccountSessionsForUserState,
+  revokeAccountUserActionTokensForUserState,
+  issuePasswordResetTokenState,
+  setAccountUserPasswordState,
+  deliverHostedInviteEmail,
+  deliverHostedPasswordResetEmail,
+});
+
+const accountStateService = createAccountStateService({
+  findAccountUserByEmail: findAccountUserByEmailState,
+  issueAccountSession: issueAccountSessionState,
+  recordAccountUserLogin: recordAccountUserLoginState,
+  findHostedAccountById: findHostedAccountByIdState,
+  issueAccountMfaLoginToken: issueAccountMfaLoginTokenState,
+  issueAccountPasskeyChallengeToken: issueAccountPasskeyChallengeTokenState,
+  findAccountUserActionTokenByToken: findAccountUserActionTokenByTokenState,
+  findAccountUserById: findAccountUserByIdState,
+  findAccountUserByPasskeyCredentialId: findAccountUserByPasskeyCredentialIdState,
+  saveAccountUserRecord: saveAccountUserRecordState,
+  consumeAccountUserActionToken: consumeAccountUserActionTokenState,
+  revokeAccountUserActionTokensForUser: revokeAccountUserActionTokensForUserState,
+  recordHostedSamlReplay: recordHostedSamlReplayState,
+  findAccountUserBySamlIdentity: findAccountUserBySamlIdentityState,
+  findAccountUserByOidcIdentity: findAccountUserByOidcIdentityState,
+  getUsageContext: getUsageContextState,
+  setAccountUserPassword: setAccountUserPasswordState,
+  revokeAccountSessionsForUser: revokeAccountSessionsForUserState,
+  saveAccountUserActionTokenRecord: saveAccountUserActionTokenRecordState,
+  revokeAccountSessionByToken: revokeAccountSessionByTokenState,
+  listHostedEmailDeliveries: listHostedEmailDeliveriesState,
+});
+
 const accountRouteDeps = {
   authService: accountAuthService,
+  apiKeyService: accountApiKeyService,
+  stateService: accountStateService,
+  userManagementService: accountUserManagementService,
   currentHostedAccount,
-  createAccountUserState,
-  AccountUserStoreError,
-  findAccountUserByEmailState,
-  resolvePlanSpec,
-  SELF_HOST_PLAN_ID,
-  tenantKeyStoreErrorResponse,
-  issueAccountSessionState,
-  recordAccountUserLoginState,
-  syncHostedBillingEntitlementForTenant,
   setSessionCookieForRecord,
   accountUserView,
   adminAccountView,
   accountApiKeyView,
   verifyAccountUserPasswordRecord,
-  findHostedAccountByIdState,
   totpSummary,
-  issueAccountMfaLoginTokenState,
-  issueAccountPasskeyChallengeTokenState,
   buildHostedPasskeyAuthenticationOptions,
   asAuthenticationResponse,
-  findAccountUserActionTokenByTokenState,
   parsePasskeyAuthenticationChallenge,
-  findAccountUserByIdState,
-  findAccountUserByPasskeyCredentialIdState,
   verifyHostedPasskeyAuthentication,
   passkeyCredentialToWebAuthnCredential,
-  saveAccountUserRecordState,
-  consumeAccountUserActionTokenState,
-  revokeAccountUserActionTokensForUserState,
   getHostedSamlMetadata,
   buildHostedSamlAuthorizationRequest,
   completeHostedSamlAuthorization,
-  recordHostedSamlReplayState,
-  findAccountUserBySamlIdentityState,
   hostedSamlAllowsAutomaticLinking,
   linkAccountUserSamlIdentity,
   buildHostedOidcAuthorizationRequest,
   completeHostedOidcAuthorization,
-  findAccountUserByOidcIdentityState,
   hostedOidcAllowsAutomaticLinking,
   linkAccountUserOidcIdentity,
   verifyTotpCode,
@@ -1634,37 +1679,15 @@ const accountRouteDeps = {
   buildTotpOtpAuthUrl,
   normalizePasskeyAuthenticatorHint,
   currentAccountRole,
-  findTenantRecordByTenantIdState,
-  getUsageContextState,
   getTenantPipelineRateLimit,
   readHostedBillingEntitlement,
   buildHostedFeatureServiceView,
-  listTenantKeyRecordsState,
-  tenantKeyStorePolicy,
-  issueTenantApiKeyState,
-  rotateTenantApiKeyState,
-  setTenantApiKeyStatusState,
-  revokeTenantApiKeyState,
-  listAccountUsersByAccountIdState,
-  listAccountUserActionTokensByAccountIdState,
-  issueAccountInviteTokenState,
-  deliverHostedInviteEmail,
-  hostedEmailDeliveryErrorResponse,
-  revokeAccountUserActionTokenState,
   accountUserActionTokenView,
-  issuePasswordResetTokenState,
-  deliverHostedPasswordResetEmail,
-  setAccountUserPasswordState,
-  revokeAccountSessionsForUserState,
-  setAccountUserStatusState,
-  saveAccountUserActionTokenRecordState,
   getCookie,
   deleteCookie,
   sessionCookieName,
-  revokeAccountSessionByTokenState,
   accountMfaErrorResponse,
   getHostedPlan,
-  listHostedEmailDeliveriesState,
   createHostedCheckoutSession,
   stripeBillingErrorResponse,
   createHostedBillingPortalSession,
@@ -1679,12 +1702,10 @@ const adminRouteDeps = {
   currentAdminAuthorized,
   adminMutationService,
   adminControlService,
-  listTenantKeyRecordsState,
+  adminQueryService,
   adminTenantKeyView,
   tenantKeyStorePolicy,
-  listHostedAccountsState,
   adminAccountView,
-  findHostedAccountByIdState,
   readHostedBillingEntitlement,
   buildHostedBillingExport,
   buildHostedBillingReconciliation,
@@ -1696,30 +1717,23 @@ const adminRouteDeps = {
   adminPlanView,
   DEFAULT_HOSTED_PLAN_ID,
   defaultRateLimitWindowSeconds,
-  listAdminAuditRecordsState,
   adminAuditView,
   isBillingEventLedgerConfigured,
   listBillingEvents,
   billingEventView,
-  listHostedBillingEntitlementsState,
   renderPrometheusMetrics,
   currentMetricsAuthorized,
   getTelemetryStatus,
   getHostedEmailDeliveryStatus,
   getSecretEnvelopeStatus,
-  listHostedEmailDeliveriesState,
   asyncBackendMode,
   bullmqQueue,
   getAsyncQueueSummary,
   getAsyncRetryPolicy,
   inProcessJobs,
   inProcessTenantQueueSnapshot,
-  listAsyncDeadLetterRecordsState,
   listFailedPipelineJobs,
   retryFailedPipelineJob,
-  queryUsageLedgerState,
-  findTenantRecordByTenantIdState,
-  findHostedAccountByTenantIdState,
   apiReleaseIntrospectionStore,
 } satisfies ApiRouteDeps['admin'];
 
@@ -1746,9 +1760,18 @@ const releasePolicyControlRouteDeps = {
   finalizeAdminMutation,
 } satisfies ApiRouteDeps['releasePolicyControl'];
 
+const pipelineUsageService = createPipelineUsageService({
+  checkQuota: canConsumePipelineRunState,
+  consumeRun: consumePipelineRunState,
+});
+
+const pipelineDeadLetterService = createPipelineDeadLetterService({
+  upsertDeadLetterRecord: upsertAsyncDeadLetterRecordState,
+});
+
 const pipelineRouteDeps = {
   currentTenant,
-  canConsumePipelineRunState,
+  pipelineUsageService,
   reserveTenantPipelineRequest,
   applyRateLimitHeaders,
   connectorRegistry,
@@ -1780,7 +1803,6 @@ const pipelineRouteDeps = {
   apiReleaseEvidencePackStore,
   apiReleaseEvidencePackIssuer,
   apiReleaseIntrospectionStore,
-  consumePipelineRunState,
   schemaAttestationSummaryFromFull,
   schemaAttestationSummaryFromConnector,
   filingRegistry,
@@ -1806,7 +1828,7 @@ const pipelineRouteDeps = {
   inProcessTenantQueueSnapshot,
   inProcessJobs,
   pki,
-  upsertAsyncDeadLetterRecordState,
+  pipelineDeadLetterService,
   getJobStatus,
 } satisfies ApiRouteDeps['pipeline'];
 
@@ -1856,17 +1878,28 @@ const stripeWebhookBillingProcessor = createStripeWebhookBillingProcessor({
   resolvePlanStripePrice,
 });
 
-const webhookRouteDeps = {
+const emailWebhookService = createEmailWebhookService({
   getSendGridWebhookStatus,
   verifySignedSendGridWebhook,
   parseSendGridWebhookEvents,
-  listHostedEmailDeliveriesState,
-  recordHostedEmailProviderEventState,
-  sendGridEventTypeToStatusHint,
   getMailgunWebhookStatus,
   parseMailgunWebhookEvent,
   verifySignedMailgunWebhook,
+  async findEmailDeliveryById(deliveryId) {
+    const existing = await listHostedEmailDeliveriesState({
+      deliveryId,
+      limit: 1,
+    });
+    return existing.records[0] ?? null;
+  },
+  recordEmailProviderEvent: recordHostedEmailProviderEventState,
+  sendGridEventTypeToStatusHint,
   mailgunEventTypeToStatusHint,
+  now: () => new Date().toISOString(),
+});
+
+const webhookRouteDeps = {
+  emailWebhookService,
   stripeWebhookService,
   stripeWebhookBillingProcessor,
 } satisfies ApiRouteDeps['webhook'];

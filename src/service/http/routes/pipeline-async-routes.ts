@@ -13,11 +13,11 @@ import type {
   PipelineJobTenantContext,
   TenantAsyncQueueSnapshot,
 } from '../../async-pipeline.js';
-import type { AsyncDeadLetterRecord } from '../../async-dead-letter-store.js';
 import type { TenantRateLimitContext, TenantRateLimitDecision } from '../../rate-limit.js';
 import type { TenantContext } from '../../tenant-isolation.js';
 import type { InProcessAsyncJob, TenantAsyncBackendMode } from '../../runtime/tenant-runtime.js';
-import type { UsageContext } from '../../usage-meter.js';
+import type { PipelineDeadLetterService } from '../../application/pipeline-dead-letter-service.js';
+import type { PipelineUsageService } from '../../application/pipeline-usage-service.js';
 
 interface RequestSignerPair {
   signer: KeylessSigner;
@@ -26,11 +26,7 @@ interface RequestSignerPair {
 
 export interface PipelineAsyncRoutesDeps {
   currentTenant(context: Context): TenantContext;
-  canConsumePipelineRunState(
-    tenantId: string,
-    planId: string | null | undefined,
-    quota: number | null | undefined,
-  ): Promise<{ allowed: boolean; usage: UsageContext }>;
+  pipelineUsageService: PipelineUsageService;
   reserveTenantPipelineRequest(
     tenantId: string,
     planId: string | null | undefined,
@@ -43,11 +39,6 @@ export interface PipelineAsyncRoutesDeps {
   createRequestSigners(identitySource: string, reviewerName?: string): RequestSignerPair;
   runFinancialPipeline(input: FinancialPipelineInput): FinancialRunReport;
   buildVerificationKit(report: FinancialRunReport, publicKeyPem: string): VerificationKit | null;
-  consumePipelineRunState(
-    tenantId: string,
-    planId: string | null | undefined,
-    quota: number | null | undefined,
-  ): Promise<UsageContext>;
   asyncBackendMode: TenantAsyncBackendMode;
   bullmqQueue: Queue<PipelineJobData, PipelineJobResult> | null;
   canEnqueueTenantAsyncJob(
@@ -77,9 +68,7 @@ export interface PipelineAsyncRoutesDeps {
   inProcessTenantQueueSnapshot(tenantId: string, planId: string | null): TenantAsyncQueueSnapshot;
   inProcessJobs: Map<string, InProcessAsyncJob>;
   pki: { signer: { keyPair: AttestorKeyPair } };
-  upsertAsyncDeadLetterRecordState(
-    input: AsyncDeadLetterRecord,
-  ): Promise<{ record: AsyncDeadLetterRecord; path: string | null }>;
+  pipelineDeadLetterService: PipelineDeadLetterService;
   getJobStatus(
     queue: Queue<PipelineJobData, PipelineJobResult>,
     jobId: string,
@@ -98,13 +87,12 @@ export interface PipelineAsyncRoutesDeps {
 export function registerPipelineAsyncRoutes(app: Hono, deps: PipelineAsyncRoutesDeps): void {
   const {
     currentTenant,
-    canConsumePipelineRunState,
+    pipelineUsageService,
     reserveTenantPipelineRequest,
     applyRateLimitHeaders,
     createRequestSigners,
     runFinancialPipeline,
     buildVerificationKit,
-    consumePipelineRunState,
     asyncBackendMode,
     bullmqQueue,
     canEnqueueTenantAsyncJob,
@@ -118,7 +106,7 @@ export function registerPipelineAsyncRoutes(app: Hono, deps: PipelineAsyncRoutes
     inProcessTenantQueueSnapshot,
     inProcessJobs,
     pki,
-    upsertAsyncDeadLetterRecordState,
+    pipelineDeadLetterService,
     getJobStatus,
   } = deps;
 
@@ -131,7 +119,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
     }
 
     const tenant = currentTenant(c);
-    const quotaCheck = await canConsumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const quotaCheck = await pipelineUsageService.check(tenant);
     if (!quotaCheck.allowed) {
       return c.json({
         error: 'Monthly pipeline run quota exceeded for this tenant plan.',
@@ -214,7 +202,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
       }
       const rateLimit = rateReservation.rateLimit;
       applyRateLimitHeaders(c, rateLimit);
-      const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+      const usage = await pipelineUsageService.consume(tenant);
       const asyncQueue = await getAsyncQueueSummary(bullmqQueue, tenant.tenantId, tenant.planId);
       return c.json({
         jobId,
@@ -293,7 +281,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
     }
     const rateLimit = rateReservation.rateLimit;
     applyRateLimitHeaders(c, rateLimit);
-    const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const usage = await pipelineUsageService.consume(tenant);
     const jobId = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const job: InProcessAsyncJob = {
       id: jobId,
@@ -341,7 +329,7 @@ app.post('/api/v1/pipeline/run-async', async (c) => {
         job.status = 'failed';
         job.error = err instanceof Error ? err.message : String(err);
         job.completedAt = new Date().toISOString();
-        await upsertAsyncDeadLetterRecordState({
+        await pipelineDeadLetterService.record({
           jobId: job.id,
           name: 'pipeline-run',
           backendMode: 'in_process',

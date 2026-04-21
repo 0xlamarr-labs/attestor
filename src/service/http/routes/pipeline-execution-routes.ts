@@ -49,7 +49,7 @@ import type {
 } from '../../../release-layer/index.js';
 import type { TenantRateLimitContext, TenantRateLimitDecision } from '../../rate-limit.js';
 import type { TenantContext } from '../../tenant-isolation.js';
-import type { UsageContext } from '../../usage-meter.js';
+import type { PipelineUsageService } from '../../application/pipeline-usage-service.js';
 
 type ConnectorSchemaAttestation = NonNullable<ConnectorExecutionResult['schemaAttestation']>;
 
@@ -127,11 +127,7 @@ interface FinanceFilingReleaseSummary {
 
 export interface PipelineExecutionRoutesDeps {
   currentTenant(context: Context): TenantContext;
-  canConsumePipelineRunState(
-    tenantId: string,
-    planId: string | null | undefined,
-    quota: number | null | undefined,
-  ): Promise<{ allowed: boolean; usage: UsageContext }>;
+  pipelineUsageService: PipelineUsageService;
   reserveTenantPipelineRequest(
     tenantId: string,
     planId: string | null | undefined,
@@ -201,11 +197,6 @@ export interface PipelineExecutionRoutesDeps {
   apiReleaseEvidencePackStore: ReleaseEvidencePackStore;
   apiReleaseEvidencePackIssuer: ReleaseEvidencePackIssuer;
   apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
-  consumePipelineRunState(
-    tenantId: string,
-    planId: string | null | undefined,
-    quota: number | null | undefined,
-  ): Promise<UsageContext>;
   schemaAttestationSummaryFromFull(attestation: SchemaAttestation): unknown;
   schemaAttestationSummaryFromConnector(
     connectorExecution: PipelineConnectorExecution | null,
@@ -276,7 +267,7 @@ function releaseEvaluationRequest(input: {
 export function registerPipelineExecutionRoutes(app: Hono, deps: PipelineExecutionRoutesDeps): void {
   const {
     currentTenant,
-    canConsumePipelineRunState,
+    pipelineUsageService,
     reserveTenantPipelineRequest,
     applyRateLimitHeaders,
     connectorRegistry,
@@ -308,7 +299,6 @@ export function registerPipelineExecutionRoutes(app: Hono, deps: PipelineExecuti
     apiReleaseEvidencePackStore,
     apiReleaseEvidencePackIssuer,
     apiReleaseIntrospectionStore,
-    consumePipelineRunState,
     schemaAttestationSummaryFromFull,
     schemaAttestationSummaryFromConnector,
     filingRegistry,
@@ -328,7 +318,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
     }
 
     const tenant = currentTenant(c);
-    const quotaCheck = await canConsumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const quotaCheck = await pipelineUsageService.check(tenant);
     if (!quotaCheck.allowed) {
       return c.json({
         error: 'Monthly pipeline run quota exceeded for this tenant plan.',
@@ -643,7 +633,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       };
     }
 
-    const usage = await consumePipelineRunState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+    const usage = await pipelineUsageService.consume(tenant);
 
     return c.json({
       runId: report.runId,

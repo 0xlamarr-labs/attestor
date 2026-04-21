@@ -13,13 +13,13 @@ import type {
   AdminMutationReadyResult,
   AdminMutationService,
 } from '../../application/admin-mutation-service.js';
+import type { AdminQueryService } from '../../application/admin-query-service.js';
 import type { HostedAccountRecord } from '../../account-store.js';
 import type * as BillingEventLedger from '../../billing-event-ledger.js';
 import type { HostedBillingEntitlementRecord, HostedBillingEntitlementStatus } from '../../billing-entitlement-store.js';
 import type * as BillingExport from '../../billing-export.js';
 import type * as BillingFeatureService from '../../billing-feature-service.js';
 import type * as BillingReconciliation from '../../billing-reconciliation.js';
-import type * as ControlPlaneStore from '../../control-plane-store.js';
 import type * as EmailDelivery from '../../email-delivery.js';
 import type { HostedEmailDeliveryProvider, HostedEmailDeliveryStatus } from '../../email-delivery-event-store.js';
 import type * as Observability from '../../observability.js';
@@ -56,12 +56,10 @@ export interface AdminRouteDeps {
   currentAdminAuthorized(context: Context): Response | null;
   adminMutationService: AdminMutationService;
   adminControlService: AdminControlService;
-  listTenantKeyRecordsState: typeof ControlPlaneStore.listTenantKeyRecordsState;
+  adminQueryService: AdminQueryService;
   adminTenantKeyView(record: TenantKeyRecord): AdminRouteResponseBody;
   tenantKeyStorePolicy(): { maxActiveKeysPerTenant: number };
-  listHostedAccountsState: typeof ControlPlaneStore.listHostedAccountsState;
   adminAccountView(record: HostedAccountRecord): AdminRouteResponseBody;
-  findHostedAccountByIdState: typeof ControlPlaneStore.findHostedAccountByIdState;
   readHostedBillingEntitlement(account: HostedAccountRecord): Promise<HostedBillingEntitlementRecord>;
   buildHostedBillingExport: typeof BillingExport.buildHostedBillingExport;
   buildHostedBillingReconciliation: typeof BillingReconciliation.buildHostedBillingReconciliation;
@@ -73,30 +71,23 @@ export interface AdminRouteDeps {
   adminPlanView(): AdminRouteResponseBody[];
   DEFAULT_HOSTED_PLAN_ID: typeof PlanCatalog.DEFAULT_HOSTED_PLAN_ID;
   defaultRateLimitWindowSeconds: typeof PlanCatalog.defaultRateLimitWindowSeconds;
-  listAdminAuditRecordsState: typeof ControlPlaneStore.listAdminAuditRecordsState;
   adminAuditView(record: AdminAuditRecord): AdminRouteResponseBody;
   isBillingEventLedgerConfigured: typeof BillingEventLedger.isBillingEventLedgerConfigured;
   listBillingEvents: typeof BillingEventLedger.listBillingEvents;
   billingEventView(record: BillingEventLedger.BillingEventRecord): AdminRouteResponseBody;
-  listHostedBillingEntitlementsState: typeof ControlPlaneStore.listHostedBillingEntitlementsState;
   renderPrometheusMetrics: typeof Observability.renderPrometheusMetrics;
   currentMetricsAuthorized(context: Context): Response | null;
   getTelemetryStatus: typeof Observability.getTelemetryStatus;
   getHostedEmailDeliveryStatus: typeof EmailDelivery.getHostedEmailDeliveryStatus;
   getSecretEnvelopeStatus(): unknown;
-  listHostedEmailDeliveriesState: typeof ControlPlaneStore.listHostedEmailDeliveriesState;
   asyncBackendMode: TenantAsyncBackendMode;
   bullmqQueue: AdminAsyncQueue | null;
   getAsyncQueueSummary: typeof AsyncPipeline.getAsyncQueueSummary;
   getAsyncRetryPolicy: typeof AsyncPipeline.getAsyncRetryPolicy;
   inProcessJobs: Map<string, InProcessAsyncJob>;
   inProcessTenantQueueSnapshot: typeof TenantRuntime.inProcessTenantQueueSnapshot;
-  listAsyncDeadLetterRecordsState: typeof ControlPlaneStore.listAsyncDeadLetterRecordsState;
   listFailedPipelineJobs: typeof AsyncPipeline.listFailedPipelineJobs;
   retryFailedPipelineJob: typeof AsyncPipeline.retryFailedPipelineJob;
-  queryUsageLedgerState: typeof ControlPlaneStore.queryUsageLedgerState;
-  findTenantRecordByTenantIdState: typeof ControlPlaneStore.findTenantRecordByTenantIdState;
-  findHostedAccountByTenantIdState: typeof ControlPlaneStore.findHostedAccountByTenantIdState;
   apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
   releaseDegradedModeGrantStore?: DegradedModeGrantStore;
 }
@@ -294,12 +285,10 @@ export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
     currentAdminAuthorized,
     adminMutationService,
     adminControlService,
-    listTenantKeyRecordsState,
+    adminQueryService,
     adminTenantKeyView,
     tenantKeyStorePolicy,
-    listHostedAccountsState,
     adminAccountView,
-    findHostedAccountByIdState,
     readHostedBillingEntitlement,
     buildHostedBillingExport,
     buildHostedBillingReconciliation,
@@ -311,30 +300,23 @@ export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
     adminPlanView,
     DEFAULT_HOSTED_PLAN_ID,
     defaultRateLimitWindowSeconds,
-    listAdminAuditRecordsState,
     adminAuditView,
     isBillingEventLedgerConfigured,
     listBillingEvents,
     billingEventView,
-    listHostedBillingEntitlementsState,
     renderPrometheusMetrics,
     currentMetricsAuthorized,
     getTelemetryStatus,
     getHostedEmailDeliveryStatus,
     getSecretEnvelopeStatus,
-    listHostedEmailDeliveriesState,
     asyncBackendMode,
     bullmqQueue,
     getAsyncQueueSummary,
     getAsyncRetryPolicy,
     inProcessJobs,
     inProcessTenantQueueSnapshot,
-    listAsyncDeadLetterRecordsState,
     listFailedPipelineJobs,
     retryFailedPipelineJob,
-    queryUsageLedgerState,
-    findTenantRecordByTenantIdState,
-    findHostedAccountByTenantIdState,
     apiReleaseIntrospectionStore,
     releaseDegradedModeGrantStore,
   } = deps;
@@ -365,7 +347,7 @@ app.get('/api/v1/admin/tenant-keys', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const { records } = await listTenantKeyRecordsState();
+  const { records } = await adminQueryService.listTenantKeys();
   return c.json({
     keys: records.map(adminTenantKeyView),
     defaults: {
@@ -378,7 +360,7 @@ app.get('/api/v1/admin/accounts', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const { records } = await listHostedAccountsState();
+  const { records } = await adminQueryService.listHostedAccounts();
   return c.json({
     accounts: records.map(adminAccountView),
   });
@@ -388,7 +370,7 @@ app.get('/api/v1/admin/accounts/:id/billing/export', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const account = await findHostedAccountByIdState(c.req.param('id'));
+  const account = await adminQueryService.findHostedAccountById(c.req.param('id'));
   if (!account) {
     return c.json({ error: `Hosted account '${c.req.param('id')}' not found.` }, 404);
   }
@@ -438,7 +420,7 @@ app.get('/api/v1/admin/accounts/:id/features', async (c) => {
   if (unauthorized) return unauthorized;
 
   const accountId = c.req.param('id');
-  const account = await findHostedAccountByIdState(accountId);
+  const account = await adminQueryService.findHostedAccountById(accountId);
   if (!account) {
     return c.json({ error: `Hosted account '${accountId}' was not found.` }, 404);
   }
@@ -450,7 +432,7 @@ app.get('/api/v1/admin/accounts/:id/billing/reconciliation', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
   if (unauthorized) return unauthorized;
 
-  const account = await findHostedAccountByIdState(c.req.param('id'));
+  const account = await adminQueryService.findHostedAccountById(c.req.param('id'));
   if (!account) {
     return c.json({ error: `Hosted account '${c.req.param('id')}' not found.` }, 404);
   }
@@ -517,7 +499,7 @@ app.get('/api/v1/admin/audit', async (c) => {
   const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
 
-  const result = await listAdminAuditRecordsState({
+  const result = await adminQueryService.listAdminAuditRecords({
     action: action ?? null,
     tenantId,
     accountId,
@@ -597,7 +579,7 @@ app.get('/api/v1/admin/billing/entitlements', async (c) => {
   const parsedLimit = limitRaw ? Number.parseInt(limitRaw, 10) : NaN;
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : null;
 
-  const result = await listHostedBillingEntitlementsState({
+  const result = await adminQueryService.listHostedBillingEntitlements({
     accountId,
     tenantId,
     status,
@@ -660,7 +642,7 @@ app.get('/api/v1/admin/email/deliveries', async (c) => {
   const accountId = c.req.query('accountId')?.trim();
   const limitRaw = c.req.query('limit')?.trim();
   const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
-  const deliveries = await listHostedEmailDeliveriesState({
+  const deliveries = await adminQueryService.listHostedEmailDeliveries({
     accountId: accountId || null,
     purpose: purpose === 'invite' || purpose === 'password_reset' ? purpose : null,
     status: hostedEmailDeliveryStatusFilter(status),
@@ -732,7 +714,7 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
   const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 25;
 
   if (asyncBackendMode === 'bullmq' && bullmqQueue) {
-    const persisted = await listAsyncDeadLetterRecordsState({ tenantId, backendMode: 'bullmq', limit });
+    const persisted = await adminQueryService.listAsyncDeadLetters({ tenantId, backendMode: 'bullmq', limit });
     const live = persisted.records.length < limit
       ? await listFailedPipelineJobs(bullmqQueue, { tenantId, limit: limit * 2 })
       : [];
@@ -755,7 +737,7 @@ app.get('/api/v1/admin/queue/dlq', async (c) => {
     });
   }
 
-  const persisted = await listAsyncDeadLetterRecordsState({ tenantId, backendMode: 'in_process', limit });
+  const persisted = await adminQueryService.listAsyncDeadLetters({ tenantId, backendMode: 'in_process', limit });
   const live = Array.from(inProcessJobs.values())
     .filter((job) => job.status === 'failed')
     .filter((job) => !tenantId || job.tenantId === tenantId)
@@ -1682,26 +1664,7 @@ app.get('/api/v1/admin/usage', async (c) => {
 
   const tenantId = c.req.query('tenantId')?.trim() || null;
   const period = c.req.query('period')?.trim() || null;
-  const usageRecords = await queryUsageLedgerState({ tenantId, period });
-  const records = await Promise.all(usageRecords.map(async (entry) => {
-    const tenantRecord = await findTenantRecordByTenantIdState(entry.tenantId);
-    const accountRecord = await findHostedAccountByTenantIdState(entry.tenantId);
-    const quota = tenantRecord?.monthlyRunQuota ?? null;
-    return {
-      tenantId: entry.tenantId,
-      tenantName: tenantRecord?.tenantName ?? null,
-      accountId: accountRecord?.id ?? null,
-      accountName: accountRecord?.accountName ?? null,
-      planId: tenantRecord?.planId ?? null,
-      monthlyRunQuota: quota,
-      meter: 'monthly_pipeline_runs' as const,
-      period: entry.period,
-      used: entry.used,
-      remaining: quota === null ? null : Math.max(0, quota - entry.used),
-      enforced: quota !== null,
-      updatedAt: entry.updatedAt,
-    };
-  }));
+  const records = await adminQueryService.listUsage({ tenantId, period });
 
   return c.json({
     records,

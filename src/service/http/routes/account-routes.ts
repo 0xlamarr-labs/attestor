@@ -12,14 +12,21 @@ import type * as AccountUserStore from '../../account-user-store.js';
 import type * as BillingExport from '../../billing-export.js';
 import type * as BillingFeatureService from '../../billing-feature-service.js';
 import type * as BillingReconciliation from '../../billing-reconciliation.js';
-import type * as ControlPlaneStore from '../../control-plane-store.js';
-import type * as EmailDelivery from '../../email-delivery.js';
 import type { HostedEmailDeliveryProvider, HostedEmailDeliveryStatus } from '../../email-delivery-event-store.js';
 import type * as PlanCatalog from '../../plan-catalog.js';
 import type * as RateLimit from '../../rate-limit.js';
 import type { SecretEnvelopeStatus } from '../../secret-envelope.js';
 import type * as StripeBilling from '../../stripe-billing.js';
+import {
+  AccountApiKeyServiceError,
+  type AccountApiKeyService,
+} from '../../application/account-api-key-service.js';
 import { AccountAuthServiceError, type AccountAuthService } from '../../application/account-auth-service.js';
+import type { AccountStateService } from '../../application/account-state-service.js';
+import {
+  AccountUserManagementServiceError,
+  type AccountUserManagementService,
+} from '../../application/account-user-management-service.js';
 import type { HostedAccountRecord } from '../../account-store.js';
 import type {
   AccountUserPasskeyCredentialRecord,
@@ -32,15 +39,6 @@ import type { HostedPasskeyAuthenticationChallengeState, HostedPasskeyAuthentica
 import type { TenantKeyRecord } from '../../tenant-key-store.js';
 import type { AccountAccessContext, TenantContext } from '../../tenant-isolation.js';
 import type { UsageContext } from '../../usage-meter.js';
-
-interface SyncHostedBillingEntitlementOptions {
-  lastEventId?: string | null;
-  lastEventType?: string | null;
-  lastEventAt?: string | null;
-  stripeEntitlementLookupKeys?: string[] | null;
-  stripeEntitlementFeatureIds?: string[] | null;
-  stripeEntitlementSummaryUpdatedAt?: string | null;
-}
 
 interface CurrentHostedAccountResult {
   tenant: TenantContext;
@@ -55,6 +53,16 @@ function accountRouteErrorMessage(error: unknown): string {
 
 function accountAuthServiceErrorResponse(context: Context, error: unknown): Response | null {
   if (!(error instanceof AccountAuthServiceError)) return null;
+  return context.json({ error: error.message }, error.statusCode);
+}
+
+function accountApiKeyServiceErrorResponse(context: Context, error: unknown): Response | null {
+  if (!(error instanceof AccountApiKeyServiceError)) return null;
+  return context.json({ error: error.message }, error.statusCode);
+}
+
+function accountUserManagementServiceErrorResponse(context: Context, error: unknown): Response | null {
+  if (!(error instanceof AccountUserManagementServiceError)) return null;
   return context.json({ error: error.message }, error.statusCode);
 }
 
@@ -100,51 +108,30 @@ function hostedEmailDeliveryProviderFilter(value: string | undefined): HostedEma
 
 export interface AccountRouteDeps {
   authService: AccountAuthService;
+  apiKeyService: AccountApiKeyService;
+  stateService: AccountStateService;
+  userManagementService: AccountUserManagementService;
   currentHostedAccount(context: Context): Promise<CurrentHostedAccountResult | Response>;
-  createAccountUserState: typeof ControlPlaneStore.createAccountUserState;
-  AccountUserStoreError: typeof AccountUserStore.AccountUserStoreError;
-  findAccountUserByEmailState: typeof ControlPlaneStore.findAccountUserByEmailState;
-  resolvePlanSpec: typeof PlanCatalog.resolvePlanSpec;
-  SELF_HOST_PLAN_ID: typeof PlanCatalog.SELF_HOST_PLAN_ID;
-  tenantKeyStoreErrorResponse(context: Context, error: unknown): Response | null;
-  issueAccountSessionState: typeof ControlPlaneStore.issueAccountSessionState;
-  recordAccountUserLoginState: typeof ControlPlaneStore.recordAccountUserLoginState;
-  syncHostedBillingEntitlementForTenant(
-    tenantId: string,
-    options?: SyncHostedBillingEntitlementOptions,
-  ): Promise<HostedBillingEntitlementRecord | null>;
   setSessionCookieForRecord(context: Context, sessionToken: string, expiresAt: string): void;
   accountUserView(record: AccountUserRecord): Record<string, unknown>;
   adminAccountView(record: HostedAccountRecord): Record<string, unknown>;
   accountApiKeyView(record: TenantKeyRecord): Record<string, unknown>;
   verifyAccountUserPasswordRecord: typeof AccountUserStore.verifyAccountUserPasswordRecord;
-  findHostedAccountByIdState: typeof ControlPlaneStore.findHostedAccountByIdState;
   totpSummary: typeof AccountMfa.totpSummary;
-  issueAccountMfaLoginTokenState: typeof ControlPlaneStore.issueAccountMfaLoginTokenState;
-  issueAccountPasskeyChallengeTokenState: typeof ControlPlaneStore.issueAccountPasskeyChallengeTokenState;
   buildHostedPasskeyAuthenticationOptions: typeof AccountPasskeys.buildHostedPasskeyAuthenticationOptions;
   asAuthenticationResponse(value: unknown): AuthenticationResponseJSON | null;
-  findAccountUserActionTokenByTokenState: typeof ControlPlaneStore.findAccountUserActionTokenByTokenState;
   parsePasskeyAuthenticationChallenge(
     record: AccountUserActionTokenRecord,
   ): HostedPasskeyAuthenticationChallengeState | null;
-  findAccountUserByIdState: typeof ControlPlaneStore.findAccountUserByIdState;
-  findAccountUserByPasskeyCredentialIdState: typeof ControlPlaneStore.findAccountUserByPasskeyCredentialIdState;
   verifyHostedPasskeyAuthentication: typeof AccountPasskeys.verifyHostedPasskeyAuthentication;
   passkeyCredentialToWebAuthnCredential: typeof AccountPasskeys.passkeyCredentialToWebAuthnCredential;
-  saveAccountUserRecordState: typeof ControlPlaneStore.saveAccountUserRecordState;
-  consumeAccountUserActionTokenState: typeof ControlPlaneStore.consumeAccountUserActionTokenState;
-  revokeAccountUserActionTokensForUserState: typeof ControlPlaneStore.revokeAccountUserActionTokensForUserState;
   getHostedSamlMetadata: typeof AccountSaml.getHostedSamlMetadata;
   buildHostedSamlAuthorizationRequest: typeof AccountSaml.buildHostedSamlAuthorizationRequest;
   completeHostedSamlAuthorization: typeof AccountSaml.completeHostedSamlAuthorization;
-  recordHostedSamlReplayState: typeof ControlPlaneStore.recordHostedSamlReplayState;
-  findAccountUserBySamlIdentityState: typeof ControlPlaneStore.findAccountUserBySamlIdentityState;
   hostedSamlAllowsAutomaticLinking: typeof AccountSaml.hostedSamlAllowsAutomaticLinking;
   linkAccountUserSamlIdentity: typeof AccountSaml.linkAccountUserSamlIdentity;
   buildHostedOidcAuthorizationRequest: typeof AccountOidc.buildHostedOidcAuthorizationRequest;
   completeHostedOidcAuthorization: typeof AccountOidc.completeHostedOidcAuthorization;
-  findAccountUserByOidcIdentityState: typeof ControlPlaneStore.findAccountUserByOidcIdentityState;
   hostedOidcAllowsAutomaticLinking: typeof AccountOidc.hostedOidcAllowsAutomaticLinking;
   linkAccountUserOidcIdentity: typeof AccountOidc.linkAccountUserOidcIdentity;
   verifyTotpCode: typeof AccountMfa.verifyTotpCode;
@@ -184,37 +171,15 @@ export interface AccountRouteDeps {
   buildTotpOtpAuthUrl: typeof AccountMfa.buildTotpOtpAuthUrl;
   normalizePasskeyAuthenticatorHint(value: unknown): HostedPasskeyAuthenticatorHint | null;
   currentAccountRole(context: Context): AccountUserRole | null;
-  findTenantRecordByTenantIdState: typeof ControlPlaneStore.findTenantRecordByTenantIdState;
   getTenantPipelineRateLimit: typeof RateLimit.getTenantPipelineRateLimit;
-  getUsageContextState: typeof ControlPlaneStore.getUsageContextState;
   readHostedBillingEntitlement(account: HostedAccountRecord): Promise<HostedBillingEntitlementRecord>;
   buildHostedFeatureServiceView: typeof BillingFeatureService.buildHostedFeatureServiceView;
-  listTenantKeyRecordsState: typeof ControlPlaneStore.listTenantKeyRecordsState;
-  tenantKeyStorePolicy: typeof import('../../tenant-key-store.js').tenantKeyStorePolicy;
-  issueTenantApiKeyState: typeof ControlPlaneStore.issueTenantApiKeyState;
-  rotateTenantApiKeyState: typeof ControlPlaneStore.rotateTenantApiKeyState;
-  setTenantApiKeyStatusState: typeof ControlPlaneStore.setTenantApiKeyStatusState;
-  revokeTenantApiKeyState: typeof ControlPlaneStore.revokeTenantApiKeyState;
-  listAccountUsersByAccountIdState: typeof ControlPlaneStore.listAccountUsersByAccountIdState;
-  listAccountUserActionTokensByAccountIdState: typeof ControlPlaneStore.listAccountUserActionTokensByAccountIdState;
-  issueAccountInviteTokenState: typeof ControlPlaneStore.issueAccountInviteTokenState;
-  deliverHostedInviteEmail: typeof EmailDelivery.deliverHostedInviteEmail;
-  hostedEmailDeliveryErrorResponse(context: Context, error: unknown): Response | null;
-  revokeAccountUserActionTokenState: typeof ControlPlaneStore.revokeAccountUserActionTokenState;
   accountUserActionTokenView(record: AccountUserActionTokenRecord): Record<string, unknown>;
-  issuePasswordResetTokenState: typeof ControlPlaneStore.issuePasswordResetTokenState;
-  deliverHostedPasswordResetEmail: typeof EmailDelivery.deliverHostedPasswordResetEmail;
-  setAccountUserPasswordState: typeof ControlPlaneStore.setAccountUserPasswordState;
-  revokeAccountSessionsForUserState: typeof ControlPlaneStore.revokeAccountSessionsForUserState;
-  setAccountUserStatusState: typeof ControlPlaneStore.setAccountUserStatusState;
-  saveAccountUserActionTokenRecordState: typeof ControlPlaneStore.saveAccountUserActionTokenRecordState;
   getCookie(context: Context, key: string, prefix?: string): string | undefined;
   deleteCookie(context: Context, key: string, options?: { path?: string }): void;
   sessionCookieName: typeof AccountSessionStore.sessionCookieName;
-  revokeAccountSessionByTokenState: typeof ControlPlaneStore.revokeAccountSessionByTokenState;
   accountMfaErrorResponse(context: Context, error: unknown): Response | null;
   getHostedPlan: typeof PlanCatalog.getHostedPlan;
-  listHostedEmailDeliveriesState: typeof ControlPlaneStore.listHostedEmailDeliveriesState;
   createHostedCheckoutSession: typeof StripeBilling.createHostedCheckoutSession;
   stripeBillingErrorResponse(context: Context, error: unknown): Response | null;
   createHostedBillingPortalSession: typeof StripeBilling.createHostedBillingPortalSession;
@@ -228,46 +193,28 @@ export interface AccountRouteDeps {
 export function registerAccountRoutes(app: Hono, deps: AccountRouteDeps): void {
   const {
     authService,
+    apiKeyService,
+    stateService,
+    userManagementService,
     currentHostedAccount,
-    createAccountUserState,
-    AccountUserStoreError,
-    findAccountUserByEmailState,
-    resolvePlanSpec,
-    SELF_HOST_PLAN_ID,
-    tenantKeyStoreErrorResponse,
-    issueAccountSessionState,
-    recordAccountUserLoginState,
-    syncHostedBillingEntitlementForTenant,
     setSessionCookieForRecord,
     accountUserView,
     adminAccountView,
     accountApiKeyView,
     verifyAccountUserPasswordRecord,
-    findHostedAccountByIdState,
     totpSummary,
-    issueAccountMfaLoginTokenState,
-    issueAccountPasskeyChallengeTokenState,
     buildHostedPasskeyAuthenticationOptions,
     asAuthenticationResponse,
-    findAccountUserActionTokenByTokenState,
     parsePasskeyAuthenticationChallenge,
-    findAccountUserByIdState,
-    findAccountUserByPasskeyCredentialIdState,
     verifyHostedPasskeyAuthentication,
     passkeyCredentialToWebAuthnCredential,
-    saveAccountUserRecordState,
-    consumeAccountUserActionTokenState,
-    revokeAccountUserActionTokensForUserState,
     getHostedSamlMetadata,
     buildHostedSamlAuthorizationRequest,
     completeHostedSamlAuthorization,
-    recordHostedSamlReplayState,
-    findAccountUserBySamlIdentityState,
     hostedSamlAllowsAutomaticLinking,
     linkAccountUserSamlIdentity,
     buildHostedOidcAuthorizationRequest,
     completeHostedOidcAuthorization,
-    findAccountUserByOidcIdentityState,
     hostedOidcAllowsAutomaticLinking,
     linkAccountUserOidcIdentity,
     verifyTotpCode,
@@ -293,37 +240,15 @@ export function registerAccountRoutes(app: Hono, deps: AccountRouteDeps): void {
     buildTotpOtpAuthUrl,
     normalizePasskeyAuthenticatorHint,
     currentAccountRole,
-    findTenantRecordByTenantIdState,
     getTenantPipelineRateLimit,
-    getUsageContextState,
     readHostedBillingEntitlement,
     buildHostedFeatureServiceView,
-    listTenantKeyRecordsState,
-    tenantKeyStorePolicy,
-    issueTenantApiKeyState,
-    rotateTenantApiKeyState,
-    setTenantApiKeyStatusState,
-    revokeTenantApiKeyState,
-    listAccountUsersByAccountIdState,
-    listAccountUserActionTokensByAccountIdState,
-    issueAccountInviteTokenState,
-    deliverHostedInviteEmail,
-    hostedEmailDeliveryErrorResponse,
-    revokeAccountUserActionTokenState,
     accountUserActionTokenView,
-    issuePasswordResetTokenState,
-    deliverHostedPasswordResetEmail,
-    setAccountUserPasswordState,
-    revokeAccountSessionsForUserState,
-    setAccountUserStatusState,
-    saveAccountUserActionTokenRecordState,
     getCookie,
     deleteCookie,
     sessionCookieName,
-    revokeAccountSessionByTokenState,
     accountMfaErrorResponse,
     getHostedPlan,
-    listHostedEmailDeliveriesState,
     createHostedCheckoutSession,
     stripeBillingErrorResponse,
     createHostedBillingPortalSession,
@@ -440,7 +365,7 @@ app.post('/api/v1/auth/passkeys/options', async (c) => {
     return c.json({ error: 'email is required for hosted passkey login in the current first slice.' }, 400);
   }
 
-  const user = await findAccountUserByEmailState(email);
+  const user = await stateService.findAccountUserByEmail(email);
   if (!user || user.status !== 'active') {
     return c.json({ error: 'Hosted passkey login requires an active account user with enrolled passkeys.' }, 404);
   }
@@ -448,7 +373,7 @@ app.post('/api/v1/auth/passkeys/options', async (c) => {
     return c.json({ error: `Account user '${user.email}' does not have passkeys enrolled.` }, 409);
   }
 
-  const account = await findHostedAccountByIdState(user.accountId);
+  const account = await stateService.findHostedAccountById(user.accountId);
   if (!account) {
     return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
   }
@@ -461,7 +386,7 @@ app.post('/api/v1/auth/passkeys/options', async (c) => {
       requestOrigin: c.req.url,
       user,
     });
-    const issued = await issueAccountPasskeyChallengeTokenState({
+    const issued = await stateService.issueAccountPasskeyChallengeToken({
       purpose: 'passkey_authentication',
       accountId: account.id,
       accountUserId: user.id,
@@ -491,19 +416,19 @@ app.post('/api/v1/auth/passkeys/verify', async (c) => {
     return c.json({ error: 'challengeToken and a valid WebAuthn authentication response are required.' }, 400);
   }
 
-  const challengeRecord = await findAccountUserActionTokenByTokenState(challengeToken);
+  const challengeRecord = await stateService.findAccountUserActionTokenByToken(challengeToken);
   const challenge = challengeRecord ? parsePasskeyAuthenticationChallenge(challengeRecord) : null;
   if (!challengeRecord || !challenge || !challengeRecord.accountUserId) {
     return c.json({ error: 'Passkey authentication challenge is invalid or expired.' }, 400);
   }
 
-  const user = await findAccountUserByIdState(challengeRecord.accountUserId);
-  const account = user ? await findHostedAccountByIdState(user.accountId) : null;
+  const user = await stateService.findAccountUserById(challengeRecord.accountUserId);
+  const account = user ? await stateService.findHostedAccountById(user.accountId) : null;
   if (!user || !account || account.id !== challengeRecord.accountId || user.status !== 'active' || account.status === 'archived') {
     return c.json({ error: 'Passkey authentication challenge is invalid or expired.' }, 400);
   }
 
-  const credentialUser = await findAccountUserByPasskeyCredentialIdState(response.id);
+  const credentialUser = await stateService.findAccountUserByPasskeyCredentialId(response.id);
   if (!credentialUser || credentialUser.id !== user.id) {
     return c.json({ error: 'Passkey credential could not be matched to the challenged account user.' }, 400);
   }
@@ -537,12 +462,12 @@ app.post('/api/v1/auth/passkeys/verify', async (c) => {
   nextCredential.lastUsedAt = now;
   nextUser.passkeys.updatedAt = now;
   nextUser.updatedAt = now;
-  await saveAccountUserRecordState(nextUser);
-  await consumeAccountUserActionTokenState(challengeRecord.id);
-  await revokeAccountUserActionTokensForUserState(user.id, 'passkey_authentication');
+  await stateService.saveAccountUserRecord(nextUser);
+  await stateService.consumeAccountUserActionToken(challengeRecord.id);
+  await stateService.revokeAccountUserActionTokensForUser(user.id, 'passkey_authentication');
 
-  const loginTouch = await recordAccountUserLoginState(user.id);
-  const issued = await issueAccountSessionState({
+  const loginTouch = await stateService.recordAccountUserLogin(user.id);
+  const issued = await stateService.issueAccountSession({
     accountId: account.id,
     accountUserId: user.id,
     role: user.role,
@@ -613,7 +538,7 @@ app.post('/api/v1/auth/saml/acs', async (c) => {
     return c.json({ error: message }, status);
   }
 
-  const replay = await recordHostedSamlReplayState({
+  const replay = await stateService.recordHostedSamlReplay({
     requestId: callback.relayState.requestId,
     responseId: callback.responseId,
     issuer: callback.identity.issuer,
@@ -628,7 +553,7 @@ app.post('/api/v1/auth/saml/acs', async (c) => {
     }, 409);
   }
 
-  let user = await findAccountUserBySamlIdentityState(
+  let user = await stateService.findAccountUserBySamlIdentity(
     callback.identity.issuer,
     callback.identity.subject,
   );
@@ -644,7 +569,7 @@ app.post('/api/v1/auth/saml/acs', async (c) => {
         },
       }, 403);
     }
-    user = await findAccountUserByEmailState(callback.identity.email);
+    user = await stateService.findAccountUserByEmail(callback.identity.email);
   }
   if (!user) {
     return c.json({
@@ -661,7 +586,7 @@ app.post('/api/v1/auth/saml/acs', async (c) => {
     return c.json({ error: `Account user '${user.email}' is inactive.` }, 403);
   }
 
-  const account = await findHostedAccountByIdState(user.accountId);
+  const account = await stateService.findHostedAccountById(user.accountId);
   if (!account) {
     return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
   }
@@ -671,13 +596,13 @@ app.post('/api/v1/auth/saml/acs', async (c) => {
 
   const sync = linkAccountUserSamlIdentity(user, callback.identity);
   if (sync.changed) {
-    await saveAccountUserRecordState(sync.record);
+    await stateService.saveAccountUserRecord(sync.record);
     user = sync.record;
   }
 
   const userTotp = totpSummary(user.mfa.totp);
   if (userTotp.enabled) {
-    const issued = await issueAccountMfaLoginTokenState({
+    const issued = await stateService.issueAccountMfaLoginToken({
       accountId: account.id,
       accountUserId: user.id,
       email: user.email,
@@ -705,12 +630,12 @@ app.post('/api/v1/auth/saml/acs', async (c) => {
     });
   }
 
-  const issued = await issueAccountSessionState({
+  const issued = await stateService.issueAccountSession({
     accountId: account.id,
     accountUserId: user.id,
     role: user.role,
   });
-  const loginTouch = await recordAccountUserLoginState(user.id);
+  const loginTouch = await stateService.recordAccountUserLogin(user.id);
   setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
 
   return c.json({
@@ -767,7 +692,7 @@ app.get('/api/v1/auth/oidc/callback', async (c) => {
     return c.json({ error: message }, status);
   }
 
-  let user = await findAccountUserByOidcIdentityState(
+  let user = await stateService.findAccountUserByOidcIdentity(
     callback.identity.issuer,
     callback.identity.subject,
   );
@@ -783,7 +708,7 @@ app.get('/api/v1/auth/oidc/callback', async (c) => {
         },
       }, 403);
     }
-    user = await findAccountUserByEmailState(callback.identity.email);
+    user = await stateService.findAccountUserByEmail(callback.identity.email);
   }
   if (!user) {
     return c.json({
@@ -800,7 +725,7 @@ app.get('/api/v1/auth/oidc/callback', async (c) => {
     return c.json({ error: `Account user '${user.email}' is inactive.` }, 403);
   }
 
-  const account = await findHostedAccountByIdState(user.accountId);
+  const account = await stateService.findHostedAccountById(user.accountId);
   if (!account) {
     return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
   }
@@ -810,13 +735,13 @@ app.get('/api/v1/auth/oidc/callback', async (c) => {
 
   const sync = linkAccountUserOidcIdentity(user, callback.identity);
   if (sync.changed) {
-    await saveAccountUserRecordState(sync.record);
+    await stateService.saveAccountUserRecord(sync.record);
     user = sync.record;
   }
 
   const userTotp = totpSummary(user.mfa.totp);
   if (userTotp.enabled) {
-    const issued = await issueAccountMfaLoginTokenState({
+    const issued = await stateService.issueAccountMfaLoginToken({
       accountId: account.id,
       accountUserId: user.id,
       email: user.email,
@@ -843,12 +768,12 @@ app.get('/api/v1/auth/oidc/callback', async (c) => {
     });
   }
 
-  const issued = await issueAccountSessionState({
+  const issued = await stateService.issueAccountSession({
     accountId: account.id,
     accountUserId: user.id,
     role: user.role,
   });
-  const loginTouch = await recordAccountUserLoginState(user.id);
+  const loginTouch = await stateService.recordAccountUserLogin(user.id);
   setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
 
   return c.json({
@@ -876,13 +801,13 @@ app.post('/api/v1/auth/mfa/verify', async (c) => {
     return c.json({ error: 'challengeToken and either code or recoveryCode are required.' }, 400);
   }
 
-  const challenge = await findAccountUserActionTokenByTokenState(challengeToken);
+  const challenge = await stateService.findAccountUserActionTokenByToken(challengeToken);
   if (!challenge || challenge.purpose !== 'mfa_login' || !challenge.accountUserId) {
     return c.json({ error: 'MFA challenge is invalid or expired.' }, 400);
   }
 
-  const user = await findAccountUserByIdState(challenge.accountUserId);
-  const account = user ? await findHostedAccountByIdState(user.accountId) : null;
+  const user = await stateService.findAccountUserById(challenge.accountUserId);
+  const account = user ? await stateService.findHostedAccountById(user.accountId) : null;
   if (!user || !account || account.id !== challenge.accountId || user.status !== 'active' || account.status === 'archived') {
     return c.json({ error: 'MFA challenge is invalid or expired.' }, 400);
   }
@@ -914,7 +839,7 @@ app.post('/api/v1/auth/mfa/verify', async (c) => {
       nextUser.mfa.totp.lastVerifiedAt = now;
       nextUser.mfa.totp.updatedAt = now;
       nextUser.updatedAt = now;
-      await saveAccountUserRecordState(nextUser);
+      await stateService.saveAccountUserRecord(nextUser);
     }
   } else {
     const recovery = verifyAndConsumeRecoveryCode(user.mfa.totp, recoveryCode);
@@ -923,7 +848,7 @@ app.post('/api/v1/auth/mfa/verify', async (c) => {
     if (recovery.ok) {
       nextUser.mfa.totp = recovery.nextTotp;
       nextUser.updatedAt = recovery.nextTotp.updatedAt ?? nextUser.updatedAt;
-      await saveAccountUserRecordState(nextUser);
+      await stateService.saveAccountUserRecord(nextUser);
     }
   }
 
@@ -935,14 +860,14 @@ app.post('/api/v1/auth/mfa/verify', async (c) => {
     if (nextChallenge.maxAttempts !== null && nextChallenge.attemptCount >= nextChallenge.maxAttempts) {
       nextChallenge.revokedAt = nextChallenge.lastAttemptAt;
     }
-    await saveAccountUserActionTokenRecordState(nextChallenge);
+    await stateService.saveAccountUserActionTokenRecord(nextChallenge);
     return c.json({ error: 'MFA code is invalid or expired.' }, 400);
   }
 
-  await consumeAccountUserActionTokenState(challenge.id);
-  await revokeAccountUserActionTokensForUserState(user.id, 'mfa_login');
-  const loginTouch = await recordAccountUserLoginState(user.id);
-  const issued = await issueAccountSessionState({
+  await stateService.consumeAccountUserActionToken(challenge.id);
+  await stateService.revokeAccountUserActionTokensForUser(user.id, 'mfa_login');
+  const loginTouch = await stateService.recordAccountUserLogin(user.id);
+  const issued = await stateService.issueAccountSession({
     accountId: account.id,
     accountUserId: user.id,
     role: user.role,
@@ -970,7 +895,7 @@ app.post('/api/v1/auth/logout', async (c) => {
     ?? getCookie(c, sessionCookieName())
     ?? null;
   if (token) {
-    await revokeAccountSessionByTokenState(token);
+    await stateService.revokeAccountSessionByToken(token);
   }
   deleteCookie(c, sessionCookieName(), {
     path: '/api/v1',
@@ -982,7 +907,7 @@ app.post('/api/v1/auth/password/change', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1000,10 +925,10 @@ app.post('/api/v1/auth/password/change', async (c) => {
     return c.json({ error: 'newPassword must be at least 12 characters long.' }, 400);
   }
 
-  const updated = await setAccountUserPasswordState(user.id, newPassword);
-  await revokeAccountSessionsForUserState(user.id);
-  await revokeAccountUserActionTokensForUserState(user.id, 'password_reset');
-  const issued = await issueAccountSessionState({
+  const updated = await stateService.setAccountUserPassword(user.id, newPassword);
+  await stateService.revokeAccountSessionsForUser(user.id);
+  await stateService.revokeAccountUserActionTokensForUser(user.id, 'password_reset');
+  const issued = await stateService.issueAccountSession({
     accountId: access.accountId,
     accountUserId: user.id,
     role: user.role,
@@ -1025,8 +950,8 @@ app.get('/api/v1/auth/me', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
-  const account = await findHostedAccountByIdState(access.accountId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
+  const account = await stateService.findHostedAccountById(access.accountId);
   if (!user || !account) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1045,7 +970,7 @@ app.get('/api/v1/account/mfa', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1058,7 +983,7 @@ app.get('/api/v1/account/oidc', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1071,7 +996,7 @@ app.get('/api/v1/account/saml', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1084,7 +1009,7 @@ app.get('/api/v1/account/passkeys', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1097,7 +1022,7 @@ app.post('/api/v1/account/passkeys/register/options', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1119,7 +1044,7 @@ app.post('/api/v1/account/passkeys/register/options', async (c) => {
       userHandle: user.passkeys.userHandle || generateHostedPasskeyUserHandle(),
       preferredAuthenticatorType,
     });
-    const issued = await issueAccountPasskeyChallengeTokenState({
+    const issued = await stateService.issueAccountPasskeyChallengeToken({
       purpose: 'passkey_registration',
       accountId: access.accountId,
       accountUserId: user.id,
@@ -1149,7 +1074,7 @@ app.post('/api/v1/account/passkeys/register/verify', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const sessionUser = await findAccountUserByIdState(access.accountUserId);
+  const sessionUser = await stateService.findAccountUserById(access.accountUserId);
   if (!sessionUser || sessionUser.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1161,7 +1086,7 @@ app.post('/api/v1/account/passkeys/register/verify', async (c) => {
     return c.json({ error: 'challengeToken and a valid WebAuthn registration response are required.' }, 400);
   }
 
-  const challengeRecord = await findAccountUserActionTokenByTokenState(challengeToken);
+  const challengeRecord = await stateService.findAccountUserActionTokenByToken(challengeToken);
   const challenge = challengeRecord ? parsePasskeyRegistrationChallenge(challengeRecord) : null;
   if (
     !challengeRecord
@@ -1209,9 +1134,9 @@ app.post('/api/v1/account/passkeys/register/verify', async (c) => {
   nextUser.passkeys.credentials.push(nextCredential);
   nextUser.passkeys.updatedAt = now;
   nextUser.updatedAt = now;
-  await saveAccountUserRecordState(nextUser);
-  await consumeAccountUserActionTokenState(challengeRecord.id);
-  await revokeAccountUserActionTokensForUserState(nextUser.id, 'passkey_registration');
+  await stateService.saveAccountUserRecord(nextUser);
+  await stateService.consumeAccountUserActionToken(challengeRecord.id);
+  await stateService.revokeAccountUserActionTokensForUser(nextUser.id, 'passkey_registration');
 
   return c.json({
     registered: true,
@@ -1224,7 +1149,7 @@ app.post('/api/v1/account/passkeys/:id/delete', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1248,7 +1173,7 @@ app.post('/api/v1/account/passkeys/:id/delete', async (c) => {
   nextUser.passkeys.credentials.splice(credentialIndex, 1);
   nextUser.passkeys.updatedAt = new Date().toISOString();
   nextUser.updatedAt = nextUser.passkeys.updatedAt;
-  await saveAccountUserRecordState(nextUser);
+  await stateService.saveAccountUserRecord(nextUser);
 
   return c.json({
     deleted: true,
@@ -1261,8 +1186,8 @@ app.post('/api/v1/account/mfa/totp/enroll', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
-  const account = await findHostedAccountByIdState(access.accountId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
+  const account = await stateService.findHostedAccountById(access.accountId);
   if (!user || !account || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1297,7 +1222,7 @@ app.post('/api/v1/account/mfa/totp/enroll', async (c) => {
   nextUser.mfa.totp.pendingIssuedAt = now;
   nextUser.mfa.totp.updatedAt = now;
   nextUser.updatedAt = now;
-  await saveAccountUserRecordState(nextUser);
+  await stateService.saveAccountUserRecord(nextUser);
 
   const issuer = process.env.ATTESTOR_MFA_ISSUER?.trim() || 'Attestor';
   return c.json({
@@ -1323,7 +1248,7 @@ app.post('/api/v1/account/mfa/totp/confirm', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1370,16 +1295,16 @@ app.post('/api/v1/account/mfa/totp/confirm', async (c) => {
   nextUser.mfa.totp.recoveryCodes = recovery.hashedCodes;
   nextUser.mfa.totp.recoveryCodesIssuedAt = now;
   nextUser.updatedAt = now;
-  await saveAccountUserRecordState(nextUser);
+  await stateService.saveAccountUserRecord(nextUser);
 
-  await revokeAccountSessionsForUserState(user.id);
-  await revokeAccountUserActionTokensForUserState(user.id, 'mfa_login');
-  const issued = await issueAccountSessionState({
+  await stateService.revokeAccountSessionsForUser(user.id);
+  await stateService.revokeAccountUserActionTokensForUser(user.id, 'mfa_login');
+  const issued = await stateService.issueAccountSession({
     accountId: access.accountId,
     accountUserId: user.id,
     role: user.role,
   });
-  const loginTouch = await recordAccountUserLoginState(user.id);
+  const loginTouch = await stateService.recordAccountUserLogin(user.id);
   setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
 
   return c.json({
@@ -1398,7 +1323,7 @@ app.post('/api/v1/account/mfa/disable', async (c) => {
   const unauthorized = requireAccountSession(c);
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(access.accountUserId);
+  const user = await stateService.findAccountUserById(access.accountUserId);
   if (!user || user.accountId !== access.accountId) {
     return c.json({ error: 'Current account session could not be resolved.' }, 404);
   }
@@ -1462,16 +1387,16 @@ app.post('/api/v1/account/mfa/disable', async (c) => {
   nextUser.mfa.totp.recoveryCodes = [];
   nextUser.mfa.totp.recoveryCodesIssuedAt = null;
   nextUser.updatedAt = now;
-  await saveAccountUserRecordState(nextUser);
+  await stateService.saveAccountUserRecord(nextUser);
 
-  await revokeAccountSessionsForUserState(user.id);
-  await revokeAccountUserActionTokensForUserState(user.id, 'mfa_login');
-  const issued = await issueAccountSessionState({
+  await stateService.revokeAccountSessionsForUser(user.id);
+  await stateService.revokeAccountUserActionTokensForUser(user.id, 'mfa_login');
+  const issued = await stateService.issueAccountSession({
     accountId: access.accountId,
     accountUserId: user.id,
     role: user.role,
   });
-  const loginTouch = await recordAccountUserLoginState(user.id);
+  const loginTouch = await stateService.recordAccountUserLogin(user.id);
   setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
 
   return c.json({
@@ -1488,7 +1413,7 @@ app.post('/api/v1/account/mfa/disable', async (c) => {
 
 app.get('/api/v1/account/usage', async (c) => {
   const tenant = currentTenant(c);
-  const usage = await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
+  const usage = await stateService.getUsageContext(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota);
   const rateLimit = await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId);
   return c.json({
     tenantContext: {
@@ -1540,19 +1465,17 @@ app.get('/api/v1/account/api-keys', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  try {
+    const result = await apiKeyService.list(access.accountId);
+    return c.json({
+      keys: result.keys.map((entry) => accountApiKeyView(entry)),
+      defaults: result.defaults,
+    });
+  } catch (err) {
+    const mapped = accountApiKeyServiceErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
   }
-  const keys = await listTenantKeyRecordsState();
-  return c.json({
-    keys: keys.records
-      .filter((entry) => entry.tenantId === account.primaryTenantId)
-      .map((entry) => accountApiKeyView(entry)),
-    defaults: {
-      maxActiveKeysPerTenant: tenantKeyStorePolicy().maxActiveKeysPerTenant,
-    },
-  });
 });
 
 app.post('/api/v1/account/api-keys', async (c) => {
@@ -1561,39 +1484,19 @@ app.post('/api/v1/account/api-keys', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
-  }
-  const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
-  const planId = tenantRecord?.planId ?? SELF_HOST_PLAN_ID;
-  const monthlyRunQuota = tenantRecord?.monthlyRunQuota ?? null;
-  const tenantName = tenantRecord?.tenantName ?? account.accountName;
-
-  let issued;
   try {
-    issued = await issueTenantApiKeyState({
-      tenantId: account.primaryTenantId,
-      tenantName,
-      planId,
-      monthlyRunQuota,
-    });
+    const issued = await apiKeyService.issue(access.accountId);
+    return c.json({
+      key: {
+        ...accountApiKeyView(issued.record),
+        apiKey: issued.apiKey,
+      },
+    }, 201);
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = accountApiKeyServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
-    lastEventType: 'account.api_keys.issue',
-    lastEventAt: new Date().toISOString(),
-  });
-
-  return c.json({
-    key: {
-      ...accountApiKeyView(issued.record),
-      apiKey: issued.apiKey,
-    },
-  }, 201);
 });
 
 app.post('/api/v1/account/api-keys/:id/rotate', async (c) => {
@@ -1602,38 +1505,20 @@ app.post('/api/v1/account/api-keys/:id/rotate', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
-  }
-  const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find(
-    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
-  ) ?? null;
-  if (!currentKey) {
-    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
-  }
-
-  let rotated;
   try {
-    rotated = await rotateTenantApiKeyState(currentKey.id);
+    const rotated = await apiKeyService.rotate(access.accountId, c.req.param('id'));
+    return c.json({
+      previousKey: accountApiKeyView(rotated.previousRecord),
+      newKey: {
+        ...accountApiKeyView(rotated.record),
+        apiKey: rotated.apiKey,
+      },
+    }, 201);
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = accountApiKeyServiceErrorResponse(c, err);
     if (mapped) return mapped;
-    return c.json({ error: accountRouteErrorMessage(err) }, 400);
+    throw err;
   }
-  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
-    lastEventType: 'account.api_keys.rotate',
-    lastEventAt: new Date().toISOString(),
-  });
-
-  return c.json({
-    previousKey: accountApiKeyView(rotated.previousRecord),
-    newKey: {
-      ...accountApiKeyView(rotated.record),
-      apiKey: rotated.apiKey,
-    },
-  }, 201);
 });
 
 app.post('/api/v1/account/api-keys/:id/deactivate', async (c) => {
@@ -1642,34 +1527,16 @@ app.post('/api/v1/account/api-keys/:id/deactivate', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
-  }
-  const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find(
-    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
-  ) ?? null;
-  if (!currentKey) {
-    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
-  }
-
-  let result;
   try {
-    result = await setTenantApiKeyStatusState(currentKey.id, 'inactive');
+    const result = await apiKeyService.setStatus(access.accountId, c.req.param('id'), 'inactive');
+    return c.json({
+      key: accountApiKeyView(result.record),
+    });
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = accountApiKeyServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
-    lastEventType: 'account.api_keys.deactivate',
-    lastEventAt: new Date().toISOString(),
-  });
-
-  return c.json({
-    key: accountApiKeyView(result.record),
-  });
 });
 
 app.post('/api/v1/account/api-keys/:id/reactivate', async (c) => {
@@ -1678,34 +1545,16 @@ app.post('/api/v1/account/api-keys/:id/reactivate', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
-  }
-  const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find(
-    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
-  ) ?? null;
-  if (!currentKey) {
-    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
-  }
-
-  let result;
   try {
-    result = await setTenantApiKeyStatusState(currentKey.id, 'active');
+    const result = await apiKeyService.setStatus(access.accountId, c.req.param('id'), 'active');
+    return c.json({
+      key: accountApiKeyView(result.record),
+    });
   } catch (err) {
-    const mapped = tenantKeyStoreErrorResponse(c, err);
+    const mapped = accountApiKeyServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
-    lastEventType: 'account.api_keys.reactivate',
-    lastEventAt: new Date().toISOString(),
-  });
-
-  return c.json({
-    key: accountApiKeyView(result.record),
-  });
 });
 
 app.post('/api/v1/account/api-keys/:id/revoke', async (c) => {
@@ -1714,30 +1563,16 @@ app.post('/api/v1/account/api-keys/:id/revoke', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
+  try {
+    const result = await apiKeyService.revoke(access.accountId, c.req.param('id'));
+    return c.json({
+      key: accountApiKeyView(result.record),
+    });
+  } catch (err) {
+    const mapped = accountApiKeyServiceErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
   }
-  const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find(
-    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
-  ) ?? null;
-  if (!currentKey) {
-    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
-  }
-
-  const result = await revokeTenantApiKeyState(currentKey.id);
-  if (!result.record) {
-    return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
-  }
-  await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
-    lastEventType: 'account.api_keys.revoke',
-    lastEventAt: new Date().toISOString(),
-  });
-
-  return c.json({
-    key: accountApiKeyView(result.record),
-  });
 });
 
 app.get('/api/v1/account/users', async (c) => {
@@ -1746,9 +1581,9 @@ app.get('/api/v1/account/users', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const users = await listAccountUsersByAccountIdState(access.accountId);
+  const users = await userManagementService.listUsers(access.accountId);
   return c.json({
-    users: users.records.map(accountUserView),
+    users: users.map(accountUserView),
   });
 });
 
@@ -1770,25 +1605,22 @@ app.post('/api/v1/account/users', async (c) => {
     return c.json({ error: 'password must be at least 12 characters long.' }, 400);
   }
 
-  let created;
   try {
-    created = await createAccountUserState({
+    const created = await userManagementService.createUser({
       accountId: access.accountId,
       email,
       displayName,
       password,
       role,
     });
+    return c.json({
+      user: accountUserView(created),
+    }, 201);
   } catch (err) {
-    if (err instanceof AccountUserStoreError) {
-      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
-    }
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
+    if (mapped) return mapped;
     throw err;
   }
-
-  return c.json({
-    user: accountUserView(created.record),
-  }, 201);
 });
 
 app.get('/api/v1/account/users/invites', async (c) => {
@@ -1797,9 +1629,9 @@ app.get('/api/v1/account/users/invites', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const invites = await listAccountUserActionTokensByAccountIdState(access.accountId, { purpose: 'invite' });
+  const invites = await userManagementService.listInvites(access.accountId);
   return c.json({
-    invites: invites.records.map(accountUserActionTokenView),
+    invites: invites.map(accountUserActionTokenView),
   });
 });
 
@@ -1809,10 +1641,6 @@ app.post('/api/v1/account/users/invites', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
-  }
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
@@ -1821,40 +1649,25 @@ app.post('/api/v1/account/users/invites', async (c) => {
   if (!email || !displayName || !role) {
     return c.json({ error: 'email, displayName, and role are required.' }, 400);
   }
-  const existing = await findAccountUserByEmailState(email);
-  if (existing) {
-    return c.json({ error: `Account user '${email}' already exists.` }, 409);
-  }
-  const issued = await issueAccountInviteTokenState({
-    accountId: access.accountId,
-    email,
-    displayName,
-    role,
-    issuedByAccountUserId: access.accountUserId,
-    ttlHours: expiresHours,
-  });
-  let delivery;
   try {
-    delivery = await deliverHostedInviteEmail({
+    const issued = await userManagementService.issueInvite({
       accountId: access.accountId,
-      accountUserId: null,
-      recipientEmail: email,
+      actorUserId: access.accountUserId,
+      email,
       displayName,
       role,
-      accountName: account.accountName,
-      token: issued.token,
+      expiresHours,
     });
+    return c.json({
+      invite: accountUserActionTokenView(issued.record),
+      ...(issued.delivery.tokenReturned ? { inviteToken: issued.token } : {}),
+      delivery: issued.delivery,
+    }, 201);
   } catch (err) {
-    await revokeAccountUserActionTokenState(issued.record.id);
-    const mapped = hostedEmailDeliveryErrorResponse(c, err);
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  return c.json({
-    invite: accountUserActionTokenView(issued.record),
-    ...(delivery.tokenReturned ? { inviteToken: issued.token } : {}),
-    delivery,
-  }, 201);
 });
 
 app.post('/api/v1/account/users/invites/:id/revoke', async (c) => {
@@ -1863,75 +1676,43 @@ app.post('/api/v1/account/users/invites/:id/revoke', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const invites = await listAccountUserActionTokensByAccountIdState(access.accountId, { purpose: 'invite' });
-  const target = invites.records.find((entry) => entry.id === c.req.param('id')) ?? null;
-  if (!target) {
-    return c.json({ error: `Invite '${c.req.param('id')}' was not found.` }, 404);
+  try {
+    const revoked = await userManagementService.revokeInvite(access.accountId, c.req.param('id'));
+    return c.json({
+      invite: accountUserActionTokenView(revoked),
+    });
+  } catch (err) {
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
   }
-  const revoked = await revokeAccountUserActionTokenState(target.id);
-  return c.json({
-    invite: accountUserActionTokenView(revoked.record ?? target),
-  });
 });
 
 app.post('/api/v1/account/users/invites/accept', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const inviteToken = typeof body.inviteToken === 'string' ? body.inviteToken.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
-  if (!inviteToken || !password) {
-    return c.json({ error: 'inviteToken and password are required.' }, 400);
-  }
-  if (password.length < 12) {
-    return c.json({ error: 'password must be at least 12 characters long.' }, 400);
-  }
-
-  const invite = await findAccountUserActionTokenByTokenState(inviteToken);
-  if (!invite || invite.purpose !== 'invite' || !invite.role || !invite.displayName) {
-    return c.json({ error: 'Invite token is invalid or expired.' }, 400);
-  }
-  const account = await findHostedAccountByIdState(invite.accountId);
-  if (!account || account.status === 'archived') {
-    return c.json({ error: 'Invite account is not available.' }, 404);
-  }
-  const existing = await findAccountUserByEmailState(invite.email);
-  if (existing) {
-    return c.json({ error: `Account user '${invite.email}' already exists.` }, 409);
-  }
-
-  let created;
   try {
-    created = await createAccountUserState({
-      accountId: invite.accountId,
-      email: invite.email,
-      displayName: invite.displayName,
+    const accepted = await userManagementService.acceptInvite({
+      inviteToken,
       password,
-      role: invite.role,
     });
+    setSessionCookieForRecord(c, accepted.sessionToken, accepted.session.expiresAt);
+    return c.json({
+      accepted: true,
+      session: {
+        id: accepted.session.id,
+        expiresAt: accepted.session.expiresAt,
+        source: 'account_session',
+      },
+      user: accountUserView(accepted.user),
+      account: adminAccountView(accepted.account),
+    }, 201);
   } catch (err) {
-    if (err instanceof AccountUserStoreError) {
-      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
-    }
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
+    if (mapped) return mapped;
     throw err;
   }
-  await consumeAccountUserActionTokenState(invite.id);
-  const loginTouch = await recordAccountUserLoginState(created.record.id);
-  const issued = await issueAccountSessionState({
-    accountId: invite.accountId,
-    accountUserId: created.record.id,
-    role: created.record.role,
-  });
-  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
-
-  return c.json({
-    accepted: true,
-    session: {
-      id: issued.record.id,
-      expiresAt: issued.record.expiresAt,
-      source: 'account_session',
-    },
-    user: accountUserView(loginTouch.record),
-    account: adminAccountView(account),
-  }, 201);
 });
 
 app.post('/api/v1/account/users/:id/deactivate', async (c) => {
@@ -1940,21 +1721,14 @@ app.post('/api/v1/account/users/:id/deactivate', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(c.req.param('id'));
-  if (!user || user.accountId !== access.accountId) {
-    return c.json({ error: `Account user '${c.req.param('id')}' was not found.` }, 404);
-  }
   try {
-    const updated = await setAccountUserStatusState(user.id, 'inactive');
-    await revokeAccountSessionsForUserState(user.id);
-    await revokeAccountUserActionTokensForUserState(user.id);
+    const updated = await userManagementService.setUserStatus(access.accountId, c.req.param('id'), 'inactive');
     return c.json({
       user: accountUserView(updated.record),
     });
   } catch (err) {
-    if (err instanceof AccountUserStoreError) {
-      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
-    }
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
+    if (mapped) return mapped;
     throw err;
   }
 });
@@ -1965,19 +1739,14 @@ app.post('/api/v1/account/users/:id/reactivate', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const user = await findAccountUserByIdState(c.req.param('id'));
-  if (!user || user.accountId !== access.accountId) {
-    return c.json({ error: `Account user '${c.req.param('id')}' was not found.` }, 404);
-  }
   try {
-    const updated = await setAccountUserStatusState(user.id, 'active');
+    const updated = await userManagementService.setUserStatus(access.accountId, c.req.param('id'), 'active');
     return c.json({
       user: accountUserView(updated.record),
     });
   } catch (err) {
-    if (err instanceof AccountUserStoreError) {
-      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
-    }
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
+    if (mapped) return mapped;
     throw err;
   }
 });
@@ -1988,75 +1757,44 @@ app.post('/api/v1/account/users/:id/password-reset', async (c) => {
   });
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
-  const account = await findHostedAccountByIdState(access.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
-  }
-  const user = await findAccountUserByIdState(c.req.param('id'));
-  if (!user || user.accountId !== access.accountId) {
-    return c.json({ error: `Account user '${c.req.param('id')}' was not found.` }, 404);
-  }
   const body = await c.req.json().catch(() => ({}));
   const ttlMinutes = typeof body.ttlMinutes === 'number' ? body.ttlMinutes : null;
-  const issued = await issuePasswordResetTokenState({
-    accountId: access.accountId,
-    accountUserId: user.id,
-    email: user.email,
-    issuedByAccountUserId: access.accountUserId,
-    ttlMinutes,
-  });
-  let delivery;
   try {
-    delivery = await deliverHostedPasswordResetEmail({
+    const issued = await userManagementService.issuePasswordReset({
       accountId: access.accountId,
-      accountUserId: user.id,
-      recipientEmail: user.email,
-      displayName: user.displayName,
-      accountName: account.accountName,
-      token: issued.token,
+      actorUserId: access.accountUserId,
+      targetUserId: c.req.param('id'),
+      ttlMinutes,
     });
+    return c.json({
+      reset: accountUserActionTokenView(issued.record),
+      ...(issued.delivery.tokenReturned ? { resetToken: issued.token } : {}),
+      delivery: issued.delivery,
+    }, 201);
   } catch (err) {
-    await revokeAccountUserActionTokenState(issued.record.id);
-    const mapped = hostedEmailDeliveryErrorResponse(c, err);
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
   }
-  return c.json({
-    reset: accountUserActionTokenView(issued.record),
-    ...(delivery.tokenReturned ? { resetToken: issued.token } : {}),
-    delivery,
-  }, 201);
 });
 
 app.post('/api/v1/auth/password/reset', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const resetToken = typeof body.resetToken === 'string' ? body.resetToken.trim() : '';
   const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
-  if (!resetToken || !newPassword) {
-    return c.json({ error: 'resetToken and newPassword are required.' }, 400);
+  try {
+    await userManagementService.consumePasswordReset({ resetToken, newPassword });
+    deleteCookie(c, sessionCookieName(), {
+      path: '/api/v1',
+    });
+    return c.json({
+      reset: true,
+    });
+  } catch (err) {
+    const mapped = accountUserManagementServiceErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
   }
-  if (newPassword.length < 12) {
-    return c.json({ error: 'newPassword must be at least 12 characters long.' }, 400);
-  }
-  const tokenRecord = await findAccountUserActionTokenByTokenState(resetToken);
-  if (!tokenRecord || tokenRecord.purpose !== 'password_reset' || !tokenRecord.accountUserId) {
-    return c.json({ error: 'Password reset token is invalid or expired.' }, 400);
-  }
-  const user = await findAccountUserByIdState(tokenRecord.accountUserId);
-  const account = user ? await findHostedAccountByIdState(user.accountId) : null;
-  if (!user || !account || account.id !== tokenRecord.accountId || account.status === 'archived') {
-    return c.json({ error: 'Password reset token is invalid or expired.' }, 400);
-  }
-  await setAccountUserPasswordState(user.id, newPassword);
-  await revokeAccountSessionsForUserState(user.id);
-  await revokeAccountUserActionTokensForUserState(user.id, 'password_reset');
-  await consumeAccountUserActionTokenState(tokenRecord.id);
-  deleteCookie(c, sessionCookieName(), {
-    path: '/api/v1',
-  });
-  return c.json({
-    reset: true,
-  });
 });
 
 app.get('/api/v1/account/email/deliveries', async (c) => {
@@ -2073,7 +1811,7 @@ app.get('/api/v1/account/email/deliveries', async (c) => {
   const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
   const statusFilter = hostedEmailDeliveryStatusFilter(status);
   const providerFilter = hostedEmailDeliveryProviderFilter(provider);
-  const deliveries = await listHostedEmailDeliveriesState({
+  const deliveries = await stateService.listHostedEmailDeliveries({
     accountId: access.accountId,
     purpose: purpose === 'invite' || purpose === 'password_reset' ? purpose : null,
     status: statusFilter,
