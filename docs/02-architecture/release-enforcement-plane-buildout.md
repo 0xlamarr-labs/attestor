@@ -60,9 +60,9 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 14 |
+| Completed | 15 |
 | In progress | 0 |
-| Not started | 6 |
+| Not started | 5 |
 
 ## Frozen Step List
 
@@ -82,7 +82,7 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | 12 | complete | Build the reference Node and Hono middleware PEP | `src/release-enforcement-plane/middleware.ts`, `tests/release-enforcement-plane-middleware.test.ts` | A reusable middleware path now makes `no release authorization -> no consequence` easy to adopt on ordinary HTTP mutation surfaces. The reference PEP includes a shared HTTP evaluation core, Hono `createMiddleware()` adapter, Node `IncomingMessage`/`ServerResponse` adapter, fail-closed deny responses, safe-method skip handling, online high-risk introspection support, and handler context/result injection after allow. |
 | 13 | complete | Build the reference webhook receiver PEP | `src/release-enforcement-plane/webhook-receiver.ts`, `tests/release-enforcement-plane-webhook-receiver.test.ts` | Inbound webhook receivers now get a direct evaluator plus Hono and Node raw-body adapters that fail closed before handler admission. The receiver verifies signed HTTP authorization envelopes, release-token binding, `Content-Digest`, nonce freshness, replay-ledger hits, online introspection/usage consumption, retryable outage responses, enforcement decisions/receipts, and narrowly scoped break-glass admission only after local cryptographic verification succeeds. |
 | 14 | complete | Build the record-write enforcement gateway | `src/release-enforcement-plane/record-write.ts`, `tests/release-enforcement-plane-record-write.test.ts` | Structured record mutations now go through a dedicated enforcement adapter that canonicalizes the exact store/collection/record operation, derives output and consequence hashes, binds the enforcement request to the record target and mutation artifact digest, requires sender-constrained mTLS/SPIFFE presentation for record writes, performs online introspection and token-use consumption by default, and fails closed on missing authorization, payload/target mismatch, bearer downgrade, revocation, replay, or control-plane outage. |
-| 15 | not started | Build the communication-send enforcement gateway | `src/release-enforcement-plane/communication-send.ts`, `tests/release-enforcement-plane-communication-send.test.ts` | Email, memo, and outbound message boundaries now have a dedicated enforcement adapter that blocks send unless the communication artifact is explicitly authorized. |
+| 15 | complete | Build the communication-send enforcement gateway | `src/release-enforcement-plane/communication-send.ts`, `tests/release-enforcement-plane-communication-send.test.ts` | Email, memo, webhook, chat, SMS, and internal-message boundaries now have a dedicated enforcement adapter that canonicalizes the exact outbound communication artifact, binds output and consequence hashes to the target endpoint and HTTP send transport, requires DPoP-bound or HTTP-message-signature sender-constrained presentation, passes nonce/replay evidence to the shared verifiers, performs online introspection and token-use consumption by default, and fails closed on missing authorization, payload/target mismatch, bearer downgrade, revocation, replay, or control-plane outage. |
 | 16 | not started | Build the action-dispatch enforcement gateway | `src/release-enforcement-plane/action-dispatch.ts`, `tests/release-enforcement-plane-action-dispatch.test.ts` | Tool calls, workflow steps, and async dispatch boundaries now go through a dedicated action gateway that binds release authorization to the actual downstream action target. |
 | 17 | not started | Build the Envoy and Istio external-authz bridge | `src/release-enforcement-plane/envoy-ext-authz.ts`, `tests/release-enforcement-plane-envoy-ext-authz.test.ts`, `docs/08-deployment/release-enforcement-plane-envoy.md` | Mesh and proxy deployments now have a reference ext-authz service so ingress or east-west traffic can pause, verify release authorization, and allow or deny consistently outside application code. |
 | 18 | not started | Add degraded-mode and break-glass enforcement control | `src/release-enforcement-plane/degraded-mode.ts`, `tests/release-enforcement-plane-degraded-mode.test.ts`, `src/service/http/routes/admin-routes.ts` | The enforcement plane now makes fail-closed default, explicitly models when cache-only or emergency behavior is allowed, and records who invoked break-glass, why, and for how long. |
@@ -91,4 +91,4 @@ Without that, Attestor is a strong policy decision and policy administration sys
 
 ## Immediate Next Step
 
-Step 14 is complete. The next implementation step is Step 15: build the communication-send enforcement gateway so outbound email, memo, and message boundaries must prove the release authorization matches the exact communication artifact before send.
+Step 15 is complete. The next implementation step is Step 16: build the action-dispatch enforcement gateway so tool calls, workflow steps, and async dispatch boundaries must prove the release authorization matches the exact downstream action target before dispatch.
