@@ -1,6 +1,99 @@
 import type { Hono } from 'hono';
+import type { ReleaseActorReference } from '../../../release-layer/index.js';
+import type {
+  EnforcementBoundaryKind,
+  EnforcementBreakGlassReason,
+  EnforcementFailureReason,
+  EnforcementPointKind,
+  ReleaseEnforcementConsequenceType,
+  ReleaseEnforcementRiskClass,
+} from '../../../release-enforcement-plane/types.js';
+import {
+  createDegradedModeGrant,
+  createInMemoryDegradedModeGrantStore,
+  degradedModeGrantStatus,
+  degradedModeGrantView,
+  type DegradedModeGrantState,
+  type DegradedModeGrantStore,
+  type DegradedModeScope,
+  type ListDegradedModeGrantOptions,
+} from '../../../release-enforcement-plane/degraded-mode.js';
 
 type RouteDeps = Record<string, any>;
+
+function adminDegradedModeActor(value: unknown): ReleaseActorReference {
+  if (value && typeof value === 'object') {
+    const candidate = value as Record<string, unknown>;
+    const id = typeof candidate.id === 'string' && candidate.id.trim()
+      ? candidate.id.trim()
+      : 'admin_api_key';
+    const type = candidate.type === 'user' || candidate.type === 'service' || candidate.type === 'system'
+      ? candidate.type
+      : 'service';
+    return {
+      id,
+      type,
+      ...(typeof candidate.displayName === 'string' && candidate.displayName.trim()
+        ? { displayName: candidate.displayName.trim() }
+        : {}),
+      ...(typeof candidate.role === 'string' && candidate.role.trim()
+        ? { role: candidate.role.trim() }
+        : {}),
+    };
+  }
+
+  return {
+    id: 'admin_api_key',
+    type: 'service',
+    displayName: 'Admin API Key',
+    role: 'release-enforcement-admin',
+  };
+}
+
+function adminDegradedModeScope(value: unknown): DegradedModeScope {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+  const candidate = value as Record<string, unknown>;
+  return {
+    environment: typeof candidate.environment === 'string' ? candidate.environment : null,
+    enforcementPointId:
+      typeof candidate.enforcementPointId === 'string' ? candidate.enforcementPointId : null,
+    pointKind: typeof candidate.pointKind === 'string'
+      ? candidate.pointKind as EnforcementPointKind
+      : null,
+    boundaryKind: typeof candidate.boundaryKind === 'string'
+      ? candidate.boundaryKind as EnforcementBoundaryKind
+      : null,
+    tenantId: typeof candidate.tenantId === 'string' ? candidate.tenantId : null,
+    accountId: typeof candidate.accountId === 'string' ? candidate.accountId : null,
+    workloadId: typeof candidate.workloadId === 'string' ? candidate.workloadId : null,
+    audience: typeof candidate.audience === 'string' ? candidate.audience : null,
+    targetId: typeof candidate.targetId === 'string' ? candidate.targetId : null,
+    consequenceType:
+      typeof candidate.consequenceType === 'string'
+        ? candidate.consequenceType as ReleaseEnforcementConsequenceType
+        : null,
+    riskClass: typeof candidate.riskClass === 'string'
+      ? candidate.riskClass as ReleaseEnforcementRiskClass
+      : null,
+  };
+}
+
+function adminDegradedModeStringArray<T extends string>(value: unknown): readonly T[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((item): item is T => typeof item === 'string');
+}
+
+function adminDegradedModeText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function adminDegradedModeError(error: unknown): string {
+  return error instanceof Error ? error.message : 'Release enforcement degraded mode request failed.';
+}
 
 export function registerAdminRoutes(app: Hono, deps: RouteDeps): void {
   const {
@@ -66,7 +159,10 @@ export function registerAdminRoutes(app: Hono, deps: RouteDeps): void {
     findTenantRecordByTenantIdState,
     findHostedAccountByTenantIdState,
     apiReleaseIntrospectionStore,
+    releaseDegradedModeGrantStore,
   } = deps;
+  const degradedModeGrantStore: DegradedModeGrantStore =
+    releaseDegradedModeGrantStore ?? createInMemoryDegradedModeGrantStore();
 
 app.get('/api/v1/admin/tenant-keys', async (c) => {
   const unauthorized = currentAdminAuthorized(c);
@@ -1254,6 +1350,182 @@ app.post('/api/v1/admin/release-tokens/:id/revoke', async (c) => {
   });
 
   return c.json(responseBody);
+});
+
+app.get('/api/v1/admin/release-enforcement/degraded-mode/grants', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const statusQuery = c.req.query('status')?.trim() as ListDegradedModeGrantOptions['status'] | undefined;
+  const allowedStatuses: readonly NonNullable<ListDegradedModeGrantOptions['status']>[] = [
+    'active',
+    'not-yet-valid',
+    'expired',
+    'revoked',
+    'exhausted',
+    'all',
+  ];
+  if (statusQuery && !allowedStatuses.includes(statusQuery)) {
+    return c.json({ error: 'status must be active, not-yet-valid, expired, revoked, exhausted, or all.' }, 400);
+  }
+
+  const grants = degradedModeGrantStore.listGrants({
+    status: statusQuery ?? 'all',
+  });
+  const now = new Date().toISOString();
+  return c.json({
+    version: 'attestor.release-enforcement-degraded-mode.admin.v1',
+    grants: grants.map(degradedModeGrantView),
+    summary: {
+      grantCount: grants.length,
+      activeCount: grants.filter((grant) => degradedModeGrantStatus(grant, now) === 'active').length,
+      auditHead: degradedModeGrantStore.auditHead(),
+    },
+  });
+});
+
+app.post('/api/v1/admin/release-enforcement/degraded-mode/grants', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const state = adminDegradedModeText(body.state ?? body.posture) as DegradedModeGrantState;
+  const allowedFailureReasons =
+    adminDegradedModeStringArray<EnforcementFailureReason>(body.allowedFailureReasons);
+  const approvedBy = Array.isArray(body.approvedBy)
+    ? body.approvedBy.map(adminDegradedModeActor)
+    : [];
+  const requestPayload = {
+    id: adminDegradedModeText(body.id) || null,
+    state: state || null,
+    reason: adminDegradedModeText(body.reason) || null,
+    scope: body.scope ?? null,
+    ticketId: adminDegradedModeText(body.ticketId) || null,
+    ttlSeconds: typeof body.ttlSeconds === 'number' ? body.ttlSeconds : null,
+    expiresAt: adminDegradedModeText(body.expiresAt) || null,
+    maxUses: typeof body.maxUses === 'number' ? body.maxUses : null,
+    allowedFailureReasons: allowedFailureReasons ?? null,
+  };
+  const adminMutation = await adminMutationRequest(
+    c,
+    'admin.release_enforcement.degraded_mode.grants.create',
+    requestPayload,
+  );
+  if (adminMutation instanceof Response) return adminMutation;
+
+  try {
+    const grant = createDegradedModeGrant({
+      id: adminDegradedModeText(body.id) || undefined,
+      state,
+      reason: adminDegradedModeText(body.reason) as EnforcementBreakGlassReason,
+      scope: adminDegradedModeScope(body.scope),
+      authorizedBy: adminDegradedModeActor(body.authorizedBy ?? body.grantedBy),
+      approvedBy,
+      authorizedAt: adminDegradedModeText(body.authorizedAt) || undefined,
+      startsAt: adminDegradedModeText(body.startsAt) || undefined,
+      expiresAt: adminDegradedModeText(body.expiresAt) || undefined,
+      ttlSeconds: typeof body.ttlSeconds === 'number' ? body.ttlSeconds : undefined,
+      maxTtlSeconds: typeof body.maxTtlSeconds === 'number' ? body.maxTtlSeconds : undefined,
+      ticketId: adminDegradedModeText(body.ticketId),
+      rationale: adminDegradedModeText(body.rationale),
+      allowedFailureReasons,
+      maxUses: typeof body.maxUses === 'number' ? body.maxUses : undefined,
+      remainingUses: typeof body.remainingUses === 'number' ? body.remainingUses : undefined,
+    });
+    degradedModeGrantStore.registerGrant(grant);
+
+    const responseBody = await finalizeAdminMutation({
+      idempotencyKey: adminMutation.idempotencyKey,
+      routeId: 'admin.release_enforcement.degraded_mode.grants.create',
+      requestPayload,
+      statusCode: 201,
+      responseBody: {
+        grant: degradedModeGrantView(grant),
+        auditHead: degradedModeGrantStore.auditHead(),
+      },
+      audit: {
+        action: 'release_enforcement.degraded_mode.grant_created',
+        requestHash: adminMutation.requestHash,
+        metadata: {
+          grantId: grant.id,
+          state: grant.state,
+          reason: grant.reason,
+          ticketId: grant.ticketId,
+          expiresAt: grant.expiresAt,
+          maxUses: grant.maxUses,
+          remainingUses: grant.remainingUses,
+          auditDigest: grant.auditDigest,
+          auditHead: degradedModeGrantStore.auditHead(),
+        },
+      },
+    });
+
+    return c.json(responseBody, 201);
+  } catch (error) {
+    return c.json({ error: adminDegradedModeError(error) }, 400);
+  }
+});
+
+app.post('/api/v1/admin/release-enforcement/degraded-mode/grants/:id/revoke', async (c) => {
+  const unauthorized = currentAdminAuthorized(c);
+  if (unauthorized) return unauthorized;
+
+  const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+  const reason = adminDegradedModeText(body.reason);
+  if (!reason) {
+    return c.json({ error: 'Release enforcement degraded mode grant revocation reason is required.' }, 400);
+  }
+  const requestPayload = {
+    id: c.req.param('id'),
+    reason,
+  };
+  const adminMutation = await adminMutationRequest(
+    c,
+    'admin.release_enforcement.degraded_mode.grants.revoke',
+    requestPayload,
+  );
+  if (adminMutation instanceof Response) return adminMutation;
+
+  try {
+    const revoked = degradedModeGrantStore.revokeGrant({
+      id: c.req.param('id'),
+      revokedAt: new Date().toISOString(),
+      revokedBy: adminDegradedModeActor(body.revokedBy ?? body.actor),
+      revocationReason: reason,
+    });
+    if (!revoked) {
+      return c.json({ error: 'Release enforcement degraded mode grant not found.' }, 404);
+    }
+
+    const responseBody = await finalizeAdminMutation({
+      idempotencyKey: adminMutation.idempotencyKey,
+      routeId: 'admin.release_enforcement.degraded_mode.grants.revoke',
+      requestPayload,
+      statusCode: 200,
+      responseBody: {
+        grant: degradedModeGrantView(revoked),
+        auditHead: degradedModeGrantStore.auditHead(),
+      },
+      audit: {
+        action: 'release_enforcement.degraded_mode.grant_revoked',
+        requestHash: adminMutation.requestHash,
+        metadata: {
+          grantId: revoked.id,
+          state: revoked.state,
+          reason: revoked.reason,
+          revocationReason: revoked.revocationReason,
+          revokedAt: revoked.revokedAt,
+          revokedBy: revoked.revokedBy,
+          auditDigest: revoked.auditDigest,
+          auditHead: degradedModeGrantStore.auditHead(),
+        },
+      },
+    });
+
+    return c.json(responseBody);
+  } catch (error) {
+    return c.json({ error: adminDegradedModeError(error) }, 400);
+  }
 });
 
 app.get('/api/v1/admin/usage', async (c) => {
