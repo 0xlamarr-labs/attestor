@@ -47,7 +47,6 @@ function testRemainingRouteAnyDebtIsExplicit(): void {
   assert.deepEqual(offenders, [
     'src/service/http/routes/account-routes.ts',
     'src/service/http/routes/admin-routes.ts',
-    'src/service/http/routes/stripe-webhook-routes.ts',
   ]);
 }
 
@@ -76,6 +75,9 @@ function testWebhookRoutesAreSplitByProviderBoundary(): void {
   assert.doesNotMatch(emailWebhookRoute, /\bas any\b/u);
 
   assert.match(stripeWebhookRoute, /export interface StripeWebhookRouteDeps/u);
+  assert.doesNotMatch(stripeWebhookRoute, /type RouteDependency = any/u);
+  assert.doesNotMatch(stripeWebhookRoute, /:\s*any\b/u);
+  assert.doesNotMatch(stripeWebhookRoute, /\bas any\b/u);
 }
 
 function testPipelineRoutesAreSplitByUseCaseBoundary(): void {

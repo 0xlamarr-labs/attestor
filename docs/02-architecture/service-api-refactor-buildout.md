@@ -20,15 +20,13 @@ Rules for this refactor:
 | Account route typing/services | Pending | Still uses `RouteDependency = any` |
 | Admin route typing/services | Pending | Still uses `RouteDependency = any` |
 | Pipeline route use-case services | Complete | Split into execution, verification, filing, and async route modules; all pipeline leaf routes are strongly typed |
-| Webhook service split | In progress | Email and Stripe webhooks split; email route is strongly typed; Stripe route still uses `RouteDependency = any` |
+| Webhook provider boundary | Complete | Email and Stripe webhooks split by provider; both provider routes are strongly typed |
 
 ## Next order
 
-1. Stripe webhook route: replace the legacy dependency bundle with typed billing-event and account/billing service contracts.
-2. Pipeline leaf routes: replace split execution, verification, filing, and async dependency bundles with typed service contracts.
-3. Admin routes: group account, tenant key, billing, queue, audit, and telemetry operations behind typed services.
-4. Account routes: group auth, user, MFA, passkey, federation, API key, billing, and usage operations behind typed services.
-5. Remove the final `RouteDependency = any` alias from all service routes.
+1. Admin routes: group account, tenant key, billing, queue, audit, and telemetry operations behind typed services.
+2. Account routes: group auth, user, MFA, passkey, federation, API key, billing, and usage operations behind typed services.
+3. Remove the final `RouteDependency = any` alias from all service routes.
 
 ## Current boundary debt
 
@@ -36,4 +34,3 @@ The explicit remaining debt is guarded by `tests/service-route-boundary.test.ts`
 
 - `src/service/http/routes/account-routes.ts`
 - `src/service/http/routes/admin-routes.ts`
-- `src/service/http/routes/stripe-webhook-routes.ts`

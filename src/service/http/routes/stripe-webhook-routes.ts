@@ -1,50 +1,102 @@
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import Stripe from 'stripe';
+import type * as BillingEventLedger from '../../billing-event-ledger.js';
+import type * as ControlPlaneStore from '../../control-plane-store.js';
+import type * as PlanCatalog from '../../plan-catalog.js';
+import type * as StripeBilling from '../../stripe-billing.js';
+import type { HostedAccountRecord, StripeInvoiceStatus } from '../../account-store.js';
+import type { HostedBillingEntitlementRecord } from '../../billing-entitlement-store.js';
 
-type RouteDependency = any;
+type BillingWebhookMetricOutcome =
+  | 'applied'
+  | 'ignored'
+  | 'duplicate'
+  | 'conflict'
+  | 'signature_invalid';
+
+interface SyncHostedBillingEntitlementOptions {
+  lastEventId?: string | null;
+  lastEventType?: string | null;
+  lastEventAt?: string | null;
+  stripeEntitlementLookupKeys?: string[] | null;
+  stripeEntitlementFeatureIds?: string[] | null;
+  stripeEntitlementSummaryUpdatedAt?: string | null;
+}
+
+type StripeAccountMatchReason = 'account_id' | 'subscription_id' | 'customer_id' | 'none';
+
+interface StripeAccountMatch {
+  record: HostedAccountRecord | null;
+  matchReason: StripeAccountMatchReason;
+}
+
+type StripeInvoiceWebhookObject = Stripe.Invoice & {
+  subscription?: unknown;
+  subscription_details?: {
+    metadata?: Record<string, unknown> | Stripe.Metadata | null;
+  } | null;
+  status_transitions?: {
+    paid_at?: unknown;
+  } | null;
+  billing_reason?: string | null;
+};
 
 export interface StripeWebhookRouteDeps {
-  stripeClient: RouteDependency;
-  observeBillingWebhookEvent: RouteDependency;
-  isBillingEventLedgerConfigured: RouteDependency;
-  isSharedControlPlaneConfigured: RouteDependency;
-  claimStripeBillingEvent: RouteDependency;
-  claimProcessedStripeWebhookState: RouteDependency;
-  lookupProcessedStripeWebhookState: RouteDependency;
-  finalizeProcessedStripeWebhookState: RouteDependency;
-  recordProcessedStripeWebhookState: RouteDependency;
-  releaseProcessedStripeWebhookClaimState: RouteDependency;
-  finalizeStripeBillingEvent: RouteDependency;
-  releaseStripeBillingEventClaim: RouteDependency;
-  isSupportedStripeWebhookEvent: RouteDependency;
-  stripeReferenceId: RouteDependency;
-  parseStripeInvoiceStatus: RouteDependency;
-  stripeInvoicePriceId: RouteDependency;
-  metadataStringValue: RouteDependency;
-  accountStoreErrorResponse: RouteDependency;
-  applyStripeSubscriptionStateState: RouteDependency;
-  applyStripeInvoiceStateState: RouteDependency;
-  applyStripeCheckoutCompletionState: RouteDependency;
-  attachStripeBillingToAccountState: RouteDependency;
-  findHostedAccountByStripeRefs: RouteDependency;
-  findHostedPlanByStripePriceId: RouteDependency;
-  resolvePlanSpec: RouteDependency;
-  DEFAULT_HOSTED_PLAN_ID: RouteDependency;
-  syncTenantPlanByTenantIdState: RouteDependency;
-  syncHostedBillingEntitlement: RouteDependency;
-  revokeAccountSessionsForLifecycleChange: RouteDependency;
-  appendAdminAuditRecordState: RouteDependency;
-  billingEntitlementView: RouteDependency;
-  extractInvoiceLineItemSnapshotsFromInvoice: RouteDependency;
-  listHostedStripeActiveEntitlements: RouteDependency;
-  extractActiveEntitlementsFromSummary: RouteDependency;
-  listHostedStripeInvoiceLineItems: RouteDependency;
-  upsertStripeInvoiceLineItems: RouteDependency;
-  parseStripeChargeStatus: RouteDependency;
-  getHostedPlan: RouteDependency;
-  upsertStripeCharges: RouteDependency;
-  unixSecondsToIso: RouteDependency;
-  resolvePlanStripePrice: RouteDependency;
+  stripeClient(): Stripe;
+  observeBillingWebhookEvent(eventType: string, outcome: BillingWebhookMetricOutcome): void;
+  isBillingEventLedgerConfigured(): boolean;
+  isSharedControlPlaneConfigured(): boolean;
+  claimStripeBillingEvent: typeof BillingEventLedger.claimStripeBillingEvent;
+  claimProcessedStripeWebhookState: typeof ControlPlaneStore.claimProcessedStripeWebhookState;
+  lookupProcessedStripeWebhookState: typeof ControlPlaneStore.lookupProcessedStripeWebhookState;
+  finalizeProcessedStripeWebhookState: typeof ControlPlaneStore.finalizeProcessedStripeWebhookState;
+  recordProcessedStripeWebhookState: typeof ControlPlaneStore.recordProcessedStripeWebhookState;
+  releaseProcessedStripeWebhookClaimState: typeof ControlPlaneStore.releaseProcessedStripeWebhookClaimState;
+  finalizeStripeBillingEvent: typeof BillingEventLedger.finalizeStripeBillingEvent;
+  releaseStripeBillingEventClaim: typeof BillingEventLedger.releaseStripeBillingEventClaim;
+  isSupportedStripeWebhookEvent(eventType: string): boolean;
+  stripeReferenceId(value: unknown): string | null;
+  parseStripeInvoiceStatus(raw: unknown): StripeInvoiceStatus;
+  stripeInvoicePriceId(invoice: Stripe.Invoice): string | null;
+  metadataStringValue(
+    key: string,
+    ...sources: Array<Record<string, unknown> | Stripe.Metadata | null | undefined>
+  ): string | null;
+  accountStoreErrorResponse(context: Context, error: unknown): Response | null;
+  applyStripeSubscriptionStateState: typeof ControlPlaneStore.applyStripeSubscriptionStateState;
+  applyStripeInvoiceStateState: typeof ControlPlaneStore.applyStripeInvoiceStateState;
+  applyStripeCheckoutCompletionState: typeof ControlPlaneStore.applyStripeCheckoutCompletionState;
+  attachStripeBillingToAccountState: typeof ControlPlaneStore.attachStripeBillingToAccountState;
+  findHostedAccountByStripeRefs(options: {
+    accountId?: string | null;
+    stripeCustomerId?: string | null;
+    stripeSubscriptionId?: string | null;
+  }): Promise<StripeAccountMatch>;
+  findHostedPlanByStripePriceId: typeof PlanCatalog.findHostedPlanByStripePriceId;
+  resolvePlanSpec: typeof PlanCatalog.resolvePlanSpec;
+  DEFAULT_HOSTED_PLAN_ID: typeof PlanCatalog.DEFAULT_HOSTED_PLAN_ID;
+  syncTenantPlanByTenantIdState: typeof ControlPlaneStore.syncTenantPlanByTenantIdState;
+  syncHostedBillingEntitlement(
+    account: HostedAccountRecord,
+    options?: SyncHostedBillingEntitlementOptions,
+  ): Promise<HostedBillingEntitlementRecord>;
+  revokeAccountSessionsForLifecycleChange(options: {
+    account: HostedAccountRecord | null;
+    previousStatus: HostedAccountRecord['status'] | null;
+    nextStatus: HostedAccountRecord['status'] | null;
+  }): Promise<number>;
+  appendAdminAuditRecordState: typeof ControlPlaneStore.appendAdminAuditRecordState;
+  billingEntitlementView(record: HostedBillingEntitlementRecord): Record<string, unknown>;
+  extractInvoiceLineItemSnapshotsFromInvoice: typeof StripeBilling.extractInvoiceLineItemSnapshotsFromInvoice;
+  listHostedStripeActiveEntitlements: typeof StripeBilling.listHostedStripeActiveEntitlements;
+  extractActiveEntitlementsFromSummary: typeof StripeBilling.extractActiveEntitlementsFromSummary;
+  listHostedStripeInvoiceLineItems: typeof StripeBilling.listHostedStripeInvoiceLineItems;
+  upsertStripeInvoiceLineItems: typeof BillingEventLedger.upsertStripeInvoiceLineItems;
+  parseStripeChargeStatus(raw: unknown): BillingEventLedger.BillingChargeStatus;
+  getHostedPlan: typeof PlanCatalog.getHostedPlan;
+  upsertStripeCharges: typeof BillingEventLedger.upsertStripeCharges;
+  unixSecondsToIso(value: unknown): string | null;
+  resolvePlanStripePrice: typeof PlanCatalog.resolvePlanStripePrice;
 }
 
 export function registerStripeWebhookRoutes(app: Hono, deps: StripeWebhookRouteDeps): void {
@@ -106,7 +158,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
   }
 
   const rawPayload = await c.req.text();
-  let event: any;
+  let event: Stripe.Event;
   try {
     event = stripeClient().webhooks.constructEvent(rawPayload, signature, webhookSecret);
   } catch (err) {
@@ -790,8 +842,8 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         })
         : [];
       const entitlementRecords = canonicalEntitlements.length > 0 ? canonicalEntitlements : summaryEntitlements;
-      const lookupKeys = [...new Set(entitlementRecords.map((record: any) => record.lookupKey).filter((value: string) => value.trim() !== ''))].sort();
-      const featureIds = [...new Set(entitlementRecords.map((record: any) => record.featureId ?? '').filter((value: string) => value.trim() !== ''))].sort();
+      const lookupKeys = [...new Set(entitlementRecords.map((record) => record.lookupKey).filter((value) => value.trim() !== ''))].sort();
+      const featureIds = [...new Set(entitlementRecords.map((record) => record.featureId ?? '').filter((value) => value.trim() !== ''))].sort();
 
       if (!account) {
         observeBillingWebhookEvent(event.type, 'ignored');
@@ -916,7 +968,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
       });
     }
 
-    const invoice: any = event.data.object;
+    const invoice = event.data.object as StripeInvoiceWebhookObject;
     const stripeCustomerId = stripeReferenceId(invoice.customer);
     const stripeSubscriptionId = stripeReferenceId(invoice.subscription);
     const stripePriceId = stripeInvoicePriceId(invoice);
@@ -1033,7 +1085,7 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
     let persistedInvoiceLineItemCount = 0;
     let persistedInvoiceLineItemCaptureMode: 'full' | 'partial' | null = null;
     if (sharedBillingLedger && stripeInvoiceId) {
-      let lineItemsToPersist = extractedInvoiceLineItems.lineItems.map((lineItem: any) => ({
+      let lineItemsToPersist: BillingEventLedger.BillingInvoiceLineItemInput[] = extractedInvoiceLineItems.lineItems.map((lineItem) => ({
         stripeInvoiceLineItemId: lineItem.lineItemId,
         stripePriceId: lineItem.priceId,
         description: lineItem.description,
@@ -1046,14 +1098,14 @@ app.post('/api/v1/billing/stripe/webhook', async (c) => {
         proration: lineItem.proration,
         metadata: {},
       }));
-      let captureMode: 'full' | 'partial' = extractedInvoiceLineItems.hasMore ? 'partial' : 'full';
-      let source: 'stripe_webhook' | 'stripe_live_fetch' = 'stripe_webhook';
+      let captureMode: BillingEventLedger.BillingInvoiceLineItemCaptureMode = extractedInvoiceLineItems.hasMore ? 'partial' : 'full';
+      let source: BillingEventLedger.BillingInvoiceLineItemSource = 'stripe_webhook';
       const canFetchCanonicalLineItems = process.env.ATTESTOR_STRIPE_USE_MOCK !== 'true'
         && Boolean(process.env.STRIPE_API_KEY?.trim());
       if (canFetchCanonicalLineItems) {
         const canonicalLineItems = await listHostedStripeInvoiceLineItems({ invoiceId: stripeInvoiceId, limit: 5_000 });
         if (canonicalLineItems.length > 0) {
-          lineItemsToPersist = canonicalLineItems.map((lineItem: any) => ({
+          lineItemsToPersist = canonicalLineItems.map((lineItem) => ({
             stripeInvoiceLineItemId: lineItem.lineItemId,
             stripePriceId: lineItem.priceId,
             description: lineItem.description,
