@@ -286,15 +286,15 @@ export const CRYPTO_EXECUTION_BOUNDARY_TEMPLATES = Object.freeze({
   }),
   'x402-payment': Object.freeze({
     adapterKind: 'x402-payment',
-    pointKind: 'communication-send-gateway',
-    boundaryKind: 'communication-send',
+    pointKind: 'action-dispatch-gateway',
+    boundaryKind: 'action-dispatch',
     defaultPresentationModes: Object.freeze([
       'http-message-signature',
       'dpop-bound-token',
       'bearer-release-token',
     ] as const),
     notes:
-      'Programmatic HTTP payment flows fit the communication-send boundary and benefit from signed-request presentation.',
+      'Programmatic HTTP payment flows move value and therefore use action-dispatch enforcement while preserving signed-request presentation.',
   }),
   'custody-cosigner': Object.freeze({
     adapterKind: 'custody-cosigner',
