@@ -100,7 +100,7 @@ Attestor is intentionally organized as layered platform modules instead of one l
 | Release layer | Decides whether outputs can become communication, records, actions, or decision support | `24 / 24` complete, packaged |
 | Release policy control plane | Stores, signs, scopes, activates, rolls out, simulates, and audits policy | `20 / 20` complete, packaged |
 | Release enforcement plane | Verifies authorization at downstream boundaries and fails closed without it | `20 / 20` complete, packaged |
-| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `19 / 20` complete |
+| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `20 / 20` complete, packaged |
 | Domain and adapter layers | Finance, healthcare, filing, connector, wallet/account/custody adapters | Expanded by tracker, not by ad hoc README growth |
 
 Reusable package surfaces:
@@ -109,8 +109,9 @@ Reusable package surfaces:
 - `attestor/release-layer/finance`
 - `attestor/release-policy-control-plane`
 - `attestor/release-enforcement-plane`
+- `attestor/crypto-authorization-core`
 
-The crypto authorization core is deliberately not packaged yet. It starts as an internal buildout track until its object model, verification projection, adapters, and package boundary are stable enough for Step 20.
+The crypto authorization core is packaged behind a stable subpath now, while still living inside the modular monolith until latency, custody, isolation, or customer-operated requirements justify a separate deployable boundary.
 
 ## Current Proving Ground
 
@@ -142,10 +143,10 @@ The design rule is **core first, adapter second**:
 Current crypto authorization status:
 
 - tracker: [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md)
-- completed: Step 01, crypto authorization vocabulary; Step 02, versioned authorization object model; Step 03, canonical chain/account/asset/counterparty references; Step 04, deterministic consequence risk mapping; Step 05, EIP-712 typed authorization envelopes; Step 06, ERC-1271 smart-account validation projection; Step 07, replay, nonce, expiry, and revocation rules; Step 08, release-layer decision binding; Step 09, policy-control-plane scope binding; Step 10, enforcement-plane verification binding; Step 11, crypto authorization simulation surface; Step 12, Safe transaction guard adapter; Step 13, Safe module guard adapter; Step 14, approval and allowance consequence support; Step 15, ERC-4337 UserOperation adapter; Step 16, ERC-7579 and ERC-6900 modular account adapters; Step 17, EIP-7702 delegation-aware adapter; Step 18, x402 agentic payment adapter; Step 19, custody co-signer and policy-engine adapter
-- code: `src/crypto-authorization-core/types.ts`, `src/crypto-authorization-core/object-model.ts`, `src/crypto-authorization-core/canonical-references.ts`, `src/crypto-authorization-core/consequence-risk-mapping.ts`, `src/crypto-authorization-core/eip712-authorization-envelope.ts`, `src/crypto-authorization-core/erc1271-validation-projection.ts`, `src/crypto-authorization-core/replay-freshness-rules.ts`, `src/crypto-authorization-core/release-decision-binding.ts`, `src/crypto-authorization-core/policy-control-plane-scope-binding.ts`, `src/crypto-authorization-core/enforcement-plane-verification.ts`, `src/crypto-authorization-core/authorization-simulation.ts`, `src/crypto-authorization-core/safe-transaction-guard-adapter.ts`, `src/crypto-authorization-core/safe-module-guard-adapter.ts`, `src/crypto-authorization-core/approval-allowance-consequence.ts`, `src/crypto-authorization-core/erc4337-user-operation-adapter.ts`, `src/crypto-authorization-core/modular-account-adapters.ts`, `src/crypto-authorization-core/eip7702-delegation-adapter.ts`, `src/crypto-authorization-core/x402-agentic-payment-adapter.ts`, `src/crypto-authorization-core/custody-cosigner-policy-adapter.ts`
-- tests: `tests/crypto-authorization-core-types.test.ts`, `tests/crypto-authorization-core-object-model.test.ts`, `tests/crypto-authorization-core-canonical-references.test.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts`, `tests/crypto-authorization-core-eip712-envelope.test.ts`, `tests/crypto-authorization-core-erc1271-validation.test.ts`, `tests/crypto-authorization-core-replay-freshness.test.ts`, `tests/crypto-authorization-core-release-binding.test.ts`, `tests/crypto-authorization-core-policy-scope-binding.test.ts`, `tests/crypto-authorization-core-enforcement-verification.test.ts`, `tests/crypto-authorization-core-authorization-simulation.test.ts`, `tests/crypto-authorization-core-safe-transaction-guard-adapter.test.ts`, `tests/crypto-authorization-core-safe-module-guard-adapter.test.ts`, `tests/crypto-authorization-core-approval-allowance-consequence.test.ts`, `tests/crypto-authorization-core-erc4337-user-operation-adapter.test.ts`, `tests/crypto-authorization-core-modular-account-adapters.test.ts`, `tests/crypto-authorization-core-eip7702-delegation-adapter.test.ts`, `tests/crypto-authorization-core-x402-agentic-payment-adapter.test.ts`, `tests/crypto-authorization-core-custody-cosigner-policy-adapter.test.ts`
-- next: Step 20, package crypto authorization as a reusable platform surface
+- completed: Step 01, crypto authorization vocabulary; Step 02, versioned authorization object model; Step 03, canonical chain/account/asset/counterparty references; Step 04, deterministic consequence risk mapping; Step 05, EIP-712 typed authorization envelopes; Step 06, ERC-1271 smart-account validation projection; Step 07, replay, nonce, expiry, and revocation rules; Step 08, release-layer decision binding; Step 09, policy-control-plane scope binding; Step 10, enforcement-plane verification binding; Step 11, crypto authorization simulation surface; Step 12, Safe transaction guard adapter; Step 13, Safe module guard adapter; Step 14, approval and allowance consequence support; Step 15, ERC-4337 UserOperation adapter; Step 16, ERC-7579 and ERC-6900 modular account adapters; Step 17, EIP-7702 delegation-aware adapter; Step 18, x402 agentic payment adapter; Step 19, custody co-signer and policy-engine adapter; Step 20, reusable platform package surface
+- code: `src/crypto-authorization-core/index.ts`, `src/crypto-authorization-core/types.ts`, `src/crypto-authorization-core/object-model.ts`, `src/crypto-authorization-core/canonical-references.ts`, `src/crypto-authorization-core/consequence-risk-mapping.ts`, `src/crypto-authorization-core/eip712-authorization-envelope.ts`, `src/crypto-authorization-core/erc1271-validation-projection.ts`, `src/crypto-authorization-core/replay-freshness-rules.ts`, `src/crypto-authorization-core/release-decision-binding.ts`, `src/crypto-authorization-core/policy-control-plane-scope-binding.ts`, `src/crypto-authorization-core/enforcement-plane-verification.ts`, `src/crypto-authorization-core/authorization-simulation.ts`, `src/crypto-authorization-core/safe-transaction-guard-adapter.ts`, `src/crypto-authorization-core/safe-module-guard-adapter.ts`, `src/crypto-authorization-core/approval-allowance-consequence.ts`, `src/crypto-authorization-core/erc4337-user-operation-adapter.ts`, `src/crypto-authorization-core/modular-account-adapters.ts`, `src/crypto-authorization-core/eip7702-delegation-adapter.ts`, `src/crypto-authorization-core/x402-agentic-payment-adapter.ts`, `src/crypto-authorization-core/custody-cosigner-policy-adapter.ts`
+- tests: `tests/crypto-authorization-core-types.test.ts`, `tests/crypto-authorization-core-object-model.test.ts`, `tests/crypto-authorization-core-canonical-references.test.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts`, `tests/crypto-authorization-core-eip712-envelope.test.ts`, `tests/crypto-authorization-core-erc1271-validation.test.ts`, `tests/crypto-authorization-core-replay-freshness.test.ts`, `tests/crypto-authorization-core-release-binding.test.ts`, `tests/crypto-authorization-core-policy-scope-binding.test.ts`, `tests/crypto-authorization-core-enforcement-verification.test.ts`, `tests/crypto-authorization-core-authorization-simulation.test.ts`, `tests/crypto-authorization-core-safe-transaction-guard-adapter.test.ts`, `tests/crypto-authorization-core-safe-module-guard-adapter.test.ts`, `tests/crypto-authorization-core-approval-allowance-consequence.test.ts`, `tests/crypto-authorization-core-erc4337-user-operation-adapter.test.ts`, `tests/crypto-authorization-core-modular-account-adapters.test.ts`, `tests/crypto-authorization-core-eip7702-delegation-adapter.test.ts`, `tests/crypto-authorization-core-x402-agentic-payment-adapter.test.ts`, `tests/crypto-authorization-core-custody-cosigner-policy-adapter.test.ts`, `tests/crypto-authorization-core-platform-surface.test.ts`
+- next: start a new tracker for the next crypto branch rather than extending this frozen Step 01-20 list
 
 ## What Ships
 
@@ -157,7 +158,7 @@ Current crypto authorization status:
 | Enforcement platform | offline/online verification, DPoP, mTLS/SPIFFE, HTTP message signatures, async envelopes, middleware, webhook receiver, record/communication/action gateways, Envoy ext_authz, degraded mode, telemetry, conformance |
 | Product surface | bounded API + worker topology, hosted auth/RBAC, billing, tenant/runtime policy, observability, HA, DR, secret-manager bootstrap, promotion packets |
 | Domain depth | finance as the deepest slice, healthcare as a second slice, PostgreSQL + Snowflake connectors, filing adapters |
-| Crypto core | vocabulary, object-model, canonical-reference, risk-mapping, EIP-712 envelope, ERC-1271 validation-projection, replay/freshness, release-decision binding, policy-control-plane scope binding, enforcement-plane verification binding, pre-execution simulation, Safe transaction guard adapter, Safe module guard adapter, approval/allowance consequence support, ERC-4337 UserOperation preflight, ERC-7579/ERC-6900 modular account adapter preflight, EIP-7702 delegated EOA preflight, x402 agentic payment preflight, and custody co-signer/policy-engine preflight for chain/account/asset/counterparty/consequence/policy/adapter modeling |
+| Crypto core | packaged `attestor/crypto-authorization-core` surface for vocabulary, object-model, canonical-reference, risk-mapping, EIP-712 envelope, ERC-1271 validation-projection, replay/freshness, release-decision binding, policy-control-plane scope binding, enforcement-plane verification binding, pre-execution simulation, Safe transaction guard adapter, Safe module guard adapter, approval/allowance consequence support, ERC-4337 UserOperation preflight, ERC-7579/ERC-6900 modular account adapter preflight, EIP-7702 delegated EOA preflight, x402 agentic payment preflight, and custody co-signer/policy-engine preflight |
 
 ## Proof and Verification
 
@@ -256,6 +257,7 @@ npm run verify:full
 | Enforcement-plane tracker | [docs/02-architecture/release-enforcement-plane-buildout.md](docs/02-architecture/release-enforcement-plane-buildout.md) |
 | Enforcement-plane package surface | [docs/02-architecture/release-enforcement-plane-platform-surface.md](docs/02-architecture/release-enforcement-plane-platform-surface.md) |
 | Crypto authorization core tracker | [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md) |
+| Crypto authorization core package surface | [docs/02-architecture/crypto-authorization-core-platform-surface.md](docs/02-architecture/crypto-authorization-core-platform-surface.md) |
 | Financial reporting wedge | [docs/01-overview/financial-reporting-acceptance.md](docs/01-overview/financial-reporting-acceptance.md) |
 | Production readiness | [docs/08-deployment/production-readiness.md](docs/08-deployment/production-readiness.md) |
 | Deployment and DR | [docs/08-deployment/deployment.md](docs/08-deployment/deployment.md), [docs/08-deployment/backup-restore-dr.md](docs/08-deployment/backup-restore-dr.md) |
@@ -271,11 +273,11 @@ Detailed API inventories, environment-specific setup, and long operational refer
 | Release layer | `24 / 24` complete |
 | Release policy control plane | `20 / 20` complete |
 | Release enforcement plane | `20 / 20` complete |
-| Crypto authorization core | `19 / 20` complete |
-| Core verification gate | `3389` checks via `npm test` |
-| Expanded verification surface | `4940` checks across `123` suites via local, live, and env-gated integration paths |
-| Latest crypto artifact | `src/crypto-authorization-core/custody-cosigner-policy-adapter.ts` with `65` focused checks |
-| Package probes | release layer, policy control plane, and enforcement plane package surfaces all covered |
+| Crypto authorization core | `20 / 20` complete, packaged |
+| Core verification gate | `3420` checks via `npm test` |
+| Expanded verification surface | `4971` checks across `124` suites via local, live, and env-gated integration paths |
+| Latest crypto artifact | `src/crypto-authorization-core/index.ts` with `31` focused platform-surface checks |
+| Package probes | release layer, policy control plane, enforcement plane, and crypto authorization core package surfaces all covered |
 | License | Business Source License 1.1, Change License `GPL-2.0-or-later` on 2030-04-13 |
 
 ## What Attestor Is Not
