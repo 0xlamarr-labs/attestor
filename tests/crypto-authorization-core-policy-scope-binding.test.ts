@@ -348,13 +348,14 @@ function testFailClosedDimensionChecks(): void {
       'asset',
       'spender',
       'amount',
-      'risk-tier',
+      'budget',
+      'validity-window',
     ],
   });
 
   assert.throws(
     () => createCryptoPolicyControlPlaneScopeBinding(missingRiskDimension),
-    /missing required dimensions: validity-window/i,
+    /missing required dimensions: risk-tier/i,
   );
   passed += 1;
 

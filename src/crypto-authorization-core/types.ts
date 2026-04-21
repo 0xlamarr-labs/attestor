@@ -147,7 +147,15 @@ export const CRYPTO_AUTHORIZATION_CONSEQUENCE_PROFILES: Record<
     label: 'Approval Or Allowance',
     releaseConsequenceType: 'action',
     defaultRiskClass: 'R4',
-    requiredPolicyDimensions: ['chain', 'account', 'asset', 'spender', 'amount'],
+    requiredPolicyDimensions: [
+      'chain',
+      'account',
+      'asset',
+      'spender',
+      'amount',
+      'budget',
+      'validity-window',
+    ],
   },
   'permission-grant': {
     kind: 'permission-grant',

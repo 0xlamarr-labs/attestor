@@ -67,9 +67,9 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 13 |
+| Completed | 14 |
 | In progress | 0 |
-| Not started | 7 |
+| Not started | 6 |
 
 ## Frozen Step List
 
@@ -88,7 +88,7 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 | 11 | complete | Build the crypto authorization simulation surface | `src/crypto-authorization-core/authorization-simulation.ts`, `tests/crypto-authorization-core-authorization-simulation.test.ts` | Operators and integrations can now deterministically preview allow/review/deny outcomes before a wallet, custody system, contract, Safe guard, bundler, payment rail, or intent solver is touched. The surface binds intent/risk consistency, policy dimension coverage, release/policy/enforcement readiness, adapter preflight evidence, and required next artifacts across Safe, ERC-4337/ERC-7562, ERC-7715, EIP-7702, wallet-call, x402, custody, module, and intent-settlement paths. |
 | 12 | complete | Add the Safe transaction guard adapter | `src/crypto-authorization-core/safe-transaction-guard-adapter.ts`, `tests/crypto-authorization-core-safe-transaction-guard-adapter.test.ts` | Ordinary owner-approved Safe transactions now have an adapter-level guard preflight that binds Safe account, chain, operation, target, function selector, native-value posture, nonce, release readiness, policy activation, enforcement binding, transaction hash, and post-execution status into a Safe guard simulation signal. Delegatecall, target mismatch, failed post-execution hooks, non-Safe accounts, and non-ordinary Safe adapter paths fail closed without making Safe-specific hook fields part of the core object model. |
 | 13 | complete | Add the Safe module guard adapter | `src/crypto-authorization-core/safe-module-guard-adapter.ts`, `tests/crypto-authorization-core-safe-module-guard-adapter.test.ts` | Module-initiated Safe transactions now have an adapter-level module guard preflight that binds Safe account, module identity, chain, operation, target, function selector, native-value posture, module nonce, release readiness, policy activation, enforcement binding, module transaction hash, owner-controlled recovery posture, and post-execution status into Safe guard and module-hook simulation signals. Disabled modules, missing module guards, delegatecall without explicit evidence, target mismatch, missing recovery, failed post-execution hooks, non-Safe accounts, and ordinary Safe guard adapter paths fail closed without moving module-specific hook fields into the core object model. |
-| 14 | not-started | Add approval and allowance consequence support |  | Treat token approvals, spender allowances, and permission-like grants as high-risk consequences with budget, expiry, revocation, and spender constraints. |
+| 14 | complete | Add approval and allowance consequence support | `src/crypto-authorization-core/approval-allowance-consequence.ts`, `tests/crypto-authorization-core-approval-allowance-consequence.test.ts` | Token approvals, spender allowances, and permission-like grants now have a deterministic consequence layer that covers ERC-20 approve/increase/decrease allowance, EIP-2612 permits, Permit2 allowance/signature-transfer paths, ERC-7674 temporary approvals, and wallet permission grants. Approval policy now requires budget and validity-window dimensions at the core profile level, while the consequence layer binds owner, token, spender, amount posture, current/resulting allowance, expiry, budget, revocation, permit nonce/deadline/domain, temporary-vs-persistent duration, high-assurance risk assessment, canonical digest, and `erc-7715-permission` simulation signal. Unlimited, over-cap, missing permit evidence, mismatched target, invalid spender, non-approval intent, and unsafe persistent approval posture fail closed or require review before any wallet/Safe/custody adapter can execute. |
 | 15 | not-started | Add the ERC-4337 UserOperation adapter |  | Project Attestor authorization into UserOperation validation and bundler/paymaster-aware execution paths. |
 | 16 | not-started | Add ERC-7579 and ERC-6900 modular account adapters |  | Map Attestor authorization into validator, executor, hook, and plugin/module surfaces for modular smart accounts. |
 | 17 | not-started | Add the EIP-7702 delegation-aware adapter |  | Model delegated EOA execution as an authorization-list-sensitive consequence with signer, code target, nonce, and runtime-context binding. |
@@ -98,4 +98,4 @@ Without this, Attestor can govern high-consequence software actions, but it is n
 
 ## Immediate Next Step
 
-Step 14 is next: add approval and allowance consequence support.
+Step 15 is next: add the ERC-4337 UserOperation adapter.
