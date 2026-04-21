@@ -298,15 +298,15 @@ export const CRYPTO_EXECUTION_BOUNDARY_TEMPLATES = Object.freeze({
   }),
   'custody-cosigner': Object.freeze({
     adapterKind: 'custody-cosigner',
-    pointKind: 'async-consumer',
-    boundaryKind: 'async-message',
+    pointKind: 'action-dispatch-gateway',
+    boundaryKind: 'action-dispatch',
     defaultPresentationModes: Object.freeze([
       'signed-json-envelope',
       'spiffe-bound-token',
       'mtls-bound-token',
     ] as const),
     notes:
-      'Custody co-signer integrations often execute asynchronously and map cleanly to signed envelope verification.',
+      'Custody co-signer requests move value and therefore use action-dispatch enforcement while preserving signed-envelope and workload-bound presentation.',
   }),
   'intent-settlement': Object.freeze({
     adapterKind: 'intent-settlement',
