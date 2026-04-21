@@ -126,6 +126,27 @@ function testStripeWebhookRouteDelegatesIngressUseCase(): void {
   assert.match(stripeWebhookBillingProcessor, /accountStoreErrorResponse/u);
 }
 
+function testStripeWebhookBillingProcessorUsesNamedEventProcessors(): void {
+  const stripeWebhookBillingProcessor = readProjectFile(
+    'src',
+    'service',
+    'application',
+    'stripe-webhook-billing-processor.ts',
+  );
+
+  assert.match(stripeWebhookBillingProcessor, /async function processUnsupportedEvent/u);
+  assert.match(stripeWebhookBillingProcessor, /async function processSubscriptionEvent/u);
+  assert.match(stripeWebhookBillingProcessor, /async function processCheckoutCompletedEvent/u);
+  assert.match(stripeWebhookBillingProcessor, /async function processChargeEvent/u);
+  assert.match(stripeWebhookBillingProcessor, /async function processEntitlementSummaryEvent/u);
+  assert.match(stripeWebhookBillingProcessor, /async function processInvoiceEvent/u);
+  assert.match(stripeWebhookBillingProcessor, /return processSubscriptionEvent\(stripeWebhook, c\);/u);
+  assert.match(stripeWebhookBillingProcessor, /return processCheckoutCompletedEvent\(stripeWebhook, c\);/u);
+  assert.match(stripeWebhookBillingProcessor, /return processChargeEvent\(stripeWebhook, c\);/u);
+  assert.match(stripeWebhookBillingProcessor, /return processEntitlementSummaryEvent\(stripeWebhook, c\);/u);
+  assert.match(stripeWebhookBillingProcessor, /return processInvoiceEvent\(stripeWebhook, c\);/u);
+}
+
 function testAdminRouteIsStronglyTyped(): void {
   const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
 
@@ -220,10 +241,11 @@ testDirectStoreRouteDebtIsExplicitlyBounded();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
 testStripeWebhookRouteDelegatesIngressUseCase();
+testStripeWebhookBillingProcessorUsesNamedEventProcessors();
 testAdminRouteIsStronglyTyped();
 testAdminRouteDelegatesMutationUseCase();
 testAccountRouteIsStronglyTyped();
 testAccountRouteDelegatesAuthUseCases();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 11 passed, 0 failed');
+console.log('Service route boundary tests: 12 passed, 0 failed');
