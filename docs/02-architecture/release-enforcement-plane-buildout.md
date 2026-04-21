@@ -60,9 +60,9 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | Metric | Value |
 |---|---|
 | Total frozen steps | 20 |
-| Completed | 19 |
+| Completed | 20 |
 | In progress | 0 |
-| Not started | 1 |
+| Not started | 0 |
 
 ## Frozen Step List
 
@@ -87,8 +87,8 @@ Without that, Attestor is a strong policy decision and policy administration sys
 | 17 | complete | Build the Envoy and Istio external-authz bridge | `src/release-enforcement-plane/envoy-ext-authz.ts`, `tests/release-enforcement-plane-envoy-ext-authz.test.ts`, `docs/08-deployment/release-enforcement-plane-envoy.md` | Mesh and proxy deployments now have a reference Envoy/Istio external-authorization bridge that canonicalizes the original downstream request from Envoy `CheckRequest` attributes, binds proxy admission to output and consequence hashes, derives DPoP/mTLS/SPIFFE sender-constrained release presentations from proxy evidence, performs online introspection and token-use consumption by default, renders fail-closed Envoy filter and Istio `CUSTOM` policy/provider configuration, emits allow/deny metadata and receipts, strips credentials before upstream admission, and fails closed on missing authorization, bearer downgrade, payload/route mismatch, revocation, replay, fresh-introspection gaps, or control-plane outage. |
 | 18 | complete | Add degraded-mode and break-glass enforcement control | `src/release-enforcement-plane/degraded-mode.ts`, `tests/release-enforcement-plane-degraded-mode.test.ts`, `src/service/http/routes/admin-routes.ts`, `package.json` | The enforcement plane now keeps fail-closed as the default while explicitly modeling short-lived cache-only and break-glass grants with scoped authorization, allowed failure reasons, use budgets, expiry windows, admin create/list/revoke routes, projected enforcement break-glass grants, and hash-chained audit records for who authorized the exception, why, and for how long. |
 | 19 | complete | Add enforcement telemetry, conformance, and transparency receipts | `src/release-enforcement-plane/telemetry.ts`, `src/release-enforcement-plane/conformance.ts`, `tests/release-enforcement-plane-conformance.test.ts`, `package.json` | Enforcement points now share a uniform allow/deny/revoke/replay/freshness/break-glass telemetry event surface with low-cardinality enforcement attributes, deterministic event digests, in-memory sink and summary helpers, transparency-style high-consequence receipts with inclusion-proof verification, and a reusable conformance runner that validates result shape, decision/receipt consistency, failure evidence, telemetry safety, freshness/replay classification, and high-consequence receipt coverage. |
-| 20 | not started | Package the enforcement plane as a reusable platform surface | `src/release-enforcement-plane/index.ts`, `docs/02-architecture/release-enforcement-plane-platform-surface.md`, `tests/release-enforcement-plane-platform-surface.test.ts`, `scripts/probe-release-enforcement-plane-package-surface.mjs`, `package.json` | The enforcement plane now ships behind a stable `attestor/release-enforcement-plane` surface instead of ad hoc internal paths, with explicit extraction criteria and package-boundary probing. |
+| 20 | complete | Package the enforcement plane as a reusable platform surface | `src/release-enforcement-plane/index.ts`, `docs/02-architecture/release-enforcement-plane-platform-surface.md`, `tests/release-enforcement-plane-platform-surface.test.ts`, `scripts/probe-release-enforcement-plane-package-surface.mjs`, `package.json` | The enforcement plane now ships behind a stable `attestor/release-enforcement-plane` surface instead of ad hoc internal paths, with explicit extraction criteria, grouped namespace exports, `package.json` export encapsulation, and package-boundary probing. |
 
 ## Immediate Next Step
 
-Step 19 is complete. The next implementation step is Step 20: package the enforcement plane as a reusable platform surface so the stable `attestor/release-enforcement-plane` entrypoint exposes the finished enforcement contract behind explicit package-boundary checks.
+The frozen enforcement-plane buildout track is complete at `20 / 20`. The stable `attestor/release-enforcement-plane` entrypoint now exposes the finished enforcement contract behind explicit package-boundary checks, and any future work should start from a new tracker instead of extending this frozen step list.
