@@ -47,7 +47,8 @@ function testRemainingRouteAnyDebtIsExplicit(): void {
   assert.deepEqual(offenders, [
     'src/service/http/routes/account-routes.ts',
     'src/service/http/routes/admin-routes.ts',
-    'src/service/http/routes/pipeline-routes.ts',
+    'src/service/http/routes/pipeline-async-routes.ts',
+    'src/service/http/routes/pipeline-execution-routes.ts',
     'src/service/http/routes/stripe-webhook-routes.ts',
   ]);
 }
@@ -79,9 +80,35 @@ function testWebhookRoutesAreSplitByProviderBoundary(): void {
   assert.match(stripeWebhookRoute, /export interface StripeWebhookRouteDeps/u);
 }
 
+function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
+  const pipelineRoute = readFileSync(join(ROUTE_ROOT, 'pipeline-routes.ts'), 'utf8');
+
+  assert.match(pipelineRoute, /registerPipelineExecutionRoutes\(app, deps\);/u);
+  assert.match(pipelineRoute, /registerPipelineVerificationRoutes\(app, deps\);/u);
+  assert.match(pipelineRoute, /registerPipelineFilingRoutes\(app, deps\);/u);
+  assert.match(pipelineRoute, /registerPipelineAsyncRoutes\(app, deps\);/u);
+  assert.doesNotMatch(pipelineRoute, /type RouteDependency = any/u);
+
+  const verificationRoute = readFileSync(
+    join(ROUTE_ROOT, 'pipeline-verification-routes.ts'),
+    'utf8',
+  );
+  assert.match(verificationRoute, /export interface PipelineVerificationRoutesDeps/u);
+  assert.doesNotMatch(verificationRoute, /type RouteDependency = any/u);
+  assert.doesNotMatch(verificationRoute, /:\s*any\b/u);
+  assert.doesNotMatch(verificationRoute, /\bas any\b/u);
+
+  const filingRoute = readFileSync(join(ROUTE_ROOT, 'pipeline-filing-routes.ts'), 'utf8');
+  assert.match(filingRoute, /export interface PipelineFilingRoutesDeps/u);
+  assert.doesNotMatch(filingRoute, /type RouteDependency = any/u);
+  assert.doesNotMatch(filingRoute, /:\s*any\b/u);
+  assert.doesNotMatch(filingRoute, /\bas any\b/u);
+}
+
 testReleaseReviewRouteIsStronglyTyped();
 testRemainingRouteAnyDebtIsExplicit();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
+testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 4 passed, 0 failed');
+console.log('Service route boundary tests: 5 passed, 0 failed');

@@ -19,13 +19,13 @@ Rules for this refactor:
 | Release review route typing | Complete | `release-review-routes.ts` has no `RouteDependency = any`; `npm run test:service-route-boundary` |
 | Account route typing/services | Pending | Still uses `RouteDependency = any` |
 | Admin route typing/services | Pending | Still uses `RouteDependency = any` |
-| Pipeline route use-case services | Pending | Still uses `RouteDependency = any` |
+| Pipeline route use-case services | In progress | Split into execution, verification, filing, and async route modules; verification and filing routes are strongly typed; execution and async leaf modules still use `RouteDependency = any` |
 | Webhook service split | In progress | Email and Stripe webhooks split; email route is strongly typed; Stripe route still uses `RouteDependency = any` |
 
 ## Next order
 
 1. Stripe webhook route: replace the legacy dependency bundle with typed billing-event and account/billing service contracts.
-2. Pipeline routes: introduce execution, async submission, verification, and filing-release service contracts.
+2. Pipeline leaf routes: replace split execution, verification, filing, and async dependency bundles with typed service contracts.
 3. Admin routes: group account, tenant key, billing, queue, audit, and telemetry operations behind typed services.
 4. Account routes: group auth, user, MFA, passkey, federation, API key, billing, and usage operations behind typed services.
 5. Remove the final `RouteDependency = any` alias from all service routes.
@@ -36,5 +36,6 @@ The explicit remaining debt is guarded by `tests/service-route-boundary.test.ts`
 
 - `src/service/http/routes/account-routes.ts`
 - `src/service/http/routes/admin-routes.ts`
-- `src/service/http/routes/pipeline-routes.ts`
+- `src/service/http/routes/pipeline-async-routes.ts`
+- `src/service/http/routes/pipeline-execution-routes.ts`
 - `src/service/http/routes/stripe-webhook-routes.ts`
