@@ -15,6 +15,12 @@ export { record, communication, action };
 
 export type FinanceFilingReleaseCandidate = record.FinanceFilingReleaseCandidate;
 export type FinanceFilingReleaseMaterial = record.FinanceFilingReleaseMaterial;
+export type FinanceCommunicationReleaseCandidate =
+  communication.FinanceCommunicationReleaseCandidate;
+export type FinanceCommunicationReleaseMaterial =
+  communication.FinanceCommunicationReleaseMaterial;
+export type FinanceActionReleaseCandidate = action.FinanceActionReleaseCandidate;
+export type FinanceActionReleaseMaterial = action.FinanceActionReleaseMaterial;
 
 export const RELEASE_LAYER_FINANCE_SURFACE_SPEC_VERSION =
   'attestor.release-layer-finance.v1';

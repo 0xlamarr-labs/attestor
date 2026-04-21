@@ -19,7 +19,7 @@ Rules for this refactor:
 | Release review route typing | Complete | `release-review-routes.ts` has no `RouteDependency = any`; `npm run test:service-route-boundary` |
 | Account route typing/services | Pending | Still uses `RouteDependency = any` |
 | Admin route typing/services | Pending | Still uses `RouteDependency = any` |
-| Pipeline route use-case services | In progress | Split into execution, verification, filing, and async route modules; verification, filing, and async routes are strongly typed; execution still uses `RouteDependency = any` |
+| Pipeline route use-case services | Complete | Split into execution, verification, filing, and async route modules; all pipeline leaf routes are strongly typed |
 | Webhook service split | In progress | Email and Stripe webhooks split; email route is strongly typed; Stripe route still uses `RouteDependency = any` |
 
 ## Next order
@@ -36,5 +36,4 @@ The explicit remaining debt is guarded by `tests/service-route-boundary.test.ts`
 
 - `src/service/http/routes/account-routes.ts`
 - `src/service/http/routes/admin-routes.ts`
-- `src/service/http/routes/pipeline-execution-routes.ts`
 - `src/service/http/routes/stripe-webhook-routes.ts`

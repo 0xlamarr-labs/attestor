@@ -47,7 +47,6 @@ function testRemainingRouteAnyDebtIsExplicit(): void {
   assert.deepEqual(offenders, [
     'src/service/http/routes/account-routes.ts',
     'src/service/http/routes/admin-routes.ts',
-    'src/service/http/routes/pipeline-execution-routes.ts',
     'src/service/http/routes/stripe-webhook-routes.ts',
   ]);
 }
@@ -108,6 +107,12 @@ function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
   assert.doesNotMatch(asyncRoute, /type RouteDependency = any/u);
   assert.doesNotMatch(asyncRoute, /:\s*any\b/u);
   assert.doesNotMatch(asyncRoute, /\bas any\b/u);
+
+  const executionRoute = readFileSync(join(ROUTE_ROOT, 'pipeline-execution-routes.ts'), 'utf8');
+  assert.match(executionRoute, /export interface PipelineExecutionRoutesDeps/u);
+  assert.doesNotMatch(executionRoute, /type RouteDependency = any/u);
+  assert.doesNotMatch(executionRoute, /:\s*any\b/u);
+  assert.doesNotMatch(executionRoute, /\bas any\b/u);
 }
 
 testReleaseReviewRouteIsStronglyTyped();

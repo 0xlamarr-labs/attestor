@@ -1,47 +1,276 @@
-import { randomUUID } from 'node:crypto';
-import type { Hono } from 'hono';
+import { createHash, randomUUID } from 'node:crypto';
+import type { Context, Hono } from 'hono';
+import type {
+  ConnectorExecutionResult,
+  ConnectorRegistry,
+} from '../../../connectors/connector-interface.js';
+import type { SchemaAttestation } from '../../../connectors/schema-attestation.js';
+import type { DecisionEnvelope, FilingAdapterRegistry } from '../../../filing/filing-adapter.js';
+import type { FinancialPipelineInput } from '../../../financial/pipeline.js';
+import type {
+  ExecutionEvidence,
+  FinancialRunReport,
+  ReviewerIdentity,
+} from '../../../financial/types.js';
+import type {
+  IdentitySource,
+  OidcConfig,
+  OidcVerificationResult,
+} from '../../../identity/oidc-identity.js';
+import type { VerificationKit } from '../../../signing/bundle.js';
+import type { KeylessSigner } from '../../../signing/keyless-signer.js';
+import type {
+  FinanceActionReleaseCandidate,
+  FinanceActionReleaseMaterial,
+  FinanceCommunicationReleaseCandidate,
+  FinanceCommunicationReleaseMaterial,
+  FinanceFilingReleaseCandidate,
+  FinanceFilingReleaseMaterial,
+} from '../../../release-layer/finance.js';
+import type {
+  CapabilityBoundaryDescriptor,
+  DeterministicCheckObservation,
+  ReleaseActorReference,
+  ReleaseDecision,
+  ReleaseDecisionEngine,
+  ReleaseDecisionLogEntry,
+  ReleaseDecisionLogWriter,
+  ReleaseEvaluationRequest,
+  ReleaseEvaluationScopeContext,
+  ReleaseEvidencePackIssuer,
+  ReleaseEvidencePackStore,
+  ReleaseReviewerQueueRecord,
+  ReleaseReviewerQueueStore,
+  ReleaseTargetKind,
+  ReleaseTokenIntrospectionStore,
+  ReleaseTokenIssuer,
+  ShadowModeReleaseEvaluator,
+  OutputContractDescriptor,
+} from '../../../release-layer/index.js';
+import type { TenantRateLimitContext, TenantRateLimitDecision } from '../../rate-limit.js';
+import type { TenantContext } from '../../tenant-isolation.js';
+import type { UsageContext } from '../../usage-meter.js';
 
-type RouteDependency = any;
+type ConnectorSchemaAttestation = NonNullable<ConnectorExecutionResult['schemaAttestation']>;
+
+type PipelineConnectorExecution = ExecutionEvidence & {
+  schemaAttestation?: ConnectorSchemaAttestation | SchemaAttestation | null;
+};
+
+interface RequestSignerPair {
+  signer: KeylessSigner;
+  reviewer: KeylessSigner;
+}
+
+interface ReleaseMaterialShape {
+  readonly target: {
+    readonly kind: ReleaseTargetKind;
+    readonly id: string;
+    readonly displayName?: string;
+  };
+  readonly outputContract: OutputContractDescriptor;
+  readonly capabilityBoundary: CapabilityBoundaryDescriptor;
+  readonly hashBundle: {
+    readonly outputHash: string;
+    readonly consequenceHash: string;
+  };
+}
+
+interface ReleaseShadowSummary {
+  readonly targetId: string;
+  readonly decisionId: string;
+  readonly decisionStatus: string;
+  readonly policyVersion: string;
+  readonly policyRolloutMode: string | null;
+  readonly policyEvaluationMode: string | null;
+  readonly wouldBlockIfEnforced: boolean;
+  readonly wouldRequireReview: boolean;
+  readonly wouldRequireToken: boolean;
+  readonly outputHash: string;
+  readonly consequenceHash: string;
+}
+
+interface FinanceCommunicationReleaseSummary extends ReleaseShadowSummary {
+  readonly preview: {
+    readonly recipientId: string;
+    readonly channelId: string;
+    readonly subject: string;
+  };
+}
+
+interface FinanceActionReleaseSummary extends ReleaseShadowSummary {
+  readonly preview: {
+    readonly workflowId: string;
+    readonly actionType: string;
+    readonly requestedTransition: string;
+  };
+}
+
+interface FinanceFilingReleaseSummary {
+  readonly targetId: string;
+  readonly decisionId: string;
+  readonly decisionStatus: string;
+  readonly policyVersion: string;
+  readonly introspectionRequired: boolean;
+  readonly outputHash: string;
+  readonly consequenceHash: string;
+  readonly tokenId: string | null;
+  readonly token: string | null;
+  readonly expiresAt: string | null;
+  readonly evidencePackId: string | null;
+  readonly evidencePackPath: string | null;
+  readonly evidencePackDigest: string | null;
+  readonly reviewQueueId: string | null;
+  readonly reviewQueuePath: string | null;
+  readonly candidate: FinanceFilingReleaseCandidate;
+}
 
 export interface PipelineExecutionRoutesDeps {
-  currentTenant: RouteDependency;
-  canConsumePipelineRunState: RouteDependency;
-  reserveTenantPipelineRequest: RouteDependency;
-  applyRateLimitHeaders: RouteDependency;
-  connectorRegistry: RouteDependency;
-  verifyOidcToken: RouteDependency;
-  classifyIdentitySource: RouteDependency;
-  createRequestSigners: RouteDependency;
-  runFinancialPipeline: RouteDependency;
-  buildVerificationKit: RouteDependency;
-  createFinanceCommunicationReleaseCandidateFromReport: RouteDependency;
-  buildFinanceCommunicationReleaseMaterial: RouteDependency;
-  buildFinanceCommunicationReleaseObservation: RouteDependency;
-  financeCommunicationReleaseShadowEvaluator: RouteDependency;
-  createFinanceActionReleaseCandidateFromReport: RouteDependency;
-  buildFinanceActionReleaseMaterial: RouteDependency;
-  buildFinanceActionReleaseObservation: RouteDependency;
-  financeActionReleaseShadowEvaluator: RouteDependency;
-  createFinanceFilingReleaseCandidateFromReport: RouteDependency;
-  FINANCE_FILING_ADAPTER_ID: RouteDependency;
-  buildFinanceFilingReleaseMaterial: RouteDependency;
-  financeReleaseDecisionEngine: RouteDependency;
-  financeReleaseDecisionLog: RouteDependency;
-  buildFinanceFilingReleaseObservation: RouteDependency;
-  currentReleaseRequester: RouteDependency;
-  currentReleaseEvaluationContext: RouteDependency;
-  finalizeFinanceFilingReleaseDecision: RouteDependency;
-  createFinanceReviewerQueueItem: RouteDependency;
-  apiReleaseReviewerQueueStore: RouteDependency;
-  apiReleaseTokenIssuer: RouteDependency;
-  apiReleaseEvidencePackStore: RouteDependency;
-  apiReleaseEvidencePackIssuer: RouteDependency;
-  apiReleaseIntrospectionStore: RouteDependency;
-  consumePipelineRunState: RouteDependency;
-  schemaAttestationSummaryFromFull: RouteDependency;
-  schemaAttestationSummaryFromConnector: RouteDependency;
-  filingRegistry: RouteDependency;
-  buildCounterpartyEnvelope: RouteDependency;
+  currentTenant(context: Context): TenantContext;
+  canConsumePipelineRunState(
+    tenantId: string,
+    planId: string | null | undefined,
+    quota: number | null | undefined,
+  ): Promise<{ allowed: boolean; usage: UsageContext }>;
+  reserveTenantPipelineRequest(
+    tenantId: string,
+    planId: string | null | undefined,
+  ): Promise<TenantRateLimitDecision>;
+  applyRateLimitHeaders(
+    context: Context,
+    rateLimit: TenantRateLimitContext,
+    options?: { includeRetryAfter?: boolean },
+  ): void;
+  connectorRegistry: Pick<ConnectorRegistry, 'get' | 'listIds'>;
+  verifyOidcToken(token: string, config: OidcConfig): Promise<OidcVerificationResult>;
+  classifyIdentitySource(oidcVerified: boolean, pkiBound: boolean): IdentitySource;
+  createRequestSigners(identitySource: string, reviewerName?: string): RequestSignerPair;
+  runFinancialPipeline(input: FinancialPipelineInput): FinancialRunReport;
+  buildVerificationKit(
+    report: FinancialRunReport,
+    publicKeyPem: string,
+    reviewerPublicKeyPem?: string | null,
+    trustChain?: KeylessSigner['trustChain'] | null,
+    caPublicKeyPem?: string | null,
+  ): VerificationKit | null;
+  createFinanceCommunicationReleaseCandidateFromReport(
+    report: FinancialRunReport,
+  ): FinanceCommunicationReleaseCandidate | null;
+  buildFinanceCommunicationReleaseMaterial(
+    candidate: FinanceCommunicationReleaseCandidate,
+  ): FinanceCommunicationReleaseMaterial;
+  buildFinanceCommunicationReleaseObservation(
+    material: FinanceCommunicationReleaseMaterial,
+    report: FinancialRunReport,
+  ): DeterministicCheckObservation;
+  financeCommunicationReleaseShadowEvaluator: ShadowModeReleaseEvaluator;
+  createFinanceActionReleaseCandidateFromReport(
+    report: FinancialRunReport,
+  ): FinanceActionReleaseCandidate | null;
+  buildFinanceActionReleaseMaterial(candidate: FinanceActionReleaseCandidate): FinanceActionReleaseMaterial;
+  buildFinanceActionReleaseObservation(
+    material: FinanceActionReleaseMaterial,
+    report: FinancialRunReport,
+  ): DeterministicCheckObservation;
+  financeActionReleaseShadowEvaluator: ShadowModeReleaseEvaluator;
+  createFinanceFilingReleaseCandidateFromReport(
+    report: FinancialRunReport,
+  ): FinanceFilingReleaseCandidate | null;
+  FINANCE_FILING_ADAPTER_ID: string;
+  buildFinanceFilingReleaseMaterial(candidate: FinanceFilingReleaseCandidate): FinanceFilingReleaseMaterial;
+  financeReleaseDecisionEngine: ReleaseDecisionEngine;
+  financeReleaseDecisionLog: ReleaseDecisionLogWriter;
+  buildFinanceFilingReleaseObservation(
+    material: FinanceFilingReleaseMaterial,
+    report: FinancialRunReport,
+  ): DeterministicCheckObservation;
+  currentReleaseRequester(context: Context, reviewerIdentity?: ReviewerIdentity): ReleaseActorReference;
+  currentReleaseEvaluationContext(context: Context): ReleaseEvaluationScopeContext;
+  finalizeFinanceFilingReleaseDecision(
+    decision: ReleaseDecision,
+    report: FinancialRunReport,
+  ): ReleaseDecision;
+  createFinanceReviewerQueueItem(input: {
+    decision: ReleaseDecision;
+    candidate: FinanceFilingReleaseCandidate;
+    report: FinancialRunReport;
+    logEntries: readonly ReleaseDecisionLogEntry[];
+  }): ReleaseReviewerQueueRecord;
+  apiReleaseReviewerQueueStore: ReleaseReviewerQueueStore;
+  apiReleaseTokenIssuer: ReleaseTokenIssuer;
+  apiReleaseEvidencePackStore: ReleaseEvidencePackStore;
+  apiReleaseEvidencePackIssuer: ReleaseEvidencePackIssuer;
+  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
+  consumePipelineRunState(
+    tenantId: string,
+    planId: string | null | undefined,
+    quota: number | null | undefined,
+  ): Promise<UsageContext>;
+  schemaAttestationSummaryFromFull(attestation: SchemaAttestation): unknown;
+  schemaAttestationSummaryFromConnector(
+    connectorExecution: PipelineConnectorExecution | null,
+    connectorProvider: string | null,
+  ): unknown;
+  filingRegistry: Pick<FilingAdapterRegistry, 'get'>;
+  buildCounterpartyEnvelope(
+    runId: string,
+    decision: string,
+    certificateId: string | null,
+    evidenceChainTerminal: string,
+    rows: readonly Record<string, unknown>[],
+    proofMode: string,
+  ): DecisionEnvelope;
+}
+
+function connectorSchemaHash(result: ConnectorExecutionResult): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ columns: result.columns, columnTypes: result.columnTypes }))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function supportedExecutionProvider(provider: string): ExecutionEvidence['provider'] {
+  return provider === 'fixture' || provider === 'sqlite' || provider === 'postgres'
+    ? provider
+    : undefined;
+}
+
+function connectorExecutionEvidenceFromResult(
+  result: ConnectorExecutionResult,
+): PipelineConnectorExecution {
+  return {
+    success: result.success,
+    durationMs: result.durationMs,
+    rowCount: result.rowCount,
+    columns: result.columns,
+    columnTypes: result.columnTypes,
+    rows: result.rows,
+    error: result.error,
+    schemaHash: connectorSchemaHash(result),
+    provider: supportedExecutionProvider(result.provider),
+    executionContextHash: result.executionContextHash,
+    schemaAttestation: result.schemaAttestation ?? null,
+  };
+}
+
+function releaseEvaluationRequest(input: {
+  id: string;
+  createdAt: string;
+  material: ReleaseMaterialShape;
+  requester: ReleaseActorReference;
+  context: ReleaseEvaluationScopeContext;
+}): ReleaseEvaluationRequest {
+  return {
+    id: input.id,
+    createdAt: input.createdAt,
+    outputHash: input.material.hashBundle.outputHash,
+    consequenceHash: input.material.hashBundle.consequenceHash,
+    outputContract: input.material.outputContract,
+    capabilityBoundary: input.material.capabilityBoundary,
+    requester: input.requester,
+    context: input.context,
+    target: input.material.target,
+  };
 }
 
 export function registerPipelineExecutionRoutes(app: Hono, deps: PipelineExecutionRoutesDeps): void {
@@ -121,9 +350,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
     applyRateLimitHeaders(c, rateLimit);
 
     // Optional connector-backed execution
-    let connectorExecution: any = null;
+    let connectorExecution: PipelineConnectorExecution | null = null;
     let connectorProvider: string | null = null;
-    let fullSchemaAttestation: any = null;
+    let fullSchemaAttestation: SchemaAttestation | null = null;
 
     // Special case: 'postgres-prove' uses the full postgres-prove path with schema attestation
     if (body.connector === 'postgres-prove') {
@@ -133,7 +362,10 @@ app.post('/api/v1/pipeline/run', async (c) => {
         if (isPostgresConfigured()) {
           const pgResult = await runPostgresProve(candidateSql);
           if (pgResult.execution?.success) {
-            connectorExecution = pgResult.execution;
+            connectorExecution = {
+              ...pgResult.execution,
+              schemaAttestation: pgResult.schemaAttestation,
+            };
             connectorProvider = 'postgres';
             fullSchemaAttestation = pgResult.schemaAttestation;
           }
@@ -151,10 +383,10 @@ app.post('/api/v1/pipeline/run', async (c) => {
       try {
         const result = await connector.execute(candidateSql, connConfig);
         if (result.success) {
-          connectorExecution = result;
+          connectorExecution = connectorExecutionEvidenceFromResult(result);
           connectorProvider = result.provider;
         }
-      } catch (err: any) {
+      } catch {
         // Connector execution failure is not fatal; fall back to fixture.
         connectorExecution = null;
       }
@@ -165,7 +397,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
     // OIDC-backed reviewer identity
     // If reviewerOidcToken is provided, verify it and derive reviewer identity.
     // If absent, fall back to operator-asserted identity (or no reviewer).
-    let reviewerIdentity: any;
+    let reviewerIdentity: ReviewerIdentity | undefined;
     let oidcVerified = false;
 
     if (body.reviewerOidcToken && body.oidcIssuer) {
@@ -195,7 +427,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
     const keyPair = keylessPair?.signer.signingKeyPair;
     const reviewerKeyPair = (sign && reviewerIdentity && keylessPair) ? keylessPair.reviewer.signingKeyPair : undefined;
 
-    const input = {
+    const input: FinancialPipelineInput = {
       runId: `api-${Date.now().toString(36)}`,
       intent,
       candidateSql,
@@ -223,68 +455,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
     };
 
     const report = runFinancialPipeline(input);
-    let financeCommunicationRelease: {
-      targetId: string;
-      decisionId: string;
-      decisionStatus: string;
-      policyVersion: string;
-      policyRolloutMode: string | null;
-      policyEvaluationMode: string | null;
-      wouldBlockIfEnforced: boolean;
-      wouldRequireReview: boolean;
-      wouldRequireToken: boolean;
-      outputHash: string;
-      consequenceHash: string;
-      preview: {
-        recipientId: string;
-        channelId: string;
-        subject: string;
-      };
-    } | null = null;
-    let financeActionRelease: {
-      targetId: string;
-      decisionId: string;
-      decisionStatus: string;
-      policyVersion: string;
-      policyRolloutMode: string | null;
-      policyEvaluationMode: string | null;
-      wouldBlockIfEnforced: boolean;
-      wouldRequireReview: boolean;
-      wouldRequireToken: boolean;
-      outputHash: string;
-      consequenceHash: string;
-      preview: {
-        workflowId: string;
-        actionType: string;
-        requestedTransition: string;
-      };
-    } | null = null;
-    let financeFilingRelease: {
-      targetId: string;
-      decisionId: string;
-      decisionStatus: string;
-      policyVersion: string;
-      introspectionRequired: boolean;
-      outputHash: string;
-      consequenceHash: string;
-      tokenId: string | null;
-      token: string | null;
-      expiresAt: string | null;
-      evidencePackId: string | null;
-      evidencePackPath: string | null;
-      evidencePackDigest: string | null;
-      reviewQueueId: string | null;
-      reviewQueuePath: string | null;
-      candidate: {
-        adapterId: string;
-        runId: string;
-        decision: string;
-        certificateId: string | null;
-        evidenceChainTerminal: string;
-        rows: readonly Record<string, unknown>[];
-        proofMode: string;
-      };
-    } | null = null;
+    let financeCommunicationRelease: FinanceCommunicationReleaseSummary | null = null;
+    let financeActionRelease: FinanceActionReleaseSummary | null = null;
+    let financeFilingRelease: FinanceFilingReleaseSummary | null = null;
 
     let kit = null;
     if (keyPair && report.certificate) {
@@ -300,17 +473,13 @@ app.post('/api/v1/pipeline/run', async (c) => {
       if (filingCandidate?.adapterId === FINANCE_FILING_ADAPTER_ID) {
         const material = buildFinanceFilingReleaseMaterial(filingCandidate);
         const evaluation = financeReleaseDecisionEngine.evaluateWithDeterministicChecks(
-          {
+          releaseEvaluationRequest({
             id: `release_${randomUUID()}`,
             createdAt: report.timestamp,
-            outputHash: material.hashBundle.outputHash,
-            consequenceHash: material.hashBundle.consequenceHash,
-            outputContract: material.outputContract,
-            capabilityBoundary: material.capabilityBoundary,
+            material,
             requester: currentReleaseRequester(c, reviewerIdentity),
             context: currentReleaseEvaluationContext(c),
-            target: material.target,
-          },
+          }),
           buildFinanceFilingReleaseObservation(material, report),
         );
         const releaseDecision = finalizeFinanceFilingReleaseDecision(
@@ -355,7 +524,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
                 issuedAt: report.timestamp,
                 decisionLogEntries: financeReleaseDecisionLog
                   .entries()
-                  .filter((entry: any) => entry.decisionId === releaseDecision.id),
+                  .filter((entry) => entry.decisionId === releaseDecision.id),
                 decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
                 releaseToken: issuedReleaseToken,
                 artifactReferences: Object.freeze(
@@ -385,7 +554,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
           introspectionRequired:
             issuedReleaseToken?.claims.introspection_required ??
             releaseDecision.releaseConditions.items.some(
-              (item: any) => item.kind === 'introspection' && item.required,
+              (item) => item.kind === 'introspection' && item.required,
             ),
           outputHash: material.hashBundle.outputHash,
           consequenceHash: material.hashBundle.consequenceHash,
@@ -410,17 +579,13 @@ app.post('/api/v1/pipeline/run', async (c) => {
     if (communicationCandidate) {
       const communicationMaterial = buildFinanceCommunicationReleaseMaterial(communicationCandidate);
       const communicationShadow = financeCommunicationReleaseShadowEvaluator.evaluate(
-        {
+        releaseEvaluationRequest({
           id: `release_comm_${randomUUID()}`,
           createdAt: report.timestamp,
-          outputHash: communicationMaterial.hashBundle.outputHash,
-          consequenceHash: communicationMaterial.hashBundle.consequenceHash,
-          outputContract: communicationMaterial.outputContract,
-          capabilityBoundary: communicationMaterial.capabilityBoundary,
+          material: communicationMaterial,
           requester: currentReleaseRequester(c, reviewerIdentity),
           context: currentReleaseEvaluationContext(c),
-          target: communicationMaterial.target,
-        },
+        }),
         buildFinanceCommunicationReleaseObservation(communicationMaterial, report),
       );
 
@@ -448,17 +613,13 @@ app.post('/api/v1/pipeline/run', async (c) => {
     if (actionCandidate) {
       const actionMaterial = buildFinanceActionReleaseMaterial(actionCandidate);
       const actionShadow = financeActionReleaseShadowEvaluator.evaluate(
-        {
+        releaseEvaluationRequest({
           id: `release_action_${randomUUID()}`,
           createdAt: report.timestamp,
-          outputHash: actionMaterial.hashBundle.outputHash,
-          consequenceHash: actionMaterial.hashBundle.consequenceHash,
-          outputContract: actionMaterial.outputContract,
-          capabilityBoundary: actionMaterial.capabilityBoundary,
+          material: actionMaterial,
           requester: currentReleaseRequester(c, reviewerIdentity),
           context: currentReleaseEvaluationContext(c),
-          target: actionMaterial.target,
-        },
+        }),
         buildFinanceActionReleaseObservation(actionMaterial, report),
       );
 
