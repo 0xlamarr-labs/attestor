@@ -48,7 +48,7 @@ function testRemainingRouteAnyDebtIsExplicit(): void {
     'src/service/http/routes/account-routes.ts',
     'src/service/http/routes/admin-routes.ts',
     'src/service/http/routes/pipeline-routes.ts',
-    'src/service/http/routes/webhook-routes.ts',
+    'src/service/http/routes/stripe-webhook-routes.ts',
   ]);
 }
 
@@ -62,8 +62,26 @@ function testReleaseReviewRouteUsesPublicReleaseLayerTypes(): void {
   assert.doesNotMatch(releaseReviewRoute, /release-kernel\//u);
 }
 
+function testWebhookRoutesAreSplitByProviderBoundary(): void {
+  const webhookRoute = readFileSync(join(ROUTE_ROOT, 'webhook-routes.ts'), 'utf8');
+  const emailWebhookRoute = readFileSync(join(ROUTE_ROOT, 'email-webhook-routes.ts'), 'utf8');
+  const stripeWebhookRoute = readFileSync(join(ROUTE_ROOT, 'stripe-webhook-routes.ts'), 'utf8');
+
+  assert.match(webhookRoute, /registerEmailWebhookRoutes\(app, deps\);/u);
+  assert.match(webhookRoute, /registerStripeWebhookRoutes\(app, deps\);/u);
+  assert.doesNotMatch(webhookRoute, /type RouteDependency = any/u);
+
+  assert.match(emailWebhookRoute, /export interface EmailWebhookRouteDeps/u);
+  assert.doesNotMatch(emailWebhookRoute, /type RouteDependency = any/u);
+  assert.doesNotMatch(emailWebhookRoute, /:\s*any\b/u);
+  assert.doesNotMatch(emailWebhookRoute, /\bas any\b/u);
+
+  assert.match(stripeWebhookRoute, /export interface StripeWebhookRouteDeps/u);
+}
+
 testReleaseReviewRouteIsStronglyTyped();
 testRemainingRouteAnyDebtIsExplicit();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
+testWebhookRoutesAreSplitByProviderBoundary();
 
-console.log('Service route boundary tests: 3 passed, 0 failed');
+console.log('Service route boundary tests: 4 passed, 0 failed');
