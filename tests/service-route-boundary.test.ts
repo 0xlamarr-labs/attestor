@@ -38,15 +38,13 @@ function testReleaseReviewRouteIsStronglyTyped(): void {
   assert.match(releaseReviewRoute, /ReleaseDecisionLogWriter/u);
 }
 
-function testRemainingRouteAnyDebtIsExplicit(): void {
+function testAllServiceRoutesHaveClosedAnyDebt(): void {
   const offenders = collectRouteFiles(ROUTE_ROOT)
     .filter((filePath) => readFileSync(filePath, 'utf8').includes('type RouteDependency = any'))
     .map(normalizePath)
     .sort();
 
-  assert.deepEqual(offenders, [
-    'src/service/http/routes/account-routes.ts',
-  ]);
+  assert.deepEqual(offenders, []);
 }
 
 function testReleaseReviewRouteUsesPublicReleaseLayerTypes(): void {
@@ -88,6 +86,15 @@ function testAdminRouteIsStronglyTyped(): void {
   assert.doesNotMatch(adminRoute, /\bas any\b/u);
 }
 
+function testAccountRouteIsStronglyTyped(): void {
+  const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
+
+  assert.match(accountRoute, /export interface AccountRouteDeps/u);
+  assert.doesNotMatch(accountRoute, /type RouteDependency = any/u);
+  assert.doesNotMatch(accountRoute, /:\s*any\b/u);
+  assert.doesNotMatch(accountRoute, /\bas any\b/u);
+}
+
 function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
   const pipelineRoute = readFileSync(join(ROUTE_ROOT, 'pipeline-routes.ts'), 'utf8');
 
@@ -126,10 +133,11 @@ function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
 }
 
 testReleaseReviewRouteIsStronglyTyped();
-testRemainingRouteAnyDebtIsExplicit();
+testAllServiceRoutesHaveClosedAnyDebt();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
 testAdminRouteIsStronglyTyped();
+testAccountRouteIsStronglyTyped();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 6 passed, 0 failed');
+console.log('Service route boundary tests: 7 passed, 0 failed');

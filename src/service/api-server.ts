@@ -1679,7 +1679,6 @@ const accountRouteDeps = {
   listAccountUserActionTokensByAccountIdState,
   issueAccountInviteTokenState,
   deliverHostedInviteEmail,
-  HostedEmailDeliveryError,
   hostedEmailDeliveryErrorResponse,
   revokeAccountUserActionTokenState,
   accountUserActionTokenView,

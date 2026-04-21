@@ -1,119 +1,227 @@
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
+import type {
+  AuthenticationResponseJSON,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/server';
+import type * as AccountMfa from '../../account-mfa.js';
+import type * as AccountOidc from '../../account-oidc.js';
+import type * as AccountPasskeys from '../../account-passkeys.js';
+import type * as AccountSessionStore from '../../account-session-store.js';
+import type * as AccountSaml from '../../account-saml.js';
+import type * as AccountUserStore from '../../account-user-store.js';
+import type * as BillingExport from '../../billing-export.js';
+import type * as BillingFeatureService from '../../billing-feature-service.js';
+import type * as BillingReconciliation from '../../billing-reconciliation.js';
+import type * as ControlPlaneStore from '../../control-plane-store.js';
+import type * as EmailDelivery from '../../email-delivery.js';
+import type { HostedEmailDeliveryProvider, HostedEmailDeliveryStatus } from '../../email-delivery-event-store.js';
+import type * as PlanCatalog from '../../plan-catalog.js';
+import type * as RateLimit from '../../rate-limit.js';
+import type { SecretEnvelopeStatus } from '../../secret-envelope.js';
+import type * as StripeBilling from '../../stripe-billing.js';
+import type { HostedAccountRecord } from '../../account-store.js';
+import type {
+  AccountUserPasskeyCredentialRecord,
+  AccountUserRecord,
+  AccountUserRole,
+} from '../../account-user-store.js';
+import type { AccountUserActionTokenRecord } from '../../account-user-token-store.js';
+import type { HostedBillingEntitlementRecord } from '../../billing-entitlement-store.js';
+import type { HostedPasskeyAuthenticationChallengeState, HostedPasskeyAuthenticatorHint, HostedPasskeyRegistrationChallengeState } from '../../account-passkeys.js';
+import type { TenantKeyRecord } from '../../tenant-key-store.js';
+import type { AccountAccessContext, TenantContext } from '../../tenant-isolation.js';
+import type { UsageContext } from '../../usage-meter.js';
 
-type RouteDependency = any;
+interface SyncHostedBillingEntitlementOptions {
+  lastEventId?: string | null;
+  lastEventType?: string | null;
+  lastEventAt?: string | null;
+  stripeEntitlementLookupKeys?: string[] | null;
+  stripeEntitlementFeatureIds?: string[] | null;
+  stripeEntitlementSummaryUpdatedAt?: string | null;
+}
+
+interface CurrentHostedAccountResult {
+  tenant: TenantContext;
+  account: HostedAccountRecord;
+  usage: UsageContext;
+  rateLimit: RateLimit.TenantRateLimitContext;
+}
+
+function accountRouteErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function accountUserRoleFilter(value: unknown): AccountUserRole | null {
+  switch (value) {
+    case 'account_admin':
+    case 'billing_admin':
+    case 'read_only':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function hostedEmailDeliveryStatusFilter(value: string | undefined): HostedEmailDeliveryStatus | null {
+  switch (value) {
+    case 'manual_delivered':
+    case 'smtp_sent':
+    case 'processed':
+    case 'delivered':
+    case 'deferred':
+    case 'bounced':
+    case 'dropped':
+    case 'failed':
+    case 'unknown':
+      return value;
+    default:
+      return null;
+  }
+}
+
+function hostedEmailDeliveryProviderFilter(value: string | undefined): HostedEmailDeliveryProvider | null {
+  switch (value) {
+    case 'manual':
+    case 'smtp':
+    case 'sendgrid_smtp':
+    case 'mailgun_smtp':
+      return value;
+    default:
+      return null;
+  }
+}
 
 export interface AccountRouteDeps {
-  currentHostedAccount: RouteDependency;
-  countAccountUsersForAccountState: RouteDependency;
-  createAccountUserState: RouteDependency;
-  AccountUserStoreError: RouteDependency;
-  findAccountUserByEmailState: RouteDependency;
-  deriveSignupTenantId: RouteDependency;
-  resolvePlanSpec: RouteDependency;
-  SELF_HOST_PLAN_ID: RouteDependency;
-  provisionHostedAccountState: RouteDependency;
-  accountStoreErrorResponse: RouteDependency;
-  tenantKeyStoreErrorResponse: RouteDependency;
-  issueAccountSessionState: RouteDependency;
-  recordAccountUserLoginState: RouteDependency;
-  syncHostedBillingEntitlementForTenant: RouteDependency;
-  setSessionCookieForRecord: RouteDependency;
-  accountUserView: RouteDependency;
-  adminAccountView: RouteDependency;
-  DEFAULT_HOSTED_PLAN_ID: RouteDependency;
-  accountApiKeyView: RouteDependency;
-  resolvePlanStripeTrialDays: RouteDependency;
-  verifyAccountUserPasswordRecord: RouteDependency;
-  findHostedAccountByIdState: RouteDependency;
-  totpSummary: RouteDependency;
-  issueAccountMfaLoginTokenState: RouteDependency;
-  issueAccountPasskeyChallengeTokenState: RouteDependency;
-  buildHostedPasskeyAuthenticationOptions: RouteDependency;
-  asAuthenticationResponse: RouteDependency;
-  findAccountUserActionTokenByTokenState: RouteDependency;
-  parsePasskeyAuthenticationChallenge: RouteDependency;
-  findAccountUserByIdState: RouteDependency;
-  findAccountUserByPasskeyCredentialIdState: RouteDependency;
-  verifyHostedPasskeyAuthentication: RouteDependency;
-  passkeyCredentialToWebAuthnCredential: RouteDependency;
-  saveAccountUserRecordState: RouteDependency;
-  consumeAccountUserActionTokenState: RouteDependency;
-  revokeAccountUserActionTokensForUserState: RouteDependency;
-  getHostedSamlMetadata: RouteDependency;
-  buildHostedSamlAuthorizationRequest: RouteDependency;
-  completeHostedSamlAuthorization: RouteDependency;
-  recordHostedSamlReplayState: RouteDependency;
-  findAccountUserBySamlIdentityState: RouteDependency;
-  hostedSamlAllowsAutomaticLinking: RouteDependency;
-  linkAccountUserSamlIdentity: RouteDependency;
-  buildHostedOidcAuthorizationRequest: RouteDependency;
-  completeHostedOidcAuthorization: RouteDependency;
-  findAccountUserByOidcIdentityState: RouteDependency;
-  hostedOidcAllowsAutomaticLinking: RouteDependency;
-  linkAccountUserOidcIdentity: RouteDependency;
-  verifyTotpCode: RouteDependency;
-  verifyAndConsumeRecoveryCode: RouteDependency;
-  requireAccountSession: RouteDependency;
-  currentAccountAccess: RouteDependency;
-  buildHostedPasskeyRegistrationOptions: RouteDependency;
-  parsePasskeyRegistrationChallenge: RouteDependency;
-  asRegistrationResponse: RouteDependency;
-  verifyHostedPasskeyRegistration: RouteDependency;
-  buildAccountUserPasskeyCredentialRecord: RouteDependency;
-  generateHostedPasskeyUserHandle: RouteDependency;
-  accountUserDetailedMfaView: RouteDependency;
-  accountUserDetailedOidcView: RouteDependency;
-  accountUserDetailedSamlView: RouteDependency;
-  accountUserDetailedPasskeyView: RouteDependency;
-  accountPasskeyCredentialView: RouteDependency;
-  decryptTotpSecret: RouteDependency;
-  getSecretEnvelopeStatus: RouteDependency;
-  encryptTotpSecret: RouteDependency;
-  generateRecoveryCodes: RouteDependency;
-  generateTotpSecretBase32: RouteDependency;
-  buildTotpOtpAuthUrl: RouteDependency;
-  normalizePasskeyAuthenticatorHint: RouteDependency;
-  currentAccountRole: RouteDependency;
-  findTenantRecordByTenantIdState: RouteDependency;
-  getTenantPipelineRateLimit: RouteDependency;
-  getUsageContextState: RouteDependency;
-  readHostedBillingEntitlement: RouteDependency;
-  buildHostedFeatureServiceView: RouteDependency;
-  listTenantKeyRecordsState: RouteDependency;
-  tenantKeyStorePolicy: RouteDependency;
-  issueTenantApiKeyState: RouteDependency;
-  rotateTenantApiKeyState: RouteDependency;
-  setTenantApiKeyStatusState: RouteDependency;
-  revokeTenantApiKeyState: RouteDependency;
-  listAccountUsersByAccountIdState: RouteDependency;
-  listAccountUserActionTokensByAccountIdState: RouteDependency;
-  issueAccountInviteTokenState: RouteDependency;
-  deliverHostedInviteEmail: RouteDependency;
-  HostedEmailDeliveryError: RouteDependency;
-  hostedEmailDeliveryErrorResponse: RouteDependency;
-  revokeAccountUserActionTokenState: RouteDependency;
-  accountUserActionTokenView: RouteDependency;
-  issuePasswordResetTokenState: RouteDependency;
-  deliverHostedPasswordResetEmail: RouteDependency;
-  setAccountUserPasswordState: RouteDependency;
-  revokeAccountSessionsForUserState: RouteDependency;
-  setAccountUserStatusState: RouteDependency;
-  saveAccountUserActionTokenRecordState: RouteDependency;
-  getCookie: RouteDependency;
-  deleteCookie: RouteDependency;
-  sessionCookieName: RouteDependency;
-  revokeAccountSessionByTokenState: RouteDependency;
-  accountMfaErrorResponse: RouteDependency;
-  getHostedPlan: RouteDependency;
-  listHostedEmailDeliveriesState: RouteDependency;
-  createHostedCheckoutSession: RouteDependency;
-  stripeBillingErrorResponse: RouteDependency;
-  createHostedBillingPortalSession: RouteDependency;
-  buildHostedBillingExport: RouteDependency;
-  renderHostedBillingExportCsv: RouteDependency;
-  buildHostedBillingReconciliation: RouteDependency;
-  billingEntitlementView: RouteDependency;
-  currentTenant: RouteDependency;
+  currentHostedAccount(context: Context): Promise<CurrentHostedAccountResult | Response>;
+  countAccountUsersForAccountState: typeof ControlPlaneStore.countAccountUsersForAccountState;
+  createAccountUserState: typeof ControlPlaneStore.createAccountUserState;
+  AccountUserStoreError: typeof AccountUserStore.AccountUserStoreError;
+  findAccountUserByEmailState: typeof ControlPlaneStore.findAccountUserByEmailState;
+  deriveSignupTenantId(accountName: string, email: string): string;
+  resolvePlanSpec: typeof PlanCatalog.resolvePlanSpec;
+  SELF_HOST_PLAN_ID: typeof PlanCatalog.SELF_HOST_PLAN_ID;
+  provisionHostedAccountState: typeof ControlPlaneStore.provisionHostedAccountState;
+  accountStoreErrorResponse(context: Context, error: unknown): Response | null;
+  tenantKeyStoreErrorResponse(context: Context, error: unknown): Response | null;
+  issueAccountSessionState: typeof ControlPlaneStore.issueAccountSessionState;
+  recordAccountUserLoginState: typeof ControlPlaneStore.recordAccountUserLoginState;
+  syncHostedBillingEntitlementForTenant(
+    tenantId: string,
+    options?: SyncHostedBillingEntitlementOptions,
+  ): Promise<HostedBillingEntitlementRecord | null>;
+  setSessionCookieForRecord(context: Context, sessionToken: string, expiresAt: string): void;
+  accountUserView(record: AccountUserRecord): Record<string, unknown>;
+  adminAccountView(record: HostedAccountRecord): Record<string, unknown>;
+  DEFAULT_HOSTED_PLAN_ID: typeof PlanCatalog.DEFAULT_HOSTED_PLAN_ID;
+  accountApiKeyView(record: TenantKeyRecord): Record<string, unknown>;
+  resolvePlanStripeTrialDays: typeof PlanCatalog.resolvePlanStripeTrialDays;
+  verifyAccountUserPasswordRecord: typeof AccountUserStore.verifyAccountUserPasswordRecord;
+  findHostedAccountByIdState: typeof ControlPlaneStore.findHostedAccountByIdState;
+  totpSummary: typeof AccountMfa.totpSummary;
+  issueAccountMfaLoginTokenState: typeof ControlPlaneStore.issueAccountMfaLoginTokenState;
+  issueAccountPasskeyChallengeTokenState: typeof ControlPlaneStore.issueAccountPasskeyChallengeTokenState;
+  buildHostedPasskeyAuthenticationOptions: typeof AccountPasskeys.buildHostedPasskeyAuthenticationOptions;
+  asAuthenticationResponse(value: unknown): AuthenticationResponseJSON | null;
+  findAccountUserActionTokenByTokenState: typeof ControlPlaneStore.findAccountUserActionTokenByTokenState;
+  parsePasskeyAuthenticationChallenge(
+    record: AccountUserActionTokenRecord,
+  ): HostedPasskeyAuthenticationChallengeState | null;
+  findAccountUserByIdState: typeof ControlPlaneStore.findAccountUserByIdState;
+  findAccountUserByPasskeyCredentialIdState: typeof ControlPlaneStore.findAccountUserByPasskeyCredentialIdState;
+  verifyHostedPasskeyAuthentication: typeof AccountPasskeys.verifyHostedPasskeyAuthentication;
+  passkeyCredentialToWebAuthnCredential: typeof AccountPasskeys.passkeyCredentialToWebAuthnCredential;
+  saveAccountUserRecordState: typeof ControlPlaneStore.saveAccountUserRecordState;
+  consumeAccountUserActionTokenState: typeof ControlPlaneStore.consumeAccountUserActionTokenState;
+  revokeAccountUserActionTokensForUserState: typeof ControlPlaneStore.revokeAccountUserActionTokensForUserState;
+  getHostedSamlMetadata: typeof AccountSaml.getHostedSamlMetadata;
+  buildHostedSamlAuthorizationRequest: typeof AccountSaml.buildHostedSamlAuthorizationRequest;
+  completeHostedSamlAuthorization: typeof AccountSaml.completeHostedSamlAuthorization;
+  recordHostedSamlReplayState: typeof ControlPlaneStore.recordHostedSamlReplayState;
+  findAccountUserBySamlIdentityState: typeof ControlPlaneStore.findAccountUserBySamlIdentityState;
+  hostedSamlAllowsAutomaticLinking: typeof AccountSaml.hostedSamlAllowsAutomaticLinking;
+  linkAccountUserSamlIdentity: typeof AccountSaml.linkAccountUserSamlIdentity;
+  buildHostedOidcAuthorizationRequest: typeof AccountOidc.buildHostedOidcAuthorizationRequest;
+  completeHostedOidcAuthorization: typeof AccountOidc.completeHostedOidcAuthorization;
+  findAccountUserByOidcIdentityState: typeof ControlPlaneStore.findAccountUserByOidcIdentityState;
+  hostedOidcAllowsAutomaticLinking: typeof AccountOidc.hostedOidcAllowsAutomaticLinking;
+  linkAccountUserOidcIdentity: typeof AccountOidc.linkAccountUserOidcIdentity;
+  verifyTotpCode: typeof AccountMfa.verifyTotpCode;
+  verifyAndConsumeRecoveryCode: typeof AccountMfa.verifyAndConsumeRecoveryCode;
+  requireAccountSession(
+    context: Context,
+    options?: {
+      roles?: AccountUserRole[];
+      allowApiKey?: boolean;
+    },
+  ): Response | null;
+  currentAccountAccess(context: Context): AccountAccessContext | null;
+  buildHostedPasskeyRegistrationOptions: typeof AccountPasskeys.buildHostedPasskeyRegistrationOptions;
+  parsePasskeyRegistrationChallenge(
+    record: AccountUserActionTokenRecord,
+  ): HostedPasskeyRegistrationChallengeState | null;
+  asRegistrationResponse(value: unknown): RegistrationResponseJSON | null;
+  verifyHostedPasskeyRegistration: typeof AccountPasskeys.verifyHostedPasskeyRegistration;
+  buildAccountUserPasskeyCredentialRecord: typeof AccountPasskeys.buildAccountUserPasskeyCredentialRecord;
+  generateHostedPasskeyUserHandle: typeof AccountPasskeys.generateHostedPasskeyUserHandle;
+  accountUserDetailedMfaView(record: AccountUserRecord): ReturnType<typeof AccountMfa.totpSummary>;
+  accountUserDetailedOidcView(
+    record: AccountUserRecord,
+    requestOrigin?: string | URL | null,
+  ): Record<string, unknown>;
+  accountUserDetailedSamlView(
+    record: AccountUserRecord,
+    requestOrigin?: string | URL | null,
+  ): Record<string, unknown>;
+  accountUserDetailedPasskeyView(record: AccountUserRecord): Record<string, unknown>;
+  accountPasskeyCredentialView(record: AccountUserPasskeyCredentialRecord): Record<string, unknown>;
+  decryptTotpSecret: typeof AccountMfa.decryptTotpSecret;
+  getSecretEnvelopeStatus(): SecretEnvelopeStatus;
+  encryptTotpSecret: typeof AccountMfa.encryptTotpSecret;
+  generateRecoveryCodes: typeof AccountMfa.generateRecoveryCodes;
+  generateTotpSecretBase32: typeof AccountMfa.generateTotpSecretBase32;
+  buildTotpOtpAuthUrl: typeof AccountMfa.buildTotpOtpAuthUrl;
+  normalizePasskeyAuthenticatorHint(value: unknown): HostedPasskeyAuthenticatorHint | null;
+  currentAccountRole(context: Context): AccountUserRole | null;
+  findTenantRecordByTenantIdState: typeof ControlPlaneStore.findTenantRecordByTenantIdState;
+  getTenantPipelineRateLimit: typeof RateLimit.getTenantPipelineRateLimit;
+  getUsageContextState: typeof ControlPlaneStore.getUsageContextState;
+  readHostedBillingEntitlement(account: HostedAccountRecord): Promise<HostedBillingEntitlementRecord>;
+  buildHostedFeatureServiceView: typeof BillingFeatureService.buildHostedFeatureServiceView;
+  listTenantKeyRecordsState: typeof ControlPlaneStore.listTenantKeyRecordsState;
+  tenantKeyStorePolicy: typeof import('../../tenant-key-store.js').tenantKeyStorePolicy;
+  issueTenantApiKeyState: typeof ControlPlaneStore.issueTenantApiKeyState;
+  rotateTenantApiKeyState: typeof ControlPlaneStore.rotateTenantApiKeyState;
+  setTenantApiKeyStatusState: typeof ControlPlaneStore.setTenantApiKeyStatusState;
+  revokeTenantApiKeyState: typeof ControlPlaneStore.revokeTenantApiKeyState;
+  listAccountUsersByAccountIdState: typeof ControlPlaneStore.listAccountUsersByAccountIdState;
+  listAccountUserActionTokensByAccountIdState: typeof ControlPlaneStore.listAccountUserActionTokensByAccountIdState;
+  issueAccountInviteTokenState: typeof ControlPlaneStore.issueAccountInviteTokenState;
+  deliverHostedInviteEmail: typeof EmailDelivery.deliverHostedInviteEmail;
+  hostedEmailDeliveryErrorResponse(context: Context, error: unknown): Response | null;
+  revokeAccountUserActionTokenState: typeof ControlPlaneStore.revokeAccountUserActionTokenState;
+  accountUserActionTokenView(record: AccountUserActionTokenRecord): Record<string, unknown>;
+  issuePasswordResetTokenState: typeof ControlPlaneStore.issuePasswordResetTokenState;
+  deliverHostedPasswordResetEmail: typeof EmailDelivery.deliverHostedPasswordResetEmail;
+  setAccountUserPasswordState: typeof ControlPlaneStore.setAccountUserPasswordState;
+  revokeAccountSessionsForUserState: typeof ControlPlaneStore.revokeAccountSessionsForUserState;
+  setAccountUserStatusState: typeof ControlPlaneStore.setAccountUserStatusState;
+  saveAccountUserActionTokenRecordState: typeof ControlPlaneStore.saveAccountUserActionTokenRecordState;
+  getCookie(context: Context, key: string, prefix?: string): string | undefined;
+  deleteCookie(context: Context, key: string, options?: { path?: string }): void;
+  sessionCookieName: typeof AccountSessionStore.sessionCookieName;
+  revokeAccountSessionByTokenState: typeof ControlPlaneStore.revokeAccountSessionByTokenState;
+  accountMfaErrorResponse(context: Context, error: unknown): Response | null;
+  getHostedPlan: typeof PlanCatalog.getHostedPlan;
+  listHostedEmailDeliveriesState: typeof ControlPlaneStore.listHostedEmailDeliveriesState;
+  createHostedCheckoutSession: typeof StripeBilling.createHostedCheckoutSession;
+  stripeBillingErrorResponse(context: Context, error: unknown): Response | null;
+  createHostedBillingPortalSession: typeof StripeBilling.createHostedBillingPortalSession;
+  buildHostedBillingExport: typeof BillingExport.buildHostedBillingExport;
+  renderHostedBillingExportCsv: typeof BillingExport.renderHostedBillingExportCsv;
+  buildHostedBillingReconciliation: typeof BillingReconciliation.buildHostedBillingReconciliation;
+  billingEntitlementView(record: HostedBillingEntitlementRecord): Record<string, unknown>;
+  currentTenant(context: Context): TenantContext;
 }
 
 export function registerAccountRoutes(app: Hono, deps: AccountRouteDeps): void {
@@ -204,7 +312,6 @@ export function registerAccountRoutes(app: Hono, deps: AccountRouteDeps): void {
     listAccountUserActionTokensByAccountIdState,
     issueAccountInviteTokenState,
     deliverHostedInviteEmail,
-    HostedEmailDeliveryError,
     hostedEmailDeliveryErrorResponse,
     revokeAccountUserActionTokenState,
     accountUserActionTokenView,
@@ -265,7 +372,7 @@ app.post('/api/v1/account/users/bootstrap', async (c) => {
       password,
       role: 'account_admin',
     });
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof AccountUserStoreError) {
       return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
     }
@@ -303,8 +410,8 @@ app.post('/api/v1/auth/signup', async (c) => {
       planId: SELF_HOST_PLAN_ID,
       defaultPlanId: SELF_HOST_PLAN_ID,
     });
-  } catch (err: any) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  } catch (err) {
+    return c.json({ error: accountRouteErrorMessage(err) }, 400);
   }
 
   let provisioned;
@@ -322,7 +429,7 @@ app.post('/api/v1/auth/signup', async (c) => {
         monthlyRunQuota: resolvedPlan.monthlyRunQuota,
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = accountStoreErrorResponse(c, err);
     if (mapped) return mapped;
     const tenantMapped = tenantKeyStoreErrorResponse(c, err);
@@ -339,7 +446,7 @@ app.post('/api/v1/auth/signup', async (c) => {
       password,
       role: 'account_admin',
     });
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof AccountUserStoreError) {
       return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
     }
@@ -494,9 +601,8 @@ app.post('/api/v1/auth/passkeys/options', async (c) => {
       mode: 'email_lookup',
       hintedUser: accountUserView(user),
     });
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: message }, 400);
+  } catch (err) {
+    return c.json({ error: accountRouteErrorMessage(err) }, 400);
   }
 });
 
@@ -525,7 +631,7 @@ app.post('/api/v1/auth/passkeys/verify', async (c) => {
     return c.json({ error: 'Passkey credential could not be matched to the challenged account user.' }, 400);
   }
 
-  const credentialIndex = user.passkeys.credentials.findIndex((entry: any) => entry.credentialId === response.id);
+  const credentialIndex = user.passkeys.credentials.findIndex((entry) => entry.credentialId === response.id);
   if (credentialIndex < 0) {
     return c.json({ error: 'Passkey credential could not be matched to the challenged account user.' }, 400);
   }
@@ -538,9 +644,8 @@ app.post('/api/v1/auth/passkeys/verify', async (c) => {
       response,
       credential: passkeyCredentialToWebAuthnCredential(storedCredential),
     });
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: message }, 400);
+  } catch (err) {
+    return c.json({ error: accountRouteErrorMessage(err) }, 400);
   }
   if (!verification.verified) {
     return c.json({ error: 'Passkey authentication could not be verified.' }, 400);
@@ -587,8 +692,8 @@ app.get('/api/v1/auth/saml/metadata', (c) => {
     const metadata = getHostedSamlMetadata(c.req.url);
     c.header('content-type', 'application/samlmetadata+xml; charset=utf-8');
     return c.body(metadata);
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (err) {
+    const message = accountRouteErrorMessage(err);
     const status = message.includes('not configured') ? 503 : 400;
     return c.json({ error: message }, status);
   }
@@ -603,8 +708,8 @@ app.post('/api/v1/auth/saml/login', async (c) => {
       emailHint: email || null,
     });
     return c.json({ authorization });
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (err) {
+    const message = accountRouteErrorMessage(err);
     const status = message.includes('not configured') ? 503 : 400;
     return c.json({ error: message }, status);
   }
@@ -625,8 +730,8 @@ app.post('/api/v1/auth/saml/acs', async (c) => {
       samlResponse,
       relayState,
     });
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (err) {
+    const message = accountRouteErrorMessage(err);
     const status = message.includes('not configured') ? 503 : 400;
     return c.json({ error: message }, status);
   }
@@ -766,8 +871,8 @@ app.post('/api/v1/auth/oidc/login', async (c) => {
         expiresAt: authorization.expiresAt,
       },
     });
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (err) {
+    const message = accountRouteErrorMessage(err);
     if (message.includes('not configured')) {
       return c.json({ error: message }, 503);
     }
@@ -779,8 +884,8 @@ app.get('/api/v1/auth/oidc/callback', async (c) => {
   let callback;
   try {
     callback = await completeHostedOidcAuthorization(c.req.url);
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
+  } catch (err) {
+    const message = accountRouteErrorMessage(err);
     const status = message.includes('not configured') ? 503 : 400;
     return c.json({ error: message }, status);
   }
@@ -922,7 +1027,7 @@ app.post('/api/v1/auth/mfa/verify', async (c) => {
         }),
         code,
       });
-    } catch (err: any) {
+    } catch (err) {
       const mapped = accountMfaErrorResponse(c, err);
       if (mapped) return mapped;
       throw err;
@@ -1158,9 +1263,8 @@ app.post('/api/v1/account/passkeys/register/options', async (c) => {
         origin: built.config.origin,
       },
     });
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: message }, 400);
+  } catch (err) {
+    return c.json({ error: accountRouteErrorMessage(err) }, 400);
   }
 });
 
@@ -1197,9 +1301,8 @@ app.post('/api/v1/account/passkeys/register/verify', async (c) => {
       challengeState: challenge,
       response,
     });
-  } catch (err: any) {
-    const message = err instanceof Error ? err.message : String(err);
-    return c.json({ error: message }, 400);
+  } catch (err) {
+    return c.json({ error: accountRouteErrorMessage(err) }, 400);
   }
   if (!verification.verified || !verification.registrationInfo) {
     return c.json({ error: 'Passkey registration could not be verified.' }, 400);
@@ -1216,7 +1319,7 @@ app.post('/api/v1/account/passkeys/register/verify', async (c) => {
     createdAt: now,
   });
   const existingIndex = nextUser.passkeys.credentials.findIndex(
-    (entry: any) => entry.credentialId === nextCredential.credentialId,
+    (entry) => entry.credentialId === nextCredential.credentialId,
   );
   if (existingIndex >= 0) {
     const existing = nextUser.passkeys.credentials[existingIndex]!;
@@ -1259,7 +1362,7 @@ app.post('/api/v1/account/passkeys/:id/delete', async (c) => {
     return c.json({ error: 'Current password is invalid.' }, 403);
   }
 
-  const credentialIndex = user.passkeys.credentials.findIndex((entry: any) => entry.id === passkeyId);
+  const credentialIndex = user.passkeys.credentials.findIndex((entry) => entry.id === passkeyId);
   if (credentialIndex < 0) {
     return c.json({ error: `Passkey '${passkeyId}' was not found for the current account user.` }, 404);
   }
@@ -1304,7 +1407,7 @@ app.post('/api/v1/account/mfa/totp/enroll', async (c) => {
   try {
     secretBase32 = generateTotpSecretBase32();
     secretEnvelope = encryptTotpSecret(secretBase32);
-  } catch (err: any) {
+  } catch (err) {
     const mapped = accountMfaErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1364,7 +1467,7 @@ app.post('/api/v1/account/mfa/totp/confirm', async (c) => {
       iv: user.mfa.totp.pendingSecretIv,
       authTag: user.mfa.totp.pendingSecretAuthTag,
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = accountMfaErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1450,7 +1553,7 @@ app.post('/api/v1/account/mfa/disable', async (c) => {
         }),
         code,
       });
-    } catch (err: any) {
+    } catch (err) {
       const mapped = accountMfaErrorResponse(c, err);
       if (mapped) return mapped;
       throw err;
@@ -1567,8 +1670,8 @@ app.get('/api/v1/account/api-keys', async (c) => {
   const keys = await listTenantKeyRecordsState();
   return c.json({
     keys: keys.records
-      .filter((entry: any) => entry.tenantId === account.primaryTenantId)
-      .map((entry: any) => accountApiKeyView(entry)),
+      .filter((entry) => entry.tenantId === account.primaryTenantId)
+      .map((entry) => accountApiKeyView(entry)),
     defaults: {
       maxActiveKeysPerTenant: tenantKeyStorePolicy().maxActiveKeysPerTenant,
     },
@@ -1598,7 +1701,7 @@ app.post('/api/v1/account/api-keys', async (c) => {
       planId,
       monthlyRunQuota,
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1627,7 +1730,9 @@ app.post('/api/v1/account/api-keys/:id/rotate', async (c) => {
     return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
   }
   const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find((entry: any) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  const currentKey = keys.records.find(
+    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
+  ) ?? null;
   if (!currentKey) {
     return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
   }
@@ -1635,10 +1740,10 @@ app.post('/api/v1/account/api-keys/:id/rotate', async (c) => {
   let rotated;
   try {
     rotated = await rotateTenantApiKeyState(currentKey.id);
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    return c.json({ error: accountRouteErrorMessage(err) }, 400);
   }
   await syncHostedBillingEntitlementForTenant(account.primaryTenantId, {
     lastEventType: 'account.api_keys.rotate',
@@ -1665,7 +1770,9 @@ app.post('/api/v1/account/api-keys/:id/deactivate', async (c) => {
     return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
   }
   const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find((entry: any) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  const currentKey = keys.records.find(
+    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
+  ) ?? null;
   if (!currentKey) {
     return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
   }
@@ -1673,7 +1780,7 @@ app.post('/api/v1/account/api-keys/:id/deactivate', async (c) => {
   let result;
   try {
     result = await setTenantApiKeyStatusState(currentKey.id, 'inactive');
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1699,7 +1806,9 @@ app.post('/api/v1/account/api-keys/:id/reactivate', async (c) => {
     return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
   }
   const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find((entry: any) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  const currentKey = keys.records.find(
+    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
+  ) ?? null;
   if (!currentKey) {
     return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
   }
@@ -1707,7 +1816,7 @@ app.post('/api/v1/account/api-keys/:id/reactivate', async (c) => {
   let result;
   try {
     result = await setTenantApiKeyStatusState(currentKey.id, 'active');
-  } catch (err: any) {
+  } catch (err) {
     const mapped = tenantKeyStoreErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -1733,7 +1842,9 @@ app.post('/api/v1/account/api-keys/:id/revoke', async (c) => {
     return c.json({ error: `Hosted account '${access.accountId}' was not found.` }, 404);
   }
   const keys = await listTenantKeyRecordsState();
-  const currentKey = keys.records.find((entry: any) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId) ?? null;
+  const currentKey = keys.records.find(
+    (entry) => entry.id === c.req.param('id') && entry.tenantId === account.primaryTenantId,
+  ) ?? null;
   if (!currentKey) {
     return c.json({ error: `API key '${c.req.param('id')}' was not found.` }, 404);
   }
@@ -1774,12 +1885,9 @@ app.post('/api/v1/account/users', async (c) => {
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
-  const role = typeof body.role === 'string' ? body.role.trim() as any : null;
+  const role = accountUserRoleFilter(typeof body.role === 'string' ? body.role.trim() : null);
   if (!email || !displayName || !password || !role) {
     return c.json({ error: 'email, displayName, password, and role are required.' }, 400);
-  }
-  if (!['account_admin', 'billing_admin', 'read_only'].includes(role)) {
-    return c.json({ error: "role must be one of: account_admin, billing_admin, read_only." }, 400);
   }
   if (password.length < 12) {
     return c.json({ error: 'password must be at least 12 characters long.' }, 400);
@@ -1794,7 +1902,7 @@ app.post('/api/v1/account/users', async (c) => {
       password,
       role,
     });
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof AccountUserStoreError) {
       return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
     }
@@ -1831,13 +1939,10 @@ app.post('/api/v1/account/users/invites', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
-  const role = typeof body.role === 'string' ? body.role.trim() as any : null;
+  const role = accountUserRoleFilter(typeof body.role === 'string' ? body.role.trim() : null);
   const expiresHours = typeof body.expiresHours === 'number' ? body.expiresHours : null;
   if (!email || !displayName || !role) {
     return c.json({ error: 'email, displayName, and role are required.' }, 400);
-  }
-  if (!['account_admin', 'billing_admin', 'read_only'].includes(role)) {
-    return c.json({ error: "role must be one of: account_admin, billing_admin, read_only." }, 400);
   }
   const existing = await findAccountUserByEmailState(email);
   if (existing) {
@@ -1862,7 +1967,7 @@ app.post('/api/v1/account/users/invites', async (c) => {
       accountName: account.accountName,
       token: issued.token,
     });
-  } catch (err: any) {
+  } catch (err) {
     await revokeAccountUserActionTokenState(issued.record.id);
     const mapped = hostedEmailDeliveryErrorResponse(c, err);
     if (mapped) return mapped;
@@ -1882,7 +1987,7 @@ app.post('/api/v1/account/users/invites/:id/revoke', async (c) => {
   if (unauthorized) return unauthorized;
   const access = currentAccountAccess(c)!;
   const invites = await listAccountUserActionTokensByAccountIdState(access.accountId, { purpose: 'invite' });
-  const target = invites.records.find((entry: any) => entry.id === c.req.param('id')) ?? null;
+  const target = invites.records.find((entry) => entry.id === c.req.param('id')) ?? null;
   if (!target) {
     return c.json({ error: `Invite '${c.req.param('id')}' was not found.` }, 404);
   }
@@ -1925,7 +2030,7 @@ app.post('/api/v1/account/users/invites/accept', async (c) => {
       password,
       role: invite.role,
     });
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof AccountUserStoreError) {
       return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
     }
@@ -1969,7 +2074,7 @@ app.post('/api/v1/account/users/:id/deactivate', async (c) => {
     return c.json({
       user: accountUserView(updated.record),
     });
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof AccountUserStoreError) {
       return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
     }
@@ -1992,7 +2097,7 @@ app.post('/api/v1/account/users/:id/reactivate', async (c) => {
     return c.json({
       user: accountUserView(updated.record),
     });
-  } catch (err: any) {
+  } catch (err) {
     if (err instanceof AccountUserStoreError) {
       return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
     }
@@ -2033,7 +2138,7 @@ app.post('/api/v1/account/users/:id/password-reset', async (c) => {
       accountName: account.accountName,
       token: issued.token,
     });
-  } catch (err: any) {
+  } catch (err) {
     await revokeAccountUserActionTokenState(issued.record.id);
     const mapped = hostedEmailDeliveryErrorResponse(c, err);
     if (mapped) return mapped;
@@ -2089,11 +2194,13 @@ app.get('/api/v1/account/email/deliveries', async (c) => {
   const recipient = c.req.query('recipient')?.trim();
   const limitRaw = c.req.query('limit')?.trim();
   const limit = limitRaw ? Number.parseInt(limitRaw, 10) : undefined;
+  const statusFilter = hostedEmailDeliveryStatusFilter(status);
+  const providerFilter = hostedEmailDeliveryProviderFilter(provider);
   const deliveries = await listHostedEmailDeliveriesState({
     accountId: access.accountId,
     purpose: purpose === 'invite' || purpose === 'password_reset' ? purpose : null,
-    status: status ? status as any : null,
-    provider: provider ? provider as any : null,
+    status: statusFilter,
+    provider: providerFilter,
     recipient: recipient || null,
     limit: Number.isFinite(limit) ? limit : undefined,
   });
@@ -2143,7 +2250,7 @@ app.post('/api/v1/account/billing/checkout', async (c) => {
       plan,
       idempotencyKey,
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = stripeBillingErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
@@ -2175,7 +2282,7 @@ app.post('/api/v1/account/billing/portal', async (c) => {
     portal = await createHostedBillingPortalSession({
       account: current.account,
     });
-  } catch (err: any) {
+  } catch (err) {
     const mapped = stripeBillingErrorResponse(c, err);
     if (mapped) return mapped;
     throw err;
