@@ -60,7 +60,6 @@ function testDirectStoreRouteDebtIsExplicitlyBounded(): void {
   assert.deepEqual(offenders, [
     'src/service/http/routes/account-routes.ts',
     'src/service/http/routes/admin-routes.ts',
-    'src/service/http/routes/stripe-webhook-routes.ts',
   ]);
 }
 
@@ -97,19 +96,34 @@ function testWebhookRoutesAreSplitByProviderBoundary(): void {
 function testStripeWebhookRouteDelegatesIngressUseCase(): void {
   const stripeWebhookRoute = readFileSync(join(ROUTE_ROOT, 'stripe-webhook-routes.ts'), 'utf8');
   const stripeWebhookService = readProjectFile('src', 'service', 'application', 'stripe-webhook-service.ts');
+  const stripeWebhookBillingProcessor = readProjectFile(
+    'src',
+    'service',
+    'application',
+    'stripe-webhook-billing-processor.ts',
+  );
 
   assert.match(stripeWebhookRoute, /stripeWebhookService: StripeWebhookService/u);
+  assert.match(stripeWebhookRoute, /stripeWebhookBillingProcessor: StripeWebhookBillingProcessor/u);
   assert.match(stripeWebhookRoute, /stripeWebhookService\.begin/u);
+  assert.match(stripeWebhookRoute, /stripeWebhookBillingProcessor\.process/u);
   assert.doesNotMatch(stripeWebhookRoute, /claimStripeBillingEvent/u);
   assert.doesNotMatch(stripeWebhookRoute, /claimProcessedStripeWebhookState/u);
   assert.doesNotMatch(stripeWebhookRoute, /lookupProcessedStripeWebhookState/u);
   assert.doesNotMatch(stripeWebhookRoute, /finalizeProcessedStripeWebhookState/u);
   assert.doesNotMatch(stripeWebhookRoute, /recordProcessedStripeWebhookState/u);
   assert.doesNotMatch(stripeWebhookRoute, /releaseProcessedStripeWebhookClaimState/u);
+  assert.doesNotMatch(stripeWebhookRoute, /applyStripeSubscriptionStateState/u);
+  assert.doesNotMatch(stripeWebhookRoute, /appendAdminAuditRecordState/u);
+  assert.doesNotMatch(stripeWebhookRoute, /billing-event-ledger/u);
+  assert.doesNotMatch(stripeWebhookRoute, /control-plane-store/u);
 
   assert.match(stripeWebhookService, /export interface StripeWebhookService/u);
   assert.match(stripeWebhookService, /begin\(input: StripeWebhookBeginInput\)/u);
   assert.match(stripeWebhookService, /releaseClaim\(\)/u);
+  assert.match(stripeWebhookBillingProcessor, /export interface StripeWebhookBillingProcessor/u);
+  assert.match(stripeWebhookBillingProcessor, /process\(stripeWebhook: StripeWebhookProcessingHandle\)/u);
+  assert.match(stripeWebhookBillingProcessor, /accountStoreErrorResponse/u);
 }
 
 function testAdminRouteIsStronglyTyped(): void {

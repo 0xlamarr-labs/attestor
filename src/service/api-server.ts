@@ -360,6 +360,7 @@ import {
 } from './release-review-site.js';
 import { createAdminMutationService } from './application/admin-mutation-service.js';
 import { createAccountAuthService } from './application/account-auth-service.js';
+import { createStripeWebhookBillingProcessor } from './application/stripe-webhook-billing-processor.js';
 import { createStripeWebhookService } from './application/stripe-webhook-service.js';
 import { createRegistries } from './bootstrap/registries.js';
 import { createRuntime, type AppRouteDeps, type AppRuntimeInfra } from './bootstrap/runtime.js';
@@ -1851,29 +1852,16 @@ const stripeWebhookService = createStripeWebhookService({
   releaseStripeBillingEventClaim,
 });
 
-const webhookRouteDeps = {
-  getSendGridWebhookStatus,
-  verifySignedSendGridWebhook,
-  parseSendGridWebhookEvents,
-  listHostedEmailDeliveriesState,
-  recordHostedEmailProviderEventState,
-  sendGridEventTypeToStatusHint,
-  getMailgunWebhookStatus,
-  parseMailgunWebhookEvent,
-  verifySignedMailgunWebhook,
-  mailgunEventTypeToStatusHint,
-  stripeWebhookService,
+const stripeWebhookBillingProcessor = createStripeWebhookBillingProcessor({
   observeBillingWebhookEvent,
   isSupportedStripeWebhookEvent,
   stripeReferenceId,
   parseStripeInvoiceStatus,
   stripeInvoicePriceId,
   metadataStringValue,
-  accountStoreErrorResponse,
   applyStripeSubscriptionStateState,
   applyStripeInvoiceStateState,
   applyStripeCheckoutCompletionState,
-  attachStripeBillingToAccountState,
   findHostedAccountByStripeRefs,
   findHostedPlanByStripePriceId,
   resolvePlanSpec,
@@ -1893,6 +1881,21 @@ const webhookRouteDeps = {
   upsertStripeCharges,
   unixSecondsToIso,
   resolvePlanStripePrice,
+});
+
+const webhookRouteDeps = {
+  getSendGridWebhookStatus,
+  verifySignedSendGridWebhook,
+  parseSendGridWebhookEvents,
+  listHostedEmailDeliveriesState,
+  recordHostedEmailProviderEventState,
+  sendGridEventTypeToStatusHint,
+  getMailgunWebhookStatus,
+  parseMailgunWebhookEvent,
+  verifySignedMailgunWebhook,
+  mailgunEventTypeToStatusHint,
+  stripeWebhookService,
+  stripeWebhookBillingProcessor,
 } satisfies ApiRouteDeps['webhook'];
 
 const apiRuntimeInfra = {
