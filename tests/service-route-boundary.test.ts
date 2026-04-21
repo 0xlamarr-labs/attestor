@@ -4,6 +4,10 @@ import { join } from 'node:path';
 
 const ROUTE_ROOT = join(process.cwd(), 'src', 'service', 'http', 'routes');
 
+function readProjectFile(...segments: string[]): string {
+  return readFileSync(join(process.cwd(), ...segments), 'utf8');
+}
+
 function collectRouteFiles(root: string): string[] {
   const results: string[] = [];
   for (const entry of readdirSync(root)) {
@@ -99,6 +103,21 @@ function testAdminRouteIsStronglyTyped(): void {
   assert.doesNotMatch(adminRoute, /\bas any\b/u);
 }
 
+function testAdminRouteDelegatesMutationUseCase(): void {
+  const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
+  const adminMutationService = readProjectFile('src', 'service', 'application', 'admin-mutation-service.ts');
+
+  assert.match(adminRoute, /adminMutationService: AdminMutationService/u);
+  assert.match(adminRoute, /adminMutationService\.begin/u);
+  assert.match(adminRoute, /adminMutationService\.finalize/u);
+  assert.doesNotMatch(adminRoute, /adminMutationRequest/u);
+  assert.doesNotMatch(adminRoute, /finalizeAdminMutation/u);
+
+  assert.match(adminMutationService, /export interface AdminMutationService/u);
+  assert.match(adminMutationService, /begin\(input: AdminMutationBeginInput\)/u);
+  assert.match(adminMutationService, /finalize\(input: AdminMutationFinalizationInput\)/u);
+}
+
 function testAccountRouteIsStronglyTyped(): void {
   const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
 
@@ -106,6 +125,24 @@ function testAccountRouteIsStronglyTyped(): void {
   assert.doesNotMatch(accountRoute, /type RouteDependency = any/u);
   assert.doesNotMatch(accountRoute, /:\s*any\b/u);
   assert.doesNotMatch(accountRoute, /\bas any\b/u);
+}
+
+function testAccountRouteDelegatesAuthUseCases(): void {
+  const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
+  const accountAuthService = readProjectFile('src', 'service', 'application', 'account-auth-service.ts');
+
+  assert.match(accountRoute, /authService: AccountAuthService/u);
+  assert.match(accountRoute, /authService\.bootstrapFirstUser/u);
+  assert.match(accountRoute, /authService\.signup/u);
+  assert.match(accountRoute, /authService\.login/u);
+  assert.doesNotMatch(accountRoute, /countAccountUsersForAccountState/u);
+  assert.doesNotMatch(accountRoute, /provisionHostedAccountState/u);
+  assert.doesNotMatch(accountRoute, /deriveSignupTenantId/u);
+
+  assert.match(accountAuthService, /export interface AccountAuthService/u);
+  assert.match(accountAuthService, /bootstrapFirstUser/u);
+  assert.match(accountAuthService, /signup/u);
+  assert.match(accountAuthService, /login/u);
 }
 
 function testPipelineRoutesAreSplitByUseCaseBoundary(): void {
@@ -151,7 +188,9 @@ testDirectStoreRouteDebtIsExplicitlyBounded();
 testReleaseReviewRouteUsesPublicReleaseLayerTypes();
 testWebhookRoutesAreSplitByProviderBoundary();
 testAdminRouteIsStronglyTyped();
+testAdminRouteDelegatesMutationUseCase();
 testAccountRouteIsStronglyTyped();
+testAccountRouteDelegatesAuthUseCases();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 
-console.log('Service route boundary tests: 8 passed, 0 failed');
+console.log('Service route boundary tests: 10 passed, 0 failed');

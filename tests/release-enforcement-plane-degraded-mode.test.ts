@@ -313,15 +313,18 @@ function createAdminFixture(options?: { authorized?: boolean }) {
       }
       return null;
     },
-    async adminMutationRequest(_c: Context, routeId: string, requestPayload: unknown) {
-      return {
-        idempotencyKey: null,
-        requestHash: JSON.stringify({ routeId, requestPayload }),
-      };
-    },
-    async finalizeAdminMutation(input: any) {
-      adminAuditRecords.push(input.audit);
-      return input.responseBody;
+    adminMutationService: {
+      async begin({ routeId, requestPayload }) {
+        return {
+          kind: 'ready',
+          idempotencyKey: null,
+          requestHash: JSON.stringify({ routeId, requestPayload }),
+        };
+      },
+      async finalize(input) {
+        adminAuditRecords.push(input.audit);
+        return input.responseBody;
+      },
     },
   });
 

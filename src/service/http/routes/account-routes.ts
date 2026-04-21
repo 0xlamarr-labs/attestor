@@ -19,6 +19,7 @@ import type * as PlanCatalog from '../../plan-catalog.js';
 import type * as RateLimit from '../../rate-limit.js';
 import type { SecretEnvelopeStatus } from '../../secret-envelope.js';
 import type * as StripeBilling from '../../stripe-billing.js';
+import { AccountAuthServiceError, type AccountAuthService } from '../../application/account-auth-service.js';
 import type { HostedAccountRecord } from '../../account-store.js';
 import type {
   AccountUserPasskeyCredentialRecord,
@@ -50,6 +51,11 @@ interface CurrentHostedAccountResult {
 
 function accountRouteErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function accountAuthServiceErrorResponse(context: Context, error: unknown): Response | null {
+  if (!(error instanceof AccountAuthServiceError)) return null;
+  return context.json({ error: error.message }, error.statusCode);
 }
 
 function accountUserRoleFilter(value: unknown): AccountUserRole | null {
@@ -93,16 +99,13 @@ function hostedEmailDeliveryProviderFilter(value: string | undefined): HostedEma
 }
 
 export interface AccountRouteDeps {
+  authService: AccountAuthService;
   currentHostedAccount(context: Context): Promise<CurrentHostedAccountResult | Response>;
-  countAccountUsersForAccountState: typeof ControlPlaneStore.countAccountUsersForAccountState;
   createAccountUserState: typeof ControlPlaneStore.createAccountUserState;
   AccountUserStoreError: typeof AccountUserStore.AccountUserStoreError;
   findAccountUserByEmailState: typeof ControlPlaneStore.findAccountUserByEmailState;
-  deriveSignupTenantId(accountName: string, email: string): string;
   resolvePlanSpec: typeof PlanCatalog.resolvePlanSpec;
   SELF_HOST_PLAN_ID: typeof PlanCatalog.SELF_HOST_PLAN_ID;
-  provisionHostedAccountState: typeof ControlPlaneStore.provisionHostedAccountState;
-  accountStoreErrorResponse(context: Context, error: unknown): Response | null;
   tenantKeyStoreErrorResponse(context: Context, error: unknown): Response | null;
   issueAccountSessionState: typeof ControlPlaneStore.issueAccountSessionState;
   recordAccountUserLoginState: typeof ControlPlaneStore.recordAccountUserLoginState;
@@ -113,9 +116,7 @@ export interface AccountRouteDeps {
   setSessionCookieForRecord(context: Context, sessionToken: string, expiresAt: string): void;
   accountUserView(record: AccountUserRecord): Record<string, unknown>;
   adminAccountView(record: HostedAccountRecord): Record<string, unknown>;
-  DEFAULT_HOSTED_PLAN_ID: typeof PlanCatalog.DEFAULT_HOSTED_PLAN_ID;
   accountApiKeyView(record: TenantKeyRecord): Record<string, unknown>;
-  resolvePlanStripeTrialDays: typeof PlanCatalog.resolvePlanStripeTrialDays;
   verifyAccountUserPasswordRecord: typeof AccountUserStore.verifyAccountUserPasswordRecord;
   findHostedAccountByIdState: typeof ControlPlaneStore.findHostedAccountByIdState;
   totpSummary: typeof AccountMfa.totpSummary;
@@ -226,16 +227,13 @@ export interface AccountRouteDeps {
 
 export function registerAccountRoutes(app: Hono, deps: AccountRouteDeps): void {
   const {
+    authService,
     currentHostedAccount,
-    countAccountUsersForAccountState,
     createAccountUserState,
     AccountUserStoreError,
     findAccountUserByEmailState,
-    deriveSignupTenantId,
     resolvePlanSpec,
     SELF_HOST_PLAN_ID,
-    provisionHostedAccountState,
-    accountStoreErrorResponse,
     tenantKeyStoreErrorResponse,
     issueAccountSessionState,
     recordAccountUserLoginState,
@@ -243,9 +241,7 @@ export function registerAccountRoutes(app: Hono, deps: AccountRouteDeps): void {
     setSessionCookieForRecord,
     accountUserView,
     adminAccountView,
-    DEFAULT_HOSTED_PLAN_ID,
     accountApiKeyView,
-    resolvePlanStripeTrialDays,
     verifyAccountUserPasswordRecord,
     findHostedAccountByIdState,
     totpSummary,
@@ -341,48 +337,28 @@ export function registerAccountRoutes(app: Hono, deps: AccountRouteDeps): void {
 app.post('/api/v1/account/users/bootstrap', async (c) => {
   const current = await currentHostedAccount(c);
   if (current instanceof Response) return current;
-  if (current.tenant.source !== 'api_key') {
-    return c.json({ error: 'Bootstrap requires a tenant API key.' }, 403);
-  }
-
-  const existingUsers = await countAccountUsersForAccountState(current.account.id);
-  if (existingUsers > 0) {
-    return c.json({
-      error: `Hosted account '${current.account.id}' already has account users. Use an account_admin session to manage users.`,
-    }, 409);
-  }
 
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
-  if (!email || !displayName || !password) {
-    return c.json({ error: 'email, displayName, and password are required.' }, 400);
-  }
-  if (password.length < 12) {
-    return c.json({ error: 'password must be at least 12 characters long.' }, 400);
-  }
 
-  let created;
   try {
-    created = await createAccountUserState({
-      accountId: current.account.id,
+    const created = await authService.bootstrapFirstUser({
+      current,
       email,
       displayName,
       password,
-      role: 'account_admin',
     });
+    return c.json({
+      user: accountUserView(created.user),
+      bootstrap: true,
+    }, 201);
   } catch (err) {
-    if (err instanceof AccountUserStoreError) {
-      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
-    }
+    const mapped = accountAuthServiceErrorResponse(c, err);
+    if (mapped) return mapped;
     throw err;
   }
-
-  return c.json({
-    user: accountUserView(created.record),
-    bootstrap: true,
-  }, 201);
 });
 
 app.post('/api/v1/auth/signup', async (c) => {
@@ -391,169 +367,70 @@ app.post('/api/v1/auth/signup', async (c) => {
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
-  if (!accountName || !email || !displayName || !password) {
-    return c.json({ error: 'accountName, email, displayName, and password are required.' }, 400);
-  }
-  if (password.length < 12) {
-    return c.json({ error: 'password must be at least 12 characters long.' }, 400);
-  }
-
-  const existingUser = await findAccountUserByEmailState(email);
-  if (existingUser) {
-    return c.json({ error: `Account user '${email}' already exists.` }, 409);
-  }
-
-  const tenantId = deriveSignupTenantId(accountName, email);
-  let resolvedPlan;
   try {
-    resolvedPlan = resolvePlanSpec({
-      planId: SELF_HOST_PLAN_ID,
-      defaultPlanId: SELF_HOST_PLAN_ID,
-    });
-  } catch (err) {
-    return c.json({ error: accountRouteErrorMessage(err) }, 400);
-  }
-
-  let provisioned;
-  try {
-    provisioned = await provisionHostedAccountState({
-      account: {
-        accountName,
-        contactEmail: email,
-        primaryTenantId: tenantId,
-      },
-      key: {
-        tenantId,
-        tenantName: accountName,
-        planId: resolvedPlan.planId,
-        monthlyRunQuota: resolvedPlan.monthlyRunQuota,
-      },
-    });
-  } catch (err) {
-    const mapped = accountStoreErrorResponse(c, err);
-    if (mapped) return mapped;
-    const tenantMapped = tenantKeyStoreErrorResponse(c, err);
-    if (tenantMapped) return tenantMapped;
-    throw err;
-  }
-
-  let createdUser;
-  try {
-    createdUser = await createAccountUserState({
-      accountId: provisioned.account.id,
+    const signup = await authService.signup({
+      accountName,
       email,
       displayName,
       password,
-      role: 'account_admin',
     });
+
+    setSessionCookieForRecord(c, signup.sessionToken, signup.session.expiresAt);
+
+    return c.json({
+      signup: true,
+      session: {
+        id: signup.session.id,
+        expiresAt: signup.session.expiresAt,
+        source: 'account_session',
+      },
+      user: accountUserView(signup.user),
+      account: adminAccountView(signup.account),
+      commercial: signup.commercial,
+      initialKey: {
+        ...accountApiKeyView(signup.initialKey),
+        apiKey: signup.apiKey,
+      },
+    }, 201);
   } catch (err) {
-    if (err instanceof AccountUserStoreError) {
-      return c.json({ error: err.message }, err.code === 'NOT_FOUND' ? 404 : 409);
-    }
+    const mapped = accountAuthServiceErrorResponse(c, err);
+    if (mapped) return mapped;
     throw err;
   }
-
-  const issued = await issueAccountSessionState({
-    accountId: provisioned.account.id,
-    accountUserId: createdUser.record.id,
-    role: createdUser.record.role,
-  });
-  const loginTouch = await recordAccountUserLoginState(createdUser.record.id);
-  await syncHostedBillingEntitlementForTenant(provisioned.account.primaryTenantId, {
-    lastEventType: 'auth.signup',
-    lastEventAt: new Date().toISOString(),
-  });
-
-  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
-
-  return c.json({
-    signup: true,
-    session: {
-      id: issued.record.id,
-      expiresAt: issued.record.expiresAt,
-      source: 'account_session',
-    },
-    user: accountUserView(loginTouch.record),
-    account: adminAccountView(provisioned.account),
-    commercial: {
-      currentPhase: resolvedPlan.plan?.intendedFor === 'self_host' ? 'evaluation' : 'paid',
-      includedMonthlyRunQuota: resolvedPlan.monthlyRunQuota,
-      firstHostedPlanId: DEFAULT_HOSTED_PLAN_ID,
-      firstHostedPlanTrialDays: resolvePlanStripeTrialDays(DEFAULT_HOSTED_PLAN_ID).trialDays,
-    },
-    initialKey: {
-      ...accountApiKeyView(provisioned.initialKey),
-      apiKey: provisioned.apiKey,
-    },
-  }, 201);
 });
 
 app.post('/api/v1/auth/login', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const email = typeof body.email === 'string' ? body.email.trim() : '';
   const password = typeof body.password === 'string' ? body.password : '';
-  if (!email || !password) {
-    return c.json({ error: 'email and password are required.' }, 400);
-  }
+  try {
+    const login = await authService.login({ email, password });
+    if (login.mfaRequired) {
+      return c.json({
+        mfaRequired: true,
+        challengeToken: login.challengeToken,
+        challenge: login.challenge,
+        user: accountUserView(login.user),
+        account: adminAccountView(login.account),
+      });
+    }
 
-  const user = await findAccountUserByEmailState(email);
-  if (!user || !verifyAccountUserPasswordRecord(user.password, password)) {
-    return c.json({ error: 'Invalid email or password.' }, 401);
-  }
-  if (user.status !== 'active') {
-    return c.json({ error: `Account user '${user.email}' is inactive.` }, 403);
-  }
+    setSessionCookieForRecord(c, login.sessionToken, login.session.expiresAt);
 
-  const account = await findHostedAccountByIdState(user.accountId);
-  if (!account) {
-    return c.json({ error: `Hosted account '${user.accountId}' was not found.` }, 404);
-  }
-  if (account.status === 'archived') {
-    return c.json({ error: `Hosted account '${account.id}' is archived and cannot accept new sessions.` }, 403);
-  }
-
-  const userTotp = totpSummary(user.mfa.totp);
-  if (userTotp.enabled) {
-    const issued = await issueAccountMfaLoginTokenState({
-      accountId: account.id,
-      accountUserId: user.id,
-      email: user.email,
-    });
     return c.json({
-      mfaRequired: true,
-      challengeToken: issued.token,
-      challenge: {
-        id: issued.record.id,
-        method: 'totp',
-        expiresAt: issued.record.expiresAt,
-        maxAttempts: issued.record.maxAttempts,
-        remainingAttempts: issued.record.maxAttempts === null
-          ? null
-          : Math.max(issued.record.maxAttempts - issued.record.attemptCount, 0),
+      session: {
+        id: login.session.id,
+        expiresAt: login.session.expiresAt,
+        source: 'account_session',
       },
-      user: accountUserView(user),
-      account: adminAccountView(account),
+      user: accountUserView(login.user),
+      account: adminAccountView(login.account),
     });
+  } catch (err) {
+    const mapped = accountAuthServiceErrorResponse(c, err);
+    if (mapped) return mapped;
+    throw err;
   }
-
-  const issued = await issueAccountSessionState({
-    accountId: account.id,
-    accountUserId: user.id,
-    role: user.role,
-  });
-  const loginTouch = await recordAccountUserLoginState(user.id);
-
-  setSessionCookieForRecord(c, issued.sessionToken, issued.record.expiresAt);
-
-  return c.json({
-    session: {
-      id: issued.record.id,
-      expiresAt: issued.record.expiresAt,
-      source: 'account_session',
-    },
-    user: accountUserView(loginTouch.record),
-    account: adminAccountView(account),
-  });
 });
 
 app.post('/api/v1/auth/passkeys/options', async (c) => {

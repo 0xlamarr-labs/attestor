@@ -358,6 +358,8 @@ import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
+import { createAdminMutationService } from './application/admin-mutation-service.js';
+import { createAccountAuthService } from './application/account-auth-service.js';
 import { createRegistries } from './bootstrap/registries.js';
 import { createRuntime, type AppRouteDeps, type AppRuntimeInfra } from './bootstrap/runtime.js';
 import { registerAllRoutes } from './bootstrap/routes.js';
@@ -1482,45 +1484,33 @@ function billingEventView(record: Awaited<ReturnType<typeof listBillingEvents>>[
   };
 }
 
+const adminMutationService = createAdminMutationService({
+  hashJsonValue,
+  lookupAdminIdempotencyState,
+  recordAdminIdempotencyState,
+  appendAdminAuditRecordState,
+});
+
 async function adminMutationRequest(c: Context, routeId: string, requestPayload: unknown):
   Promise<{ idempotencyKey: string | null; requestHash: string } | Response> {
-  const idempotencyKey = c.req.header('Idempotency-Key')?.trim() ?? null;
-  if (!idempotencyKey) {
-    return {
-      idempotencyKey: null,
-      requestHash: hashJsonValue({ routeId, payload: requestPayload }),
-    };
-  }
-
-  const lookup = await lookupAdminIdempotencyState({
-    idempotencyKey,
+  const mutation = await adminMutationService.begin({
+    idempotencyKey: c.req.header('Idempotency-Key')?.trim() ?? null,
     routeId,
     requestPayload,
   });
-
-  if (lookup.kind === 'conflict') {
-    return c.json({
-      error: `Idempotency-Key '${idempotencyKey}' was already used for a different admin mutation.`,
-      routeId: lookup.record.routeId,
-      createdAt: lookup.record.createdAt,
-    }, 409);
+  if (mutation.kind === 'ready') {
+    return {
+      idempotencyKey: mutation.idempotencyKey,
+      requestHash: mutation.requestHash,
+    };
   }
-
-  if (lookup.kind === 'replay') {
-    return new Response(JSON.stringify(lookup.response), {
-      status: lookup.record.statusCode,
-      headers: {
-        'content-type': 'application/json; charset=UTF-8',
-        'x-attestor-idempotent-replay': 'true',
-        'x-attestor-idempotency-key': idempotencyKey,
-      },
-    });
+  if (mutation.kind === 'conflict') {
+    return c.json(mutation.responseBody, mutation.statusCode);
   }
-
-  return {
-    idempotencyKey,
-    requestHash: lookup.requestHash,
-  };
+  return new Response(JSON.stringify(mutation.responseBody), {
+    status: mutation.statusCode,
+    headers: mutation.headers,
+  });
 }
 
 async function finalizeAdminMutation(options: {
@@ -1540,32 +1530,7 @@ async function finalizeAdminMutation(options: {
     metadata?: Record<string, unknown>;
   };
 }): Promise<Record<string, unknown>> {
-  if (options.idempotencyKey) {
-    await recordAdminIdempotencyState({
-      idempotencyKey: options.idempotencyKey,
-      routeId: options.routeId,
-      requestPayload: options.requestPayload,
-      statusCode: options.statusCode,
-      response: options.responseBody,
-    });
-  }
-
-  await appendAdminAuditRecordState({
-    actorType: 'admin_api_key',
-    actorLabel: 'ATTESTOR_ADMIN_API_KEY',
-    action: options.audit.action,
-    routeId: options.routeId,
-    accountId: options.audit.accountId ?? null,
-    tenantId: options.audit.tenantId ?? null,
-    tenantKeyId: options.audit.tenantKeyId ?? null,
-    planId: options.audit.planId ?? null,
-    monthlyRunQuota: options.audit.monthlyRunQuota ?? null,
-    idempotencyKey: options.idempotencyKey,
-    requestHash: options.audit.requestHash ?? '',
-    metadata: options.audit.metadata ?? {},
-  });
-
-  return options.responseBody;
+  return adminMutationService.finalize(options);
 }
 
 const publicSiteRouteDeps = {
@@ -1592,17 +1557,33 @@ const coreRouteDeps = {
   rlsActivationResult,
 } satisfies ApiRouteDeps['core'];
 
-const accountRouteDeps = {
-  currentHostedAccount,
+const accountAuthService = createAccountAuthService({
   countAccountUsersForAccountState,
   createAccountUserState,
-  AccountUserStoreError,
   findAccountUserByEmailState,
   deriveSignupTenantId,
   resolvePlanSpec,
   SELF_HOST_PLAN_ID,
+  DEFAULT_HOSTED_PLAN_ID,
+  resolvePlanStripeTrialDays,
   provisionHostedAccountState,
-  accountStoreErrorResponse,
+  issueAccountSessionState,
+  recordAccountUserLoginState,
+  syncHostedBillingEntitlementForTenant,
+  verifyAccountUserPasswordRecord,
+  findHostedAccountByIdState,
+  totpSummary,
+  issueAccountMfaLoginTokenState,
+});
+
+const accountRouteDeps = {
+  authService: accountAuthService,
+  currentHostedAccount,
+  createAccountUserState,
+  AccountUserStoreError,
+  findAccountUserByEmailState,
+  resolvePlanSpec,
+  SELF_HOST_PLAN_ID,
   tenantKeyStoreErrorResponse,
   issueAccountSessionState,
   recordAccountUserLoginState,
@@ -1610,9 +1591,7 @@ const accountRouteDeps = {
   setSessionCookieForRecord,
   accountUserView,
   adminAccountView,
-  DEFAULT_HOSTED_PLAN_ID,
   accountApiKeyView,
-  resolvePlanStripeTrialDays,
   verifyAccountUserPasswordRecord,
   findHostedAccountByIdState,
   totpSummary,
@@ -1707,6 +1686,7 @@ const accountRouteDeps = {
 
 const adminRouteDeps = {
   currentAdminAuthorized,
+  adminMutationService,
   listTenantKeyRecordsState,
   adminTenantKeyView,
   tenantKeyStorePolicy,
@@ -1745,8 +1725,6 @@ const adminRouteDeps = {
   listAsyncDeadLetterRecordsState,
   listFailedPipelineJobs,
   retryFailedPipelineJob,
-  adminMutationRequest,
-  finalizeAdminMutation,
   resolvePlanSpec,
   provisionHostedAccountState,
   accountStoreErrorResponse,
