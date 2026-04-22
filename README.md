@@ -133,6 +133,7 @@ npm run verify
 - [Enforcement-plane buildout](docs/02-architecture/release-enforcement-plane-buildout.md)
 - [Crypto authorization core buildout](docs/02-architecture/crypto-authorization-core-buildout.md)
 - [Crypto execution-admission buildout](docs/02-architecture/crypto-execution-admission-buildout.md)
+- [Hosted product flow buildout](docs/02-architecture/hosted-product-flow-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
 
 ## Start here

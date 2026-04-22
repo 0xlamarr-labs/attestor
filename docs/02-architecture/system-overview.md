@@ -123,5 +123,10 @@ Active priority:
 
 - keep the product story centered on one Attestor platform
 - keep the README and architecture docs aligned with the trackers
-- keep the frozen crypto execution-admission track moving without letting the product story drift
-- avoid presenting first-slice supporting surfaces as if they were the entire product story
+- treat the frozen crypto execution-admission track as complete at `12 / 12`
+- harden the hosted product flow and adoption path without creating a second product story
+- avoid presenting supporting hosted surfaces as if they were automatically sale-ready without journey, billing, and readiness gates
+
+Active tracker:
+
+- [Hosted product flow and adoption hardening](hosted-product-flow-buildout.md)
