@@ -65,18 +65,11 @@ import type { FinancialPipelineInput } from '../financial/pipeline.js';
 import type { ReviewerIdentity } from '../financial/types.js';
 
 import { buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
-import { generatePkiHierarchy, verifyTrustChain } from '../signing/pki-chain.js';
+import { verifyTrustChain } from '../signing/pki-chain.js';
 import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
-import { decisionLog, evidence, introspection, review, shadow, token, verification } from '../release-layer/index.js';
+import { review, verification } from '../release-layer/index.js';
 import { action as financeActionRelease, communication as financeCommunicationRelease, record as financeRecordRelease } from '../release-layer/finance.js';
-import {
-  activationApprovals as controlPlaneActivationApprovals,
-  auditLog as controlPlaneAuditLog,
-  financeProving as controlPlaneFinanceProving,
-  store as controlPlaneStore,
-} from '../release-policy-control-plane/index.js';
-import { createFileBackedDegradedModeGrantStore } from '../release-enforcement-plane/degraded-mode.js';
 import {
   canEnqueueTenantAsyncJob,
   getAsyncQueueSummary,
@@ -111,24 +104,9 @@ const {
   finalizeFinanceFilingReleaseDecision,
   buildFinanceFilingReleaseObservation,
 } = financeRecordRelease;
-const { createInMemoryReleaseDecisionLogWriter } = decisionLog;
-const { createShadowModeReleaseEvaluator } = shadow;
-const { createInMemoryReleaseTokenIntrospectionStore, createReleaseTokenIntrospector } =
-  introspection;
-const { createFinanceReviewerQueueItem, createInMemoryReleaseReviewerQueueStore } = review;
-const { createReleaseTokenIssuer } = token;
-const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
+const { createFinanceReviewerQueueItem } = review;
 const { ReleaseVerificationError, resolveReleaseTokenFromRequest, verifyReleaseAuthorization } =
   verification;
-const { createFileBackedPolicyActivationApprovalStore } =
-  controlPlaneActivationApprovals;
-const {
-  createFinanceControlPlaneReleaseDecisionEngine,
-  ensureFinanceProvingPolicies,
-  FINANCE_PROVING_POLICY_ENVIRONMENT,
-} = controlPlaneFinanceProving;
-const { createFileBackedPolicyControlPlaneStore } = controlPlaneStore;
-const { createFileBackedPolicyMutationAuditLogWriter } = controlPlaneAuditLog;
 import {
   getTenantPipelineRateLimit,
   reserveTenantPipelineRequest,
@@ -356,6 +334,7 @@ import {
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
 import { createRegistries } from './bootstrap/registries.js';
+import { createReleaseRuntimeBootstrap } from './bootstrap/release-runtime.js';
 import {
   buildAccountRouteDeps,
   buildAdminRouteDeps,
@@ -534,55 +513,25 @@ app.use('/api/*', async (c, next) => {
 // Apply tenant isolation middleware to all API routes
 app.use('/api/*', tenantMiddleware());
 
-// PKI hierarchy (startup-time, for health/metadata)
-const pki = generatePkiHierarchy('Attestor Keyless CA', 'API Runtime Signer', 'API Reviewer');
-const pkiReady = true;
-const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
-const apiReleaseReviewerQueueStore = createInMemoryReleaseReviewerQueueStore();
-const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
-const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
-const apiReleaseTokenIssuer = createReleaseTokenIssuer({
-  issuer: 'attestor.api.release.local',
-  privateKeyPem: pki.signer.keyPair.privateKeyPem,
-  publicKeyPem: pki.signer.keyPair.publicKeyPem,
-});
-const apiReleaseEvidencePackStore = createInMemoryReleaseEvidencePackStore();
-const apiReleaseEvidencePackIssuer = createReleaseEvidencePackIssuer({
-  issuer: 'attestor.api.release.local',
-  privateKeyPem: pki.signer.keyPair.privateKeyPem,
-  publicKeyPem: pki.signer.keyPair.publicKeyPem,
-});
-const apiReleaseVerificationKeyPromise = apiReleaseTokenIssuer.exportVerificationKey();
-const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore();
-const policyControlPlaneStore = createFileBackedPolicyControlPlaneStore();
-const policyActivationApprovalStore = createFileBackedPolicyActivationApprovalStore();
-const policyMutationAuditLog = createFileBackedPolicyMutationAuditLogWriter();
-const financePolicyEnvironment =
-  process.env.ATTESTOR_RELEASE_POLICY_ENVIRONMENT?.trim() ||
-  FINANCE_PROVING_POLICY_ENVIRONMENT;
-ensureFinanceProvingPolicies(policyControlPlaneStore, {
-  environment: financePolicyEnvironment,
-});
-const financeReleaseDecisionEngine = createFinanceControlPlaneReleaseDecisionEngine({
-  store: policyControlPlaneStore,
-  flow: 'record',
-  environment: financePolicyEnvironment,
-  decisionLog: financeReleaseDecisionLog,
-});
-const financeCommunicationReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
-  engine: createFinanceControlPlaneReleaseDecisionEngine({
-    store: policyControlPlaneStore,
-    flow: 'communication',
-    environment: financePolicyEnvironment,
-  }),
-});
-const financeActionReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
-  engine: createFinanceControlPlaneReleaseDecisionEngine({
-    store: policyControlPlaneStore,
-    flow: 'action',
-    environment: financePolicyEnvironment,
-  }),
-});
+const {
+  pki,
+  pkiReady,
+  financeReleaseDecisionLog,
+  apiReleaseReviewerQueueStore,
+  apiReleaseIntrospectionStore,
+  apiReleaseIntrospector,
+  apiReleaseTokenIssuer,
+  apiReleaseEvidencePackStore,
+  apiReleaseEvidencePackIssuer,
+  apiReleaseVerificationKeyPromise,
+  apiReleaseDegradedModeGrantStore,
+  policyControlPlaneStore,
+  policyActivationApprovalStore,
+  policyMutationAuditLog,
+  financeReleaseDecisionEngine,
+  financeCommunicationReleaseShadowEvaluator,
+  financeActionReleaseShadowEvaluator,
+} = createReleaseRuntimeBootstrap();
 
 // Keyless signer: per-request ephemeral keys with CA-issued short-lived certs (Sigstore pattern)
 function createRequestSigners(identitySource: string, reviewerName?: string) {

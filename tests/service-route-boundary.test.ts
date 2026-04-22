@@ -266,12 +266,22 @@ function testAdminRouteDelegatesQueryUseCases(): void {
 function testAdminRouteRequiresSharedDegradedModeGrantStore(): void {
   const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
   const apiServer = readProjectFile('src', 'service', 'api-server.ts');
+  const releaseRuntime = readProjectFile(
+    'src',
+    'service',
+    'bootstrap',
+    'release-runtime.ts',
+  );
 
   assert.match(adminRoute, /releaseDegradedModeGrantStore: DegradedModeGrantStore;/u);
   assert.doesNotMatch(adminRoute, /releaseDegradedModeGrantStore\?: DegradedModeGrantStore;/u);
   assert.doesNotMatch(adminRoute, /createInMemoryDegradedModeGrantStore/u);
-  assert.match(apiServer, /const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore\(\);/u);
+  assert.match(apiServer, /createReleaseRuntimeBootstrap\(\)/u);
   assert.match(apiServer, /releaseDegradedModeGrantStore:\s*apiReleaseDegradedModeGrantStore/u);
+  assert.match(
+    releaseRuntime,
+    /const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore\(\);/u,
+  );
 }
 
 function testAccountRouteIsStronglyTyped(): void {

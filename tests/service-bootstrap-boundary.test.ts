@@ -51,12 +51,17 @@ function testApiServerDoesNotRegisterRoutesDirectly(): void {
 
 function testBootstrapModulesOwnTheirBoundaries(): void {
   const registries = readFileSync(join(BOOTSTRAP_ROOT, 'registries.ts'), 'utf8');
+  const releaseRuntime = readFileSync(join(BOOTSTRAP_ROOT, 'release-runtime.ts'), 'utf8');
   const routes = readFileSync(join(BOOTSTRAP_ROOT, 'routes.ts'), 'utf8');
   const server = readFileSync(join(BOOTSTRAP_ROOT, 'server.ts'), 'utf8');
   const runtime = readFileSync(join(BOOTSTRAP_ROOT, 'runtime.ts'), 'utf8');
   const httpRouteBuilders = readFileSync(join(BOOTSTRAP_ROOT, 'http-route-builders.ts'), 'utf8');
 
   assert.match(registries, /export function createRegistries\(\): AppRegistries/u);
+  assert.match(
+    releaseRuntime,
+    /export function createReleaseRuntimeBootstrap\(\): ReleaseRuntimeBootstrap/u,
+  );
   assert.match(routes, /export function registerAllRoutes<Packet>\(app: Hono, runtime: AppRuntime<Packet>\): void/u);
   assert.match(server, /export function startHttpServer\(app: Hono, port: number = 3700\): HttpServerHandle/u);
   assert.match(server, /export function installGracefulShutdown\(handle: HttpServerHandle\): void/u);
@@ -161,6 +166,43 @@ function testHttpRouteBuildersOwnApplicationServiceConstruction(): void {
   }
 }
 
+function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
+  const apiServer = readFileSync(API_SERVER, 'utf8');
+  const releaseRuntime = readProjectFile('src', 'service', 'bootstrap', 'release-runtime.ts');
+
+  assert.match(apiServer, /from '\.\/bootstrap\/release-runtime\.js'/u);
+  assert.match(apiServer, /createReleaseRuntimeBootstrap\(\)/u);
+
+  for (const releaseFactory of [
+    'generatePkiHierarchy(',
+    'createInMemoryReleaseDecisionLogWriter(',
+    'createInMemoryReleaseReviewerQueueStore(',
+    'createInMemoryReleaseTokenIntrospectionStore(',
+    'createReleaseTokenIntrospector(',
+    'createReleaseTokenIssuer(',
+    'createInMemoryReleaseEvidencePackStore(',
+    'createReleaseEvidencePackIssuer(',
+    'createFileBackedDegradedModeGrantStore(',
+    'createFileBackedPolicyControlPlaneStore(',
+    'createFileBackedPolicyActivationApprovalStore(',
+    'createFileBackedPolicyMutationAuditLogWriter(',
+    'createFinanceControlPlaneReleaseDecisionEngine(',
+    'createShadowModeReleaseEvaluator(',
+    'ensureFinanceProvingPolicies(',
+  ]) {
+    assert.equal(
+      apiServer.includes(releaseFactory),
+      false,
+      `api-server.ts should delegate ${releaseFactory} through bootstrap/release-runtime.ts`,
+    );
+    assert.equal(
+      releaseRuntime.includes(releaseFactory),
+      true,
+      `bootstrap/release-runtime.ts should own ${releaseFactory}`,
+    );
+  }
+}
+
 testApiServerUsesBootstrapComposition();
 testApiServerDoesNotOwnNodeServerLifecycle();
 testApiServerDoesNotRegisterRoutesDirectly();
@@ -168,5 +210,6 @@ testBootstrapModulesOwnTheirBoundaries();
 testRuntimeUsesStructuredComposition();
 testRegistriesOwnStaticPlatformRegistration();
 testHttpRouteBuildersOwnApplicationServiceConstruction();
+testReleaseRuntimeBootstrapOwnsReleaseSetup();
 
-console.log('Service bootstrap boundary tests: 7 passed, 0 failed');
+console.log('Service bootstrap boundary tests: 8 passed, 0 failed');
