@@ -123,7 +123,7 @@ Its job is simple: apply the same policy, authority, proof, and fail-closed admi
 Current status:
 
 - `attestor/crypto-authorization-core`: `20 / 20` complete, packaged
-- `attestor/crypto-execution-admission`: `5 / 12` complete, active buildout
+- `attestor/crypto-execution-admission`: `6 / 12` complete, active buildout
 
 What the crypto pack already covers:
 
@@ -139,11 +139,11 @@ What the crypto pack already covers:
 - EIP-7702 delegation-aware adapter
 - x402 agentic payment adapter
 - custody co-signer and policy-engine adapter
-- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, and modular-account runtime handoffs
+- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, modular-account runtime handoffs, and delegated-EOA runtime handoffs
 
 Next frozen crypto step:
 
-- Step 06: delegated EOA admission for EIP-7702
+- Step 07: x402 resource-server admission middleware
 
 ## Proof And Verification
 
@@ -239,7 +239,7 @@ npm run verify
 | Release policy control plane | `20 / 20` complete |
 | Release enforcement plane | `20 / 20` complete |
 | Crypto authorization core | `20 / 20` complete, packaged |
-| Crypto execution admission | `5 / 12` complete, active buildout |
+| Crypto execution admission | `6 / 12` complete, active buildout |
 | Verification | covered by `npm test`, `npm run verify`, and `npm run verify:full` |
 | Package probes | release layer, policy control plane, enforcement plane, crypto authorization core, and crypto execution admission package surfaces are covered |
 | License | Business Source License 1.1, Change License `GPL-2.0-or-later` on 2030-04-13 |

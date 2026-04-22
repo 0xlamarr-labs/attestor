@@ -25,6 +25,7 @@ The admission layer answers:
 The public subpath exposes:
 
 - `createCryptoExecutionAdmissionPlan()`
+- `createDelegatedEoaAdmissionHandoff()`
 - `createErc4337BundlerAdmissionHandoff()`
 - `createModularAccountAdmissionHandoff()`
 - `createWalletRpcAdmissionHandoff()`
@@ -34,6 +35,8 @@ The public subpath exposes:
 - `cryptoExecutionAdmissionLabel()`
 - `erc4337BundlerAdmissionDescriptor()`
 - `erc4337BundlerAdmissionHandoffLabel()`
+- `delegatedEoaAdmissionDescriptor()`
+- `delegatedEoaAdmissionHandoffLabel()`
 - `modularAccountAdmissionDescriptor()`
 - `modularAccountAdmissionHandoffLabel()`
 - `safeGuardAdmissionDescriptor()`
@@ -97,6 +100,16 @@ Modular account admission handoffs map ERC-7579 module and ERC-6900 plugin prefl
 
 The handoff does not install modules, run hooks, or execute plugin calls. It records the exact module/plugin path that Attestor admitted and fails closed on wrong plan surface, blocked preflight, hook failure, manifest gaps, recovery gaps, chain/account mismatch, or failed runtime observation.
 
+Delegated EOA admission handoffs map EIP-7702 delegation preflight evidence into delegated-runtime handoffs:
+
+| Runtime surface | Handoff role |
+|---|---|
+| EIP-7702 direct set-code transaction | Bind authorization tuple evidence, authority nonce state, account code posture, delegate implementation posture, signed target/value/gas/nonce scope, initialization posture, recovery posture, and post-execution observation before a type `0x04` transaction is submitted |
+| EIP-5792 / ERC-7902 delegated wallet path | Bind `eip7702Auth` capability support, atomic wallet-call expectations, and the same tuple/delegate/nonce controls before wallet-assisted delegated execution is requested |
+| ERC-4337 delegated EOA path | Bind `eip7702Auth` inclusion, `0x7702` initcode-marker posture, EntryPoint evidence, preVerificationGas authorization coverage, and delegated-EOA-specific runtime observations before bundler submission proceeds |
+
+The handoff does not become a wallet, relayer, or delegated account implementation. It proves that the delegated-EOA execution path Attestor admitted still has the required tuple, delegate, nonce, wallet/runtime capability, initialization, sponsorship, and recovery posture before value-moving execution is attempted.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -114,6 +127,7 @@ flowchart LR
 ```ts
 import {
   createCryptoExecutionAdmissionPlan,
+  createDelegatedEoaAdmissionHandoff,
   createErc4337BundlerAdmissionHandoff,
   createModularAccountAdmissionHandoff,
   createSafeGuardAdmissionReceipt,
@@ -143,6 +157,29 @@ const walletHandoff = createWalletRpcAdmissionHandoff({
 
 if (walletHandoff.outcome === 'blocked') {
   throw new Error(walletHandoff.blockingReasons.join(', '));
+}
+
+const delegatedPlan = createCryptoExecutionAdmissionPlan({
+  simulation: delegatedEoaSimulation,
+  createdAt: new Date().toISOString(),
+  integrationRef: 'integration:eip7702:runtime',
+});
+
+const delegatedHandoff = createDelegatedEoaAdmissionHandoff({
+  plan: delegatedPlan,
+  preflight: delegatedEoaPreflight,
+  authorization: delegatedAuthorizationTuple,
+  accountState: delegatedAuthorityState,
+  delegateCode: delegatedCodeEvidence,
+  execution: delegatedExecutionEvidence,
+  initialization: delegatedInitializationEvidence,
+  sponsor: delegatedSponsorEvidence,
+  recovery: delegatedRecoveryEvidence,
+  createdAt: new Date().toISOString(),
+});
+
+if (delegatedHandoff.outcome === 'blocked') {
+  throw new Error(delegatedHandoff.blockingReasons.join(', '));
 }
 
 const safePlan = createCryptoExecutionAdmissionPlan({

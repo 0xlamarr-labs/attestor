@@ -46,6 +46,14 @@ assert.equal(
   admission.modularAccountAdmissionDescriptor().runtimeChecks.includes('executionManifest'),
   true,
 );
+assert.equal(
+  admission.delegatedEoaAdmissionDescriptor().standards.includes('EIP-7702'),
+  true,
+);
+assert.equal(
+  admission.delegatedEoaAdmissionDescriptor().runtimeChecks.includes('eip7702Auth'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {
