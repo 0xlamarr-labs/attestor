@@ -54,6 +54,13 @@ Reviewed again on 2026-04-22 before Step 03:
 - The SEC adopted the updated EDGAR Filer Manual for EDGAR Release 26.1 in March 2026, keeping filing preparation tied to current EDGAR procedural requirements rather than a static historical demo: [SEC Adoption of Updated EDGAR Filer Manual](https://www.sec.gov/rules-regulations/2026/03/33-11411)
 - XBRL International describes iXBRL as an open standard for reports that preserve human presentation while providing structured, machine-readable data, reinforcing why Attestor's first finance proof scenario binds output hashes, evidence, and release status before filing-like consequence: [XBRL iXBRL](https://www.xbrl.org/ixbrl)
 
+Reviewed again on 2026-04-22 before Step 04:
+
+- EIP-7702 defines set-code transactions for EOAs with an authorization list of tuples, which is the right official anchor for delegated-EOA authorization evidence and fail-closed tuple checks: [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+- x402 uses standard HTTP request/response semantics around `402 Payment Required`, with payment instructions and signed payment evidence before fulfillment; this anchors the agent-payment proof scenario without claiming Attestor is a wallet or payment facilitator: [x402 docs](https://docs.x402.org/)
+- ERC-4337 documentation and the EIP both keep UserOperation simulation and EntryPoint validation as the account-abstraction pre-execution surface; this remains adjacent evidence for later proof scenarios but Step 04 stays on x402 and EIP-7702: [ERC-4337 docs](https://docs.erc4337.io/core-standards/erc-4337.html), [EIP-4337](https://eips.ethereum.org/EIPS/eip-4337)
+- Safe guard documentation names `checkTransaction` and `checkAfterExecution` as guard hooks; this confirms the broader admission mental model while Step 04 avoids adding a Safe-specific proof run: [Safe guard docs](https://docs.safe.global/advanced/smart-account-guards/smart-account-guard-tutorial)
+
 ## Architecture Decision
 
 Start the proof surface as a small, testable product-adoption layer inside the existing modular monolith:
@@ -83,10 +90,10 @@ The proof surface uses one shared vocabulary across packs:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 3 |
+| Completed | 4 |
 | In progress | 0 |
-| Not started | 5 |
-| Current posture | Finance proof scenarios now execute against shipped release-kernel and finance-release behavior; proof-surface work can add crypto admission runs next without widening into a separate product or mock demo |
+| Not started | 4 |
+| Current posture | Finance and crypto proof scenarios now execute against shipped Attestor release, crypto authorization, crypto execution-admission, and signed receipt behavior. The proof surface can unify output shape next without widening into a separate product or mock demo |
 
 ## Frozen Step List
 
@@ -95,7 +102,7 @@ The proof surface uses one shared vocabulary across packs:
 | 01 | complete | Define the proof surface purpose, scope, vocabulary, and guardrails | `docs/02-architecture/proof-console-buildout.md`, `tests/proof-surface-docs.test.ts`, `README.md`, `package.json` | The track is explicitly an adoption/proof layer around the existing Attestor product, not a new product, wallet, custody platform, agent runtime, orchestration layer, or mock-only marketing demo. |
 | 02 | complete | Add the proof scenario registry | `src/proof-surface/scenario-registry.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-scenario-registry.test.ts`, `package.json` | The registry defines five grounded proof scenarios across finance, crypto, and general fail-closed consequences. Each scenario carries a human hook, proposed consequence, real package/source entry points, expected bounded decision, proof material, customer value, and non-goals. The guard test verifies scenario uniqueness, package-surface binding, source/export grounding, proof material existence, finance/crypto/general coverage, admit/review/block coverage, and the no-hosted-crypto-route constraint. |
 | 03 | complete | Add finance proof scenarios | `src/proof-surface/finance-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-finance-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance proof runs now execute the shipped finance filing release bridge, release decision engine, deterministic checks, canonical release material, and domain finalization. The admit scenario reaches `accepted` with canonical hashes and authority satisfied; the review scenario keeps evidence sufficient while authority remains pending, producing `review-required` and fail-closed downstream behavior. |
-| 04 | not started | Add crypto admission proof scenarios |  | Include at least one admit path and one deny/needs-evidence path tied to `attestor/crypto-authorization-core` or `attestor/crypto-execution-admission`. Do not claim a public hosted crypto HTTP route. |
+| 04 | complete | Add crypto admission proof scenarios | `src/proof-surface/crypto-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-crypto-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Crypto proof runs now execute the shipped x402 agentic payment adapter, EIP-7702 delegation adapter, crypto authorization simulation, crypto execution-admission planner, and signed admission receipt verifier. The x402 scenario reaches `admit` on the `agent-payment-http` surface with PAYMENT handoff artifacts; the delegated EOA scenario injects invalid authorization tuple evidence and reaches fail-closed `deny` on the `delegated-eoa-runtime` surface. No public hosted crypto HTTP route is claimed. |
 | 05 | not started | Add unified proof output shape |  | Output proposed consequence, policy check, authority check, evidence check, decision, reason, and proof material in one shared structure across packs. |
 | 06 | not started | Add runnable local proof command or artifact generator |  | Prefer a deterministic CLI/static artifact first. A broad hosted console waits until the proof output shape is stable and tested. |
 | 07 | not started | Add README "Run the proof" path |  | Link the runnable proof scenarios from the README without bloating the opening product story or claiming unfinished hosted capability. |
@@ -103,4 +110,4 @@ The proof surface uses one shared vocabulary across packs:
 
 ## Immediate Next Step
 
-Implement Step 04: attach crypto admission proof scenarios to shipped crypto authorization/admission surfaces so the proof surface can show an admit path and a deny/needs-evidence path without claiming a public hosted crypto HTTP route.
+Implement Step 05: add one unified proof output shape across finance and crypto runs so proposed consequence, policy check, authority check, evidence check, decision, reason, and proof material can be rendered consistently.

@@ -33,3 +33,15 @@ export {
   type FinanceProofScenarioId,
   type FinanceProofScenarioRun,
 } from './finance-scenarios.js';
+
+export {
+  CRYPTO_PROOF_SCENARIO_IDS,
+  runCryptoProofScenario,
+  runCryptoProofScenarios,
+  type CryptoProofAdmissionReceiptSummary,
+  type CryptoProofAdmissionSummary,
+  type CryptoProofPreflightSummary,
+  type CryptoProofScenarioId,
+  type CryptoProofScenarioRun,
+  type CryptoProofSimulationSummary,
+} from './crypto-scenarios.js';

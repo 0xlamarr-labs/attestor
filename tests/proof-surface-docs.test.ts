@@ -105,11 +105,12 @@ function testFrozenPlanStartsNarrow(): void {
   const tracker = readProjectFile('docs', '02-architecture', 'proof-console-buildout.md');
 
   includes(tracker, '| Total frozen steps | 8 |', 'Proof surface docs: step count is explicit');
-  includes(tracker, '| Completed | 3 |', 'Proof surface docs: scope, scenario registry, and finance scenarios are complete');
+  includes(tracker, '| Completed | 4 |', 'Proof surface docs: scope, scenario registry, finance scenarios, and crypto scenarios are complete');
   includes(tracker, '| 01 | complete | Define the proof surface purpose, scope, vocabulary, and guardrails |', 'Proof surface docs: step 01 is complete');
   includes(tracker, '| 02 | complete | Add the proof scenario registry |', 'Proof surface docs: scenario registry step is complete');
   includes(tracker, '| 03 | complete | Add finance proof scenarios |', 'Proof surface docs: finance proof scenario step is complete');
-  includes(tracker, 'Implement Step 04: attach crypto admission proof scenarios', 'Proof surface docs: next step is crypto admission proof scenarios');
+  includes(tracker, '| 04 | complete | Add crypto admission proof scenarios |', 'Proof surface docs: crypto proof scenario step is complete');
+  includes(tracker, 'Implement Step 05: add one unified proof output shape', 'Proof surface docs: next step is unified proof output shape');
   includes(tracker, 'Prefer a deterministic CLI/static artifact first.', 'Proof surface docs: tracker avoids premature broad UI');
   excludes(tracker, /\bfirst[- ]slice\b/iu, 'Proof surface docs: tracker avoids stale first-slice language');
 }
