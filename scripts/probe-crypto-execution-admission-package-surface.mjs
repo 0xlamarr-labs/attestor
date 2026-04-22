@@ -62,6 +62,14 @@ assert.equal(
   admission.x402ResourceServerAdmissionDescriptor().runtimeChecks.includes('PAYMENT-REQUIRED'),
   true,
 );
+assert.equal(
+  admission.custodyPolicyAdmissionCallbackDescriptor().outcomes.includes('needs-review'),
+  true,
+);
+assert.equal(
+  admission.custodyPolicyAdmissionCallbackDescriptor().runtimeChecks.includes('callbackAuthentication'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {

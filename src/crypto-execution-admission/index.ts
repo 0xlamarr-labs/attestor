@@ -694,3 +694,4 @@ export * from './erc4337-bundler.js';
 export * from './modular-account.js';
 export * from './delegated-eoa.js';
 export * from './x402-resource-server.js';
+export * from './custody-policy-callback.js';

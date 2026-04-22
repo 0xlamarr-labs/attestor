@@ -27,6 +27,7 @@ The public subpath exposes:
 - `createCryptoExecutionAdmissionPlan()`
 - `createDelegatedEoaAdmissionHandoff()`
 - `createErc4337BundlerAdmissionHandoff()`
+- `createCustodyPolicyAdmissionCallbackContract()`
 - `createModularAccountAdmissionHandoff()`
 - `createWalletRpcAdmissionHandoff()`
 - `createSafeGuardAdmissionReceipt()`
@@ -36,6 +37,8 @@ The public subpath exposes:
 - `cryptoExecutionAdmissionLabel()`
 - `erc4337BundlerAdmissionDescriptor()`
 - `erc4337BundlerAdmissionHandoffLabel()`
+- `custodyPolicyAdmissionCallbackDescriptor()`
+- `custodyPolicyAdmissionCallbackLabel()`
 - `delegatedEoaAdmissionDescriptor()`
 - `delegatedEoaAdmissionHandoffLabel()`
 - `modularAccountAdmissionDescriptor()`
@@ -123,6 +126,16 @@ x402 resource-server admission middleware maps x402 payment preflight evidence i
 
 The middleware does not become the x402 resource server or facilitator. It gives the resource server a deterministic Attestor contract for when to challenge, when to verify, when to settle, when to fulfill, and when to fail closed.
 
+Custody policy admission callback contracts map custody/co-signer callback evidence into explicit provider responses:
+
+| Callback surface | Admission role |
+|---|---|
+| Synchronous co-signer callback | Require configured callback handling, authenticated request/response posture, fresh nonce/body binding, response deadline fit, and signed or pinned-channel response semantics before returning provider approval |
+| Approval queue / provider review | Normalize pending approval, missing quorum, break-glass, travel-rule, or retry posture into `needs-review` without allowing custody signing to proceed |
+| Policy consensus engine | Bind provider policy decision, explicit/implicit deny handling, approval quorum, and Attestor token evidence before allowing a custody signing path |
+
+The contract does not become a custody platform, key manager, MPC signer, or provider webhook endpoint. It shapes the provider callback result into Attestor `allow`, `needs-review`, or `deny` and fails closed on missing callback configuration, weak authentication, stale callback bodies, policy deny, sanctions/risk hits, velocity breaches, unsafe key posture, or failed provider terminal status.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -142,6 +155,7 @@ import {
   createCryptoExecutionAdmissionPlan,
   createDelegatedEoaAdmissionHandoff,
   createErc4337BundlerAdmissionHandoff,
+  createCustodyPolicyAdmissionCallbackContract,
   createModularAccountAdmissionHandoff,
   createSafeGuardAdmissionReceipt,
   createWalletRpcAdmissionHandoff,
@@ -277,6 +291,30 @@ const x402Middleware = createX402ResourceServerAdmissionMiddleware({
 
 if (x402Middleware.outcome === 'blocked') {
   throw new Error(x402Middleware.blockingReasons.join(', '));
+}
+
+const custodyPlan = createCryptoExecutionAdmissionPlan({
+  simulation: custodySimulation,
+  createdAt: new Date().toISOString(),
+  integrationRef: 'integration:custody:cosigner',
+});
+
+const custodyCallback = createCustodyPolicyAdmissionCallbackContract({
+  plan: custodyPlan,
+  preflight: custodyPreflight,
+  account: custodyAccount,
+  transaction: custodyTransaction,
+  policyDecision: custodyPolicyDecision,
+  approvals: custodyApprovals,
+  callback: custodyCosignerCallback,
+  screening: custodyScreening,
+  keyPosture: custodyKeyPosture,
+  postExecution: custodyPostExecution,
+  createdAt: new Date().toISOString(),
+});
+
+if (custodyCallback.outcome === 'deny') {
+  throw new Error(custodyCallback.blockingReasons.join(', '));
 }
 ```
 
