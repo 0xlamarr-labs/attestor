@@ -4,57 +4,60 @@ Use this page as the shortest internal orientation note.
 
 For the public product framing, use the [README](../../README.md).
 For the architecture map, use [System overview](../02-architecture/system-overview.md).
+For commercial packaging, use [Commercial packaging, pricing, and evaluation](product-packaging.md).
 
 ## Current Repository Truth
 
-The repository currently contains:
+Attestor is one product:
 
-- a complete financial reference implementation
-- signed single-query and multi-query proof paths
-- reviewer endorsements with run binding
-- a real PostgreSQL-backed proof path
-- a bounded HTTP API service with sync and async first-slice routes
-- domain pack, connector, and filing-adapter registries
-- differential evidence for multi-query comparison
+**a policy-bound release and authorization platform that sits before real consequence.**
 
-It also contains broader building blocks:
+The repository currently contains a shared platform core with curated package surfaces:
 
-- a healthcare domain pack
-- a Snowflake connector module
-- an XBRL US-GAAP 2024 adapter
-- OIDC reviewer identity verification plus a CLI device-flow helper
-- a JSON PKI trust-chain module with API-path issuance and chain validation
-- a BullMQ/Redis async orchestration module
+- `attestor/release-layer`
+- `attestor/release-layer/finance`
+- `attestor/release-policy-control-plane`
+- `attestor/release-enforcement-plane`
+- `attestor/crypto-authorization-core`
+- `attestor/crypto-execution-admission`
 
-Those modules prove architectural breadth. They do not yet imply release-layer completeness outside the financial reference path.
+The finance pack remains the deepest proven wedge today. It carries the strongest end-to-end path for AI-assisted financial reporting acceptance, governed SQL, deterministic checks, release decisions, signed proof, reviewer authority, verification kits, and downstream consequence gating.
+
+The crypto pack extends the same platform core into programmable-money authorization and execution admission. Its first public integration shape is packaged authorization/admission surfaces for external integrators, not a public hosted crypto HTTP route.
+
+The hosted path includes account signup, the first API key, tenant API-key calls, usage and entitlement visibility, Stripe checkout and portal handoff, signed webhook convergence, billing export/reconciliation, and focused readiness gates.
+
+The service/API refactor keeps the HTTP server thin: `api-server.ts` is now a small Hono composition root, with route registration, server lifecycle, runtime wiring, and route dependency construction under `src/service/bootstrap`.
+
+Supporting slices such as healthcare, Snowflake, VSAC, observability, HA/DR, OIDC, SAML, passkeys, and live provider probes show architectural breadth. They are not all as deep as the finance proof wedge.
 
 ## What It Is
 
-Attestor is being built as:
+Attestor is a release and authorization layer before consequence.
 
-- an AI output release layer
-- an AI acceptance layer
-- a consequence gateway between generated output and real-world effect
+It is used when a customer-controlled system has a proposed output, record, communication, action, filing-like artifact, or programmable-money execution path that should not proceed on informal trust.
 
-The point is not to generate the output.
-
-The point is to decide whether that output may move forward into communication, record, action, or decision-support.
+The customer system calls Attestor before the downstream system writes, sends, files, executes, signs, broadcasts, settles, or routes the consequence. Attestor evaluates policy, authority, evidence, freshness, and enforcement posture, then returns a bounded decision and proof material.
 
 ## What It Is Not
 
+- not the model
+- not the agent runtime
+- not the downstream system of record
 - not a financial chatbot
+- not a wallet or custody platform
+- not a bundler, paymaster, bridge, facilitator, solver, or relayer
 - not an LLM orchestration framework
 - not a BI front-end
 - not a generic AI compliance checklist
-- not a customer-facing automated decision engine
-- not a universal AI platform
+- not a magical router that guesses the correct pack automatically
 
-Attestor makes release into consequence governable. It does not make AI inherently trustworthy.
+Attestor makes release into consequence governable. It does not make AI or programmable execution inherently trustworthy.
 
 ## Who This Is For
 
-- teams introducing AI into high-stakes internal workflows
+- teams introducing AI into high-consequence internal workflows
 - reviewers and control functions who need evidence-bearing release decisions
 - builders who need portable proof, not just a model answer
 - organizations that want AI assistance without surrendering authority, auditability, or verification
-- banks, hospitals, insurers, and internal AI platform teams that need a release boundary rather than another AI app
+- finance, crypto, healthcare, insurance, and internal AI platform teams that need a release or authorization boundary rather than another AI app
