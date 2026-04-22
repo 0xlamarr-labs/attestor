@@ -684,6 +684,8 @@ CryptoExecutionAdmissionDescriptor {
       'Safe Guards',
       'x402-v2',
       'custody-policy-engine',
+      'ERC-7683',
+      'intent-settlement',
     ]),
   });
 }
@@ -695,3 +697,4 @@ export * from './modular-account.js';
 export * from './delegated-eoa.js';
 export * from './x402-resource-server.js';
 export * from './custody-policy-callback.js';
+export * from './intent-solver.js';

@@ -70,6 +70,14 @@ assert.equal(
   admission.custodyPolicyAdmissionCallbackDescriptor().runtimeChecks.includes('callbackAuthentication'),
   true,
 );
+assert.equal(
+  admission.intentSolverAdmissionDescriptor().standards.includes('ERC-7683'),
+  true,
+);
+assert.equal(
+  admission.intentSolverAdmissionDescriptor().runtimeChecks.includes('replayProtection'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {

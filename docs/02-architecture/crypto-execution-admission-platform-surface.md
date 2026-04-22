@@ -28,6 +28,7 @@ The public subpath exposes:
 - `createDelegatedEoaAdmissionHandoff()`
 - `createErc4337BundlerAdmissionHandoff()`
 - `createCustodyPolicyAdmissionCallbackContract()`
+- `createIntentSolverAdmissionHandoff()`
 - `createModularAccountAdmissionHandoff()`
 - `createWalletRpcAdmissionHandoff()`
 - `createSafeGuardAdmissionReceipt()`
@@ -41,6 +42,8 @@ The public subpath exposes:
 - `custodyPolicyAdmissionCallbackLabel()`
 - `delegatedEoaAdmissionDescriptor()`
 - `delegatedEoaAdmissionHandoffLabel()`
+- `intentSolverAdmissionDescriptor()`
+- `intentSolverAdmissionHandoffLabel()`
 - `modularAccountAdmissionDescriptor()`
 - `modularAccountAdmissionHandoffLabel()`
 - `safeGuardAdmissionDescriptor()`
@@ -136,6 +139,16 @@ Custody policy admission callback contracts map custody/co-signer callback evide
 
 The contract does not become a custody platform, key manager, MPC signer, or provider webhook endpoint. It shapes the provider callback result into Attestor `allow`, `needs-review`, or `deny` and fails closed on missing callback configuration, weak authentication, stale callback bodies, policy deny, sanctions/risk hits, velocity breaches, unsafe key posture, or failed provider terminal status.
 
+Intent-solver admission handoffs map solver route evidence into deterministic pre-execution contracts:
+
+| Solver surface | Admission role |
+|---|---|
+| ERC-7683 gasless order | Bind user-signed order evidence, `openFor`/origin-settler posture, nonce freshness, route commitment, fill instructions, and settlement windows before a filler opens the order |
+| ERC-7683 on-chain order | Bind `open` order evidence, destination settler instructions, route/slippage commitments, counterparty posture, and replay checks before the order is submitted |
+| Solver API / custom intent route | Bind quote expiry, route simulation, counterparties, settlement security review, liquidity/refund posture, and Attestor sidecar evidence before handing execution to a solver network |
+
+The handoff does not become a solver, bridge, relayer, orderbook, or settlement contract. It proves that the solver route Attestor admitted still matches the policy-bound order, slippage bounds, counterparties, settlement contracts, deadlines, and replay posture before an intent route can be opened, filled, or broadcast.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -156,6 +169,7 @@ import {
   createDelegatedEoaAdmissionHandoff,
   createErc4337BundlerAdmissionHandoff,
   createCustodyPolicyAdmissionCallbackContract,
+  createIntentSolverAdmissionHandoff,
   createModularAccountAdmissionHandoff,
   createSafeGuardAdmissionReceipt,
   createWalletRpcAdmissionHandoff,
@@ -315,6 +329,26 @@ const custodyCallback = createCustodyPolicyAdmissionCallbackContract({
 
 if (custodyCallback.outcome === 'deny') {
   throw new Error(custodyCallback.blockingReasons.join(', '));
+}
+
+const intentSolverPlan = createCryptoExecutionAdmissionPlan({
+  simulation: intentSettlementSimulation,
+  createdAt: new Date().toISOString(),
+  integrationRef: 'integration:intent-solver:erc7683',
+});
+
+const intentSolverHandoff = createIntentSolverAdmissionHandoff({
+  plan: intentSolverPlan,
+  order: erc7683OrderEvidence,
+  route: solverRouteCommitment,
+  settlement: settlementEvidence,
+  counterparty: counterpartyEvidence,
+  replay: replayEvidence,
+  createdAt: new Date().toISOString(),
+});
+
+if (intentSolverHandoff.outcome === 'blocked') {
+  throw new Error(intentSolverHandoff.blockingReasons.join(', '));
 }
 ```
 
