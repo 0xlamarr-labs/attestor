@@ -94,6 +94,22 @@ assert.equal(
   admission.cryptoAdmissionConformanceDescriptor().runtimeChecks.includes('signed-receipt-verification'),
   true,
 );
+assert.equal(
+  admission.cryptoExecutionAdmissionPublicSurface().version,
+  'attestor.crypto-execution-admission-platform.v1',
+);
+assert.equal(
+  admission.cryptoExecutionAdmissionPublicSurface().namespaceExports.includes('conformanceFixtures'),
+  true,
+);
+assert.equal(
+  admission.cryptoExecutionAdmission.planner.cryptoExecutionAdmissionDescriptor().subpath,
+  'attestor/crypto-execution-admission',
+);
+assert.equal(
+  admission.cryptoExecutionAdmission.walletRpc.walletRpcAdmissionDescriptor().methods.includes('wallet_sendCalls'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {

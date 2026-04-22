@@ -11,6 +11,16 @@ import type {
   CryptoSimulationPreflightSource,
 } from '../crypto-authorization-core/authorization-simulation.js';
 import type { CryptoExecutionAdapterKind } from '../crypto-authorization-core/types.js';
+import * as walletRpc from './wallet-rpc.js';
+import * as safeGuard from './safe-guard.js';
+import * as erc4337Bundler from './erc4337-bundler.js';
+import * as modularAccount from './modular-account.js';
+import * as delegatedEoa from './delegated-eoa.js';
+import * as x402ResourceServer from './x402-resource-server.js';
+import * as custodyPolicyCallback from './custody-policy-callback.js';
+import * as intentSolver from './intent-solver.js';
+import * as telemetryReceipts from './telemetry-receipts.js';
+import * as conformanceFixtures from './conformance-fixtures.js';
 
 /**
  * Crypto execution admission turns a crypto authorization simulation into the
@@ -24,6 +34,8 @@ export const CRYPTO_EXECUTION_ADMISSION_SPEC_VERSION =
 export const CRYPTO_EXECUTION_ADMISSION_PUBLIC_SUBPATH =
   'attestor/crypto-execution-admission';
 export const CRYPTO_EXECUTION_ADMISSION_PACKAGE_NAME = 'attestor';
+export const CRYPTO_EXECUTION_ADMISSION_PLATFORM_SURFACE_SPEC_VERSION =
+  'attestor.crypto-execution-admission-platform.v1';
 
 export const CRYPTO_EXECUTION_ADMISSION_OUTCOMES = [
   'admit',
@@ -140,6 +152,55 @@ export interface CryptoExecutionAdmissionDescriptor {
   readonly stepKinds: typeof CRYPTO_EXECUTION_ADMISSION_STEP_KINDS;
   readonly standards: readonly string[];
 }
+
+export type CryptoExecutionAdmissionExtractionStatus = 'ready' | 'pending';
+
+export interface CryptoExecutionAdmissionExtractionCriterion {
+  readonly id: string;
+  readonly status: CryptoExecutionAdmissionExtractionStatus;
+  readonly description: string;
+}
+
+export interface CryptoExecutionAdmissionPublicSurfaceDescriptor {
+  readonly version: typeof CRYPTO_EXECUTION_ADMISSION_PLATFORM_SURFACE_SPEC_VERSION;
+  readonly packageName: typeof CRYPTO_EXECUTION_ADMISSION_PACKAGE_NAME;
+  readonly subpath: typeof CRYPTO_EXECUTION_ADMISSION_PUBLIC_SUBPATH;
+  readonly namespaceExports: typeof CRYPTO_EXECUTION_ADMISSION_NAMESPACE_EXPORTS;
+  readonly integrationNamespaces: typeof CRYPTO_EXECUTION_ADMISSION_INTEGRATION_NAMESPACES;
+  readonly proofNamespaces: typeof CRYPTO_EXECUTION_ADMISSION_PROOF_NAMESPACES;
+  readonly fixturePaths: readonly string[];
+  readonly extractionCriteria: typeof CRYPTO_EXECUTION_ADMISSION_EXTRACTION_CRITERIA;
+}
+
+export const CRYPTO_EXECUTION_ADMISSION_NAMESPACE_EXPORTS = [
+  'planner',
+  'walletRpc',
+  'safeGuard',
+  'erc4337Bundler',
+  'modularAccount',
+  'delegatedEoa',
+  'x402ResourceServer',
+  'custodyPolicyCallback',
+  'intentSolver',
+  'telemetryReceipts',
+  'conformanceFixtures',
+] as const;
+
+export const CRYPTO_EXECUTION_ADMISSION_INTEGRATION_NAMESPACES = [
+  'walletRpc',
+  'safeGuard',
+  'erc4337Bundler',
+  'modularAccount',
+  'delegatedEoa',
+  'x402ResourceServer',
+  'custodyPolicyCallback',
+  'intentSolver',
+] as const;
+
+export const CRYPTO_EXECUTION_ADMISSION_PROOF_NAMESPACES = [
+  'telemetryReceipts',
+  'conformanceFixtures',
+] as const;
 
 export const CRYPTO_EXECUTION_ADMISSION_ADAPTER_PROFILES = Object.freeze({
   'adapter-neutral': Object.freeze({
@@ -687,6 +748,107 @@ CryptoExecutionAdmissionDescriptor {
       'ERC-7683',
       'intent-settlement',
     ]),
+  });
+}
+
+export const CRYPTO_EXECUTION_ADMISSION_EXTRACTION_CRITERIA = Object.freeze([
+  Object.freeze({
+    id: 'stable-admission-plan-contract',
+    status: 'ready',
+    description:
+      'The admission planner maps crypto authorization simulations into versioned admit, needs-evidence, and deny handoff plans with deterministic digests and fail-closed next actions.',
+  }),
+  Object.freeze({
+    id: 'external-integration-surfaces-proven',
+    status: 'ready',
+    description:
+      'Wallet RPC, Safe guard, ERC-4337 bundler, modular account, delegated EOA, x402 resource server, custody callback, and intent-solver paths reuse the same admission contract.',
+  }),
+  Object.freeze({
+    id: 'telemetry-receipt-and-conformance-proven',
+    status: 'ready',
+    description:
+      'Admission telemetry, signed receipts, JSON Schema fixtures, and runtime conformance validation bind external handoffs to the same proof shape.',
+  }),
+  Object.freeze({
+    id: 'package-boundary-proven',
+    status: 'ready',
+    description:
+      'The execution-admission layer is exported through one stable package subpath with package-boundary probes that reject internal deep imports.',
+  }),
+  Object.freeze({
+    id: 'justify-separate-admission-service',
+    status: 'pending',
+    description:
+      'A standalone deployable crypto execution-admission service should wait until low-latency chain adjacency, customer-operated custody boundaries, or separate isolation requirements justify a new runtime boundary.',
+  }),
+] satisfies readonly CryptoExecutionAdmissionExtractionCriterion[]);
+
+export const cryptoExecutionAdmissionPlanner = Object.freeze({
+  CRYPTO_EXECUTION_ADMISSION_SPEC_VERSION,
+  CRYPTO_EXECUTION_ADMISSION_PUBLIC_SUBPATH,
+  CRYPTO_EXECUTION_ADMISSION_PACKAGE_NAME,
+  CRYPTO_EXECUTION_ADMISSION_OUTCOMES,
+  CRYPTO_EXECUTION_ADMISSION_SURFACES,
+  CRYPTO_EXECUTION_ADMISSION_STEP_KINDS,
+  CRYPTO_EXECUTION_ADMISSION_STEP_STATUSES,
+  CRYPTO_EXECUTION_ADMISSION_ADAPTER_PROFILES,
+  createCryptoExecutionAdmissionPlan,
+  cryptoExecutionAdmissionAdapterProfile,
+  cryptoExecutionAdmissionDescriptor,
+  cryptoExecutionAdmissionLabel,
+});
+
+export const cryptoExecutionAdmission = Object.freeze({
+  planner: cryptoExecutionAdmissionPlanner,
+  walletRpc,
+  safeGuard,
+  erc4337Bundler,
+  modularAccount,
+  delegatedEoa,
+  x402ResourceServer,
+  custodyPolicyCallback,
+  intentSolver,
+  telemetryReceipts,
+  conformanceFixtures,
+});
+
+export type CryptoExecutionAdmission = typeof cryptoExecutionAdmission;
+export type WalletRpcAdmissionHandoff = walletRpc.WalletRpcAdmissionHandoff;
+export type SafeGuardAdmissionReceipt = safeGuard.SafeGuardAdmissionReceipt;
+export type Erc4337BundlerAdmissionHandoff =
+  erc4337Bundler.Erc4337BundlerAdmissionHandoff;
+export type ModularAccountAdmissionHandoff =
+  modularAccount.ModularAccountAdmissionHandoff;
+export type DelegatedEoaAdmissionHandoff =
+  delegatedEoa.DelegatedEoaAdmissionHandoff;
+export type X402ResourceServerAdmissionMiddleware =
+  x402ResourceServer.X402ResourceServerAdmissionMiddleware;
+export type CustodyPolicyAdmissionCallbackContract =
+  custodyPolicyCallback.CustodyPolicyAdmissionCallbackContract;
+export type IntentSolverAdmissionHandoff =
+  intentSolver.IntentSolverAdmissionHandoff;
+export type CryptoAdmissionTelemetryEvent =
+  telemetryReceipts.CryptoAdmissionTelemetryEvent;
+export type CryptoAdmissionReceipt =
+  telemetryReceipts.CryptoAdmissionReceipt;
+export type CryptoAdmissionConformanceFixtureSuite =
+  conformanceFixtures.CryptoAdmissionConformanceFixtureSuite;
+
+export function cryptoExecutionAdmissionPublicSurface():
+CryptoExecutionAdmissionPublicSurfaceDescriptor {
+  return Object.freeze({
+    version: CRYPTO_EXECUTION_ADMISSION_PLATFORM_SURFACE_SPEC_VERSION,
+    packageName: CRYPTO_EXECUTION_ADMISSION_PACKAGE_NAME,
+    subpath: CRYPTO_EXECUTION_ADMISSION_PUBLIC_SUBPATH,
+    namespaceExports: CRYPTO_EXECUTION_ADMISSION_NAMESPACE_EXPORTS,
+    integrationNamespaces: CRYPTO_EXECUTION_ADMISSION_INTEGRATION_NAMESPACES,
+    proofNamespaces: CRYPTO_EXECUTION_ADMISSION_PROOF_NAMESPACES,
+    fixturePaths: Object.freeze([
+      conformanceFixtures.CRYPTO_ADMISSION_CONFORMANCE_FIXTURE_PATH,
+      conformanceFixtures.CRYPTO_ADMISSION_CONFORMANCE_SCHEMA_PATH,
+    ]),
+    extractionCriteria: CRYPTO_EXECUTION_ADMISSION_EXTRACTION_CRITERIA,
   });
 }
 

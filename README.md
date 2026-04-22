@@ -87,9 +87,9 @@ Need the hosted sign-up, first API key, and checkout flow? See [Hosted customer 
 | Pack | What it means today | Status |
 |---|---|---|
 | Finance | deepest proven path today; financial reporting is the current proving wedge | mature proving pack |
-| Crypto | real programmable-money core on the same model, with admission surfaces still actively expanding | `attestor/crypto-authorization-core` `20 / 20` complete; `attestor/crypto-execution-admission` `11 / 12` active buildout |
+| Crypto | real programmable-money core on the same model, with packaged admission surfaces for external integrations | `attestor/crypto-authorization-core` `20 / 20` complete, packaged; `attestor/crypto-execution-admission` `12 / 12` complete, packaged |
 
-The crypto pack already covers the authorization core and several execution-admission surfaces, including wallet RPC, Safe guard, ERC-4337 bundler, modular-account runtime, delegated-EOA runtime, x402 resource-server middleware, custody policy callback paths, intent-solver handoffs, uniform admission telemetry / signed receipts, and JSON conformance fixtures for external integrators. It extends the same Attestor control model; it is not a separate product identity.
+The crypto pack already covers the authorization core and execution-admission surfaces, including wallet RPC, Safe guard, ERC-4337 bundler, modular-account runtime, delegated-EOA runtime, x402 resource-server middleware, custody policy callback paths, intent-solver handoffs, uniform admission telemetry / signed receipts, JSON conformance fixtures, and a curated package surface for external integrators. It extends the same Attestor control model; it is not a separate product identity.
 
 ## Proof and verification
 

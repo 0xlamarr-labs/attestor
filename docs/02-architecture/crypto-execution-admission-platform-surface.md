@@ -4,7 +4,24 @@ Attestor now exposes the first crypto execution admission layer through:
 
 - `attestor/crypto-execution-admission`
 
-This is the layer after `attestor/crypto-authorization-core`.
+This is the stable packaged surface after `attestor/crypto-authorization-core`. It is complete for the current execution-admission buildout track and remains inside the Attestor modular monolith rather than becoming a separate deployable service.
+
+## Final Package Boundary
+
+The package surface exposes one public subpath and one curated namespace object:
+
+- public subpath: `attestor/crypto-execution-admission`
+- namespace object: `cryptoExecutionAdmission`
+- surface descriptor: `cryptoExecutionAdmissionPublicSurface()`
+
+This follows the same package-boundary model as the release layer, policy control plane, enforcement plane, and crypto authorization core: consumers import one stable subpath while internal file layout stays private behind `package.json` `exports`.
+
+The public compatibility promise is:
+
+- the subpath name is stable
+- namespace names under `cryptoExecutionAdmission` are stable
+- versioned admission, handoff, telemetry, receipt, and conformance specs remain the public contract
+- internal `attestor/crypto-execution-admission/*.js` deep module paths are not public API
 
 The core answers:
 
@@ -24,6 +41,9 @@ The admission layer answers:
 
 The public subpath exposes:
 
+- `cryptoExecutionAdmission`
+- `cryptoExecutionAdmissionPlanner`
+- `cryptoExecutionAdmissionPublicSurface()`
 - `createCryptoExecutionAdmissionPlan()`
 - `createCryptoAdmissionReceipt()`
 - `createCryptoAdmissionTelemetryEvent()`
@@ -62,7 +82,23 @@ The public subpath exposes:
 - `walletRpcAdmissionHandoffLabel()`
 - `x402ResourceServerAdmissionDescriptor()`
 - `x402ResourceServerAdmissionLabel()`
-- versioned admission outcomes, surfaces, step kinds, step statuses, telemetry, receipt, and conformance fixture constants
+- versioned admission outcomes, surfaces, step kinds, step statuses, telemetry, receipt, conformance fixture, namespace, and extraction-criteria constants
+
+The curated namespace object groups the platform surface as:
+
+| Namespace | Role |
+|---|---|
+| `planner` | adapter-to-surface planning, outcomes, steps, labels, and descriptors |
+| `walletRpc` | EIP-5792 / ERC-7715 / ERC-7902 wallet-call handoffs |
+| `safeGuard` | Safe transaction and module guard admission receipts |
+| `erc4337Bundler` | ERC-4337 / ERC-7769 bundler handoffs |
+| `modularAccount` | ERC-7579 and ERC-6900 runtime handoffs |
+| `delegatedEoa` | EIP-7702 delegated EOA handoffs |
+| `x402ResourceServer` | x402 resource-server admission middleware contracts |
+| `custodyPolicyCallback` | custody/co-signer callback contracts |
+| `intentSolver` | intent-solver and ERC-7683-style route handoffs |
+| `telemetryReceipts` | uniform telemetry, signed receipts, sinks, summaries, and verification |
+| `conformanceFixtures` | JSON fixture/schema descriptors and runtime validation |
 
 The first planner maps existing crypto authorization simulation results onto these surfaces:
 
@@ -179,6 +215,18 @@ Conformance fixtures give external integrators a stable JSON contract to test ag
 
 The fixture signer is intentionally marked `fixture-only`. It is a deterministic test vector so wallets, guards, bundlers, payment servers, custody engines, and solvers can prove they preserve Attestor plan, telemetry, and receipt bindings. It is not a production signing key or custody credential.
 
+## Extraction Criteria
+
+The execution-admission package surface is ready before standalone service extraction. Full service extraction still requires one criterion to become true:
+
+1. Stable admission plan contract. Status: `ready`
+2. External integration surfaces proven. Status: `ready`
+3. Telemetry, receipt, and conformance proof surface proven. Status: `ready`
+4. Package boundary proven by export-map probes. Status: `ready`
+5. Low-latency chain adjacency, customer-operated custody boundaries, or separate isolation requirements justify a standalone service. Status: `pending`
+
+So crypto execution admission is now **packaged**, but not yet **split into a separate service**.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -195,6 +243,8 @@ flowchart LR
 
 ```ts
 import {
+  cryptoExecutionAdmission,
+  cryptoExecutionAdmissionPublicSurface,
   createCryptoExecutionAdmissionPlan,
   createCryptoAdmissionReceipt,
   createCryptoAdmissionTelemetryEvent,
@@ -210,6 +260,12 @@ import {
   createX402ResourceServerAdmissionMiddleware,
   verifyCryptoAdmissionReceipt,
 } from 'attestor/crypto-execution-admission';
+
+const surface = cryptoExecutionAdmissionPublicSurface();
+
+if (!surface.namespaceExports.includes('walletRpc')) {
+  throw new Error('Crypto execution admission wallet namespace is unavailable.');
+}
 
 const walletPlan = createCryptoExecutionAdmissionPlan({
   simulation,
@@ -430,6 +486,14 @@ const conformance = validateCryptoAdmissionConformanceFixtureSuite(fixtureSuiteJ
 
 if (conformance.status !== 'valid') {
   throw new Error(conformance.findings.map((finding) => finding.message).join(', '));
+}
+
+const walletMethods = cryptoExecutionAdmission.walletRpc
+  .walletRpcAdmissionDescriptor()
+  .methods;
+
+if (!walletMethods.includes('wallet_sendCalls')) {
+  throw new Error('Wallet RPC admission surface is not packaged correctly.');
 }
 ```
 

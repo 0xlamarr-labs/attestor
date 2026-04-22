@@ -83,7 +83,7 @@ Current status:
 | Surface | Status |
 |---|---|
 | `attestor/crypto-authorization-core` | `20 / 20` complete, packaged |
-| `attestor/crypto-execution-admission` | `11 / 12` complete, active buildout |
+| `attestor/crypto-execution-admission` | `12 / 12` complete, packaged |
 
 What the crypto pack already covers:
 
@@ -95,11 +95,12 @@ What the crypto pack already covers:
 - ERC-7579 and ERC-6900 modular account adapters
 - EIP-7702 delegation-aware adapter
 - x402 and custody/co-signer adapters
-- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, modular-account handoffs, delegated-EOA handoffs, x402 resource-server middleware, custody policy callback contracts, intent-solver admission handoffs, uniform admission telemetry / signed receipts, and JSON conformance fixtures for external integrators
+- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, modular-account handoffs, delegated-EOA handoffs, x402 resource-server middleware, custody policy callback contracts, intent-solver admission handoffs, uniform admission telemetry / signed receipts, JSON conformance fixtures, and a curated package surface for external integrators
 
-Next frozen crypto execution-admission step:
+Current crypto execution-admission posture:
 
-- Step 12: package and document the execution-admission platform surface
+- the frozen execution-admission buildout is complete at `12 / 12`
+- future crypto work should start from a new tracker rather than extending the frozen list
 
 ## Product Truth Versus First Slices
 
@@ -107,7 +108,7 @@ The following distinctions matter:
 
 - the platform core is real and already strongly implemented
 - the finance pack is the strongest end-to-end proof wedge
-- the crypto pack is real and active, but the execution-admission side is still an unfinished frozen track
+- the crypto pack is real, and the current authorization plus execution-admission package tracks are complete; future chain/customer deployment work should be tracked separately
 - hosted account, billing, SSO, passkey, and tenant operations exist as product-surface slices inside the service, not as proof that every commercial surface is already independently mature
 - healthcare, Snowflake, VSAC, and other supporting slices exist, but they are not as deep as the finance wedge
 - distributed control-plane operation is not extracted into an independent multi-region service
