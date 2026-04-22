@@ -1,208 +1,128 @@
-# Product Packaging and Pricing
+# Commercial Packaging and Pricing
 
-Attestor is not sold as a file-management app or a generic AI workspace.
+This document is the commercial truth source for Attestor plan structure, pricing, delivery paths, and the production licensing boundary.
 
-It is sold as a **policy-bound release and authorization platform for high-consequence systems**, delivered either as:
+Attestor is one product: a **policy-bound release and authorization platform for high-consequence systems**. Finance is the deepest proven wedge today. Crypto extends the same platform core and control model.
 
-- a **hosted API product**
-- or a **customer-operated deployment path** for teams that need stricter control boundaries
+## What customers buy
 
-Financial reporting remains the first proving wedge, but the product is wider than finance alone: one Attestor platform core, with modular packs for finance, crypto, and later consequence domains.
-
-## What Customers Actually Buy
-
-Customers are not buying an upload interface or a separate product for each domain.
+Customers are not buying a file workspace, chatbot shell, wallet, or separate product per domain.
 
 They are buying:
 
-- governed release and authorization infrastructure
-- portable proof and verification
+- governed release and authorization before consequence
+- portable proof and independent verification
 - authority closure and auditability
-- hosted account, billing, and usage surfaces
-- API access they can call from their own environment
-- one platform core that can carry multiple packs without splitting the product story
+- a shared platform core that can carry multiple packs
+- a hosted path and a customer-operated path, depending on control requirements
 
-Their files, data, workflows, and business logic stay in **their** systems.
+Customer data, business workflows, models, agents, wallets, and operational systems stay in the customer's own environment. Attestor sits in front of the consequence boundary.
 
-The repo should now be read core-first, wedge-aware:
+## Delivery paths
 
-- the shared core is release, policy, enforcement, and authorization
-- the clearest first buyer problem is AI-assisted financial reporting
-- the clearest first demo is the counterparty exposure reporting packet
-- the crypto direction extends the same product, not a separate one
-- broader cross-domain expansion should attach as packs, not as disconnected product lines
+Attestor is sold through two delivery paths:
 
-Attestor sits around the consequence boundary:
+### Hosted path
 
-```mermaid
-flowchart LR
-  App["Customer systems and workflows"] --> A["Attestor API and control surfaces"]
-  A --> P["Release, proof, verification, authority, billing, usage"]
-  P --> C["Production consequence, audit, review"]
-```
+For teams that want a managed product path.
 
-## Buying Model
+What they get:
 
-The commercial flow should stay simple:
+- hosted account and tenant boundary
+- API keys
+- usage and billing visibility
+- hosted release / proof / authorization access
 
-1. choose a plan
-2. sign up and receive a hosted account plus first API key
-3. pay through Stripe Checkout when a paid plan is needed
-4. receive the paid entitlement on the same hosted account
-5. use Attestor from the customer's own environment
+### Customer-operated path
 
-That means the first customer-facing product surface only needs to cover:
+For teams that need stricter runtime, isolation, or operating control.
 
-- plan selection
-- checkout
+What they get:
+
+- the same Attestor product and core control model
+- a commercial deployment path under customer control
+- enterprise packaging around deployment boundary, scale, and operating requirements
+
+## Plans and pricing
+
+| Plan | Price | Intended use |
+|---|---|---|
+| `community` | free | zero-cost evaluation path and the first `10` hosted runs |
+| `starter` | EUR `499` / month | one serious team and one live workflow |
+| `pro` | EUR `1,999` / month | several workflows or one business unit |
+| `enterprise` | from EUR `7,500` / month | negotiated scale, stricter rollout, or a customer-operated deployment boundary |
+
+Pricing should be read together with the product shape:
+
+- `community` is for evaluation, not a broad production commitment
+- paid hosted plans stay on the same account surface
+- `enterprise` is where customer-operated deployment and stricter control boundaries fit commercially
+
+## How buying works
+
+The commercial path should be simple:
+
+1. choose the plan that matches the control boundary and usage posture
+2. create the hosted account if using the hosted path
+3. receive the first API key
+4. open Stripe Checkout when moving onto a paid hosted plan
+5. use the same account for usage, billing, entitlement, and key management
+6. for customer-operated deployment, move into the enterprise commercial path before production use
+
+For the detailed hosted signup and checkout flow, see [Hosted customer journey](hosted-customer-journey.md).
+
+## Production licensing
+
+This repository is source-available under Business Source License 1.1.
+
+The practical commercial rule is:
+
+- non-production use is allowed
+- production use requires a commercial license until the Change Date in [LICENSE](../../LICENSE)
+
+That applies whether Attestor is used through a hosted paid plan or through a customer-operated production deployment.
+
+## Hosted commercial surface
+
+The hosted commercial surface only needs to cover:
+
+- signup and login
 - account overview
-- API key management
-- usage
-- billing
-- docs
+- entitlement and usage
+- API key lifecycle
+- Stripe Checkout and Billing Portal
+- docs and onboarding
 
-It does **not** need a document workspace or file browser.
+It does not need to become a broad document workspace or generic AI application.
 
-The commercial rule to preserve is simple:
+## Operator pricing configuration
 
-- zero-cost evaluation can start with the repo or a hosted account signup
-- `community` includes the first `10` hosted runs before a paid hosted plan is needed
-
-## Commercial Surface
-
-Keep the surface split small:
-
-- README = public product and plan explanation
-- hosted customer journey = signup and checkout sequence
-- Stripe commercial bootstrap = operator setup
-
-That avoids maintaining the same commercial story in three places.
-
-## Where Customer Payment And Your Bank Account Meet
-
-Attestor itself does not collect money into your bank account.
-
-The hosted paid path works like this:
-
-1. the customer pays through Stripe Checkout
-2. Stripe records the payment on your Stripe balance
-3. Stripe later pays out to the bank account you connected on the Stripe side
-
-So your bank details matter when you activate live Stripe payouts, not inside the Attestor product surface itself.
-
-## Minimum Hosted Account Plane
-
-The hosted account plane only needs to do a few things well:
-
-- show the current plan and entitlement state
-- show usage against quota
-- manage API keys
-- let the customer upgrade or manage billing
-- point back to docs and quick integration examples
-
-That is enough for the first complete product line.
-
-## Recommended Public Pricing
-
-Keep the README `Plans and Pricing` section as the single source of truth for buyer-facing copy.
-
-This file should preserve the internal packaging rule behind that public table:
-
-- `community` = free evaluation path plus the first `10` hosted runs
-- `starter` = EUR 499 / month for one serious team and one live workflow
-- `pro` = EUR 1,999 / month for several workflows or one business unit
-- `enterprise` = from EUR 7,500 / month for negotiated scale, stricter rollout, or a customer-operated deployment path
-
-These prices should map to the Stripe price ids configured through:
+Hosted paid plans map to these Stripe configuration values:
 
 - `ATTESTOR_STRIPE_PRICE_STARTER`
 - `ATTESTOR_STRIPE_PRICE_PRO`
 - `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
 - `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS`
 
-## Commercial Bootstrap
-
-The minimum hosted commercial contract is intentionally small.
-
-To make the paid plans actually purchasable, configure:
+The minimum operator bootstrap for hosted billing also requires:
 
 - `STRIPE_API_KEY`
 - `STRIPE_WEBHOOK_SECRET`
-- `ATTESTOR_STRIPE_PRICE_STARTER`
-- `ATTESTOR_STRIPE_PRICE_PRO`
-- `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
-- `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS`
 - `ATTESTOR_BILLING_SUCCESS_URL`
 - `ATTESTOR_BILLING_CANCEL_URL`
 - `ATTESTOR_BILLING_PORTAL_RETURN_URL`
 
-After that, the runtime already exposes the core buying and account-management surface:
+The deeper operator setup lives outside this overview document.
 
-- `POST /api/v1/auth/signup`
-- `POST /api/v1/account/billing/checkout`
-- `POST /api/v1/account/billing/portal`
-- `POST /api/v1/billing/stripe/webhook`
-- `GET /api/v1/account`
-- `GET /api/v1/account/usage`
-- `GET /api/v1/account/entitlement`
-- `GET /api/v1/account/api-keys`
-- `POST /api/v1/account/api-keys`
-- `POST /api/v1/account/api-keys/:id/rotate`
-- `POST /api/v1/account/api-keys/:id/deactivate`
-- `POST /api/v1/account/api-keys/:id/reactivate`
-- `POST /api/v1/account/api-keys/:id/revoke`
-
-## Why The Pricing Should Not Be Cheap
-
-Attestor is valuable when AI output is no longer just a suggestion.
-
-Once output or programmable execution can influence:
-
-- reporting
-- financial decisions
-- healthcare review
-- claims operations
-- compliance
-- audit exposure
-- production consequence
-- programmable-money movement
-
-the missing layer is not another cheap inference endpoint. It is the release, authorization, and control infrastructure around that consequence.
-
-That is why Attestor should price more like:
-
-- developer infrastructure
-- security/control infrastructure
-- high-trust operational software
-
-and less like:
-
-- commodity generation APIs
-- lightweight wrappers
-- casual productivity SaaS
-
-## Fastest Way To Sell It
-
-The fastest enterprise sales pattern is to avoid pitching Attestor as a generic AI layer.
-
-Pitch it as:
-
-- the release and control plane between model output and production consequence
-- the authorization layer before programmable-money movement becomes real execution
-- the evidence system that makes reviewer signoff and later audit possible
-- the operational product surface that procurement can actually buy: account, usage, billing, entitlement, and deployment boundary
-
-That mirrors how strong infrastructure sellers win enterprise adoption: they sell control, legibility, and rollout safety before they sell convenience.
-
-## Product Truth To Preserve Everywhere
+## Product truth to preserve
 
 Do not describe Attestor as:
 
 - a file uploader
 - an AI workspace
-- a document management app
 - a generic AI-for-everything platform
+- a separate finance product and separate crypto product
 
 Describe it as:
 
-**Attestor is a policy-bound release and authorization platform for high-consequence systems, delivered as a hosted API product or customer-operated deployment, with financial reporting as the first proving wedge and modular packs for finance, crypto, and later consequence domains.**
+**Attestor is one product: a policy-bound release and authorization platform for high-consequence systems, delivered through hosted and customer-operated paths, with finance as the deepest proven wedge and crypto as an extension pack on the same core.**

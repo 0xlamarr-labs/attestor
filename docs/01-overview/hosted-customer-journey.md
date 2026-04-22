@@ -1,100 +1,71 @@
 # Hosted Customer Journey
 
-Attestor is bought and used as an API-first platform product, with financial reporting as the first proving wedge for a broader release and authorization platform.
+This document covers the hosted buying and onboarding flow only.
 
-That means the customer does not come to Attestor to manage files in a hosted workspace. The customer keeps data, files, business workflows, wallets, and operational systems where they already are, then uses Attestor where release decisions, proof, verification, authorization, and operational control are required.
+For plan definitions, pricing, hosted vs customer-operated packaging, and the production licensing boundary, use [Commercial packaging and pricing](product-packaging.md) as the source of truth.
 
-## The Core Product Shape
+## What this path is for
 
-What the customer buys:
+The hosted path is for teams that want a managed Attestor product surface without turning Attestor into the place where their files, workflows, wallets, or business systems live.
 
-- hosted API access to the release, proof, and authorization layer
-- a real account and tenant boundary
-- API keys
-- usage and billing visibility
-- plan and entitlement state
-- proof, verification, and filing-capable endpoints
-- one account surface that can support multiple Attestor packs over time
+The customer keeps those systems where they already are, then calls Attestor where release decisions, proof, verification, authorization, and operational control are required.
 
-What the customer does not buy:
+## The 3-step view
 
-- a file browser
-- a drag-and-drop workspace
-- a chat shell
-- a generic AI productivity app
+The hosted path should be easy to understand:
 
-The category to preserve is:
+1. create the hosted account
+2. receive the first API key
+3. upgrade through Stripe Checkout if a paid hosted plan is needed
 
-**Attestor is a policy-bound release and authorization platform for high-consequence systems, delivered as a hosted API product, with financial reporting as the first proving wedge.**
+After that, the same account remains the control point for keys, usage, entitlement, and billing.
 
-## The Buying Flow
+## Buying flow
 
-The first commercial flow should stay straightforward:
+The first hosted commercial flow is:
 
-1. the customer reads the repo/docs and chooses a plan
+1. the customer reads the docs and chooses a hosted plan
 2. the customer signs up for a hosted account
-3. Attestor returns the first tenant API key immediately
-4. the customer upgrades through Stripe Checkout when paid volume or support is needed
-5. the same account now carries the paid entitlement
-6. the customer manages keys, usage, and billing from the account plane
+3. Attestor returns the first tenant API key
+4. the customer upgrades through Stripe Checkout when moving to a paid hosted plan
+5. the same account carries the paid entitlement after checkout
+6. the customer manages keys, usage, and billing from the hosted account plane
 7. the customer calls Attestor from their own environment
 
 ```mermaid
 flowchart LR
-  D["Docs / README / pricing"] --> S["Sign up hosted account"]
+  D["Docs and pricing"] --> S["Sign up hosted account"]
   S --> K["Receive first API key"]
   K --> U["Upgrade through Stripe if needed"]
   U --> A["Account plane: usage, billing, keys"]
-  A --> C["Customer systems call Attestor API"]
+  A --> C["Customer systems call Attestor"]
 ```
 
-## The 3-Second Version
+## What to send and when
 
-If someone skims this page, they should still understand the buying path:
+Use this sequence:
 
-- `community` = try Attestor first
-- `starter`, `pro`, `enterprise` = paid plans on the same account
-- first create the account, then open Stripe Checkout for the plan, then pay, then keep using that same account
-
-For the fuller public plan wording and run-sizing guidance, keep the README `Plans and Pricing` section as the source of truth.
-
-## What To Send And When
-
-Use this order:
-
-1. create the account:
+1. create the account
    send `accountName`, `email`, `displayName`, and `password` to `POST /api/v1/auth/signup`
-2. start checkout for the plan:
+2. start checkout for a paid hosted plan
    send `planId` (`starter`, `pro`, or `enterprise`) to `POST /api/v1/account/billing/checkout`
 3. open the returned `checkoutUrl` and finish payment in Stripe
 4. keep using the same account after checkout completes
-5. manage invoices or payment details later through `POST /api/v1/account/billing/portal`
+5. manage billing later through `POST /api/v1/account/billing/portal`
 
-## Choosing A Plan
+## Minimum hosted account plane
 
-Keep the public packaging language simple:
+The hosted account plane only needs to cover:
 
-- `community` = zero-cost evaluation and the first `10` hosted runs
-- `starter` = the first paid hosted plan, good for one live reporting workflow
-- `pro` = the larger hosted plan for several recurring reporting or control workflows
-- `enterprise` = negotiated scale, hosted enterprise, or a customer-operated deployment boundary
-
-This document stays focused on the buying sequence. The detailed plan wording lives in the README so it only needs maintenance in one place.
-
-## The Minimum Hosted Account Plane
-
-The account plane does not need to be a broad application. It only needs to cover the customer tasks that matter:
-
-- current plan
-- current entitlement state
+- current plan and entitlement state
 - usage against quota
 - API key lifecycle
 - billing checkout and billing portal
-- webhook and onboarding guidance
+- onboarding and docs links
 
-That is enough to make Attestor purchasable and usable.
+That is enough to make the hosted product purchasable and usable.
 
-## The Route Contract Behind The Buying Flow
+## Hosted route contract
 
 The hosted customer journey already maps to the shipped API surface:
 
@@ -114,26 +85,13 @@ The hosted customer journey already maps to the shipped API surface:
 - `POST /api/v1/account/billing/portal`
 - `POST /api/v1/billing/stripe/webhook`
 
-## Commercial Surface
+## What this document does not do
 
-The practical commercial surface is:
+This document does not define:
 
-- README for the public product and plan story
-- this document for the hosted buying sequence
-- Stripe Checkout plus Billing Portal for payment and plan management
+- pricing
+- plan packaging
+- customer-operated deployment packaging
+- production licensing terms
 
-## Commercial Truth
-
-Attestor should not be framed as a thin utility API.
-
-The customer is buying:
-
-- governed release
-- proof
-- verification
-- operational control
-- a durable account and billing surface around those capabilities
-
-That is why the strongest description is still:
-
-**Attestor is a policy-bound release and authorization platform for high-consequence systems, delivered as a hosted API product, with financial reporting as the first proving wedge.**
+Those live in [Commercial packaging and pricing](product-packaging.md).
