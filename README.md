@@ -2,11 +2,13 @@
 
 **Policy-bound release and authorization platform that sits before real consequence.**
 
-One front door. One platform core. Modular packs for finance, crypto, and later consequence domains.
+One platform core. Shared front-door product shape. Modular packs for finance, crypto, and later consequence domains.
 
 Attestor sits between a proposed consequence and the system that would make it real. Teams use it before accepting AI-assisted outputs, writing financial records, sending controlled communications, or allowing programmable-money execution.
 
-Its job is simple: decide whether the proposed consequence may proceed, under what policy, with what authority, and with what durable evidence left behind. It keeps high-consequence workflows from crossing into production on informal trust alone.
+Its job is simple: decide whether the proposed consequence may proceed, under what policy, with what authority, and with what durable evidence left behind.
+
+Built for teams that cannot let sensitive outputs or execution paths enter production on informal trust.
 
 > [!IMPORTANT]
 > Attestor is the release / authorization / evidence layer before consequence. It is not the model, agent runtime, wallet, custody platform, or orchestration layer.
@@ -14,21 +16,10 @@ Its job is simple: decide whether the proposed consequence may proceed, under wh
 > [!NOTE]
 > This repository is source-available under Business Source License 1.1. Non-production use is allowed. Production use requires a commercial license until the Change Date in [LICENSE](LICENSE).
 
-## What Attestor Is
-
-Attestor answers four practical questions:
-
-- may this proposed consequence proceed at all?
-- under what policy may it move forward?
-- who or what authority can approve it?
-- what evidence survives after the decision?
-
-That pattern holds across both finance and programmable-money workflows.
-
 ## How Attestor works in practice
 
 - A customer system proposes a sensitive output, record, action, or programmable-money move.
-- It calls Attestor before the downstream system accepts or executes that consequence.
+- It calls Attestor before the downstream system writes, sends, files, or executes that consequence.
 - Attestor evaluates active policy, required authority, and evidence requirements.
 - Attestor returns a bounded decision: admit, narrow, review, or block, plus proof material.
 - The downstream system proceeds only when the decision allows it and otherwise fails closed.
@@ -66,14 +57,15 @@ Teams buy a control layer, not a replacement for their existing systems.
 
 Attestor is called from the customer's own environment. Customer data, business workflows, models, agents, wallets, and operational systems stay where they already are.
 
-A practical adoption path is usually:
+A buyer should be able to see the path clearly:
 
-1. Start with one narrow consequence boundary, not a full platform rewrite.
-2. Evaluate locally from this repo and the proof path, or through the hosted account path described in the docs.
-3. Put Attestor in front of the downstream system that would otherwise accept or execute the sensitive consequence.
-4. Move to production on the hosted path or a customer-operated deployment boundary, depending on control requirements.
+- **What teams are buying:** governed release and authorization infrastructure, portable proof, independent verification, and a bounded control point before consequence.
+- **How evaluation starts:** start with one narrow consequence boundary and prove the control model locally from this repo, the proof path, or the hosted account path described in the docs.
+- **Hosted path:** use the hosted account, API key, usage, and billing surfaces when a managed product path fits the control boundary.
+- **Customer-operated path:** use a customer-run deployment boundary when the team needs stricter runtime, isolation, or operating control.
+- **When commercial licensing applies:** production use is commercial under BSL 1.1 until the Change Date in [LICENSE](LICENSE).
 
-The hosted path in this repo/docs includes account, API key, usage, and billing surfaces. The customer-operated path exists for teams that need stricter runtime and control boundaries. Production use is commercial under BSL 1.1 until the Change Date in [LICENSE](LICENSE).
+In both paths, Attestor stays in front of an existing system that would otherwise write, send, file, or execute the consequence directly.
 
 ## Platform core
 
@@ -88,8 +80,8 @@ The hosted path in this repo/docs includes account, API key, usage, and billing 
 
 | Pack | What it means today | Status |
 |---|---|---|
-| Finance | strongest end-to-end proof path; financial reporting is the deepest proving wedge | mature proving pack |
-| Crypto | same core control model applied to programmable-money authorization and admission | `attestor/crypto-authorization-core` `20 / 20` complete; `attestor/crypto-execution-admission` `7 / 12` active buildout |
+| Finance | deepest proven path today; financial reporting is the current proving wedge | mature proving pack |
+| Crypto | real programmable-money core on the same model, with admission surfaces still actively expanding | `attestor/crypto-authorization-core` `20 / 20` complete; `attestor/crypto-execution-admission` `7 / 12` active buildout |
 
 The crypto pack already covers the authorization core and several execution-admission surfaces, including wallet RPC, Safe guard, ERC-4337 bundler, modular-account runtime, delegated-EOA runtime, and x402 resource-server middleware paths. It extends the same Attestor control model; it is not a separate product identity.
 
@@ -139,6 +131,12 @@ npm run verify
 - [Crypto authorization core buildout](docs/02-architecture/crypto-authorization-core-buildout.md)
 - [Crypto execution-admission buildout](docs/02-architecture/crypto-execution-admission-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
+
+## Start here
+
+- Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
+- Want packaging and commercial structure? Start with [Product packaging and pricing](docs/01-overview/product-packaging.md).
+- Want the managed customer path? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
 
 ## What Attestor is not
 
