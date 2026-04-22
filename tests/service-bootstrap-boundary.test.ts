@@ -214,6 +214,10 @@ function testApiServerUsesExtractedRouteSupport(): void {
     join(SERVICE_ROOT, 'hosted-surface-support.ts'),
     'utf8',
   );
+  const hostedAccountSupport = readFileSync(
+    join(SERVICE_ROOT, 'hosted-account-support.ts'),
+    'utf8',
+  );
   const pipelineRouteSupport = readFileSync(
     join(SERVICE_ROOT, 'pipeline-route-support.ts'),
     'utf8',
@@ -226,11 +230,13 @@ function testApiServerUsesExtractedRouteSupport(): void {
 
   assert.match(apiServer, /from '\.\/account-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/hosted-surface-support\.js'/u);
+  assert.match(apiServer, /from '\.\/hosted-account-support\.js'/u);
   assert.match(apiServer, /from '\.\/pipeline-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/request-context\.js'/u);
   assert.match(apiServer, /from '\.\/stripe-webhook-support\.js'/u);
 
   for (const helperName of [
+    'function accountStoreErrorResponse(',
     'function accountUserView(',
     'function accountUserDetailedMfaView(',
     'function accountUserDetailedOidcView(',
@@ -265,6 +271,15 @@ function testApiServerUsesExtractedRouteSupport(): void {
     'function currentAdminAuthorized(',
     'function currentMetricsAuthorized(',
     'function constantTimeSecretEquals(',
+    'function accountMfaErrorResponse(',
+    'function stripeBillingErrorResponse(',
+    'async function currentHostedAccount(',
+    'async function projectBillingEntitlementForAccount(',
+    'async function readHostedBillingEntitlement(',
+    'async function syncHostedBillingEntitlement(',
+    'async function syncHostedBillingEntitlementForTenant(',
+    'async function findHostedAccountByStripeRefs(',
+    'async function revokeAccountSessionsForLifecycleChange(',
     'function stripeClient(',
     'function parseStripeInvoiceStatus(',
     'function parseStripeChargeStatus(',
@@ -315,6 +330,25 @@ function testApiServerUsesExtractedRouteSupport(): void {
       hostedSurfaceSupport.includes(hostedHelper),
       true,
       `hosted-surface-support.ts should own ${hostedHelper}`,
+    );
+  }
+
+  for (const hostedAccountHelper of [
+    'export function accountMfaErrorResponse(',
+    'export function stripeBillingErrorResponse(',
+    'export function createHostedAccountSupport(',
+    'async function currentHostedAccount(',
+    'async function projectBillingEntitlementForAccount(',
+    'async function readHostedBillingEntitlement(',
+    'async function syncHostedBillingEntitlement(',
+    'async function syncHostedBillingEntitlementForTenant(',
+    'async function findHostedAccountByStripeRefs(',
+    'async function revokeAccountSessionsForLifecycleChange(',
+  ]) {
+    assert.equal(
+      hostedAccountSupport.includes(hostedAccountHelper),
+      true,
+      `hosted-account-support.ts should own ${hostedAccountHelper}`,
     );
   }
 

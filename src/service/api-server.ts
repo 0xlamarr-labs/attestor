@@ -49,7 +49,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
-import { Hono, type Context } from 'hono';
+import { Hono } from 'hono';
 import { deleteCookie, getCookie } from 'hono/cookie';
 import { runFinancialPipeline } from '../financial/pipeline.js';
 import { generateKeyPair } from '../signing/keys.js';
@@ -72,10 +72,7 @@ import {
   retryFailedPipelineJob,
   submitPipelineJob,
 } from './async-pipeline.js';
-import {
-  tenantMiddleware,
-  type TenantContext,
-} from './tenant-isolation.js';
+import { tenantMiddleware } from './tenant-isolation.js';
 import {
   accountPasskeyCredentialView,
   accountUserActionTokenView,
@@ -100,6 +97,11 @@ import {
   billingEntitlementView,
   billingEventView,
 } from './hosted-surface-support.js';
+import {
+  accountMfaErrorResponse,
+  createHostedAccountSupport,
+  stripeBillingErrorResponse,
+} from './hosted-account-support.js';
 import {
   applyRateLimitHeaders,
   schemaAttestationSummaryFromConnector,
@@ -162,10 +164,7 @@ import {
   resolveServiceInstanceId,
 } from './high-availability.js';
 import { tenantKeyStorePolicy } from './tenant-key-store.js';
-import {
-  AccountStoreError,
-  type HostedAccountRecord,
-} from './account-store.js';
+import { type HostedAccountRecord } from './account-store.js';
 import {
   type AccountUserRole,
   verifyAccountUserPasswordRecord,
@@ -271,11 +270,7 @@ import {
   upsertHostedBillingEntitlementState,
   listHostedBillingEntitlementsState,
 } from './control-plane-store.js';
-import {
-  projectHostedBillingEntitlement,
-  type HostedBillingEntitlementRecord,
-  type HostedBillingEntitlementStatus,
-} from './billing-entitlement-store.js';
+import { type HostedBillingEntitlementStatus } from './billing-entitlement-store.js';
 import { buildHostedFeatureServiceView } from './billing-feature-service.js';
 import {
   DEFAULT_HOSTED_PLAN_ID,
@@ -326,7 +321,6 @@ import {
 } from './sendgrid-email-webhook.js';
 import { getSecretEnvelopeStatus } from './secret-envelope.js';
 import {
-  StripeBillingError,
   createHostedBillingPortalSession,
   createHostedCheckoutSession,
   extractActiveEntitlementsFromSummary,
@@ -550,173 +544,25 @@ const {
   financeCommunicationReleaseShadowEvaluator,
   financeActionReleaseShadowEvaluator,
 } = createReleaseRuntimeBootstrap();
-
-function accountStoreErrorResponse(c: Context, err: unknown): Response | null {
-  if (!(err instanceof AccountStoreError)) return null;
-  if (err.code === 'NOT_FOUND') {
-    return c.json({ error: err.message }, 404);
-  }
-  return c.json({ error: err.message }, 409);
-}
-
-function accountMfaErrorResponse(c: Context, err: unknown): Response | null {
-  if (!(err instanceof Error)) return null;
-  if (err.message.includes('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY') || err.message.includes('ATTESTOR_ADMIN_API_KEY')) {
-    return c.json({ error: err.message }, 503);
-  }
-  return null;
-}
-
-function stripeBillingErrorResponse(c: Context, err: unknown): Response | null {
-  if (!(err instanceof StripeBillingError)) return null;
-  if (err.code === 'DISABLED') return c.json({ error: err.message }, 503);
-  if (err.code === 'NO_CUSTOMER') return c.json({ error: err.message }, 409);
-  return c.json({ error: err.message }, 400);
-}
-
-async function currentHostedAccount(c: Context): Promise<{
-  tenant: TenantContext;
-  account: HostedAccountRecord;
-  usage: Awaited<ReturnType<typeof getUsageContextState>>;
-  rateLimit: Awaited<ReturnType<typeof getTenantPipelineRateLimit>>;
-} | Response> {
-  const tenant = currentTenant(c);
-  const account = await findHostedAccountByTenantIdState(tenant.tenantId);
-  if (!account) {
-    return c.json({
-      error: `Hosted account not found for tenant '${tenant.tenantId}'.`,
-      tenantContext: {
-        tenantId: tenant.tenantId,
-        source: tenant.source,
-        planId: tenant.planId,
-      },
-    }, 404);
-  }
-  return {
-    tenant,
-    account,
-    usage: await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota),
-    rateLimit: await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
-  };
-}
-
-async function projectBillingEntitlementForAccount(account: HostedAccountRecord, options?: {
-  lastEventId?: string | null;
-  lastEventType?: string | null;
-  lastEventAt?: string | null;
-  stripeEntitlementLookupKeys?: string[] | null;
-  stripeEntitlementFeatureIds?: string[] | null;
-  stripeEntitlementSummaryUpdatedAt?: string | null;
-}): Promise<HostedBillingEntitlementRecord> {
-  const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
-  return projectHostedBillingEntitlement(
-    await findHostedBillingEntitlementByAccountIdState(account.id),
-    {
-      account,
-      currentPlanId: tenantRecord?.planId ?? account.billing.lastCheckoutPlanId ?? DEFAULT_HOSTED_PLAN_ID,
-      currentMonthlyRunQuota: tenantRecord?.monthlyRunQuota ?? null,
-      stripeEntitlementLookupKeys: options?.stripeEntitlementLookupKeys ?? null,
-      stripeEntitlementFeatureIds: options?.stripeEntitlementFeatureIds ?? null,
-      stripeEntitlementSummaryUpdatedAt: options?.stripeEntitlementSummaryUpdatedAt ?? null,
-      lastEventId: options?.lastEventId ?? null,
-      lastEventType: options?.lastEventType ?? null,
-      lastEventAt: options?.lastEventAt ?? null,
-    },
-  );
-}
-
-async function readHostedBillingEntitlement(account: HostedAccountRecord): Promise<HostedBillingEntitlementRecord> {
-  const existing = await findHostedBillingEntitlementByAccountIdState(account.id);
-  if (existing) return existing;
-  return projectBillingEntitlementForAccount(account);
-}
-
-async function syncHostedBillingEntitlement(account: HostedAccountRecord, options?: {
-  lastEventId?: string | null;
-  lastEventType?: string | null;
-  lastEventAt?: string | null;
-  stripeEntitlementLookupKeys?: string[] | null;
-  stripeEntitlementFeatureIds?: string[] | null;
-  stripeEntitlementSummaryUpdatedAt?: string | null;
-}): Promise<HostedBillingEntitlementRecord> {
-  const tenantRecord = await findTenantRecordByTenantIdState(account.primaryTenantId);
-  const synced = await upsertHostedBillingEntitlementState({
-    account,
-    currentPlanId: tenantRecord?.planId ?? account.billing.lastCheckoutPlanId ?? DEFAULT_HOSTED_PLAN_ID,
-    currentMonthlyRunQuota: tenantRecord?.monthlyRunQuota ?? null,
-    stripeEntitlementLookupKeys: options?.stripeEntitlementLookupKeys ?? null,
-    stripeEntitlementFeatureIds: options?.stripeEntitlementFeatureIds ?? null,
-    stripeEntitlementSummaryUpdatedAt: options?.stripeEntitlementSummaryUpdatedAt ?? null,
-    lastEventId: options?.lastEventId ?? null,
-    lastEventType: options?.lastEventType ?? null,
-    lastEventAt: options?.lastEventAt ?? null,
-  });
-  return synced.record;
-}
-
-async function syncHostedBillingEntitlementForTenant(
-  tenantId: string,
-  options?: {
-    lastEventId?: string | null;
-    lastEventType?: string | null;
-    lastEventAt?: string | null;
-    stripeEntitlementLookupKeys?: string[] | null;
-    stripeEntitlementFeatureIds?: string[] | null;
-    stripeEntitlementSummaryUpdatedAt?: string | null;
-  },
-): Promise<HostedBillingEntitlementRecord | null> {
-  const account = await findHostedAccountByTenantIdState(tenantId);
-  if (!account) return null;
-  return syncHostedBillingEntitlement(account, options);
-}
-
-async function findHostedAccountByStripeRefs(options: {
-  accountId?: string | null;
-  stripeCustomerId?: string | null;
-  stripeSubscriptionId?: string | null;
-}): Promise<{
-  record: HostedAccountRecord | null;
-  matchReason: 'account_id' | 'subscription_id' | 'customer_id' | 'none';
-}> {
-  if (options.accountId) {
-    const record = await findHostedAccountByIdState(options.accountId);
-    if (record) {
-      return { record, matchReason: 'account_id' };
-    }
-  }
-
-  const { records } = await listHostedAccountsState();
-  if (options.stripeSubscriptionId) {
-    const record = records.find((entry) => entry.billing.stripeSubscriptionId === options.stripeSubscriptionId) ?? null;
-    if (record) {
-      return { record, matchReason: 'subscription_id' };
-    }
-  }
-
-  if (options.stripeCustomerId) {
-    const record = records.find((entry) => entry.billing.stripeCustomerId === options.stripeCustomerId) ?? null;
-    if (record) {
-      return { record, matchReason: 'customer_id' };
-    }
-  }
-
-  return {
-    record: null,
-    matchReason: 'none',
-  };
-}
-
-async function revokeAccountSessionsForLifecycleChange(options: {
-  account: HostedAccountRecord | null;
-  previousStatus: HostedAccountRecord['status'] | null;
-  nextStatus: HostedAccountRecord['status'] | null;
-}): Promise<number> {
-  if (!options.account) return 0;
-  if (options.previousStatus === options.nextStatus) return 0;
-  if (options.nextStatus !== 'suspended' && options.nextStatus !== 'archived') return 0;
-  const result = await revokeAccountSessionsForAccountState(options.account.id);
-  return result.revokedCount;
-}
+const {
+  currentHostedAccount,
+  readHostedBillingEntitlement,
+  syncHostedBillingEntitlement,
+  syncHostedBillingEntitlementForTenant,
+  findHostedAccountByStripeRefs,
+  revokeAccountSessionsForLifecycleChange,
+} = createHostedAccountSupport({
+  DEFAULT_HOSTED_PLAN_ID,
+  findHostedAccountByTenantId: findHostedAccountByTenantIdState,
+  findHostedAccountById: findHostedAccountByIdState,
+  listHostedAccounts: listHostedAccountsState,
+  findTenantRecordByTenantId: findTenantRecordByTenantIdState,
+  getUsageContext: getUsageContextState,
+  getTenantPipelineRateLimit,
+  findHostedBillingEntitlementByAccountId: findHostedBillingEntitlementByAccountIdState,
+  upsertHostedBillingEntitlement: upsertHostedBillingEntitlementState,
+  revokeAccountSessionsForAccount: revokeAccountSessionsForAccountState,
+});
 
 const publicSiteRouteDeps = {
   committedFinancialPacket,
