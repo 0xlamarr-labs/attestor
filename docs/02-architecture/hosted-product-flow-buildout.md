@@ -69,6 +69,13 @@ Reviewed again on 2026-04-22 before Step 05:
 - OWASP API2:2023 lists sensitive authentication details in URLs and unvalidated tokens as broken-authentication risks; the quickstart should teach secret handling before it teaches the first API call: [OWASP API2:2023 Broken Authentication](https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/)
 - OWASP API4:2023 recommends limiting how often clients interact with APIs, so the first-call path should show quota/rate-limit response handling as expected product behavior, not as a surprise: [OWASP API4:2023 Unrestricted Resource Consumption](https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/)
 
+Reviewed again on 2026-04-22 before Step 06:
+
+- SEC Inline XBRL guidance and the EDGAR Filer Manual keep structured financial reporting tied to machine-readable filing requirements, which supports finance as the first hard consequence boundary rather than a soft demo: [SEC Inline XBRL](https://www.sec.gov/data-research/structured-data/inline-xbrl), [SEC EDGAR Filer Manual](https://www.sec.gov/submit-filings/edgar-filer-manual)
+- XBRL International describes Inline XBRL as a single human-readable and machine-readable reporting format, which matches Attestor's finance first-integration posture around structured output, evidence, and verification before filing-like consequences: [XBRL Inline XBRL](https://www.xbrl.org/ixbrl)
+- EIP-712 and ERC-1271 remain the relevant structured-data and smart-account validation anchors for crypto authorization evidence, so Attestor should describe crypto as signed authorization/admission infrastructure, not as a wallet: [EIP-712](https://eips.ethereum.org/EIPS/eip-712), [ERC-1271](https://eips.ethereum.org/EIPS/eip-1271)
+- ERC-4337 and EIP-7702 define concrete account-abstraction and delegated-EOA execution surfaces, so Attestor's first crypto integration examples should name bundler/delegated-runtime handoffs without claiming a new public hosted route: [ERC-4337](https://eips.ethereum.org/EIPS/eip-4337), [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+
 ## Architecture Decision
 
 Treat the hosted product flow as an adoption shell around the existing Attestor core:
@@ -84,10 +91,10 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 5 |
+| Completed | 6 |
 | In progress | 0 |
-| Not started | 3 |
-| Current posture | Active; hosted signup, Stripe billing convergence, and first customer API-call guidance are hardened; the next gap is finance and crypto first-integration examples |
+| Not started | 2 |
+| Current posture | Active; hosted signup, Stripe billing convergence, first customer API-call guidance, and finance/crypto first-integration examples are hardened; the next gap is account-plane visibility guidance |
 
 ## Frozen Step List
 
@@ -98,10 +105,10 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | 03 | complete | Harden signup-to-first-API-key verification | `tests/hosted-signup-first-api-key-flow.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `package.json`, `docs/01-overview/hosted-product-flow-audit.md` | The focused gate proves hosted signup, session issuance, one-time plaintext first API key, bearer-authenticated account/usage/entitlement access, first governed consequence call, community quota exhaustion at run 11, hidden historical plaintext secrets, second key issue, revoked signup-key rejection, and replacement-key continuity without running the full live API suite. |
 | 04 | complete | Harden Stripe checkout, portal, webhook, and entitlement convergence | `tests/hosted-stripe-billing-convergence-flow.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `package.json`, `docs/01-overview/hosted-product-flow-audit.md` | The focused gate proves paid hosted checkout idempotency, hosted portal readiness, raw-body Stripe signature enforcement, duplicate replay behavior, payload conflict rejection, checkout-completed pending posture, subscription past_due fail-closed suspension, active subscription recovery, invoice delinquency/recovery, entitlement summary convergence, and Stripe-backed feature grants without relying on the full live API suite. |
 | 05 | complete | Add the first customer API-call quickstart | `docs/01-overview/hosted-first-api-call.md`, `README.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/hosted-journey-contract.md`, `src/service/hosted-journey-contract.ts`, `tests/hosted-product-flow-docs.test.ts`, `tests/hosted-product-flow-contract.test.ts`, `docs/01-overview/hosted-product-flow-audit.md` | The quickstart shows the first tenant API-key usage preflight, the first `POST /api/v1/pipeline/run` consequence gate, expected decision/proof/tenant/usage shape, Bearer-header secret handling, quota/rate-limit failure signals, optional signed proof verification, and downstream fail-closed responsibility without adding a new product surface or claiming automatic pack detection. |
-| 06 | not_started | Add finance and crypto first-integration examples |  | Show how the same hosted API/adoption model maps into finance and crypto packs while preserving the one-product model and avoiding separate-product language. |
+| 06 | complete | Add finance and crypto first-integration examples | `docs/01-overview/finance-and-crypto-first-integrations.md`, `README.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/hosted-journey-contract.md`, `src/service/hosted-journey-contract.ts`, `tests/hosted-product-flow-docs.test.ts`, `tests/hosted-product-flow-contract.test.ts`, `docs/01-overview/hosted-product-flow-audit.md` | The first-integration guide preserves the one-product model while making the real first surfaces explicit: finance starts through the hosted `POST /api/v1/pipeline/run` path, and crypto starts through the packaged `attestor/crypto-authorization-core` and `attestor/crypto-execution-admission` surfaces for wallets, Safe guards, ERC-4337 bundlers, modular accounts, EIP-7702 delegated EOAs, x402 resource servers, custody policy engines, and intent solvers. It also states that crypto must not be described as generally available through a public hosted route until a committed route contract, test, and tracker exist. |
 | 07 | not_started | Add usage, quota, billing, and entitlement visibility guide |  | Make account-plane visibility obvious: what customers can inspect, which endpoint owns it, what Stripe owns, and what operators must not expose as customer-facing pricing truth. |
 | 08 | not_started | Add final docs truth-source and readiness gate |  | Add a final guard that README, product packaging, hosted customer journey, Stripe bootstrap, system overview, route contract, probes, and tests agree before calling the hosted product flow sale-ready. |
 
 ## Immediate Next Step
 
-Step 06 should add finance and crypto first-integration examples that reuse the same hosted API/adoption model while preserving one-product modular-pack language.
+Step 07 should add a compact usage, quota, billing, and entitlement visibility guide that shows what customers inspect inside Attestor and what remains owned by Stripe.

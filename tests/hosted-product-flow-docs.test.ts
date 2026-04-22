@@ -27,6 +27,7 @@ function testCommercialTruthSourcesStayLinked(): void {
   const journey = readProjectFile('docs', '01-overview', 'hosted-customer-journey.md');
   const contract = readProjectFile('docs', '01-overview', 'hosted-journey-contract.md');
   const firstApiCall = readProjectFile('docs', '01-overview', 'hosted-first-api-call.md');
+  const firstIntegrations = readProjectFile('docs', '01-overview', 'finance-and-crypto-first-integrations.md');
   const stripeBootstrap = readProjectFile('docs', '01-overview', 'stripe-commercial-bootstrap.md');
 
   includes(
@@ -43,6 +44,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     readme,
     'docs/01-overview/hosted-first-api-call.md',
     'Hosted product flow docs: README links to first hosted API-call quickstart',
+  );
+  includes(
+    readme,
+    'docs/01-overview/finance-and-crypto-first-integrations.md',
+    'Hosted product flow docs: README links to first finance/crypto integration examples',
   );
   includes(
     packaging,
@@ -65,6 +71,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: hosted journey links to first API-call quickstart',
   );
   includes(
+    journey,
+    'Finance and crypto first integrations](finance-and-crypto-first-integrations.md)',
+    'Hosted product flow docs: hosted journey links to first integration examples',
+  );
+  includes(
     packaging,
     'Hosted journey contract](hosted-journey-contract.md)',
     'Hosted product flow docs: product packaging links to canonical journey contract',
@@ -80,15 +91,65 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: contract doc links first API-call quickstart',
   );
   includes(
+    contract,
+    'Finance and crypto first integrations](finance-and-crypto-first-integrations.md)',
+    'Hosted product flow docs: contract doc links first integration examples',
+  );
+  includes(
     firstApiCall,
     'This quickstart shows the first customer-owned API call after hosted signup.',
     'Hosted product flow docs: first API-call quickstart declares its scope',
+  );
+  includes(
+    firstIntegrations,
+    'Finance and crypto are modular packs on the same Attestor platform core.',
+    'Hosted product flow docs: first integration examples preserve one-product pack framing',
   );
   includes(
     stripeBootstrap,
     'operator-facing and should not become a second public pricing page',
     'Hosted product flow docs: Stripe bootstrap stays operator-facing',
   );
+}
+
+function testFinanceAndCryptoFirstIntegrationsStayGrounded(): void {
+  const examples = readProjectFile('docs', '01-overview', 'finance-and-crypto-first-integrations.md');
+  const contract = readProjectFile('src', 'service', 'hosted-journey-contract.ts');
+  const packageJson = readProjectFile('package.json');
+  const pipelineRoute = readProjectFile('src', 'service', 'http', 'routes', 'pipeline-execution-routes.ts');
+  const cryptoAdmission = readProjectFile('src', 'crypto-execution-admission', 'index.ts');
+  const cryptoAuthorization = readProjectFile('src', 'crypto-authorization-core', 'index.ts');
+
+  includes(examples, 'same Attestor adoption model', 'Hosted first integrations: shared model is explicit');
+  includes(examples, 'Finance is the deepest proven path today.', 'Hosted first integrations: finance proof wedge is explicit');
+  includes(examples, '`POST /api/v1/pipeline/run`', 'Hosted first integrations: finance uses shipped hosted pipeline route');
+  includes(examples, '`Authorization: Bearer <tenant_api_key>`', 'Hosted first integrations: finance auth boundary is explicit');
+  includes(examples, '`attestor/crypto-authorization-core`', 'Hosted first integrations: crypto authorization package is named');
+  includes(examples, '`attestor/crypto-execution-admission`', 'Hosted first integrations: crypto admission package is named');
+  includes(examples, 'not a new hosted HTTP route', 'Hosted first integrations: crypto route overclaim is blocked');
+  includes(examples, 'Do not describe crypto as generally available through a public hosted route', 'Hosted first integrations: public crypto HTTP route guardrail is explicit');
+  includes(examples, 'createCryptoExecutionAdmissionPlan', 'Hosted first integrations: crypto admission planner function is named');
+  includes(examples, 'cryptoExecutionAdmissionAdapterProfile', 'Hosted first integrations: crypto adapter profile function is named');
+  includes(examples, 'admit', 'Hosted first integrations: crypto admit outcome is documented');
+  includes(examples, 'needs-evidence', 'Hosted first integrations: crypto needs-evidence outcome is documented');
+  includes(examples, 'deny', 'Hosted first integrations: crypto deny outcome is documented');
+  includes(examples, 'wallet RPC admission', 'Hosted first integrations: wallet RPC surface is documented');
+  includes(examples, 'Safe guard admission receipt', 'Hosted first integrations: Safe guard surface is documented');
+  includes(examples, 'bundler admission handoff', 'Hosted first integrations: ERC-4337 surface is documented');
+  includes(examples, 'x402 resource-server admission middleware', 'Hosted first integrations: x402 surface is documented');
+  includes(examples, 'custody policy callback contract', 'Hosted first integrations: custody surface is documented');
+  includes(examples, 'intent-solver admission handoff', 'Hosted first integrations: intent solver surface is documented');
+  includes(examples, 'Attestor is not doing:', 'Hosted first integrations: non-goals are documented');
+  includes(
+    contract,
+    "firstIntegrationExamples: 'docs/01-overview/finance-and-crypto-first-integrations.md'",
+    'Hosted first integrations: machine-readable truth source is exported',
+  );
+  includes(pipelineRoute, "app.post('/api/v1/pipeline/run'", 'Hosted first integrations: finance route exists');
+  includes(packageJson, '"./crypto-authorization-core"', 'Hosted first integrations: crypto authorization export exists');
+  includes(packageJson, '"./crypto-execution-admission"', 'Hosted first integrations: crypto admission export exists');
+  includes(cryptoAuthorization, 'cryptoAuthorizationCorePublicSurface', 'Hosted first integrations: crypto authorization public surface exists');
+  includes(cryptoAdmission, 'createCryptoExecutionAdmissionPlan', 'Hosted first integrations: crypto admission planner exists');
 }
 
 function testFirstApiCallQuickstartStaysGrounded(): void {
@@ -212,17 +273,19 @@ function testTrackerAndAuditStayInSync(): void {
   const systemOverview = readProjectFile('docs', '02-architecture', 'system-overview.md');
 
   includes(tracker, 'Total frozen steps | 8', 'Hosted product flow docs: tracker declares eight frozen steps');
-  includes(tracker, '| Completed | 5 |', 'Hosted product flow docs: tracker has five completed steps after first API-call quickstart');
+  includes(tracker, '| Completed | 6 |', 'Hosted product flow docs: tracker has six completed steps after first integration examples');
   includes(tracker, '| 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces |', 'Hosted product flow docs: Step 01 is complete');
   includes(tracker, '| 02 | complete | Define one canonical hosted journey contract |', 'Hosted product flow docs: Step 02 is complete');
   includes(tracker, '| 03 | complete | Harden signup-to-first-API-key verification |', 'Hosted product flow docs: Step 03 is complete');
   includes(tracker, '| 04 | complete | Harden Stripe checkout, portal, webhook, and entitlement convergence |', 'Hosted product flow docs: Step 04 is complete');
   includes(tracker, '| 05 | complete | Add the first customer API-call quickstart |', 'Hosted product flow docs: Step 05 is complete');
-  includes(tracker, '| 06 | not_started | Add finance and crypto first-integration examples |', 'Hosted product flow docs: Step 06 is the next step');
+  includes(tracker, '| 06 | complete | Add finance and crypto first-integration examples |', 'Hosted product flow docs: Step 06 is complete');
+  includes(tracker, '| 07 | not_started | Add usage, quota, billing, and entitlement visibility guide |', 'Hosted product flow docs: Step 07 is the next step');
   includes(audit, 'The hosted API and billing pieces are real.', 'Hosted product flow docs: audit records the current conclusion');
   includes(audit, '**Focused hosted flow probe.** Addressed by `tests/hosted-signup-first-api-key-flow.test.ts`', 'Hosted product flow docs: audit records Step 03 evidence');
   includes(audit, '**Focused billing convergence probe.** Addressed by `tests/hosted-stripe-billing-convergence-flow.test.ts`', 'Hosted product flow docs: audit records Step 04 evidence');
   includes(audit, '**Customer first-call quickstart.** Addressed by `docs/01-overview/hosted-first-api-call.md`', 'Hosted product flow docs: audit records Step 05 evidence');
+  includes(audit, '**Finance and crypto adoption examples.** Addressed by `docs/01-overview/finance-and-crypto-first-integrations.md`', 'Hosted product flow docs: audit records Step 06 evidence');
   includes(systemOverview, 'Hosted product flow and adoption hardening', 'Hosted product flow docs: system overview names active hosted flow track');
 }
 
@@ -232,6 +295,7 @@ async function main(): Promise<void> {
   testHostedJourneyRoutesMatchShippedRoutes();
   testRuntimeCoverageGatesAreNamed();
   testFirstApiCallQuickstartStaysGrounded();
+  testFinanceAndCryptoFirstIntegrationsStayGrounded();
   testTrackerAndAuditStayInSync();
 
   ok(passed > 0, 'Hosted product flow docs: tests executed');

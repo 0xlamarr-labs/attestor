@@ -8,6 +8,8 @@ For exact hosted route order, auth boundaries, success signals, and failure sign
 
 For the first customer-owned API call after signup, use [First hosted API call](hosted-first-api-call.md).
 
+For the first finance and crypto integration paths, use [Finance and crypto first integrations](finance-and-crypto-first-integrations.md).
+
 ## What this path is for
 
 The hosted path is for teams that want a managed Attestor product surface without turning Attestor into the place where their files, workflows, wallets, or business systems live.

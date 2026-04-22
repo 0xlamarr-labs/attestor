@@ -75,6 +75,8 @@ Need the hosted sign-up, first API key, and checkout flow? See [Hosted customer 
 
 Need the first hosted API call after signup? See [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 
+Need first finance and crypto integration paths? See [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
+
 ## Platform core
 
 | Core layer | Role | Status |
@@ -144,6 +146,7 @@ npm run verify
 - Want pricing, free evaluation, or hosted trial details? Start with [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
 - Want the managed customer path, sign-up flow, and billing handoff? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
 - Want the first API call after signup? Start with [First hosted API call](docs/01-overview/hosted-first-api-call.md).
+- Want the first finance or crypto integration path? Start with [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
 
 ## What Attestor is not
 

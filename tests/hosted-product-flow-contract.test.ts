@@ -86,6 +86,11 @@ function testTruthSources(): void {
     'docs/01-overview/hosted-first-api-call.md',
     'Hosted journey contract: first API-call quickstart truth source is exported',
   );
+  equal(
+    contract.truthSources.firstIntegrationExamples,
+    'docs/01-overview/finance-and-crypto-first-integrations.md',
+    'Hosted journey contract: first integration examples truth source is exported',
+  );
 }
 
 function testRouteContractsMapToShippedRoutes(): void {
@@ -183,6 +188,7 @@ function testDocsReflectContract(): void {
   ok(contractDoc.includes('This is the canonical customer journey contract'), 'Hosted journey contract: doc states canonical role');
   ok(contractDoc.includes('src/service/hosted-journey-contract.ts'), 'Hosted journey contract: doc links machine-readable descriptor');
   ok(contractDoc.includes('First hosted API call](hosted-first-api-call.md)'), 'Hosted journey contract: doc links first API-call quickstart');
+  ok(contractDoc.includes('Finance and crypto first integrations](finance-and-crypto-first-integrations.md)'), 'Hosted journey contract: doc links first integration examples');
   ok(contractDoc.includes('Attestor does not auto-detect what pack to run'), 'Hosted journey contract: doc rejects auto-detect promise');
   ok(contractDoc.includes('Idempotency-Key'), 'Hosted journey contract: doc names checkout idempotency');
   ok(contractDoc.includes('Stripe-Signature'), 'Hosted journey contract: doc names webhook signature boundary');
