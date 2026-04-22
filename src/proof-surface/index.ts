@@ -23,3 +23,13 @@ export {
   type ProofSurfacePackFamily,
   type ProofSurfaceProofMaterialKind,
 } from './scenario-registry.js';
+
+export {
+  FINANCE_PROOF_SCENARIO_IDS,
+  runFinanceProofScenario,
+  runFinanceProofScenarios,
+  type FinanceProofCheckResult,
+  type FinanceProofRunMaterial,
+  type FinanceProofScenarioId,
+  type FinanceProofScenarioRun,
+} from './finance-scenarios.js';

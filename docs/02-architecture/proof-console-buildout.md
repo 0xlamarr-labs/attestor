@@ -48,6 +48,12 @@ Reviewed on 2026-04-22 before opening this track:
 - Stanford Web Credibility guidance says credibility improves when claims are easy to verify, the site looks appropriate for its purpose, and evidence is visible; Attestor's demo should therefore expose verification material instead of relying on positioning alone: [Stanford Web Credibility Guidelines](https://credibility.stanford.edu/guidelines/index.html)
 - The FTC dark-patterns report warns against designs that trick or manipulate users; Attestor's adoption surface must build recognition through clarity and proof, not through deceptive urgency, hidden terms, or fake social proof: [FTC dark patterns report](https://www.ftc.gov/news-events/news/press-releases/2022/09/ftc-report-shows-rise-sophisticated-dark-patterns-designed-trick-trap-consumers)
 
+Reviewed again on 2026-04-22 before Step 03:
+
+- SEC Inline XBRL guidance describes Inline XBRL as a structured data language that lets filers prepare one document that is both human-readable and machine-readable, supporting the finance proof scenario's focus on structured filing-preparation evidence: [SEC Inline XBRL](https://www.sec.gov/about/inline-xbrl)
+- The SEC adopted the updated EDGAR Filer Manual for EDGAR Release 26.1 in March 2026, keeping filing preparation tied to current EDGAR procedural requirements rather than a static historical demo: [SEC Adoption of Updated EDGAR Filer Manual](https://www.sec.gov/rules-regulations/2026/03/33-11411)
+- XBRL International describes iXBRL as an open standard for reports that preserve human presentation while providing structured, machine-readable data, reinforcing why Attestor's first finance proof scenario binds output hashes, evidence, and release status before filing-like consequence: [XBRL iXBRL](https://www.xbrl.org/ixbrl)
+
 ## Architecture Decision
 
 Start the proof surface as a small, testable product-adoption layer inside the existing modular monolith:
@@ -77,10 +83,10 @@ The proof surface uses one shared vocabulary across packs:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 2 |
+| Completed | 3 |
 | In progress | 0 |
-| Not started | 6 |
-| Current posture | Scenario registry exists and is guarded; proof-surface work can now attach real finance and crypto runs without widening into a separate product or mock demo |
+| Not started | 5 |
+| Current posture | Finance proof scenarios now execute against shipped release-kernel and finance-release behavior; proof-surface work can add crypto admission runs next without widening into a separate product or mock demo |
 
 ## Frozen Step List
 
@@ -88,7 +94,7 @@ The proof surface uses one shared vocabulary across packs:
 |---|---|---|---|---|
 | 01 | complete | Define the proof surface purpose, scope, vocabulary, and guardrails | `docs/02-architecture/proof-console-buildout.md`, `tests/proof-surface-docs.test.ts`, `README.md`, `package.json` | The track is explicitly an adoption/proof layer around the existing Attestor product, not a new product, wallet, custody platform, agent runtime, orchestration layer, or mock-only marketing demo. |
 | 02 | complete | Add the proof scenario registry | `src/proof-surface/scenario-registry.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-scenario-registry.test.ts`, `package.json` | The registry defines five grounded proof scenarios across finance, crypto, and general fail-closed consequences. Each scenario carries a human hook, proposed consequence, real package/source entry points, expected bounded decision, proof material, customer value, and non-goals. The guard test verifies scenario uniqueness, package-surface binding, source/export grounding, proof material existence, finance/crypto/general coverage, admit/review/block coverage, and the no-hosted-crypto-route constraint. |
-| 03 | not started | Add finance proof scenarios |  | Include at least one admit path and one review/block path tied to shipped finance/release proof behavior. Finance remains the deepest proof wedge. |
+| 03 | complete | Add finance proof scenarios | `src/proof-surface/finance-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-finance-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance proof runs now execute the shipped finance filing release bridge, release decision engine, deterministic checks, canonical release material, and domain finalization. The admit scenario reaches `accepted` with canonical hashes and authority satisfied; the review scenario keeps evidence sufficient while authority remains pending, producing `review-required` and fail-closed downstream behavior. |
 | 04 | not started | Add crypto admission proof scenarios |  | Include at least one admit path and one deny/needs-evidence path tied to `attestor/crypto-authorization-core` or `attestor/crypto-execution-admission`. Do not claim a public hosted crypto HTTP route. |
 | 05 | not started | Add unified proof output shape |  | Output proposed consequence, policy check, authority check, evidence check, decision, reason, and proof material in one shared structure across packs. |
 | 06 | not started | Add runnable local proof command or artifact generator |  | Prefer a deterministic CLI/static artifact first. A broad hosted console waits until the proof output shape is stable and tested. |
@@ -97,4 +103,4 @@ The proof surface uses one shared vocabulary across packs:
 
 ## Immediate Next Step
 
-Implement Step 03: attach finance proof scenarios to shipped finance/release behavior so the first proof surface can show an admit path and a review/block path without mock-only output.
+Implement Step 04: attach crypto admission proof scenarios to shipped crypto authorization/admission surfaces so the proof surface can show an admit path and a deny/needs-evidence path without claiming a public hosted crypto HTTP route.
