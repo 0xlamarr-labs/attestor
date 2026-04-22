@@ -54,12 +54,16 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   const routes = readFileSync(join(BOOTSTRAP_ROOT, 'routes.ts'), 'utf8');
   const server = readFileSync(join(BOOTSTRAP_ROOT, 'server.ts'), 'utf8');
   const runtime = readFileSync(join(BOOTSTRAP_ROOT, 'runtime.ts'), 'utf8');
+  const httpRouteBuilders = readFileSync(join(BOOTSTRAP_ROOT, 'http-route-builders.ts'), 'utf8');
 
   assert.match(registries, /export function createRegistries\(\): AppRegistries/u);
   assert.match(routes, /export function registerAllRoutes<Packet>\(app: Hono, runtime: AppRuntime<Packet>\): void/u);
   assert.match(server, /export function startHttpServer\(app: Hono, port: number = 3700\): HttpServerHandle/u);
   assert.match(server, /export function installGracefulShutdown\(handle: HttpServerHandle\): void/u);
   assert.match(runtime, /export interface AppRuntime<Packet = unknown>/u);
+  assert.match(httpRouteBuilders, /export function buildAccountRouteDeps/u);
+  assert.match(httpRouteBuilders, /export function buildAdminRouteDeps/u);
+  assert.match(httpRouteBuilders, /export function buildPipelineRouteDeps/u);
 }
 
 function testRuntimeUsesStructuredComposition(): void {
@@ -107,11 +111,54 @@ function testRegistriesOwnStaticPlatformRegistration(): void {
   }
 }
 
+function testHttpRouteBuildersOwnApplicationServiceConstruction(): void {
+  const apiServer = readFileSync(API_SERVER, 'utf8');
+  const httpRouteBuilders = readProjectFile('src', 'service', 'bootstrap', 'http-route-builders.ts');
+
+  assert.match(apiServer, /from '\.\/bootstrap\/http-route-builders\.js'/u);
+
+  for (const serviceFactory of [
+    'createAccountAuthService',
+    'createAccountApiKeyService',
+    'createAccountUserManagementService',
+    'createAccountStateService',
+    'createAdminMutationService',
+    'createAdminControlService',
+    'createAdminQueryService',
+    'createPipelineUsageService',
+    'createPipelineDeadLetterService',
+  ]) {
+    assert.equal(
+      apiServer.includes(`${serviceFactory}(`),
+      false,
+      `api-server.ts should delegate ${serviceFactory} wiring through bootstrap/http-route-builders.ts`,
+    );
+    assert.equal(
+      httpRouteBuilders.includes(`${serviceFactory}(`),
+      true,
+      `bootstrap/http-route-builders.ts should own ${serviceFactory} wiring`,
+    );
+  }
+
+  for (const routeDepsConstant of [
+    'const accountRouteDeps = {',
+    'const adminRouteDeps = {',
+    'const pipelineRouteDeps = {',
+  ]) {
+    assert.equal(
+      apiServer.includes(routeDepsConstant),
+      false,
+      `api-server.ts should not build ${routeDepsConstant} directly`,
+    );
+  }
+}
+
 testApiServerUsesBootstrapComposition();
 testApiServerDoesNotOwnNodeServerLifecycle();
 testApiServerDoesNotRegisterRoutesDirectly();
 testBootstrapModulesOwnTheirBoundaries();
 testRuntimeUsesStructuredComposition();
 testRegistriesOwnStaticPlatformRegistration();
+testHttpRouteBuildersOwnApplicationServiceConstruction();
 
-console.log('Service bootstrap boundary tests: 6 passed, 0 failed');
+console.log('Service bootstrap boundary tests: 7 passed, 0 failed');

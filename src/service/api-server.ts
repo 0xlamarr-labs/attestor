@@ -355,21 +355,19 @@ import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
-import { createAccountApiKeyService } from './application/account-api-key-service.js';
-import { createAdminControlService } from './application/admin-control-service.js';
-import { createAdminMutationService } from './application/admin-mutation-service.js';
-import { createAdminQueryService } from './application/admin-query-service.js';
-import { createAccountAuthService } from './application/account-auth-service.js';
-import { createAccountStateService } from './application/account-state-service.js';
-import { createAccountUserManagementService } from './application/account-user-management-service.js';
 import { createEmailWebhookService } from './application/email-webhook-service.js';
-import { createPipelineDeadLetterService } from './application/pipeline-dead-letter-service.js';
-import { createPipelineUsageService } from './application/pipeline-usage-service.js';
 import { createStripeWebhookBillingProcessor } from './application/stripe-webhook-billing-processor.js';
 import { createStripeWebhookService } from './application/stripe-webhook-service.js';
 import { createRegistries } from './bootstrap/registries.js';
 import { createRuntime, type AppRouteDeps, type AppRuntimeInfra } from './bootstrap/runtime.js';
 import { registerAllRoutes } from './bootstrap/routes.js';
+import {
+  buildAccountRouteDeps,
+  buildAdminRouteDeps,
+  buildPipelineRouteDeps,
+  buildReleasePolicyControlRouteDeps,
+  buildReleaseReviewRouteDeps,
+} from './bootstrap/http-route-builders.js';
 import {
   installGracefulShutdown,
   startHttpServer,
@@ -1450,85 +1448,6 @@ function billingEventView(record: Awaited<ReturnType<typeof listBillingEvents>>[
   };
 }
 
-const adminMutationService = createAdminMutationService({
-  hashJsonValue,
-  lookupAdminIdempotencyState,
-  recordAdminIdempotencyState,
-  appendAdminAuditRecordState,
-});
-
-const adminControlService = createAdminControlService({
-  resolvePlanSpec,
-  DEFAULT_HOSTED_PLAN_ID,
-  provisionHostedAccountState,
-  attachStripeBillingToAccountState,
-  setHostedAccountStatusState,
-  revokeAccountSessionsForAccountState,
-  issueTenantApiKeyState,
-  rotateTenantApiKeyState,
-  setTenantApiKeyStatusState,
-  recoverTenantApiKeyState,
-  revokeTenantApiKeyState,
-  syncHostedBillingEntitlement,
-  syncHostedBillingEntitlementForTenant,
-  now: () => new Date().toISOString(),
-});
-
-const adminQueryService = createAdminQueryService({
-  listTenantKeyRecordsState,
-  listHostedAccountsState,
-  findHostedAccountByIdState,
-  listAdminAuditRecordsState,
-  listHostedBillingEntitlementsState,
-  listHostedEmailDeliveriesState,
-  listAsyncDeadLetterRecordsState,
-  queryUsageLedgerState,
-  findTenantRecordByTenantIdState,
-  findHostedAccountByTenantIdState,
-});
-
-async function adminMutationRequest(c: Context, routeId: string, requestPayload: unknown):
-  Promise<{ idempotencyKey: string | null; requestHash: string } | Response> {
-  const mutation = await adminMutationService.begin({
-    idempotencyKey: c.req.header('Idempotency-Key')?.trim() ?? null,
-    routeId,
-    requestPayload,
-  });
-  if (mutation.kind === 'ready') {
-    return {
-      idempotencyKey: mutation.idempotencyKey,
-      requestHash: mutation.requestHash,
-    };
-  }
-  if (mutation.kind === 'conflict') {
-    return c.json(mutation.responseBody, mutation.statusCode);
-  }
-  return new Response(JSON.stringify(mutation.responseBody), {
-    status: mutation.statusCode,
-    headers: mutation.headers,
-  });
-}
-
-async function finalizeAdminMutation(options: {
-  idempotencyKey: string | null;
-  routeId: string;
-  requestPayload: unknown;
-  statusCode: number;
-  responseBody: Record<string, unknown>;
-  audit: {
-    action: AdminAuditAction;
-    accountId?: string | null;
-    tenantId?: string | null;
-    tenantKeyId?: string | null;
-    planId?: string | null;
-    monthlyRunQuota?: number | null;
-    requestHash?: string;
-    metadata?: Record<string, unknown>;
-  };
-}): Promise<Record<string, unknown>> {
-  return adminMutationService.finalize(options);
-}
-
 const publicSiteRouteDeps = {
   committedFinancialPacket,
   renderFinancialReportingLandingPage,
@@ -1553,7 +1472,7 @@ const coreRouteDeps = {
   rlsActivationResult,
 } satisfies ApiRouteDeps['core'];
 
-const accountAuthService = createAccountAuthService({
+const accountRouteDeps = buildAccountRouteDeps({
   countAccountUsersForAccountState,
   createAccountUserState,
   findAccountUserByEmailState,
@@ -1570,35 +1489,21 @@ const accountAuthService = createAccountAuthService({
   findHostedAccountByIdState,
   totpSummary,
   issueAccountMfaLoginTokenState,
-});
-
-const accountApiKeyService = createAccountApiKeyService({
-  findHostedAccountByIdState,
   findTenantRecordByTenantIdState,
   listTenantKeyRecordsState,
   tenantKeyStorePolicy,
-  SELF_HOST_PLAN_ID,
   issueTenantApiKeyState,
   rotateTenantApiKeyState,
   setTenantApiKeyStatusState,
   revokeTenantApiKeyState,
-  syncHostedBillingEntitlementForTenant,
   now: () => new Date().toISOString(),
-});
-
-const accountUserManagementService = createAccountUserManagementService({
   listAccountUsersByAccountIdState,
-  createAccountUserState,
-  findAccountUserByEmailState,
   listAccountUserActionTokensByAccountIdState,
   findAccountUserActionTokenByTokenState,
   issueAccountInviteTokenState,
   revokeAccountUserActionTokenState,
   consumeAccountUserActionTokenState,
-  findHostedAccountByIdState,
   findAccountUserByIdState,
-  recordAccountUserLoginState,
-  issueAccountSessionState,
   setAccountUserStatusState,
   revokeAccountSessionsForUserState,
   revokeAccountUserActionTokensForUserState,
@@ -1606,9 +1511,6 @@ const accountUserManagementService = createAccountUserManagementService({
   setAccountUserPasswordState,
   deliverHostedInviteEmail,
   deliverHostedPasswordResetEmail,
-});
-
-const accountStateService = createAccountStateService({
   findAccountUserByEmail: findAccountUserByEmailState,
   issueAccountSession: issueAccountSessionState,
   recordAccountUserLogin: recordAccountUserLoginState,
@@ -1630,20 +1532,11 @@ const accountStateService = createAccountStateService({
   saveAccountUserActionTokenRecord: saveAccountUserActionTokenRecordState,
   revokeAccountSessionByToken: revokeAccountSessionByTokenState,
   listHostedEmailDeliveries: listHostedEmailDeliveriesState,
-});
-
-const accountRouteDeps = {
-  authService: accountAuthService,
-  apiKeyService: accountApiKeyService,
-  stateService: accountStateService,
-  userManagementService: accountUserManagementService,
   currentHostedAccount,
   setSessionCookieForRecord,
   accountUserView,
   adminAccountView,
   accountApiKeyView,
-  verifyAccountUserPasswordRecord,
-  totpSummary,
   buildHostedPasskeyAuthenticationOptions,
   asAuthenticationResponse,
   parsePasskeyAuthenticationChallenge,
@@ -1698,17 +1591,46 @@ const accountRouteDeps = {
   buildHostedBillingReconciliation,
   billingEntitlementView,
   currentTenant,
-} satisfies ApiRouteDeps['account'];
+});
 
-const adminRouteDeps = {
-  currentAdminAuthorized,
-  adminMutationService,
-  adminControlService,
-  adminQueryService,
-  adminTenantKeyView,
-  tenantKeyStorePolicy,
-  adminAccountView,
+const {
+  adminRouteDeps,
+  adminMutationRequest,
+  finalizeAdminMutation,
+} = buildAdminRouteDeps({
+  hashJsonValue,
+  lookupAdminIdempotencyState,
+  recordAdminIdempotencyState,
+  appendAdminAuditRecordState,
+  resolvePlanSpec,
+  DEFAULT_HOSTED_PLAN_ID,
+  provisionHostedAccountState,
+  attachStripeBillingToAccountState,
+  setHostedAccountStatusState,
+  revokeAccountSessionsForAccountState,
   readHostedBillingEntitlement,
+  tenantKeyStorePolicy,
+  issueTenantApiKeyState,
+  rotateTenantApiKeyState,
+  setTenantApiKeyStatusState,
+  recoverTenantApiKeyState,
+  revokeTenantApiKeyState,
+  syncHostedBillingEntitlement,
+  syncHostedBillingEntitlementForTenant,
+  now: () => new Date().toISOString(),
+  listTenantKeyRecordsState,
+  listHostedAccountsState,
+  findHostedAccountByIdState,
+  listAdminAuditRecordsState,
+  listHostedBillingEntitlementsState,
+  listHostedEmailDeliveriesState,
+  listAsyncDeadLetterRecordsState,
+  queryUsageLedgerState,
+  findTenantRecordByTenantIdState,
+  findHostedAccountByTenantIdState,
+  currentAdminAuthorized,
+  adminTenantKeyView,
+  adminAccountView,
   buildHostedBillingExport,
   buildHostedBillingReconciliation,
   renderHostedBillingExportCsv,
@@ -1717,7 +1639,6 @@ const adminRouteDeps = {
   getTenantAsyncExecutionCoordinatorStatus,
   getTenantAsyncWeightedDispatchCoordinatorStatus,
   adminPlanView,
-  DEFAULT_HOSTED_PLAN_ID,
   defaultRateLimitWindowSeconds,
   adminAuditView,
   isBillingEventLedgerConfigured,
@@ -1738,9 +1659,9 @@ const adminRouteDeps = {
   retryFailedPipelineJob,
   apiReleaseIntrospectionStore,
   releaseDegradedModeGrantStore: apiReleaseDegradedModeGrantStore,
-} satisfies ApiRouteDeps['admin'];
+});
 
-const releaseReviewRouteDeps = {
+const releaseReviewRouteDeps = buildReleaseReviewRouteDeps({
   renderReleaseReviewerQueueInboxPage,
   renderReleaseReviewerQueueDetailPage,
   currentAdminAuthorized,
@@ -1752,29 +1673,22 @@ const releaseReviewRouteDeps = {
   apiReleaseIntrospectionStore,
   adminMutationRequest,
   finalizeAdminMutation,
-} satisfies ApiRouteDeps['releaseReview'];
+});
 
-const releasePolicyControlRouteDeps = {
+const releasePolicyControlRouteDeps = buildReleasePolicyControlRouteDeps({
   currentAdminAuthorized,
   policyControlPlaneStore,
   policyActivationApprovalStore,
   policyMutationAuditLog,
   adminMutationRequest,
   finalizeAdminMutation,
-} satisfies ApiRouteDeps['releasePolicyControl'];
+});
 
-const pipelineUsageService = createPipelineUsageService({
+const pipelineRouteDeps = buildPipelineRouteDeps({
   checkQuota: canConsumePipelineRunState,
   consumeRun: consumePipelineRunState,
-});
-
-const pipelineDeadLetterService = createPipelineDeadLetterService({
   upsertDeadLetterRecord: upsertAsyncDeadLetterRecordState,
-});
-
-const pipelineRouteDeps = {
   currentTenant,
-  pipelineUsageService,
   reserveTenantPipelineRequest,
   applyRateLimitHeaders,
   connectorRegistry,
@@ -1831,9 +1745,8 @@ const pipelineRouteDeps = {
   inProcessTenantQueueSnapshot,
   inProcessJobs,
   pki,
-  pipelineDeadLetterService,
   getJobStatus,
-} satisfies ApiRouteDeps['pipeline'];
+});
 
 const stripeWebhookService = createStripeWebhookService({
   stripeClient,
