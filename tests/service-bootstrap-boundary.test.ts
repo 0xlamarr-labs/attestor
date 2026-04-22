@@ -12,9 +12,12 @@ function readProjectFile(...segments: string[]): string {
 
 function testApiServerUsesBootstrapComposition(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
+  const apiRouteRuntime = readFileSync(join(BOOTSTRAP_ROOT, 'api-route-runtime.ts'), 'utf8');
 
   assert.match(apiServer, /from '\.\/bootstrap\/registries\.js'/u);
-  assert.match(apiServer, /from '\.\/bootstrap\/runtime\.js'/u);
+  assert.match(apiServer, /from '\.\/bootstrap\/api-route-runtime\.js'/u);
+  assert.doesNotMatch(apiServer, /from '\.\/bootstrap\/runtime\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\/runtime\.js'/u);
   assert.match(apiServer, /from '\.\/bootstrap\/routes\.js'/u);
   assert.match(apiServer, /from '\.\/bootstrap\/server\.js'/u);
   assert.match(apiServer, /registerAllRoutes\(app, runtime\);/u);
@@ -57,6 +60,7 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   const server = readFileSync(join(BOOTSTRAP_ROOT, 'server.ts'), 'utf8');
   const runtime = readFileSync(join(BOOTSTRAP_ROOT, 'runtime.ts'), 'utf8');
   const httpRouteBuilders = readFileSync(join(BOOTSTRAP_ROOT, 'http-route-builders.ts'), 'utf8');
+  const apiRouteRuntime = readFileSync(join(BOOTSTRAP_ROOT, 'api-route-runtime.ts'), 'utf8');
 
   assert.match(registries, /export function createRegistries\(\): AppRegistries/u);
   assert.match(
@@ -73,10 +77,12 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   assert.match(httpRouteBuilders, /export function buildAdminRouteDeps/u);
   assert.match(httpRouteBuilders, /export function buildPipelineRouteDeps/u);
   assert.match(httpRouteBuilders, /export function buildWebhookRouteDeps/u);
+  assert.match(apiRouteRuntime, /export function createApiHttpRouteRuntime/u);
 }
 
 function testRuntimeUsesStructuredComposition(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
+  const apiRouteRuntime = readFileSync(join(BOOTSTRAP_ROOT, 'api-route-runtime.ts'), 'utf8');
   const routes = readFileSync(join(BOOTSTRAP_ROOT, 'routes.ts'), 'utf8');
   const runtime = readFileSync(join(BOOTSTRAP_ROOT, 'runtime.ts'), 'utf8');
 
@@ -91,9 +97,13 @@ function testRuntimeUsesStructuredComposition(): void {
   assert.match(routes, /runtime\.services\.httpRoutes\.account/u);
   assert.doesNotMatch(routes, /runtime\.routeDeps/u);
 
-  assert.match(apiServer, /createRuntimeInfra\(\{/u);
-  assert.match(apiServer, /createHttpRouteRuntime\(\{/u);
-  assert.match(apiServer, /httpRoutes:\s*\{/u);
+  assert.match(apiServer, /createApiHttpRouteRuntime\(\{/u);
+  assert.doesNotMatch(apiServer, /createRuntimeInfra\(\{/u);
+  assert.doesNotMatch(apiServer, /createHttpRouteRuntime\(\{/u);
+  assert.doesNotMatch(apiServer, /httpRoutes:\s*\{/u);
+  assert.match(apiRouteRuntime, /createRuntimeInfra\(\{/u);
+  assert.match(apiRouteRuntime, /createHttpRouteRuntime\(\{/u);
+  assert.match(apiRouteRuntime, /httpRoutes:\s*\{/u);
   assert.doesNotMatch(apiServer, /routeDeps:\s*\{/u);
 }
 
@@ -123,9 +133,11 @@ function testRegistriesOwnStaticPlatformRegistration(): void {
 
 function testHttpRouteBuildersOwnApplicationServiceConstruction(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
+  const apiRouteRuntime = readProjectFile('src', 'service', 'bootstrap', 'api-route-runtime.ts');
   const httpRouteBuilders = readProjectFile('src', 'service', 'bootstrap', 'http-route-builders.ts');
 
-  assert.match(apiServer, /from '\.\/bootstrap\/http-route-builders\.js'/u);
+  assert.doesNotMatch(apiServer, /from '\.\/bootstrap\/http-route-builders\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\/http-route-builders\.js'/u);
 
   for (const serviceFactory of [
     'createAccountAuthService',
@@ -154,10 +166,14 @@ function testHttpRouteBuildersOwnApplicationServiceConstruction(): void {
   }
 
   for (const routeDepsConstant of [
-    'const accountRouteDeps = {',
-    'const adminRouteDeps = {',
-    'const pipelineRouteDeps = {',
-    'const webhookRouteDeps = {',
+    'const publicSiteRouteDeps =',
+    'const coreRouteDeps =',
+    'const accountRouteDeps =',
+    'const adminRouteDeps =',
+    'const releaseReviewRouteDeps =',
+    'const releasePolicyControlRouteDeps =',
+    'const pipelineRouteDeps =',
+    'const webhookRouteDeps =',
   ]) {
     assert.equal(
       apiServer.includes(routeDepsConstant),
@@ -169,10 +185,13 @@ function testHttpRouteBuildersOwnApplicationServiceConstruction(): void {
 
 function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
+  const apiRouteRuntime = readProjectFile('src', 'service', 'bootstrap', 'api-route-runtime.ts');
   const releaseRuntime = readProjectFile('src', 'service', 'bootstrap', 'release-runtime.ts');
 
-  assert.match(apiServer, /from '\.\/bootstrap\/release-runtime\.js'/u);
-  assert.match(apiServer, /createReleaseRuntimeBootstrap\(\)/u);
+  assert.doesNotMatch(apiServer, /from '\.\/bootstrap\/release-runtime\.js'/u);
+  assert.doesNotMatch(apiServer, /createReleaseRuntimeBootstrap\(\)/u);
+  assert.match(apiRouteRuntime, /from '\.\/release-runtime\.js'/u);
+  assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\)/u);
 
   for (const releaseFactory of [
     'generatePkiHierarchy(',
@@ -206,6 +225,7 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
 
 function testApiServerUsesExtractedRouteSupport(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
+  const apiRouteRuntime = readProjectFile('src', 'service', 'bootstrap', 'api-route-runtime.ts');
   const accountRouteSupport = readFileSync(
     join(SERVICE_ROOT, 'account-route-support.ts'),
     'utf8',
@@ -237,15 +257,15 @@ function testApiServerUsesExtractedRouteSupport(): void {
     'utf8',
   );
 
-  assert.match(apiServer, /from '\.\/account-route-support\.js'/u);
-  assert.match(apiServer, /from '\.\/hosted-surface-support\.js'/u);
-  assert.match(apiServer, /from '\.\/hosted-account-support\.js'/u);
-  assert.match(apiServer, /from '\.\/finance-release-route-support\.js'/u);
-  assert.match(apiServer, /from '\.\/pipeline-route-support\.js'/u);
-  assert.match(apiServer, /from '\.\/request-context\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/account-route-support\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/hosted-surface-support\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/hosted-account-support\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/finance-release-route-support\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/pipeline-route-support\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/request-context\.js'/u);
   assert.match(apiServer, /from '\.\/request-observability-middleware\.js'/u);
-  assert.match(apiServer, /from '\.\/site-support\.js'/u);
-  assert.match(apiServer, /from '\.\/stripe-webhook-support\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/site-support\.js'/u);
+  assert.match(apiRouteRuntime, /from '\.\.\/stripe-webhook-support\.js'/u);
 
   for (const helperName of [
     'function accountStoreErrorResponse(',

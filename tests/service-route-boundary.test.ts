@@ -265,7 +265,12 @@ function testAdminRouteDelegatesQueryUseCases(): void {
 
 function testAdminRouteRequiresSharedDegradedModeGrantStore(): void {
   const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
-  const apiServer = readProjectFile('src', 'service', 'api-server.ts');
+  const apiRouteRuntime = readProjectFile(
+    'src',
+    'service',
+    'bootstrap',
+    'api-route-runtime.ts',
+  );
   const releaseRuntime = readProjectFile(
     'src',
     'service',
@@ -276,8 +281,8 @@ function testAdminRouteRequiresSharedDegradedModeGrantStore(): void {
   assert.match(adminRoute, /releaseDegradedModeGrantStore: DegradedModeGrantStore;/u);
   assert.doesNotMatch(adminRoute, /releaseDegradedModeGrantStore\?: DegradedModeGrantStore;/u);
   assert.doesNotMatch(adminRoute, /createInMemoryDegradedModeGrantStore/u);
-  assert.match(apiServer, /createReleaseRuntimeBootstrap\(\)/u);
-  assert.match(apiServer, /releaseDegradedModeGrantStore:\s*apiReleaseDegradedModeGrantStore/u);
+  assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\)/u);
+  assert.match(apiRouteRuntime, /releaseDegradedModeGrantStore:\s*apiReleaseDegradedModeGrantStore/u);
   assert.match(
     releaseRuntime,
     /const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore\(\);/u,
