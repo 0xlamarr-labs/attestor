@@ -6,7 +6,16 @@ One API. One platform core. Modular packs for finance, crypto, and later consequ
 
 Attestor sits before consequence.
 
-It decides whether an AI-assisted output, operational action, financial record, or programmable-money movement may proceed; under what policy; with what authority; and with what evidence left behind.
+It is built for teams that will not let AI-assisted outputs, operational actions, financial records, or programmable-money movements cross into real consequence without policy, authority, and durable evidence.
+
+Attestor decides whether a proposed consequence may proceed; under what policy; with what authority; and with what evidence left behind.
+
+In practice, that means teams use Attestor to:
+
+- admit, narrow, review, or block proposed consequences before they become real
+- bind release decisions to policy and authority instead of informal operator judgment
+- produce portable proof and independent verification artifacts
+- enforce the same control model across finance and programmable-money execution paths
 
 Attestor is not the model, agent runtime, wallet, custody platform, or orchestration layer. It is the release, authorization, and evidence layer between a proposed consequence and the system that would carry it out.
 
@@ -50,17 +59,6 @@ The packs sit on top of that shared platform:
 - **crypto pack**: the programmable-money extension, built on the same policy, proof, and authorization model
 - **later packs**: additional consequence or domain packs can attach to the same Attestor core without turning into separate products by default
 
-The package surfaces in this repository reflect that shape:
-
-| Layer | Public package surface |
-|---|---|
-| Release layer | `attestor/release-layer` |
-| Finance proving pack | `attestor/release-layer/finance` |
-| Policy control plane | `attestor/release-policy-control-plane` |
-| Enforcement plane | `attestor/release-enforcement-plane` |
-| Crypto authorization pack | `attestor/crypto-authorization-core` |
-| Crypto execution-admission pack | `attestor/crypto-execution-admission` |
-
 ## Current Proof Wedge
 
 The strongest end-to-end proving path today is finance.
@@ -86,6 +84,17 @@ The platform core is where Attestor already has the strongest product truth:
 | Enforcement plane | offline/online verification, DPoP, mTLS/SPIFFE, HTTP message signatures, gateways, proxy enforcement | `20 / 20` complete, packaged |
 | Crypto authorization core | programmable-money authorization vocabulary, object model, bindings, simulation, and adapter preflight | `20 / 20` complete, packaged |
 
+### Public Package Surfaces
+
+| Layer | Public package surface |
+|---|---|
+| Release layer | `attestor/release-layer` |
+| Finance proving pack | `attestor/release-layer/finance` |
+| Policy control plane | `attestor/release-policy-control-plane` |
+| Enforcement plane | `attestor/release-enforcement-plane` |
+| Crypto authorization pack | `attestor/crypto-authorization-core` |
+| Crypto execution-admission pack | `attestor/crypto-execution-admission` |
+
 ## Pack Status
 
 ### Finance Pack
@@ -108,6 +117,8 @@ It includes:
 ### Crypto Pack
 
 The crypto pack is an extension of the same Attestor core, not a separate product.
+
+Its job is simple: apply the same policy, authority, proof, and fail-closed admission discipline to programmable-money execution before value actually moves.
 
 Current status:
 
