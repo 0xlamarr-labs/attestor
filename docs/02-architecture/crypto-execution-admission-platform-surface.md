@@ -26,6 +26,7 @@ The public subpath exposes:
 
 - `createCryptoExecutionAdmissionPlan()`
 - `createErc4337BundlerAdmissionHandoff()`
+- `createModularAccountAdmissionHandoff()`
 - `createWalletRpcAdmissionHandoff()`
 - `createSafeGuardAdmissionReceipt()`
 - `cryptoExecutionAdmissionAdapterProfile()`
@@ -33,6 +34,8 @@ The public subpath exposes:
 - `cryptoExecutionAdmissionLabel()`
 - `erc4337BundlerAdmissionDescriptor()`
 - `erc4337BundlerAdmissionHandoffLabel()`
+- `modularAccountAdmissionDescriptor()`
+- `modularAccountAdmissionHandoffLabel()`
 - `safeGuardAdmissionDescriptor()`
 - `safeGuardAdmissionReceiptLabel()`
 - `walletRpcAdmissionDescriptor()`
@@ -85,6 +88,15 @@ ERC-4337 bundler admission handoffs map UserOperation preflight evidence into ER
 
 The handoff does not become a bundler or paymaster. It packages the UserOperation, EntryPoint, chain, gas estimate, ERC-7562 validation-scope expectation, paymaster posture, and Attestor sidecar into a deterministic pre-submission object.
 
+Modular account admission handoffs map ERC-7579 module and ERC-6900 plugin preflight evidence into runtime admission receipts:
+
+| Runtime surface | Handoff role |
+|---|---|
+| ERC-7579 module runtime | Bind account, module type id, installed module evidence, execution mode support, selector scope, hook pre/post evidence, recovery posture, and runtime checks such as `supportsExecutionMode` and `isModuleInstalled` |
+| ERC-6900 plugin runtime | Bind plugin address, execution manifest hash, runtime validation, selector-scoped execution, execution hooks, dependencies, recovery posture, and post-execution runtime observations |
+
+The handoff does not install modules, run hooks, or execute plugin calls. It records the exact module/plugin path that Attestor admitted and fails closed on wrong plan surface, blocked preflight, hook failure, manifest gaps, recovery gaps, chain/account mismatch, or failed runtime observation.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -103,6 +115,7 @@ flowchart LR
 import {
   createCryptoExecutionAdmissionPlan,
   createErc4337BundlerAdmissionHandoff,
+  createModularAccountAdmissionHandoff,
   createSafeGuardAdmissionReceipt,
   createWalletRpcAdmissionHandoff,
 } from 'attestor/crypto-execution-admission';
@@ -173,6 +186,22 @@ const bundlerHandoff = createErc4337BundlerAdmissionHandoff({
 
 if (bundlerHandoff.outcome === 'blocked') {
   throw new Error(bundlerHandoff.blockingReasons.join(', '));
+}
+
+const modularPlan = createCryptoExecutionAdmissionPlan({
+  simulation: modularAccountSimulation,
+  createdAt: new Date().toISOString(),
+  integrationRef: 'integration:modular-account:treasury',
+});
+
+const modularHandoff = createModularAccountAdmissionHandoff({
+  plan: modularPlan,
+  preflight: modularAccountPreflight,
+  createdAt: new Date().toISOString(),
+});
+
+if (modularHandoff.outcome === 'blocked') {
+  throw new Error(modularHandoff.blockingReasons.join(', '));
 }
 ```
 

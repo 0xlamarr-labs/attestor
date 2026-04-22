@@ -31,7 +31,7 @@ The reusable platform surfaces that are complete today are:
 | Release policy control plane | `attestor/release-policy-control-plane` | `20 / 20` complete, packaged |
 | Release enforcement plane | `attestor/release-enforcement-plane` | `20 / 20` complete, packaged |
 | Crypto authorization core | `attestor/crypto-authorization-core` | `20 / 20` complete, packaged |
-| Crypto execution admission | `attestor/crypto-execution-admission` | `4 / 12` complete, packaged first slices, paused |
+| Crypto execution admission | `attestor/crypto-execution-admission` | `5 / 12` complete, active buildout |
 
 The codebase is still one repository and one modular monolith. Package surfaces are stable import boundaries, not a claim that every module is already a separately operated service.
 
@@ -44,7 +44,7 @@ The shipped platform capabilities include:
 - signed policy bundles, activation records, scoped policy resolution, simulation, impact summaries, audit logs, activation approvals, and policy-control package boundaries
 - offline and online enforcement verification, freshness and replay rules, token exchange, DPoP, mTLS/SPIFFE, HTTP message signatures, async envelopes, Hono/Node middleware, webhook receiver, record-write gateway, communication-send gateway, action-dispatch gateway, Envoy/Istio external authorization, degraded-mode control, telemetry, conformance, and enforcement package boundaries
 - crypto authorization vocabulary, object model, canonical chain/account/asset references, risk mapping, EIP-712 envelopes, ERC-1271 projection, replay/freshness rules, release/policy/enforcement binding, simulation, Safe adapters, ERC-4337, ERC-7579, ERC-6900, EIP-7702, x402, custody/co-signer adapters, and crypto authorization package boundaries
-- crypto execution admission first slices for admission planning, wallet RPC handoffs, Safe guard receipts, and ERC-4337 bundler handoffs
+- crypto execution admission first slices for admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, and ERC-7579/ERC-6900 modular account handoffs
 
 ## Deepest Proven Domain
 
@@ -73,7 +73,7 @@ The following areas exist, but should not be presented as fully complete product
 - hosted account, billing, SSO, passkey, and tenant operations are implemented as product-surface slices inside the service, not as a separately operated commercial SaaS deployment
 - healthcare, Snowflake, VSAC, and other domain/connector paths are useful supporting slices, not as deep as the finance path
 - distributed control-plane operation is not extracted into an independent multi-region service
-- crypto execution admission is paused after Step 04; it has a packaged API for the first execution surfaces, but it is not yet a full crypto platform, wallet, custody product, bundler, payment facilitator, or intent-solver network
+- crypto execution admission has a packaged API for the first execution surfaces, but it is not yet a full crypto platform, wallet, custody product, bundler, payment facilitator, or intent-solver network
 
 ## Current Work Posture
 
@@ -84,8 +84,8 @@ Active priority:
 - keep README scope tight enough to be readable
 - avoid presenting first-slice product surfaces as complete markets
 
-Paused:
+Active:
 
-- new crypto execution-admission buildout work after Step 04
+- finish the frozen crypto execution-admission buildout before the broader product packaging pass
 
-When resumed, the next frozen crypto execution-admission step is Step 05: modular account admission handoffs for ERC-7579 and ERC-6900.
+The next frozen crypto execution-admission step is Step 06: delegated EOA admission for EIP-7702.

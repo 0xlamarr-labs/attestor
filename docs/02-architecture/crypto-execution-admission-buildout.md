@@ -50,10 +50,10 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 12 |
-| Completed | 4 |
+| Completed | 5 |
 | In progress | 0 |
-| Not started | 8 |
-| Current posture | Paused after Step 04 while repository scope and documentation truth sources are tightened |
+| Not started | 7 |
+| Current posture | Active; continue frozen crypto execution-admission buildout before the broader product packaging pass |
 
 ## Frozen Step List
 
@@ -63,7 +63,7 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 | 02 | complete | Add wallet RPC admission for EIP-5792, ERC-7715, and ERC-7902 | `src/crypto-execution-admission/wallet-rpc.ts`, `tests/crypto-execution-admission-wallet-rpc.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | Admission plans now project into wallet RPC handoffs for capability discovery, `wallet_sendCalls`, status tracking, ERC-7715 execution-permission requests, supported-permission discovery, ERC-7902 capability expectations, optional Attestor sidecar metadata, canonical handoff digests, fail-closed unsupported-capability blocking, and missing-wallet-evidence next actions without making Attestor a wallet. |
 | 03 | complete | Add Safe guard admission receipts | `src/crypto-execution-admission/safe-guard.ts`, `tests/crypto-execution-admission-safe-guard.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | Safe transaction guard and Safe module guard pre/post hook evidence now become durable Attestor admission receipts with guard/interface binding, Safe/module transaction hash binding, ERC-165 support posture, recovery posture, post-execution observation, canonical receipt digests, and fail-closed blocked/recovery-required outcomes. |
 | 04 | complete | Add ERC-4337 bundler admission handoff | `src/crypto-execution-admission/erc4337-bundler.ts`, `tests/crypto-execution-admission-erc4337-bundler.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | Admission plans now project into ERC-7769 bundler JSON-RPC handoffs for chain/EntryPoint discovery, gas estimation, UserOperation submission, status/receipt lookup, Attestor sidecar evidence, EntryPoint support checks, ERC-7562 validation-scope expectations, paymaster posture, gas-fit enforcement, and fail-closed blocked/needs-bundler-evidence outcomes. |
-| 05 | not-started | Add modular account admission handoff |  | Project ERC-7579/ERC-6900 module, hook, and plugin preflight evidence into admission receipts. |
+| 05 | complete | Add modular account admission handoff | `src/crypto-execution-admission/modular-account.ts`, `tests/crypto-execution-admission-modular-account.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | ERC-7579 module and ERC-6900 plugin preflight evidence now becomes deterministic modular-account runtime admission handoffs with account/module/plugin binding, module type projection, execution-mode checks, selector-scope checks, hook evidence, ERC-6900 manifest binding, recovery posture, post-execution runtime observations, Attestor sidecar evidence, canonical digests, and fail-closed ready/needs-runtime-evidence/blocked outcomes. |
 | 06 | not-started | Add delegated EOA admission for EIP-7702 |  | Bind authorization tuple evidence, delegate code posture, nonce state, and wallet capability support to execution admission. |
 | 07 | not-started | Add x402 resource-server admission middleware |  | Gate HTTP 402 payment verification and settlement through Attestor admission before resource fulfillment. |
 | 08 | not-started | Add custody policy admission callback contract |  | Shape custody/co-signer provider callbacks into Attestor admission allow/deny/needs-review outputs. |
@@ -74,4 +74,4 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 
 ## Immediate Next Step
 
-Crypto execution-admission implementation is paused after Step 04. When the pause is lifted, Step 05 should project admission plans into modular account admission handoffs for ERC-7579 and ERC-6900 module/hook/plugin execution. That is the next layer because modular accounts compose execution behavior dynamically and need module-scoped admission evidence before installed hooks or plugins can execute.
+Step 06 should add delegated EOA admission for EIP-7702. That is the next layer because EIP-7702 authorization tuples and delegate-code posture need admission evidence before delegated EOA execution can be treated like an authorized programmable-money consequence.

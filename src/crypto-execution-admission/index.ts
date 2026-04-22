@@ -691,3 +691,4 @@ CryptoExecutionAdmissionDescriptor {
 export * from './wallet-rpc.js';
 export * from './safe-guard.js';
 export * from './erc4337-bundler.js';
+export * from './modular-account.js';

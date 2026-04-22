@@ -38,6 +38,14 @@ assert.equal(
   admission.erc4337BundlerAdmissionDescriptor().standards.includes('ERC-7769'),
   true,
 );
+assert.equal(
+  admission.modularAccountAdmissionDescriptor().standards.includes('ERC-7579'),
+  true,
+);
+assert.equal(
+  admission.modularAccountAdmissionDescriptor().runtimeChecks.includes('executionManifest'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {
