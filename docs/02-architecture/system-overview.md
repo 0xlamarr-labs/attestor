@@ -2,55 +2,63 @@
 
 Architecture of Attestor as of April 22, 2026.
 
-This document is the short architectural truth source. Detailed inventories stay in the buildout trackers and platform-surface documents linked from the README.
+This document is the short architectural truth source. The README gives the product view; the trackers and platform-surface docs give the detailed implementation view.
 
-## Current Architectural Identity
+## One Product
 
-Attestor is the policy-bound release, enforcement, and execution-authorization layer that sits before a proposed consequence is allowed to happen.
+Attestor should be understood as one product:
 
-The common pattern is:
+**a policy-bound release and authorization platform for high-consequence systems**
+
+The core pattern is:
 
 ```text
 proposed output or operation -> policy, authority, and evidence -> admitted, reviewed, narrowed, or blocked consequence
 ```
 
-Finance remains the deepest proven domain wedge, but the platform architecture is broader than finance:
+That same pattern spans both AI-output release and programmable-money authorization. The architecture therefore has one shared core and multiple packs, not multiple unrelated products hiding in one repository.
 
-- release decisions govern AI-assisted outputs before they become communication, records, actions, or decision support
-- policy-control-plane bundles decide which rules are active for a scoped workload or tenant
-- enforcement-plane verifiers and PEP adapters fail closed at downstream boundaries
-- crypto authorization and admission modules extend the same release discipline toward programmable-money execution
+## Shared Platform Core
 
-## Packaged Platform Surfaces
+The platform core is made of reusable layers:
 
-The reusable platform surfaces that are complete today are:
-
-| Surface | Package subpath | Status |
+| Layer | Role | Status |
 |---|---|---|
-| Release layer | `attestor/release-layer`, `attestor/release-layer/finance` | `24 / 24` complete, packaged |
-| Release policy control plane | `attestor/release-policy-control-plane` | `20 / 20` complete, packaged |
-| Release enforcement plane | `attestor/release-enforcement-plane` | `20 / 20` complete, packaged |
-| Crypto authorization core | `attestor/crypto-authorization-core` | `20 / 20` complete, packaged |
-| Crypto execution admission | `attestor/crypto-execution-admission` | `5 / 12` complete, active buildout |
+| Release layer | decides whether a proposed consequence may proceed | `24 / 24` complete, packaged |
+| Policy control plane | stores, signs, scopes, activates, rolls out, simulates, and audits policy | `20 / 20` complete, packaged |
+| Enforcement plane | verifies authorization at downstream boundaries and fails closed without it | `20 / 20` complete, packaged |
+| Crypto authorization core | extends the same decision model into programmable-money authorization objects and simulations | `20 / 20` complete, packaged |
 
-The codebase is still one repository and one modular monolith. Package surfaces are stable import boundaries, not a claim that every module is already a separately operated service.
+The public package surfaces already reflect that shared core:
 
-## Shipped Capabilities
+- `attestor/release-layer`
+- `attestor/release-layer/finance`
+- `attestor/release-policy-control-plane`
+- `attestor/release-enforcement-plane`
+- `attestor/crypto-authorization-core`
+- `attestor/crypto-execution-admission`
 
-The shipped platform capabilities include:
+These are stable import boundaries inside one modular monolith. They are not a claim that every layer is already a separately operated service.
 
-- typed release vocabulary, object model, consequence rollout, deterministic checks, risk controls, release decisions, decision logging, canonicalization, and release tokens
-- token introspection, revocation, expiry, replay protection, reviewer queue, named review, dual approval, break-glass override, evidence packs, and release-layer package boundaries
-- signed policy bundles, activation records, scoped policy resolution, simulation, impact summaries, audit logs, activation approvals, and policy-control package boundaries
-- offline and online enforcement verification, freshness and replay rules, token exchange, DPoP, mTLS/SPIFFE, HTTP message signatures, async envelopes, Hono/Node middleware, webhook receiver, record-write gateway, communication-send gateway, action-dispatch gateway, Envoy/Istio external authorization, degraded-mode control, telemetry, conformance, and enforcement package boundaries
-- crypto authorization vocabulary, object model, canonical chain/account/asset references, risk mapping, EIP-712 envelopes, ERC-1271 projection, replay/freshness rules, release/policy/enforcement binding, simulation, Safe adapters, ERC-4337, ERC-7579, ERC-6900, EIP-7702, x402, custody/co-signer adapters, and crypto authorization package boundaries
-- crypto execution admission first slices for admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, and ERC-7579/ERC-6900 modular account handoffs
+## Pack Model
 
-## Deepest Proven Domain
+The pack model is:
 
-Finance is still the strongest end-to-end proving surface.
+- the platform core stays common
+- domain or execution packs attach to that core
+- packs reuse the same policy, proof, and authorization logic
+- packs do not become separate products by default
 
-The financial reference path includes:
+Today the two most important packs are:
+
+- **finance pack**: the strongest proven wedge
+- **crypto pack**: the active programmable-money extension
+
+## Finance Pack
+
+Finance is still the deepest end-to-end proof surface.
+
+The finance pack currently includes:
 
 - SQL governance
 - policy and entitlement checks
@@ -64,28 +72,55 @@ The financial reference path includes:
 - finance record-release enforcement as the first hard gateway wedge
 - finance communication and action release flows in shadow-first posture
 
-Finance is the current proof wedge, not the ceiling of the platform.
+Finance is the current proof wedge, not the total definition of Attestor.
 
-## First-Slice Or Not Yet Complete
+## Crypto Pack
 
-The following areas exist, but should not be presented as fully complete products:
+The crypto pack is an extension of the same Attestor core.
 
-- hosted account, billing, SSO, passkey, and tenant operations are implemented as product-surface slices inside the service, not as a separately operated commercial SaaS deployment
-- healthcare, Snowflake, VSAC, and other domain/connector paths are useful supporting slices, not as deep as the finance path
+Current status:
+
+| Surface | Status |
+|---|---|
+| `attestor/crypto-authorization-core` | `20 / 20` complete, packaged |
+| `attestor/crypto-execution-admission` | `5 / 12` complete, active buildout |
+
+What the crypto pack already covers:
+
+- authorization vocabulary, object model, canonical references, and risk mapping
+- EIP-712 envelopes, ERC-1271 projection, replay/freshness, and core bindings
+- pre-execution simulation
+- Safe transaction and module guard adapters
+- ERC-4337 UserOperation adapter
+- ERC-7579 and ERC-6900 modular account adapters
+- EIP-7702 delegation-aware adapter
+- x402 and custody/co-signer adapters
+- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, and modular-account handoffs
+
+Next frozen crypto execution-admission step:
+
+- Step 06: delegated EOA admission for EIP-7702
+
+## Product Truth Versus First Slices
+
+The following distinctions matter:
+
+- the platform core is real and already strongly implemented
+- the finance pack is the strongest end-to-end proof wedge
+- the crypto pack is real and active, but the execution-admission side is still an unfinished frozen track
+- hosted account, billing, SSO, passkey, and tenant operations exist as product-surface slices inside the service, not as proof that every commercial surface is already independently mature
+- healthcare, Snowflake, VSAC, and other supporting slices exist, but they are not as deep as the finance wedge
 - distributed control-plane operation is not extracted into an independent multi-region service
-- crypto execution admission has a packaged API for the first execution surfaces, but it is not yet a full crypto platform, wallet, custody product, bundler, payment facilitator, or intent-solver network
+
+So the honest architectural statement is:
+
+**Attestor is one product with a real shared core and modular packs, but not every pack or supporting slice is equally mature.**
 
 ## Current Work Posture
 
 Active priority:
 
-- keep the core platform story coherent
-- keep docs aligned with the trackers
-- keep README scope tight enough to be readable
-- avoid presenting first-slice product surfaces as complete markets
-
-Active:
-
-- finish the frozen crypto execution-admission buildout before the broader product packaging pass
-
-The next frozen crypto execution-admission step is Step 06: delegated EOA admission for EIP-7702.
+- keep the product story centered on one Attestor platform
+- keep the README and architecture docs aligned with the trackers
+- keep the frozen crypto execution-admission track moving without letting the product story drift
+- avoid presenting first-slice supporting surfaces as if they were the entire product story

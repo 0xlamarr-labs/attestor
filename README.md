@@ -1,12 +1,14 @@
 # Attestor
 
-**Policy-bound release and execution-authorization infrastructure for high-consequence AI, finance, and programmable money.**
+**Policy-bound release and authorization platform for high-consequence systems.**
+
+One API. One platform core. Modular packs for finance, crypto, and later consequence domains.
 
 Attestor sits before consequence.
 
 It decides whether an AI-assisted output, operational action, financial record, or programmable-money movement may proceed; under what policy; with what authority; and with what evidence left behind.
 
-Attestor is not the model, agent runtime, wallet, custody platform, or orchestration layer. It is the authorization and evidence layer between a proposed consequence and the system that would carry it out.
+Attestor is not the model, agent runtime, wallet, custody platform, or orchestration layer. It is the release, authorization, and evidence layer between a proposed consequence and the system that would carry it out.
 
 > [!IMPORTANT]
 > Attestor does not try to prove that AI or programmable execution is universally trustworthy. It gives teams a disciplined way to decide when a proposed consequence can be accepted, and when it must be blocked, reviewed, narrowed, or bounded more tightly.
@@ -14,76 +16,7 @@ Attestor is not the model, agent runtime, wallet, custody platform, or orchestra
 > [!NOTE]
 > This repository is source-available under the Business Source License 1.1. Public source access is allowed, non-production use is allowed, and production use requires a commercial license until the Change Date listed in [LICENSE](LICENSE).
 
-## At a Glance
-
-| If you need to... | Attestor gives you... |
-|---|---|
-| decide whether a proposed consequence may proceed | release decisions, policy checks, authority binding, deterministic evidence |
-| release AI-assisted output into serious workflows | typed contracts, bounded execution, reviewer routing, signed release artifacts |
-| enforce decisions downstream | fail-closed HTTP, webhook, async, record, communication, action, and proxy enforcement points |
-| prove later why something was accepted | signed certificates, verification kits, audit trail, schema/data-state attestation |
-| prepare for programmable-money authorization | chain/account/asset/consequence vocabulary, wallet and custody adapter path, crypto authorization tracker |
-| run it as a real product surface | hosted auth, billing, observability, HA, DR, promotion packets |
-
-## Quick Navigation
-
-- [What Attestor is](#what-attestor-is)
-- [Why it exists](#why-it-exists)
-- [Modular architecture](#modular-architecture)
-- [Current proving ground](#current-proving-ground)
-- [Crypto authorization direction](#crypto-authorization-direction)
-- [Proof and verification](#proof-and-verification)
-- [Quick start](#quick-start)
-- [Documentation map](#documentation-map)
-- [Project status](#project-status)
-
-Buildout trackers:
-
-- [Release layer buildout](docs/02-architecture/release-layer-buildout.md)
-- [Release policy control-plane buildout](docs/02-architecture/release-policy-control-plane-buildout.md)
-- [Release enforcement-plane buildout](docs/02-architecture/release-enforcement-plane-buildout.md)
-- [Crypto authorization core buildout](docs/02-architecture/crypto-authorization-core-buildout.md)
-- [Crypto execution admission buildout](docs/02-architecture/crypto-execution-admission-buildout.md)
-
 ## What Attestor Is
-
-Attestor is the release, policy, enforcement, and execution-authorization layer for high-consequence workflows.
-
-It governs whether a proposed output, action, record, or programmable-money movement may move forward automatically, under review, or not at all. It also records how that release was evidenced, who could authorize it, and what a third party can verify afterward.
-
-The category is:
-
-**the layer that decides whether a proposed consequence may proceed**
-
-For AI and workflow systems, that currently means these release-layer consequence types:
-
-- `communication`
-- `record`
-- `action`
-- `decision-support`
-
-For programmable-money systems, the new crypto authorization core extends the same pattern toward:
-
-- `transfer`
-- `approval`
-- `permission-grant`
-- `account-delegation`
-- `user-operation`
-- `agent-payment`
-- `custody-withdrawal`
-- `governance-action`
-
-## Why It Exists
-
-The hard bottleneck in serious AI and programmable execution workflows is no longer generation. It is authorized release into consequence.
-
-```mermaid
-flowchart LR
-  P["Models, agents, apps, wallets"] --> A["Attestor: policy, authority, evidence"]
-  A --> C["Communication, record, action, decision-support, programmable-money movement"]
-```
-
-Without that middle layer, high-consequence work either stays advisory or gets pushed forward informally. With Attestor, consequence becomes something that must be authorized, not merely hoped for.
 
 Attestor answers four questions:
 
@@ -92,82 +25,116 @@ Attestor answers four questions:
 - who or what authority can approve it?
 - what evidence survives after the decision?
 
-## Modular Architecture
+That pattern applies across both AI and programmable-money workflows.
 
-Attestor is intentionally organized as layered platform modules instead of one large monolith.
+```mermaid
+flowchart LR
+  P["models, agents, apps, wallets"] --> A["Attestor: policy, authority, evidence"]
+  A --> C["communication, record, action, decision-support, programmable-money movement"]
+```
 
-| Module | Role | Status |
-|---|---|---|
-| Release layer | Decides whether outputs can become communication, records, actions, or decision support | `24 / 24` complete, packaged |
-| Release policy control plane | Stores, signs, scopes, activates, rolls out, simulates, and audits policy | `20 / 20` complete, packaged |
-| Release enforcement plane | Verifies authorization at downstream boundaries and fails closed without it | `20 / 20` complete, packaged |
-| Crypto authorization core | Describes programmable-money authorization before wallet, contract, custody, payment, or agent execution | `20 / 20` complete, packaged |
-| Domain and adapter layers | Finance, healthcare, filing, connector, wallet/account/custody adapters | Expanded by tracker, not by ad hoc README growth |
+## One Product, Modular Packs
 
-Reusable package surfaces:
+Attestor is one product.
 
-- `attestor/release-layer`
-- `attestor/release-layer/finance`
-- `attestor/release-policy-control-plane`
-- `attestor/release-enforcement-plane`
-- `attestor/crypto-authorization-core`
-- `attestor/crypto-execution-admission`
+The core platform stays the same across domains:
 
-The crypto authorization core is packaged behind a stable subpath now, while still living inside the modular monolith until latency, custody, isolation, or customer-operated requirements justify a separate deployable boundary.
+- release decisions decide whether a proposed consequence can move at all
+- policy control-plane bundles define which rules are active for a scoped workload or tenant
+- enforcement-plane verifiers and gateways fail closed at downstream boundaries
+- authorization objects and simulations provide the portable substrate for higher-consequence execution paths
 
-## Current Proving Ground
+The packs sit on top of that shared platform:
 
-The deepest proven wedge today is financial reporting and finance operations.
+- **finance pack**: the deepest proven wedge today, centered on financial reporting and finance operations
+- **crypto pack**: the programmable-money extension, built on the same policy, proof, and authorization model
+- **later packs**: additional consequence or domain packs can attach to the same Attestor core without turning into separate products by default
 
-Finance matters because weak acceptance models break fast there: silent errors are expensive, controls must be legible, auditability is mandatory, and reviewer authority matters.
+The package surfaces in this repository reflect that shape:
+
+| Layer | Public package surface |
+|---|---|
+| Release layer | `attestor/release-layer` |
+| Finance proving pack | `attestor/release-layer/finance` |
+| Policy control plane | `attestor/release-policy-control-plane` |
+| Enforcement plane | `attestor/release-enforcement-plane` |
+| Crypto authorization pack | `attestor/crypto-authorization-core` |
+| Crypto execution-admission pack | `attestor/crypto-execution-admission` |
+
+## Current Proof Wedge
+
+The strongest end-to-end proving path today is finance.
 
 The first hard gateway wedge is:
 
 **AI output -> structured financial record release**
 
-That means the first fail-closed boundary is not chat, not generic decision support, and not arbitrary tool execution. It is the moment an AI-assisted output would otherwise become a durable reporting record, filing-preparation payload, or structured reporting artifact.
+That is the point where weak acceptance models break fast: silent errors are expensive, controls must be legible, auditability is mandatory, and reviewer authority matters.
+
+Finance is the current proving ground, not the ceiling of the platform.
 
 For the detailed wedge framing, see [AI-assisted financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 
-Finance is the proving ground, not the ceiling.
+## Platform Core
 
-## Crypto Authorization Direction
+The platform core is where Attestor already has the strongest product truth:
 
-The next platform expansion is not "add a crypto feature." It is to make Attestor a core authorization substrate before programmable money moves.
+| Core layer | Role | Status |
+|---|---|---|
+| Release layer | release decisions, tokens, canonicalization, deterministic checks, reviewer queue, evidence packs | `24 / 24` complete, packaged |
+| Policy control plane | signed policy bundles, activation, rollback, scoping, simulation, impact summaries, audit log | `20 / 20` complete, packaged |
+| Enforcement plane | offline/online verification, DPoP, mTLS/SPIFFE, HTTP message signatures, gateways, proxy enforcement | `20 / 20` complete, packaged |
+| Crypto authorization core | programmable-money authorization vocabulary, object model, bindings, simulation, and adapter preflight | `20 / 20` complete, packaged |
 
-The design rule is **core first, adapter second**:
+## Pack Status
 
-- the crypto authorization core defines chain, account, asset, consequence, policy, artifact, and adapter vocabulary
-- Safe, ERC-4337, ERC-7579, ERC-6900, EIP-7702, x402, custody, and intent paths become adapters to that core
-- adapters know about the core, but the core does not become a Safe-specific or vendor-specific model
-- release-layer decisions, policy-control-plane scope, and enforcement-plane verification remain the reusable backbone
+### Finance Pack
 
-Current crypto authorization status:
+The finance pack is the most mature Attestor pack today.
 
-- tracker: [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md)
-- completed: Step 01, crypto authorization vocabulary; Step 02, versioned authorization object model; Step 03, canonical chain/account/asset/counterparty references; Step 04, deterministic consequence risk mapping; Step 05, EIP-712 typed authorization envelopes; Step 06, ERC-1271 smart-account validation projection; Step 07, replay, nonce, expiry, and revocation rules; Step 08, release-layer decision binding; Step 09, policy-control-plane scope binding; Step 10, enforcement-plane verification binding; Step 11, crypto authorization simulation surface; Step 12, Safe transaction guard adapter; Step 13, Safe module guard adapter; Step 14, approval and allowance consequence support; Step 15, ERC-4337 UserOperation adapter; Step 16, ERC-7579 and ERC-6900 modular account adapters; Step 17, EIP-7702 delegation-aware adapter; Step 18, x402 agentic payment adapter; Step 19, custody co-signer and policy-engine adapter; Step 20, reusable platform package surface
-- next tracker: [docs/02-architecture/crypto-execution-admission-buildout.md](docs/02-architecture/crypto-execution-admission-buildout.md), Steps 01-05 complete, defining the packaged execution admission planner, wallet RPC handoff for EIP-5792/ERC-7715/ERC-7902, Safe guard admission receipts, ERC-4337 bundler handoff for ERC-7769 UserOperation submission, and modular account runtime handoff for ERC-7579/ERC-6900
-- current posture: crypto execution-admission buildout is active until the frozen 12-step track is complete; broader README/product packaging cleanup follows after this crypto track is finished
-- code: `src/crypto-authorization-core/index.ts`, `src/crypto-authorization-core/types.ts`, `src/crypto-authorization-core/object-model.ts`, `src/crypto-authorization-core/canonical-references.ts`, `src/crypto-authorization-core/consequence-risk-mapping.ts`, `src/crypto-authorization-core/eip712-authorization-envelope.ts`, `src/crypto-authorization-core/erc1271-validation-projection.ts`, `src/crypto-authorization-core/replay-freshness-rules.ts`, `src/crypto-authorization-core/release-decision-binding.ts`, `src/crypto-authorization-core/policy-control-plane-scope-binding.ts`, `src/crypto-authorization-core/enforcement-plane-verification.ts`, `src/crypto-authorization-core/authorization-simulation.ts`, `src/crypto-authorization-core/safe-transaction-guard-adapter.ts`, `src/crypto-authorization-core/safe-module-guard-adapter.ts`, `src/crypto-authorization-core/approval-allowance-consequence.ts`, `src/crypto-authorization-core/erc4337-user-operation-adapter.ts`, `src/crypto-authorization-core/modular-account-adapters.ts`, `src/crypto-authorization-core/eip7702-delegation-adapter.ts`, `src/crypto-authorization-core/x402-agentic-payment-adapter.ts`, `src/crypto-authorization-core/custody-cosigner-policy-adapter.ts`
-- tests: `tests/crypto-authorization-core-types.test.ts`, `tests/crypto-authorization-core-object-model.test.ts`, `tests/crypto-authorization-core-canonical-references.test.ts`, `tests/crypto-authorization-core-risk-mapping.test.ts`, `tests/crypto-authorization-core-eip712-envelope.test.ts`, `tests/crypto-authorization-core-erc1271-validation.test.ts`, `tests/crypto-authorization-core-replay-freshness.test.ts`, `tests/crypto-authorization-core-release-binding.test.ts`, `tests/crypto-authorization-core-policy-scope-binding.test.ts`, `tests/crypto-authorization-core-enforcement-verification.test.ts`, `tests/crypto-authorization-core-authorization-simulation.test.ts`, `tests/crypto-authorization-core-safe-transaction-guard-adapter.test.ts`, `tests/crypto-authorization-core-safe-module-guard-adapter.test.ts`, `tests/crypto-authorization-core-approval-allowance-consequence.test.ts`, `tests/crypto-authorization-core-erc4337-user-operation-adapter.test.ts`, `tests/crypto-authorization-core-modular-account-adapters.test.ts`, `tests/crypto-authorization-core-eip7702-delegation-adapter.test.ts`, `tests/crypto-authorization-core-x402-agentic-payment-adapter.test.ts`, `tests/crypto-authorization-core-custody-cosigner-policy-adapter.test.ts`, `tests/crypto-authorization-core-platform-surface.test.ts`
-- admission code: `src/crypto-execution-admission/index.ts`, `src/crypto-execution-admission/wallet-rpc.ts`, `src/crypto-execution-admission/safe-guard.ts`, `src/crypto-execution-admission/erc4337-bundler.ts`, `src/crypto-execution-admission/modular-account.ts`
-- admission tests: `tests/crypto-execution-admission.test.ts`, `tests/crypto-execution-admission-wallet-rpc.test.ts`, `tests/crypto-execution-admission-safe-guard.test.ts`, `tests/crypto-execution-admission-erc4337-bundler.test.ts`, `tests/crypto-execution-admission-modular-account.test.ts`
-- next: continue the crypto execution admission tracker with delegated EOA admission for EIP-7702
+It includes:
 
-## What Ships
+- SQL governance
+- policy and entitlement checks
+- execution guardrails
+- fixture, SQLite, and bounded PostgreSQL execution
+- data contracts and reconciliation logic
+- semantic clauses
+- filing readiness
+- signed certificates and verification kits
+- reviewer endorsement and authority closure
+- finance record-release enforcement as the first hard gateway wedge
 
-| Area | Current shipped surface |
-|---|---|
-| Engine core | typed contracts, governance, guardrails, bounded execution, reviewer authority, signed proof, verification kits, multi-query proof |
-| Release platform | release decisions, tokens, canonicalization, deterministic checks, introspection, evidence packs, reviewer queue |
-| Policy platform | signed policy bundles, activation, rollback, scoping, simulation, impact summaries, audit log, progressive rollout |
-| Enforcement platform | offline/online verification, DPoP, mTLS/SPIFFE, HTTP message signatures, async envelopes, middleware, webhook receiver, record/communication/action gateways, Envoy ext_authz, degraded mode, telemetry, conformance |
-| Product surface | bounded API + worker topology, hosted auth/RBAC, billing, tenant/runtime policy, observability, HA, DR, secret-manager bootstrap, promotion packets |
-| Domain depth | finance as the deepest slice, healthcare as a second slice, PostgreSQL + Snowflake connectors, filing adapters |
-| Crypto core | packaged `attestor/crypto-authorization-core` surface for vocabulary, object-model, canonical-reference, risk-mapping, EIP-712 envelope, ERC-1271 validation-projection, replay/freshness, release-decision binding, policy-control-plane scope binding, enforcement-plane verification binding, pre-execution simulation, Safe transaction guard adapter, Safe module guard adapter, approval/allowance consequence support, ERC-4337 UserOperation preflight, ERC-7579/ERC-6900 modular account adapter preflight, EIP-7702 delegated EOA preflight, x402 agentic payment preflight, and custody co-signer/policy-engine preflight |
-| Crypto execution admission | packaged `attestor/crypto-execution-admission` surface for converting core simulations into concrete wallet, smart-account guard, bundler, delegated EOA, x402, custody, and intent-solver admission plans, plus wallet RPC handoffs for EIP-5792 call batches, ERC-7715 execution permissions, ERC-7902 account-abstraction capabilities, Safe guard/module-guard admission receipts, ERC-4337 bundler handoffs for ERC-7769 UserOperation submission, and ERC-7579/ERC-6900 modular account runtime handoffs |
+### Crypto Pack
 
-## Proof and Verification
+The crypto pack is an extension of the same Attestor core, not a separate product.
+
+Current status:
+
+- `attestor/crypto-authorization-core`: `20 / 20` complete, packaged
+- `attestor/crypto-execution-admission`: `5 / 12` complete, active buildout
+
+What the crypto pack already covers:
+
+- canonical chain/account/asset/consequence vocabulary
+- EIP-712 authorization envelopes
+- ERC-1271 validation projection
+- replay, nonce, expiry, and revocation rules
+- release, policy, and enforcement binding
+- pre-execution simulation
+- Safe transaction and module guard adapters
+- ERC-4337 UserOperation adapter
+- ERC-7579 and ERC-6900 modular account adapters
+- EIP-7702 delegation-aware adapter
+- x402 agentic payment adapter
+- custody co-signer and policy-engine adapter
+- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, and modular-account runtime handoffs
+
+Next frozen crypto step:
+
+- Step 06: delegated EOA admission for EIP-7702
+
+## Proof And Verification
 
 The strongest black-and-white evidence in this repository is reproducible proof generation and independent verification.
 
@@ -184,25 +151,6 @@ Shortest proof path:
 npm run showcase:proof:hybrid
 npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
 ```
-
-## Product Surface
-
-Attestor is best understood as a hosted release, proof, and control layer delivered through APIs. Customers keep their data, workflows, wallets, custody systems, and operational environment where they already live.
-
-What customers get:
-
-- hosted account and tenant boundary
-- API keys
-- usage and billing visibility
-- proof, verification, and filing-capable API surfaces
-- reviewer and operator control surfaces
-- deployment and promotion guidance
-
-Commercial docs:
-
-- [Hosted customer journey](docs/01-overview/hosted-customer-journey.md)
-- [Product packaging and pricing](docs/01-overview/product-packaging.md)
-- [Stripe commercial bootstrap](docs/01-overview/stripe-commercial-bootstrap.md)
 
 ## Quick Start
 
@@ -227,17 +175,14 @@ npm run showcase:proof:hybrid
 # Verify a kit
 npm run verify:cert -- .attestor/proofs/<run>/kit.json
 
-# Core unit suites
+# Core verification gate
 npm test
 
-# Safe local verification gate
+# Local safe gate
 npm run verify
-
-# Expanded verification surface
-npm run verify:full
 ```
 
-## Main Scripts
+## Main Commands
 
 | Command | Purpose |
 |---|---|
@@ -245,12 +190,12 @@ npm run verify:full
 | `npm test` | Core verification gate |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run verify` | Typecheck, core tests, build, and package-surface probes |
-| `npm run verify:full` | Safe local gate plus wider live/integration suites; some are env-gated |
+| `npm run verify:full` | Wider local and env-gated integration verification |
 | `npm run test:release-layer-package-surface` | Probe packaged release-layer imports |
 | `npm run test:release-policy-control-plane-package-surface` | Probe packaged policy-control-plane imports |
 | `npm run test:release-enforcement-plane-package-surface` | Probe packaged enforcement-plane imports |
-| `npm run render:production-readiness-packet` | Render final observability + HA readiness handoff packet |
-| `npm run render:secret-manager-bootstrap` | Render managed secret bootstrap contracts |
+| `npm run test:crypto-authorization-core-package-surface` | Probe packaged crypto-authorization-core imports |
+| `npm run test:crypto-execution-admission-package-surface` | Probe packaged crypto-execution-admission imports |
 
 ## Documentation Map
 
@@ -265,11 +210,13 @@ npm run verify:full
 | Enforcement-plane package surface | [docs/02-architecture/release-enforcement-plane-platform-surface.md](docs/02-architecture/release-enforcement-plane-platform-surface.md) |
 | Crypto authorization core tracker | [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md) |
 | Crypto authorization core package surface | [docs/02-architecture/crypto-authorization-core-platform-surface.md](docs/02-architecture/crypto-authorization-core-platform-surface.md) |
+| Crypto execution-admission tracker | [docs/02-architecture/crypto-execution-admission-buildout.md](docs/02-architecture/crypto-execution-admission-buildout.md) |
+| Crypto execution-admission package surface | [docs/02-architecture/crypto-execution-admission-platform-surface.md](docs/02-architecture/crypto-execution-admission-platform-surface.md) |
 | Financial reporting wedge | [docs/01-overview/financial-reporting-acceptance.md](docs/01-overview/financial-reporting-acceptance.md) |
+| Product packaging and pricing | [docs/01-overview/product-packaging.md](docs/01-overview/product-packaging.md) |
+| Hosted customer journey | [docs/01-overview/hosted-customer-journey.md](docs/01-overview/hosted-customer-journey.md) |
 | Production readiness | [docs/08-deployment/production-readiness.md](docs/08-deployment/production-readiness.md) |
 | Deployment and DR | [docs/08-deployment/deployment.md](docs/08-deployment/deployment.md), [docs/08-deployment/backup-restore-dr.md](docs/08-deployment/backup-restore-dr.md) |
-
-Detailed API inventories, environment-specific setup, and long operational reference material belong in docs and source-owned route files, not in this README.
 
 ## Project Status
 
@@ -282,10 +229,8 @@ Detailed API inventories, environment-specific setup, and long operational refer
 | Release enforcement plane | `20 / 20` complete |
 | Crypto authorization core | `20 / 20` complete, packaged |
 | Crypto execution admission | `5 / 12` complete, active buildout |
-| Core verification gate | covered by `npm test` |
-| Expanded verification surface | covered by `npm run verify` and `npm run verify:full` |
-| Latest crypto artifact | `src/crypto-execution-admission/modular-account.ts` with focused ERC-7579/ERC-6900 modular account admission tests |
-| Package probes | release layer, policy control plane, enforcement plane, crypto authorization core, and crypto execution admission package surfaces all covered |
+| Verification | covered by `npm test`, `npm run verify`, and `npm run verify:full` |
+| Package probes | release layer, policy control plane, enforcement plane, crypto authorization core, and crypto execution admission package surfaces are covered |
 | License | Business Source License 1.1, Change License `GPL-2.0-or-later` on 2030-04-13 |
 
 ## What Attestor Is Not

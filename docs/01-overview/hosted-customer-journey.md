@@ -1,19 +1,20 @@
 # Hosted Customer Journey
 
-Attestor is bought and used as an API-first infrastructure product, with **AI-assisted financial reporting acceptance** as the first proving wedge for a broader **AI output release and acceptance layer**.
+Attestor is bought and used as an API-first platform product, with financial reporting as the first proving wedge for a broader release and authorization platform.
 
-That means the customer does not come to Attestor to manage files in a hosted workspace. The customer keeps data, files, and business workflows in their own systems, then uses Attestor where release decisions, proof, verification, and operational control are required.
+That means the customer does not come to Attestor to manage files in a hosted workspace. The customer keeps data, files, business workflows, wallets, and operational systems where they already are, then uses Attestor where release decisions, proof, verification, authorization, and operational control are required.
 
 ## The Core Product Shape
 
 What the customer buys:
 
-- hosted API access to the release and proof layer
+- hosted API access to the release, proof, and authorization layer
 - a real account and tenant boundary
 - API keys
 - usage and billing visibility
 - plan and entitlement state
 - proof, verification, and filing-capable endpoints
+- one account surface that can support multiple Attestor packs over time
 
 What the customer does not buy:
 
@@ -24,7 +25,7 @@ What the customer does not buy:
 
 The category to preserve is:
 
-**AI output release and acceptance infrastructure, delivered as a hosted API product, with financial reporting acceptance as the first wedge.**
+**Attestor is a policy-bound release and authorization platform for high-consequence systems, delivered as a hosted API product, with financial reporting as the first proving wedge.**
 
 ## The Buying Flow
 
@@ -135,4 +136,4 @@ The customer is buying:
 
 That is why the strongest description is still:
 
-**Attestor is AI output release and acceptance infrastructure, delivered as a hosted API product, with financial reporting acceptance as the first wedge.**
+**Attestor is a policy-bound release and authorization platform for high-consequence systems, delivered as a hosted API product, with financial reporting as the first proving wedge.**

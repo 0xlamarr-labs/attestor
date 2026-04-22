@@ -2,34 +2,37 @@
 
 Attestor is not sold as a file-management app or a generic AI workspace.
 
-It is sold as **AI output release and acceptance infrastructure**, delivered either as:
+It is sold as a **policy-bound release and authorization platform for high-consequence systems**, delivered either as:
 
 - a **hosted API product**
 - or a **customer-operated deployment path** for teams that need stricter control boundaries
 
-Financial reporting acceptance remains the first proving wedge, but the category should be wider than finance alone.
+Financial reporting remains the first proving wedge, but the product is wider than finance alone: one Attestor platform core, with modular packs for finance, crypto, and later consequence domains.
 
 ## What Customers Actually Buy
 
-Customers are not buying an upload interface.
+Customers are not buying an upload interface or a separate product for each domain.
 
 They are buying:
 
-- governed release and acceptance infrastructure
+- governed release and authorization infrastructure
 - portable proof and verification
 - authority closure and auditability
 - hosted account, billing, and usage surfaces
 - API access they can call from their own environment
+- one platform core that can carry multiple packs without splitting the product story
 
 Their files, data, workflows, and business logic stay in **their** systems.
 
-The repo should now be read finance-first:
+The repo should now be read core-first, wedge-aware:
 
-- the first clear buyer problem is AI-assisted financial reporting acceptance
-- the first clearest demo is the counterparty exposure reporting packet
-- broader cross-domain expansion is secondary to that wedge
+- the shared core is release, policy, enforcement, and authorization
+- the clearest first buyer problem is AI-assisted financial reporting
+- the clearest first demo is the counterparty exposure reporting packet
+- the crypto direction extends the same product, not a separate one
+- broader cross-domain expansion should attach as packs, not as disconnected product lines
 
-Attestor sits around the acceptance boundary:
+Attestor sits around the consequence boundary:
 
 ```mermaid
 flowchart LR
@@ -153,7 +156,7 @@ After that, the runtime already exposes the core buying and account-management s
 
 Attestor is valuable when AI output is no longer just a suggestion.
 
-Once output can influence:
+Once output or programmable execution can influence:
 
 - reporting
 - financial decisions
@@ -162,8 +165,9 @@ Once output can influence:
 - compliance
 - audit exposure
 - production consequence
+- programmable-money movement
 
-the missing layer is not another cheap inference endpoint. It is the acceptance and control infrastructure around that output.
+the missing layer is not another cheap inference endpoint. It is the release, authorization, and control infrastructure around that consequence.
 
 That is why Attestor should price more like:
 
@@ -184,6 +188,7 @@ The fastest enterprise sales pattern is to avoid pitching Attestor as a generic 
 Pitch it as:
 
 - the release and control plane between model output and production consequence
+- the authorization layer before programmable-money movement becomes real execution
 - the evidence system that makes reviewer signoff and later audit possible
 - the operational product surface that procurement can actually buy: account, usage, billing, entitlement, and deployment boundary
 
@@ -200,4 +205,4 @@ Do not describe Attestor as:
 
 Describe it as:
 
-**AI output release and acceptance infrastructure, delivered as a hosted API product, with financial reporting acceptance as the first wedge.**
+**Attestor is a policy-bound release and authorization platform for high-consequence systems, delivered as a hosted API product or customer-operated deployment, with financial reporting as the first proving wedge and modular packs for finance, crypto, and later consequence domains.**
