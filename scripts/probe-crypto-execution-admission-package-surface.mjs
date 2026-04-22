@@ -86,6 +86,14 @@ assert.equal(
   admission.cryptoAdmissionTelemetryDescriptor().safetyChecks.includes('signature verification'),
   true,
 );
+assert.equal(
+  admission.cryptoAdmissionConformanceDescriptor().fixtureVersion,
+  'attestor.crypto-execution-admission-conformance-fixtures.v1',
+);
+assert.equal(
+  admission.cryptoAdmissionConformanceDescriptor().runtimeChecks.includes('signed-receipt-verification'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {

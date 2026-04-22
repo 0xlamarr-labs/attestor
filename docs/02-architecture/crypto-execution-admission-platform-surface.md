@@ -38,9 +38,11 @@ The public subpath exposes:
 - `createX402ResourceServerAdmissionMiddleware()`
 - `buildCryptoAdmissionTelemetrySummary()`
 - `createInMemoryCryptoAdmissionTelemetrySink()`
+- `validateCryptoAdmissionConformanceFixtureSuite()`
 - `cryptoExecutionAdmissionAdapterProfile()`
 - `cryptoExecutionAdmissionDescriptor()`
 - `cryptoExecutionAdmissionLabel()`
+- `cryptoAdmissionConformanceDescriptor()`
 - `cryptoAdmissionTelemetryDescriptor()`
 - `cryptoAdmissionTelemetryEventSafetyFindings()`
 - `erc4337BundlerAdmissionDescriptor()`
@@ -60,7 +62,7 @@ The public subpath exposes:
 - `walletRpcAdmissionHandoffLabel()`
 - `x402ResourceServerAdmissionDescriptor()`
 - `x402ResourceServerAdmissionLabel()`
-- versioned admission outcomes, surfaces, step kinds, and step statuses
+- versioned admission outcomes, surfaces, step kinds, step statuses, telemetry, receipt, and conformance fixture constants
 
 The first planner maps existing crypto authorization simulation results onto these surfaces:
 
@@ -167,6 +169,16 @@ Admission telemetry and receipts provide one uniform observability and proof sha
 
 The telemetry layer does not replace an observability backend, SIEM, tracing collector, or transparency log. It emits stable Attestor objects that those systems can carry, index, verify, or archive.
 
+Conformance fixtures give external integrators a stable JSON contract to test against:
+
+| Fixture surface | Role |
+|---|---|
+| JSON fixture suite | `fixtures/crypto-execution-admission/conformance-fixtures.v1.json` covers wallet RPC, smart-account guard, ERC-4337 bundler, modular-account runtime, delegated-EOA runtime, x402 resource server, custody policy engine, and intent solver paths |
+| JSON Schema | `fixtures/crypto-execution-admission/conformance-fixtures.schema.json` documents the Draft 2020-12 structural shape for the suite |
+| Runtime validator | `validateCryptoAdmissionConformanceFixtureSuite()` checks surface coverage, plan/subject/telemetry/receipt binding, fail-closed assertions, and fixture-signed receipt verification |
+
+The fixture signer is intentionally marked `fixture-only`. It is a deterministic test vector so wallets, guards, bundlers, payment servers, custody engines, and solvers can prove they preserve Attestor plan, telemetry, and receipt bindings. It is not a production signing key or custody credential.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -187,6 +199,7 @@ import {
   createCryptoAdmissionReceipt,
   createCryptoAdmissionTelemetryEvent,
   createCryptoAdmissionTelemetrySubject,
+  validateCryptoAdmissionConformanceFixtureSuite,
   createDelegatedEoaAdmissionHandoff,
   createErc4337BundlerAdmissionHandoff,
   createCustodyPolicyAdmissionCallbackContract,
@@ -411,6 +424,12 @@ const receiptVerification = verifyCryptoAdmissionReceipt({
 
 if (receiptVerification.status !== 'valid') {
   throw new Error(receiptVerification.failureReasons.join(', '));
+}
+
+const conformance = validateCryptoAdmissionConformanceFixtureSuite(fixtureSuiteJson);
+
+if (conformance.status !== 'valid') {
+  throw new Error(conformance.findings.map((finding) => finding.message).join(', '));
 }
 ```
 

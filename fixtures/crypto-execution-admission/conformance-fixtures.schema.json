@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://attestor.dev/schemas/crypto-execution-admission/conformance-fixtures.v1",
+  "title": "Attestor Crypto Execution Admission Conformance Fixtures v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "version",
+    "schemaDialect",
+    "generatedAt",
+    "description",
+    "fixtureSigner",
+    "requiredSurfaces",
+    "fixtures"
+  ],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": {
+      "const": "attestor.crypto-execution-admission-conformance-fixtures.v1"
+    },
+    "schemaDialect": {
+      "const": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "description": { "type": "string", "minLength": 1 },
+    "fixtureSigner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyId", "secret", "purpose"],
+      "properties": {
+        "keyId": { "type": "string", "minLength": 1 },
+        "secret": { "type": "string", "minLength": 1 },
+        "purpose": { "const": "fixture-only" }
+      }
+    },
+    "requiredSurfaces": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/surface" },
+      "contains": { "const": "wallet-rpc" }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 8,
+      "items": { "$ref": "#/$defs/fixture" }
+    }
+  },
+  "$defs": {
+    "surface": {
+      "enum": [
+        "wallet-rpc",
+        "smart-account-guard",
+        "account-abstraction-bundler",
+        "modular-account-runtime",
+        "delegated-eoa-runtime",
+        "agent-payment-http",
+        "custody-policy-engine",
+        "intent-solver"
+      ]
+    },
+    "signal": {
+      "enum": ["admitted", "blocked", "missing-evidence"]
+    },
+    "planOutcome": {
+      "enum": ["admit", "deny", "needs-evidence"]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixtureId",
+        "surface",
+        "adapterKind",
+        "standards",
+        "scenario",
+        "expectedSignal",
+        "expectedReceiptClassification",
+        "expectedPlanOutcome",
+        "expectedDownstreamAction",
+        "plan",
+        "subject",
+        "telemetryEvent",
+        "receipt",
+        "externalIntegratorAssertions"
+      ],
+      "properties": {
+        "fixtureId": { "type": "string", "minLength": 1 },
+        "surface": { "$ref": "#/$defs/surface" },
+        "adapterKind": { "type": "string", "minLength": 1 },
+        "standards": { "$ref": "#/$defs/stringArray" },
+        "scenario": { "type": "string", "minLength": 1 },
+        "expectedSignal": { "$ref": "#/$defs/signal" },
+        "expectedReceiptClassification": { "$ref": "#/$defs/signal" },
+        "expectedPlanOutcome": { "$ref": "#/$defs/planOutcome" },
+        "expectedDownstreamAction": { "type": "string", "minLength": 1 },
+        "plan": { "$ref": "#/$defs/admissionPlan" },
+        "subject": { "$ref": "#/$defs/telemetrySubject" },
+        "telemetryEvent": { "$ref": "#/$defs/telemetryEvent" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "externalIntegratorAssertions": {
+          "type": "array",
+          "minItems": 4,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "admissionPlan": {
+      "type": "object",
+      "required": [
+        "version",
+        "planId",
+        "simulationId",
+        "simulationDigest",
+        "intentId",
+        "adapterKind",
+        "surface",
+        "outcome",
+        "standards",
+        "requiredHandoffArtifacts",
+        "steps",
+        "blockedReasons",
+        "nextActions",
+        "digest"
+      ],
+      "properties": {
+        "version": { "const": "attestor.crypto-execution-admission.v1" },
+        "planId": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string" },
+        "integrationRef": { "type": ["string", "null"] },
+        "simulationId": { "type": "string", "minLength": 1 },
+        "simulationDigest": { "$ref": "#/$defs/digest" },
+        "intentId": { "type": "string", "minLength": 1 },
+        "consequenceKind": { "type": "string", "minLength": 1 },
+        "adapterKind": { "type": "string", "minLength": 1 },
+        "surface": { "$ref": "#/$defs/surface" },
+        "outcome": { "$ref": "#/$defs/planOutcome" },
+        "chainId": { "type": "string", "minLength": 1 },
+        "accountAddress": { "type": "string", "minLength": 1 },
+        "standards": { "$ref": "#/$defs/stringArray" },
+        "requiredHandoffArtifacts": { "$ref": "#/$defs/stringArray" },
+        "transportHeaders": { "$ref": "#/$defs/stringArray" },
+        "steps": { "type": "array" },
+        "blockedReasons": { "$ref": "#/$defs/stringArray" },
+        "nextActions": { "$ref": "#/$defs/stringArray" },
+        "operatorNote": { "type": ["string", "null"] },
+        "canonical": { "type": "string" },
+        "digest": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": true
+    },
+    "telemetrySubject": {
+      "type": "object",
+      "required": [
+        "subjectKind",
+        "subjectId",
+        "subjectDigest",
+        "surface",
+        "adapterKind",
+        "outcome",
+        "action",
+        "planId",
+        "planDigest"
+      ],
+      "properties": {
+        "subjectKind": { "type": "string", "minLength": 1 },
+        "subjectId": { "type": "string", "minLength": 1 },
+        "subjectDigest": { "$ref": "#/$defs/digest" },
+        "surface": { "$ref": "#/$defs/surface" },
+        "adapterKind": { "type": "string", "minLength": 1 },
+        "outcome": { "type": "string", "minLength": 1 },
+        "action": { "type": ["string", "null"] },
+        "planId": { "type": "string", "minLength": 1 },
+        "planDigest": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
+    "telemetryEvent": {
+      "type": "object",
+      "required": [
+        "version",
+        "specversion",
+        "id",
+        "type",
+        "source",
+        "subject",
+        "time",
+        "datacontenttype",
+        "signal",
+        "data",
+        "eventDigest"
+      ],
+      "properties": {
+        "version": { "const": "attestor.crypto-execution-admission-telemetry.v1" },
+        "specversion": { "const": "1.0" },
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "const": "attestor.crypto_execution_admission.decision" },
+        "source": { "type": "string", "minLength": 1 },
+        "subject": { "type": "string", "minLength": 1 },
+        "time": { "type": "string" },
+        "datacontenttype": { "const": "application/json" },
+        "traceparent": { "type": ["string", "null"] },
+        "tracestate": { "type": ["string", "null"] },
+        "signal": { "$ref": "#/$defs/signal" },
+        "severityText": { "enum": ["INFO", "WARN", "ERROR"] },
+        "severityNumber": { "type": "number" },
+        "attributes": { "type": "object" },
+        "data": { "type": "object" },
+        "body": { "type": "string" },
+        "eventDigest": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
+    "receipt": {
+      "type": "object",
+      "required": [
+        "version",
+        "receiptId",
+        "issuedAt",
+        "issuer",
+        "serviceId",
+        "classification",
+        "planId",
+        "planDigest",
+        "simulationId",
+        "simulationDigest",
+        "intentId",
+        "surface",
+        "adapterKind",
+        "planOutcome",
+        "subject",
+        "trace",
+        "failureReasons",
+        "evidenceDigest",
+        "receiptDigest",
+        "signature"
+      ],
+      "properties": {
+        "version": { "const": "attestor.crypto-execution-admission-receipt.v1" },
+        "receiptId": { "type": "string", "minLength": 1 },
+        "issuedAt": { "type": "string" },
+        "issuer": { "type": "string", "minLength": 1 },
+        "serviceId": { "type": "string", "minLength": 1 },
+        "classification": { "$ref": "#/$defs/signal" },
+        "planId": { "type": "string", "minLength": 1 },
+        "planDigest": { "$ref": "#/$defs/digest" },
+        "simulationId": { "type": "string", "minLength": 1 },
+        "simulationDigest": { "$ref": "#/$defs/digest" },
+        "intentId": { "type": "string", "minLength": 1 },
+        "surface": { "$ref": "#/$defs/surface" },
+        "adapterKind": { "type": "string", "minLength": 1 },
+        "planOutcome": { "$ref": "#/$defs/planOutcome" },
+        "subject": { "$ref": "#/$defs/telemetrySubject" },
+        "trace": { "type": "object" },
+        "failureReasons": { "$ref": "#/$defs/stringArray" },
+        "evidenceDigest": { "$ref": "#/$defs/digest" },
+        "receiptDigest": { "$ref": "#/$defs/digest" },
+        "signature": {
+          "type": "object",
+          "required": ["mode", "keyId", "signedPayloadDigest", "value"],
+          "properties": {
+            "mode": { "const": "hmac-sha256" },
+            "keyId": { "type": "string", "minLength": 1 },
+            "signedPayloadDigest": { "$ref": "#/$defs/digest" },
+            "value": {
+              "type": "string",
+              "pattern": "^hmac-sha256:[a-f0-9]{64}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

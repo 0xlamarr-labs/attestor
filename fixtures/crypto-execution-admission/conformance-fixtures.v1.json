@@ -1,0 +1,1692 @@
+{
+  "$schema": "./conformance-fixtures.schema.json",
+  "version": "attestor.crypto-execution-admission-conformance-fixtures.v1",
+  "schemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "generatedAt": "2026-04-22T22:00:00.000Z",
+  "description": "Adapter-neutral Attestor crypto execution admission conformance fixtures for external wallets, guards, bundlers, payment servers, custody engines, and solvers.",
+  "fixtureSigner": {
+    "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+    "secret": "attestor-conformance-fixture-secret-v1",
+    "purpose": "fixture-only"
+  },
+  "requiredSurfaces": [
+    "wallet-rpc",
+    "smart-account-guard",
+    "account-abstraction-bundler",
+    "modular-account-runtime",
+    "delegated-eoa-runtime",
+    "agent-payment-http",
+    "custody-policy-engine",
+    "intent-solver"
+  ],
+  "fixtures": [
+    {
+      "fixtureId": "wallet-rpc-admitted-v1",
+      "surface": "wallet-rpc",
+      "adapterKind": "wallet-call-api",
+      "standards": [
+        "EIP-5792",
+        "ERC-7715",
+        "ERC-7902"
+      ],
+      "scenario": "Wallet call bundle is admitted after capability and permission evidence is present.",
+      "expectedSignal": "admitted",
+      "expectedReceiptClassification": "admitted",
+      "expectedPlanOutcome": "admit",
+      "expectedDownstreamAction": "wallet_sendCalls",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-wallet-rpc-admitted-v1",
+        "createdAt": "2026-04-22T22:01:00.000Z",
+        "integrationRef": "integration:conformance:wallet-rpc",
+        "simulationId": "simulation-wallet-rpc-admitted-v1",
+        "simulationDigest": "sha256:28316afbde5f68c60827726f0220e5803bc657a84e5aa862bef0d8ce6a703960",
+        "intentId": "intent-wallet-rpc-admitted-v1",
+        "consequenceKind": "batch-call",
+        "adapterKind": "wallet-call-api",
+        "surface": "wallet-rpc",
+        "outcome": "admit",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000001",
+        "standards": [
+          "EIP-5792",
+          "ERC-7715",
+          "ERC-7902"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "wallet-capabilities",
+          "prepared-call-bundle"
+        ],
+        "transportHeaders": [],
+        "steps": [
+          {
+            "stepId": "wallet-rpc-admitted-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "wallet-rpc",
+            "status": "satisfied",
+            "reasonCode": "release-authorization-ready",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "wallet-rpc-admitted-v1"
+            }
+          },
+          {
+            "stepId": "wallet-rpc-admitted-v1:downstream-action",
+            "kind": "submit-execution",
+            "surface": "wallet-rpc",
+            "status": "required",
+            "reasonCode": "downstream-execution-admitted",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "EIP-5792",
+              "ERC-7715",
+              "ERC-7902"
+            ],
+            "evidence": {
+              "action": "wallet_sendCalls"
+            }
+          },
+          {
+            "stepId": "wallet-rpc-admitted-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "required",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [],
+        "nextActions": [
+          "wallet_sendCalls",
+          "record-admission-receipt"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:807f1d12c3e0db441130942c336d6c6ccbd2caffcb4942c47358d3b9651f999c"
+      },
+      "subject": {
+        "subjectKind": "wallet-rpc-handoff",
+        "subjectId": "subject-wallet-rpc-admitted-v1",
+        "subjectDigest": "sha256:51372c069e59d458d32220b6070a36dc5117a9bb92b9db1417ba173ad413cf7f",
+        "surface": "wallet-rpc",
+        "adapterKind": "wallet-call-api",
+        "outcome": "ready",
+        "action": "wallet_sendCalls",
+        "planId": "plan-wallet-rpc-admitted-v1",
+        "planDigest": "sha256:807f1d12c3e0db441130942c336d6c6ccbd2caffcb4942c47358d3b9651f999c"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_b56686c193d445fa8c8d5fb34ef865d1",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "wallet-rpc/wallet-rpc-handoff/subject-wallet-rpc-admitted-v1",
+        "time": "2026-04-22T22:01:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-b2209115a55d182fe9ee16cc1c193ede-d22c6455b129f394-01",
+        "tracestate": null,
+        "signal": "admitted",
+        "severityText": "INFO",
+        "severityNumber": 9,
+        "attributes": {
+          "attestor.crypto_admission.signal": "admitted",
+          "attestor.crypto_admission.surface": "wallet-rpc",
+          "attestor.crypto_admission.adapter_kind": "wallet-call-api",
+          "attestor.crypto_admission.plan_outcome": "admit",
+          "attestor.crypto_admission.subject_kind": "wallet-rpc-handoff",
+          "attestor.crypto_admission.subject_outcome": "ready",
+          "attestor.crypto_admission.failure_reason_count": 0,
+          "attestor.crypto_admission.failure_reasons": [],
+          "attestor.crypto_admission.receipt_id": "receipt-wallet-rpc-admitted-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "wallet-rpc-admitted-v1",
+          "attestor.conformance.surface": "wallet-rpc"
+        },
+        "data": {
+          "planId": "plan-wallet-rpc-admitted-v1",
+          "planDigest": "sha256:807f1d12c3e0db441130942c336d6c6ccbd2caffcb4942c47358d3b9651f999c",
+          "simulationId": "simulation-wallet-rpc-admitted-v1",
+          "simulationDigest": "sha256:28316afbde5f68c60827726f0220e5803bc657a84e5aa862bef0d8ce6a703960",
+          "intentId": "intent-wallet-rpc-admitted-v1",
+          "surface": "wallet-rpc",
+          "adapterKind": "wallet-call-api",
+          "planOutcome": "admit",
+          "signal": "admitted",
+          "subjectKind": "wallet-rpc-handoff",
+          "subjectId": "subject-wallet-rpc-admitted-v1",
+          "subjectDigest": "sha256:51372c069e59d458d32220b6070a36dc5117a9bb92b9db1417ba173ad413cf7f",
+          "subjectOutcome": "ready",
+          "failureReasons": [],
+          "receiptId": "receipt-wallet-rpc-admitted-v1"
+        },
+        "body": "wallet-rpc conformance fixture admitted",
+        "eventDigest": "sha256:6cb4a203bf3d1cf318460baf64523c73a8a2d4dc9c9afca8c920ee337ad9a6fd"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-wallet-rpc-admitted-v1",
+        "issuedAt": "2026-04-22T22:01:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "admitted",
+        "planId": "plan-wallet-rpc-admitted-v1",
+        "planDigest": "sha256:807f1d12c3e0db441130942c336d6c6ccbd2caffcb4942c47358d3b9651f999c",
+        "simulationId": "simulation-wallet-rpc-admitted-v1",
+        "simulationDigest": "sha256:28316afbde5f68c60827726f0220e5803bc657a84e5aa862bef0d8ce6a703960",
+        "intentId": "intent-wallet-rpc-admitted-v1",
+        "surface": "wallet-rpc",
+        "adapterKind": "wallet-call-api",
+        "planOutcome": "admit",
+        "subject": {
+          "subjectKind": "wallet-rpc-handoff",
+          "subjectId": "subject-wallet-rpc-admitted-v1",
+          "subjectDigest": "sha256:51372c069e59d458d32220b6070a36dc5117a9bb92b9db1417ba173ad413cf7f",
+          "surface": "wallet-rpc",
+          "adapterKind": "wallet-call-api",
+          "outcome": "ready",
+          "action": "wallet_sendCalls",
+          "planId": "plan-wallet-rpc-admitted-v1",
+          "planDigest": "sha256:807f1d12c3e0db441130942c336d6c6ccbd2caffcb4942c47358d3b9651f999c"
+        },
+        "trace": {
+          "traceparent": "00-b2209115a55d182fe9ee16cc1c193ede-d22c6455b129f394-01",
+          "tracestate": null
+        },
+        "failureReasons": [],
+        "evidenceDigest": "sha256:33980f8039ceb6fba34148df31894215d2fc9044765109bcb45d32d43201f9d9",
+        "receiptDigest": "sha256:23d8a0b710332362bfd27a033cdd1a742770f4f7663b9b9983e25b62f24a9159",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:23d8a0b710332362bfd27a033cdd1a742770f4f7663b9b9983e25b62f24a9159",
+          "value": "hmac-sha256:c1dfca6e6d6fae295df22a4eb17730e55bc7b42c017140d0e35fc56b0f8f7d02"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    },
+    {
+      "fixtureId": "smart-account-guard-blocked-v1",
+      "surface": "smart-account-guard",
+      "adapterKind": "safe-guard",
+      "standards": [
+        "Safe Guard",
+        "ERC-1271"
+      ],
+      "scenario": "Safe guard execution is blocked when guard precheck fails.",
+      "expectedSignal": "blocked",
+      "expectedReceiptClassification": "blocked",
+      "expectedPlanOutcome": "deny",
+      "expectedDownstreamAction": "block-execution",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-smart-account-guard-blocked-v1",
+        "createdAt": "2026-04-22T22:02:00.000Z",
+        "integrationRef": "integration:conformance:smart-account-guard",
+        "simulationId": "simulation-smart-account-guard-blocked-v1",
+        "simulationDigest": "sha256:f5f03217f425ec8d3a134f0d0c974f2a0d92d284c12c1857d5518812160709bc",
+        "intentId": "intent-smart-account-guard-blocked-v1",
+        "consequenceKind": "contract-call",
+        "adapterKind": "safe-guard",
+        "surface": "smart-account-guard",
+        "outcome": "deny",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000002",
+        "standards": [
+          "Safe Guard",
+          "ERC-1271"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "safe-transaction-hash",
+          "guard-precheck"
+        ],
+        "transportHeaders": [],
+        "steps": [
+          {
+            "stepId": "smart-account-guard-blocked-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "smart-account-guard",
+            "status": "blocked",
+            "reasonCode": "release-authorization-blocked",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "smart-account-guard-blocked-v1"
+            }
+          },
+          {
+            "stepId": "smart-account-guard-blocked-v1:downstream-action",
+            "kind": "block-execution",
+            "surface": "smart-account-guard",
+            "status": "blocked",
+            "reasonCode": "downstream-execution-blocked",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "Safe Guard",
+              "ERC-1271"
+            ],
+            "evidence": {
+              "action": "block-execution"
+            }
+          },
+          {
+            "stepId": "smart-account-guard-blocked-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "recommended",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [
+          "guard-precheck-failed"
+        ],
+        "nextActions": [
+          "do-not-submit-downstream-execution",
+          "record-blocked-admission-receipt"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:66150c905708a899bff8c865c2077c9ec05d1fe64810760e048472ab33c7ca66"
+      },
+      "subject": {
+        "subjectKind": "smart-account-guard-handoff",
+        "subjectId": "subject-smart-account-guard-blocked-v1",
+        "subjectDigest": "sha256:d23b9b8c3d59476bda5274e4fccd55f86942451973df0e5df71d744de7befcdb",
+        "surface": "smart-account-guard",
+        "adapterKind": "safe-guard",
+        "outcome": "blocked",
+        "action": "block-execution",
+        "planId": "plan-smart-account-guard-blocked-v1",
+        "planDigest": "sha256:66150c905708a899bff8c865c2077c9ec05d1fe64810760e048472ab33c7ca66"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_5f43961bee74458ab1056e6860eccb63",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "smart-account-guard/smart-account-guard-handoff/subject-smart-account-guard-blocked-v1",
+        "time": "2026-04-22T22:02:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-dd61c8eb68537f4604ebb442f668772e-5530bae8b7b65ddc-01",
+        "tracestate": null,
+        "signal": "blocked",
+        "severityText": "ERROR",
+        "severityNumber": 17,
+        "attributes": {
+          "attestor.crypto_admission.signal": "blocked",
+          "attestor.crypto_admission.surface": "smart-account-guard",
+          "attestor.crypto_admission.adapter_kind": "safe-guard",
+          "attestor.crypto_admission.plan_outcome": "deny",
+          "attestor.crypto_admission.subject_kind": "smart-account-guard-handoff",
+          "attestor.crypto_admission.subject_outcome": "blocked",
+          "attestor.crypto_admission.failure_reason_count": 1,
+          "attestor.crypto_admission.failure_reasons": [
+            "guard-precheck-failed"
+          ],
+          "attestor.crypto_admission.receipt_id": "receipt-smart-account-guard-blocked-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "smart-account-guard-blocked-v1",
+          "attestor.conformance.surface": "smart-account-guard"
+        },
+        "data": {
+          "planId": "plan-smart-account-guard-blocked-v1",
+          "planDigest": "sha256:66150c905708a899bff8c865c2077c9ec05d1fe64810760e048472ab33c7ca66",
+          "simulationId": "simulation-smart-account-guard-blocked-v1",
+          "simulationDigest": "sha256:f5f03217f425ec8d3a134f0d0c974f2a0d92d284c12c1857d5518812160709bc",
+          "intentId": "intent-smart-account-guard-blocked-v1",
+          "surface": "smart-account-guard",
+          "adapterKind": "safe-guard",
+          "planOutcome": "deny",
+          "signal": "blocked",
+          "subjectKind": "smart-account-guard-handoff",
+          "subjectId": "subject-smart-account-guard-blocked-v1",
+          "subjectDigest": "sha256:d23b9b8c3d59476bda5274e4fccd55f86942451973df0e5df71d744de7befcdb",
+          "subjectOutcome": "blocked",
+          "failureReasons": [
+            "guard-precheck-failed"
+          ],
+          "receiptId": "receipt-smart-account-guard-blocked-v1"
+        },
+        "body": "smart-account-guard conformance fixture blocked",
+        "eventDigest": "sha256:dce7771fe6c29d4f93b2c1f508e1f04a1def6a5b075214134ca91f789899ae3a"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-smart-account-guard-blocked-v1",
+        "issuedAt": "2026-04-22T22:02:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "blocked",
+        "planId": "plan-smart-account-guard-blocked-v1",
+        "planDigest": "sha256:66150c905708a899bff8c865c2077c9ec05d1fe64810760e048472ab33c7ca66",
+        "simulationId": "simulation-smart-account-guard-blocked-v1",
+        "simulationDigest": "sha256:f5f03217f425ec8d3a134f0d0c974f2a0d92d284c12c1857d5518812160709bc",
+        "intentId": "intent-smart-account-guard-blocked-v1",
+        "surface": "smart-account-guard",
+        "adapterKind": "safe-guard",
+        "planOutcome": "deny",
+        "subject": {
+          "subjectKind": "smart-account-guard-handoff",
+          "subjectId": "subject-smart-account-guard-blocked-v1",
+          "subjectDigest": "sha256:d23b9b8c3d59476bda5274e4fccd55f86942451973df0e5df71d744de7befcdb",
+          "surface": "smart-account-guard",
+          "adapterKind": "safe-guard",
+          "outcome": "blocked",
+          "action": "block-execution",
+          "planId": "plan-smart-account-guard-blocked-v1",
+          "planDigest": "sha256:66150c905708a899bff8c865c2077c9ec05d1fe64810760e048472ab33c7ca66"
+        },
+        "trace": {
+          "traceparent": "00-dd61c8eb68537f4604ebb442f668772e-5530bae8b7b65ddc-01",
+          "tracestate": null
+        },
+        "failureReasons": [
+          "guard-precheck-failed"
+        ],
+        "evidenceDigest": "sha256:c37d4ae5db89e89d76e9f321815978f2c9c6c1dc0fd4315aac781b7fa77dc7bf",
+        "receiptDigest": "sha256:9609c8754a41fb3cc71ed70774cf486318f9da3ae95ac9a516945bc99c6748b2",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:9609c8754a41fb3cc71ed70774cf486318f9da3ae95ac9a516945bc99c6748b2",
+          "value": "hmac-sha256:98e108db6e50efd7d516f1268d16def834e550ac749356f8a4c721bd62c5c51c"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    },
+    {
+      "fixtureId": "erc4337-bundler-missing-evidence-v1",
+      "surface": "account-abstraction-bundler",
+      "adapterKind": "erc-4337-user-operation",
+      "standards": [
+        "ERC-4337",
+        "ERC-7562",
+        "ERC-7769"
+      ],
+      "scenario": "Bundler submission waits for simulateValidation evidence.",
+      "expectedSignal": "missing-evidence",
+      "expectedReceiptClassification": "missing-evidence",
+      "expectedPlanOutcome": "needs-evidence",
+      "expectedDownstreamAction": "collect-simulate-validation-result",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-erc4337-bundler-missing-evidence-v1",
+        "createdAt": "2026-04-22T22:03:00.000Z",
+        "integrationRef": "integration:conformance:account-abstraction-bundler",
+        "simulationId": "simulation-erc4337-bundler-missing-evidence-v1",
+        "simulationDigest": "sha256:1669fd744f332bd1ff97c2db259433c6e6eabe6482d12b142d721c0d9299b5b0",
+        "intentId": "intent-erc4337-bundler-missing-evidence-v1",
+        "consequenceKind": "user-operation",
+        "adapterKind": "erc-4337-user-operation",
+        "surface": "account-abstraction-bundler",
+        "outcome": "needs-evidence",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000003",
+        "standards": [
+          "ERC-4337",
+          "ERC-7562",
+          "ERC-7769"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "user-operation-hash",
+          "simulate-validation-result"
+        ],
+        "transportHeaders": [],
+        "steps": [
+          {
+            "stepId": "erc4337-bundler-missing-evidence-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "account-abstraction-bundler",
+            "status": "satisfied",
+            "reasonCode": "release-authorization-ready",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "erc4337-bundler-missing-evidence-v1"
+            }
+          },
+          {
+            "stepId": "erc4337-bundler-missing-evidence-v1:downstream-action",
+            "kind": "submit-execution",
+            "surface": "account-abstraction-bundler",
+            "status": "recommended",
+            "reasonCode": "downstream-execution-waits-for-evidence",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "ERC-4337",
+              "ERC-7562",
+              "ERC-7769"
+            ],
+            "evidence": {
+              "action": "collect-simulate-validation-result"
+            }
+          },
+          {
+            "stepId": "erc4337-bundler-missing-evidence-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "recommended",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [
+          "simulate-validation-result-missing"
+        ],
+        "nextActions": [
+          "collect-required-evidence",
+          "retry-admission-before-execution"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:d25314c283fed938434560d7e9daa2799779c1bc0e8568f26a79ab7a17088e4f"
+      },
+      "subject": {
+        "subjectKind": "account-abstraction-bundler-handoff",
+        "subjectId": "subject-erc4337-bundler-missing-evidence-v1",
+        "subjectDigest": "sha256:cc242906d973805909756826e4fb317958bf55dc70a98a96143cfe5e8fc04e9e",
+        "surface": "account-abstraction-bundler",
+        "adapterKind": "erc-4337-user-operation",
+        "outcome": "needs-evidence",
+        "action": "collect-simulate-validation-result",
+        "planId": "plan-erc4337-bundler-missing-evidence-v1",
+        "planDigest": "sha256:d25314c283fed938434560d7e9daa2799779c1bc0e8568f26a79ab7a17088e4f"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_b449b8defe2844ce96279ea9fa265c96",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "account-abstraction-bundler/account-abstraction-bundler-handoff/subject-erc4337-bundler-missing-evidence-v1",
+        "time": "2026-04-22T22:03:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-79414208e5a825929b9e6fbd0c3992dd-f42f25416fefec42-01",
+        "tracestate": null,
+        "signal": "missing-evidence",
+        "severityText": "WARN",
+        "severityNumber": 13,
+        "attributes": {
+          "attestor.crypto_admission.signal": "missing-evidence",
+          "attestor.crypto_admission.surface": "account-abstraction-bundler",
+          "attestor.crypto_admission.adapter_kind": "erc-4337-user-operation",
+          "attestor.crypto_admission.plan_outcome": "needs-evidence",
+          "attestor.crypto_admission.subject_kind": "account-abstraction-bundler-handoff",
+          "attestor.crypto_admission.subject_outcome": "needs-evidence",
+          "attestor.crypto_admission.failure_reason_count": 1,
+          "attestor.crypto_admission.failure_reasons": [
+            "simulate-validation-result-missing"
+          ],
+          "attestor.crypto_admission.receipt_id": "receipt-erc4337-bundler-missing-evidence-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "erc4337-bundler-missing-evidence-v1",
+          "attestor.conformance.surface": "account-abstraction-bundler"
+        },
+        "data": {
+          "planId": "plan-erc4337-bundler-missing-evidence-v1",
+          "planDigest": "sha256:d25314c283fed938434560d7e9daa2799779c1bc0e8568f26a79ab7a17088e4f",
+          "simulationId": "simulation-erc4337-bundler-missing-evidence-v1",
+          "simulationDigest": "sha256:1669fd744f332bd1ff97c2db259433c6e6eabe6482d12b142d721c0d9299b5b0",
+          "intentId": "intent-erc4337-bundler-missing-evidence-v1",
+          "surface": "account-abstraction-bundler",
+          "adapterKind": "erc-4337-user-operation",
+          "planOutcome": "needs-evidence",
+          "signal": "missing-evidence",
+          "subjectKind": "account-abstraction-bundler-handoff",
+          "subjectId": "subject-erc4337-bundler-missing-evidence-v1",
+          "subjectDigest": "sha256:cc242906d973805909756826e4fb317958bf55dc70a98a96143cfe5e8fc04e9e",
+          "subjectOutcome": "needs-evidence",
+          "failureReasons": [
+            "simulate-validation-result-missing"
+          ],
+          "receiptId": "receipt-erc4337-bundler-missing-evidence-v1"
+        },
+        "body": "account-abstraction-bundler conformance fixture missing-evidence",
+        "eventDigest": "sha256:8289706f97d86714539685ce6e685352b3a68649a1cd44d44a87c690bda10e97"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-erc4337-bundler-missing-evidence-v1",
+        "issuedAt": "2026-04-22T22:03:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "missing-evidence",
+        "planId": "plan-erc4337-bundler-missing-evidence-v1",
+        "planDigest": "sha256:d25314c283fed938434560d7e9daa2799779c1bc0e8568f26a79ab7a17088e4f",
+        "simulationId": "simulation-erc4337-bundler-missing-evidence-v1",
+        "simulationDigest": "sha256:1669fd744f332bd1ff97c2db259433c6e6eabe6482d12b142d721c0d9299b5b0",
+        "intentId": "intent-erc4337-bundler-missing-evidence-v1",
+        "surface": "account-abstraction-bundler",
+        "adapterKind": "erc-4337-user-operation",
+        "planOutcome": "needs-evidence",
+        "subject": {
+          "subjectKind": "account-abstraction-bundler-handoff",
+          "subjectId": "subject-erc4337-bundler-missing-evidence-v1",
+          "subjectDigest": "sha256:cc242906d973805909756826e4fb317958bf55dc70a98a96143cfe5e8fc04e9e",
+          "surface": "account-abstraction-bundler",
+          "adapterKind": "erc-4337-user-operation",
+          "outcome": "needs-evidence",
+          "action": "collect-simulate-validation-result",
+          "planId": "plan-erc4337-bundler-missing-evidence-v1",
+          "planDigest": "sha256:d25314c283fed938434560d7e9daa2799779c1bc0e8568f26a79ab7a17088e4f"
+        },
+        "trace": {
+          "traceparent": "00-79414208e5a825929b9e6fbd0c3992dd-f42f25416fefec42-01",
+          "tracestate": null
+        },
+        "failureReasons": [
+          "simulate-validation-result-missing"
+        ],
+        "evidenceDigest": "sha256:352f5ca2188801e08ae7141d8ca2b515dac22e76bd5f97afa25fbade0c721d28",
+        "receiptDigest": "sha256:94eb395fc0fcfa5b42b329bd5eeaa34ef05d2225b1b980e641c4f3190483c84b",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:94eb395fc0fcfa5b42b329bd5eeaa34ef05d2225b1b980e641c4f3190483c84b",
+          "value": "hmac-sha256:4a1d0e62cd1b7cafe3c57f7bed9b69adef408febb59a7e919079f0b5c892459e"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    },
+    {
+      "fixtureId": "modular-account-admitted-v1",
+      "surface": "modular-account-runtime",
+      "adapterKind": "erc-7579-module",
+      "standards": [
+        "ERC-7579",
+        "ERC-4337"
+      ],
+      "scenario": "Modular account execution is admitted after module and hook evidence is bound.",
+      "expectedSignal": "admitted",
+      "expectedReceiptClassification": "admitted",
+      "expectedPlanOutcome": "admit",
+      "expectedDownstreamAction": "submit-execution",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-modular-account-admitted-v1",
+        "createdAt": "2026-04-22T22:04:00.000Z",
+        "integrationRef": "integration:conformance:modular-account-runtime",
+        "simulationId": "simulation-modular-account-admitted-v1",
+        "simulationDigest": "sha256:4027a1cbc74c09a3fb7681363407d77478b902986468996e62f094b5b954c455",
+        "intentId": "intent-modular-account-admitted-v1",
+        "consequenceKind": "contract-call",
+        "adapterKind": "erc-7579-module",
+        "surface": "modular-account-runtime",
+        "outcome": "admit",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000004",
+        "standards": [
+          "ERC-7579",
+          "ERC-4337"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "module-installation-evidence",
+          "module-hook-precheck"
+        ],
+        "transportHeaders": [],
+        "steps": [
+          {
+            "stepId": "modular-account-admitted-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "modular-account-runtime",
+            "status": "satisfied",
+            "reasonCode": "release-authorization-ready",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "modular-account-admitted-v1"
+            }
+          },
+          {
+            "stepId": "modular-account-admitted-v1:downstream-action",
+            "kind": "submit-execution",
+            "surface": "modular-account-runtime",
+            "status": "required",
+            "reasonCode": "downstream-execution-admitted",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "ERC-7579",
+              "ERC-4337"
+            ],
+            "evidence": {
+              "action": "submit-execution"
+            }
+          },
+          {
+            "stepId": "modular-account-admitted-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "required",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [],
+        "nextActions": [
+          "submit-execution",
+          "record-admission-receipt"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:812a12a32700f2ad75f4b0bf7d68fc024efbe4831734ee76a9e1c8686115120b"
+      },
+      "subject": {
+        "subjectKind": "modular-account-runtime-handoff",
+        "subjectId": "subject-modular-account-admitted-v1",
+        "subjectDigest": "sha256:dfbb32157bb8d788917fd2c10b20e1a5609725377a4df51030629a493ae91e63",
+        "surface": "modular-account-runtime",
+        "adapterKind": "erc-7579-module",
+        "outcome": "ready",
+        "action": "submit-execution",
+        "planId": "plan-modular-account-admitted-v1",
+        "planDigest": "sha256:812a12a32700f2ad75f4b0bf7d68fc024efbe4831734ee76a9e1c8686115120b"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_941a5479e08d4f889da8cb4096ef3179",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "modular-account-runtime/modular-account-runtime-handoff/subject-modular-account-admitted-v1",
+        "time": "2026-04-22T22:04:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-c8f953d0250f511ef2ec909d4fe3b6ac-64052bd1eb94b2d3-01",
+        "tracestate": null,
+        "signal": "admitted",
+        "severityText": "INFO",
+        "severityNumber": 9,
+        "attributes": {
+          "attestor.crypto_admission.signal": "admitted",
+          "attestor.crypto_admission.surface": "modular-account-runtime",
+          "attestor.crypto_admission.adapter_kind": "erc-7579-module",
+          "attestor.crypto_admission.plan_outcome": "admit",
+          "attestor.crypto_admission.subject_kind": "modular-account-runtime-handoff",
+          "attestor.crypto_admission.subject_outcome": "ready",
+          "attestor.crypto_admission.failure_reason_count": 0,
+          "attestor.crypto_admission.failure_reasons": [],
+          "attestor.crypto_admission.receipt_id": "receipt-modular-account-admitted-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "modular-account-admitted-v1",
+          "attestor.conformance.surface": "modular-account-runtime"
+        },
+        "data": {
+          "planId": "plan-modular-account-admitted-v1",
+          "planDigest": "sha256:812a12a32700f2ad75f4b0bf7d68fc024efbe4831734ee76a9e1c8686115120b",
+          "simulationId": "simulation-modular-account-admitted-v1",
+          "simulationDigest": "sha256:4027a1cbc74c09a3fb7681363407d77478b902986468996e62f094b5b954c455",
+          "intentId": "intent-modular-account-admitted-v1",
+          "surface": "modular-account-runtime",
+          "adapterKind": "erc-7579-module",
+          "planOutcome": "admit",
+          "signal": "admitted",
+          "subjectKind": "modular-account-runtime-handoff",
+          "subjectId": "subject-modular-account-admitted-v1",
+          "subjectDigest": "sha256:dfbb32157bb8d788917fd2c10b20e1a5609725377a4df51030629a493ae91e63",
+          "subjectOutcome": "ready",
+          "failureReasons": [],
+          "receiptId": "receipt-modular-account-admitted-v1"
+        },
+        "body": "modular-account-runtime conformance fixture admitted",
+        "eventDigest": "sha256:3559e8b2099972660ff4783ae2beb28ad9db5945fa40d91c51feb4c4fd3cad23"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-modular-account-admitted-v1",
+        "issuedAt": "2026-04-22T22:04:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "admitted",
+        "planId": "plan-modular-account-admitted-v1",
+        "planDigest": "sha256:812a12a32700f2ad75f4b0bf7d68fc024efbe4831734ee76a9e1c8686115120b",
+        "simulationId": "simulation-modular-account-admitted-v1",
+        "simulationDigest": "sha256:4027a1cbc74c09a3fb7681363407d77478b902986468996e62f094b5b954c455",
+        "intentId": "intent-modular-account-admitted-v1",
+        "surface": "modular-account-runtime",
+        "adapterKind": "erc-7579-module",
+        "planOutcome": "admit",
+        "subject": {
+          "subjectKind": "modular-account-runtime-handoff",
+          "subjectId": "subject-modular-account-admitted-v1",
+          "subjectDigest": "sha256:dfbb32157bb8d788917fd2c10b20e1a5609725377a4df51030629a493ae91e63",
+          "surface": "modular-account-runtime",
+          "adapterKind": "erc-7579-module",
+          "outcome": "ready",
+          "action": "submit-execution",
+          "planId": "plan-modular-account-admitted-v1",
+          "planDigest": "sha256:812a12a32700f2ad75f4b0bf7d68fc024efbe4831734ee76a9e1c8686115120b"
+        },
+        "trace": {
+          "traceparent": "00-c8f953d0250f511ef2ec909d4fe3b6ac-64052bd1eb94b2d3-01",
+          "tracestate": null
+        },
+        "failureReasons": [],
+        "evidenceDigest": "sha256:11730b07beaf68db1e33696a9aa15841d07154a7037ab91dbf5d77db847c2075",
+        "receiptDigest": "sha256:8255c6bfb2565ce00040cc921eacea78d304bc9a45dd92befd3feea3765ea4de",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:8255c6bfb2565ce00040cc921eacea78d304bc9a45dd92befd3feea3765ea4de",
+          "value": "hmac-sha256:859ff3b7158387563b41e9b2bca575b8f22043eeed9c59f9986f38485816fa30"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    },
+    {
+      "fixtureId": "delegated-eoa-blocked-v1",
+      "surface": "delegated-eoa-runtime",
+      "adapterKind": "eip-7702-delegation",
+      "standards": [
+        "EIP-7702",
+        "EIP-5792",
+        "ERC-7902"
+      ],
+      "scenario": "Delegated EOA execution is blocked when the nonce-bound authorization tuple is stale.",
+      "expectedSignal": "blocked",
+      "expectedReceiptClassification": "blocked",
+      "expectedPlanOutcome": "deny",
+      "expectedDownstreamAction": "block-execution",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-delegated-eoa-blocked-v1",
+        "createdAt": "2026-04-22T22:05:00.000Z",
+        "integrationRef": "integration:conformance:delegated-eoa-runtime",
+        "simulationId": "simulation-delegated-eoa-blocked-v1",
+        "simulationDigest": "sha256:1d0e9af0bc5704efa6bbbc76ad991970c245b2ce5a1f05f499ab1138ea52e66f",
+        "intentId": "intent-delegated-eoa-blocked-v1",
+        "consequenceKind": "account-delegation",
+        "adapterKind": "eip-7702-delegation",
+        "surface": "delegated-eoa-runtime",
+        "outcome": "deny",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000005",
+        "standards": [
+          "EIP-7702",
+          "EIP-5792",
+          "ERC-7902"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "authorization-list-tuple",
+          "delegate-code-approval"
+        ],
+        "transportHeaders": [],
+        "steps": [
+          {
+            "stepId": "delegated-eoa-blocked-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "delegated-eoa-runtime",
+            "status": "blocked",
+            "reasonCode": "release-authorization-blocked",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "delegated-eoa-blocked-v1"
+            }
+          },
+          {
+            "stepId": "delegated-eoa-blocked-v1:downstream-action",
+            "kind": "block-execution",
+            "surface": "delegated-eoa-runtime",
+            "status": "blocked",
+            "reasonCode": "downstream-execution-blocked",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "EIP-7702",
+              "EIP-5792",
+              "ERC-7902"
+            ],
+            "evidence": {
+              "action": "block-execution"
+            }
+          },
+          {
+            "stepId": "delegated-eoa-blocked-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "recommended",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [
+          "authorization-tuple-stale"
+        ],
+        "nextActions": [
+          "do-not-submit-downstream-execution",
+          "record-blocked-admission-receipt"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:62b3351d39b28f3328a819f4f98d06156fb71fa59410f5b468e640607ea7fe05"
+      },
+      "subject": {
+        "subjectKind": "delegated-eoa-runtime-handoff",
+        "subjectId": "subject-delegated-eoa-blocked-v1",
+        "subjectDigest": "sha256:0ccc6dfdd3d935b6555b5d299d283f40656cddad3bf933815472e8d37c00cc9f",
+        "surface": "delegated-eoa-runtime",
+        "adapterKind": "eip-7702-delegation",
+        "outcome": "blocked",
+        "action": "block-execution",
+        "planId": "plan-delegated-eoa-blocked-v1",
+        "planDigest": "sha256:62b3351d39b28f3328a819f4f98d06156fb71fa59410f5b468e640607ea7fe05"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_dabf66eafb9d4d9ebfb7c587aba9d3dc",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "delegated-eoa-runtime/delegated-eoa-runtime-handoff/subject-delegated-eoa-blocked-v1",
+        "time": "2026-04-22T22:05:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-8c69e5b3c1d75874e5832bfa9a5a7938-77c16df6b5b93b81-01",
+        "tracestate": null,
+        "signal": "blocked",
+        "severityText": "ERROR",
+        "severityNumber": 17,
+        "attributes": {
+          "attestor.crypto_admission.signal": "blocked",
+          "attestor.crypto_admission.surface": "delegated-eoa-runtime",
+          "attestor.crypto_admission.adapter_kind": "eip-7702-delegation",
+          "attestor.crypto_admission.plan_outcome": "deny",
+          "attestor.crypto_admission.subject_kind": "delegated-eoa-runtime-handoff",
+          "attestor.crypto_admission.subject_outcome": "blocked",
+          "attestor.crypto_admission.failure_reason_count": 1,
+          "attestor.crypto_admission.failure_reasons": [
+            "authorization-tuple-stale"
+          ],
+          "attestor.crypto_admission.receipt_id": "receipt-delegated-eoa-blocked-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "delegated-eoa-blocked-v1",
+          "attestor.conformance.surface": "delegated-eoa-runtime"
+        },
+        "data": {
+          "planId": "plan-delegated-eoa-blocked-v1",
+          "planDigest": "sha256:62b3351d39b28f3328a819f4f98d06156fb71fa59410f5b468e640607ea7fe05",
+          "simulationId": "simulation-delegated-eoa-blocked-v1",
+          "simulationDigest": "sha256:1d0e9af0bc5704efa6bbbc76ad991970c245b2ce5a1f05f499ab1138ea52e66f",
+          "intentId": "intent-delegated-eoa-blocked-v1",
+          "surface": "delegated-eoa-runtime",
+          "adapterKind": "eip-7702-delegation",
+          "planOutcome": "deny",
+          "signal": "blocked",
+          "subjectKind": "delegated-eoa-runtime-handoff",
+          "subjectId": "subject-delegated-eoa-blocked-v1",
+          "subjectDigest": "sha256:0ccc6dfdd3d935b6555b5d299d283f40656cddad3bf933815472e8d37c00cc9f",
+          "subjectOutcome": "blocked",
+          "failureReasons": [
+            "authorization-tuple-stale"
+          ],
+          "receiptId": "receipt-delegated-eoa-blocked-v1"
+        },
+        "body": "delegated-eoa-runtime conformance fixture blocked",
+        "eventDigest": "sha256:90cd9add37f8d200d339292ab82f3309dbb178f6a2aba1dd355964d024b4afe9"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-delegated-eoa-blocked-v1",
+        "issuedAt": "2026-04-22T22:05:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "blocked",
+        "planId": "plan-delegated-eoa-blocked-v1",
+        "planDigest": "sha256:62b3351d39b28f3328a819f4f98d06156fb71fa59410f5b468e640607ea7fe05",
+        "simulationId": "simulation-delegated-eoa-blocked-v1",
+        "simulationDigest": "sha256:1d0e9af0bc5704efa6bbbc76ad991970c245b2ce5a1f05f499ab1138ea52e66f",
+        "intentId": "intent-delegated-eoa-blocked-v1",
+        "surface": "delegated-eoa-runtime",
+        "adapterKind": "eip-7702-delegation",
+        "planOutcome": "deny",
+        "subject": {
+          "subjectKind": "delegated-eoa-runtime-handoff",
+          "subjectId": "subject-delegated-eoa-blocked-v1",
+          "subjectDigest": "sha256:0ccc6dfdd3d935b6555b5d299d283f40656cddad3bf933815472e8d37c00cc9f",
+          "surface": "delegated-eoa-runtime",
+          "adapterKind": "eip-7702-delegation",
+          "outcome": "blocked",
+          "action": "block-execution",
+          "planId": "plan-delegated-eoa-blocked-v1",
+          "planDigest": "sha256:62b3351d39b28f3328a819f4f98d06156fb71fa59410f5b468e640607ea7fe05"
+        },
+        "trace": {
+          "traceparent": "00-8c69e5b3c1d75874e5832bfa9a5a7938-77c16df6b5b93b81-01",
+          "tracestate": null
+        },
+        "failureReasons": [
+          "authorization-tuple-stale"
+        ],
+        "evidenceDigest": "sha256:6d7a900429078f1439d0c23bbbeb3e2368d80a7c0c2f8e77ffa3dab26b6df367",
+        "receiptDigest": "sha256:4e76f427d5445d0e47575633ae93cd843290402a635c9e6f590fb961452ba8e6",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:4e76f427d5445d0e47575633ae93cd843290402a635c9e6f590fb961452ba8e6",
+          "value": "hmac-sha256:b5d43b24df4bb8b38b7e2bb70611d1922738516710bf2bde23879520790dd8a2"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    },
+    {
+      "fixtureId": "agent-payment-http-missing-evidence-v1",
+      "surface": "agent-payment-http",
+      "adapterKind": "x402-payment",
+      "standards": [
+        "x402-v2",
+        "HTTP 402",
+        "EIP-3009"
+      ],
+      "scenario": "x402 resource fulfillment waits for facilitator verification and settlement evidence.",
+      "expectedSignal": "missing-evidence",
+      "expectedReceiptClassification": "missing-evidence",
+      "expectedPlanOutcome": "needs-evidence",
+      "expectedDownstreamAction": "verify-http-payment",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-agent-payment-http-missing-evidence-v1",
+        "createdAt": "2026-04-22T22:06:00.000Z",
+        "integrationRef": "integration:conformance:agent-payment-http",
+        "simulationId": "simulation-agent-payment-http-missing-evidence-v1",
+        "simulationDigest": "sha256:f718536af46564e4545c54c7095165ddf2b9e614cff9cabcc907c056fc5b2aae",
+        "intentId": "intent-agent-payment-http-missing-evidence-v1",
+        "consequenceKind": "agent-payment",
+        "adapterKind": "x402-payment",
+        "surface": "agent-payment-http",
+        "outcome": "needs-evidence",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000006",
+        "standards": [
+          "x402-v2",
+          "HTTP 402",
+          "EIP-3009"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "PAYMENT-REQUIRED",
+          "PAYMENT-SIGNATURE",
+          "PAYMENT-RESPONSE"
+        ],
+        "transportHeaders": [
+          "PAYMENT-REQUIRED",
+          "PAYMENT-SIGNATURE",
+          "PAYMENT-RESPONSE"
+        ],
+        "steps": [
+          {
+            "stepId": "agent-payment-http-missing-evidence-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "agent-payment-http",
+            "status": "satisfied",
+            "reasonCode": "release-authorization-ready",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "agent-payment-http-missing-evidence-v1"
+            }
+          },
+          {
+            "stepId": "agent-payment-http-missing-evidence-v1:downstream-action",
+            "kind": "verify-http-payment",
+            "surface": "agent-payment-http",
+            "status": "recommended",
+            "reasonCode": "downstream-execution-waits-for-evidence",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "x402-v2",
+              "HTTP 402",
+              "EIP-3009"
+            ],
+            "evidence": {
+              "action": "verify-http-payment"
+            }
+          },
+          {
+            "stepId": "agent-payment-http-missing-evidence-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "recommended",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [
+          "facilitator-settlement-missing"
+        ],
+        "nextActions": [
+          "collect-required-evidence",
+          "retry-admission-before-execution"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:cc5da36b600b93ed0cceebd40914ced72bd25e769d94a4c9ff8cb6736c31a037"
+      },
+      "subject": {
+        "subjectKind": "agent-payment-http-handoff",
+        "subjectId": "subject-agent-payment-http-missing-evidence-v1",
+        "subjectDigest": "sha256:0ac7942f1159d7118f0b46b3b9426a6a25434b9197a8bcfff49fe2df514ec2ae",
+        "surface": "agent-payment-http",
+        "adapterKind": "x402-payment",
+        "outcome": "needs-evidence",
+        "action": "verify-http-payment",
+        "planId": "plan-agent-payment-http-missing-evidence-v1",
+        "planDigest": "sha256:cc5da36b600b93ed0cceebd40914ced72bd25e769d94a4c9ff8cb6736c31a037"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_74e84d747e7e4a9291bcda7d99e9ce2a",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "agent-payment-http/agent-payment-http-handoff/subject-agent-payment-http-missing-evidence-v1",
+        "time": "2026-04-22T22:06:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-83b75f1b8c603fb1b426ef71f59f137c-a02c243bbee714c9-01",
+        "tracestate": null,
+        "signal": "missing-evidence",
+        "severityText": "WARN",
+        "severityNumber": 13,
+        "attributes": {
+          "attestor.crypto_admission.signal": "missing-evidence",
+          "attestor.crypto_admission.surface": "agent-payment-http",
+          "attestor.crypto_admission.adapter_kind": "x402-payment",
+          "attestor.crypto_admission.plan_outcome": "needs-evidence",
+          "attestor.crypto_admission.subject_kind": "agent-payment-http-handoff",
+          "attestor.crypto_admission.subject_outcome": "needs-evidence",
+          "attestor.crypto_admission.failure_reason_count": 1,
+          "attestor.crypto_admission.failure_reasons": [
+            "facilitator-settlement-missing"
+          ],
+          "attestor.crypto_admission.receipt_id": "receipt-agent-payment-http-missing-evidence-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "agent-payment-http-missing-evidence-v1",
+          "attestor.conformance.surface": "agent-payment-http"
+        },
+        "data": {
+          "planId": "plan-agent-payment-http-missing-evidence-v1",
+          "planDigest": "sha256:cc5da36b600b93ed0cceebd40914ced72bd25e769d94a4c9ff8cb6736c31a037",
+          "simulationId": "simulation-agent-payment-http-missing-evidence-v1",
+          "simulationDigest": "sha256:f718536af46564e4545c54c7095165ddf2b9e614cff9cabcc907c056fc5b2aae",
+          "intentId": "intent-agent-payment-http-missing-evidence-v1",
+          "surface": "agent-payment-http",
+          "adapterKind": "x402-payment",
+          "planOutcome": "needs-evidence",
+          "signal": "missing-evidence",
+          "subjectKind": "agent-payment-http-handoff",
+          "subjectId": "subject-agent-payment-http-missing-evidence-v1",
+          "subjectDigest": "sha256:0ac7942f1159d7118f0b46b3b9426a6a25434b9197a8bcfff49fe2df514ec2ae",
+          "subjectOutcome": "needs-evidence",
+          "failureReasons": [
+            "facilitator-settlement-missing"
+          ],
+          "receiptId": "receipt-agent-payment-http-missing-evidence-v1"
+        },
+        "body": "agent-payment-http conformance fixture missing-evidence",
+        "eventDigest": "sha256:368fad92a991634217def6f881253645c09176344e8f6b7a6cb3af8f1cf4718a"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-agent-payment-http-missing-evidence-v1",
+        "issuedAt": "2026-04-22T22:06:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "missing-evidence",
+        "planId": "plan-agent-payment-http-missing-evidence-v1",
+        "planDigest": "sha256:cc5da36b600b93ed0cceebd40914ced72bd25e769d94a4c9ff8cb6736c31a037",
+        "simulationId": "simulation-agent-payment-http-missing-evidence-v1",
+        "simulationDigest": "sha256:f718536af46564e4545c54c7095165ddf2b9e614cff9cabcc907c056fc5b2aae",
+        "intentId": "intent-agent-payment-http-missing-evidence-v1",
+        "surface": "agent-payment-http",
+        "adapterKind": "x402-payment",
+        "planOutcome": "needs-evidence",
+        "subject": {
+          "subjectKind": "agent-payment-http-handoff",
+          "subjectId": "subject-agent-payment-http-missing-evidence-v1",
+          "subjectDigest": "sha256:0ac7942f1159d7118f0b46b3b9426a6a25434b9197a8bcfff49fe2df514ec2ae",
+          "surface": "agent-payment-http",
+          "adapterKind": "x402-payment",
+          "outcome": "needs-evidence",
+          "action": "verify-http-payment",
+          "planId": "plan-agent-payment-http-missing-evidence-v1",
+          "planDigest": "sha256:cc5da36b600b93ed0cceebd40914ced72bd25e769d94a4c9ff8cb6736c31a037"
+        },
+        "trace": {
+          "traceparent": "00-83b75f1b8c603fb1b426ef71f59f137c-a02c243bbee714c9-01",
+          "tracestate": null
+        },
+        "failureReasons": [
+          "facilitator-settlement-missing"
+        ],
+        "evidenceDigest": "sha256:51d4931fd7ccde846afb8ae06097735d5307c8d3d435c761ace2f7019c13493e",
+        "receiptDigest": "sha256:fb40c25fdaaeefa3465956c5d2bcf4afe7cd1b7fae6ec27d77ed5ed4903132fb",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:fb40c25fdaaeefa3465956c5d2bcf4afe7cd1b7fae6ec27d77ed5ed4903132fb",
+          "value": "hmac-sha256:e6c055c6ad13cdc4eb8168937d32630b2d1baaed2fdacd7b868cde4774c8416f"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    },
+    {
+      "fixtureId": "custody-policy-engine-blocked-v1",
+      "surface": "custody-policy-engine",
+      "adapterKind": "custody-cosigner",
+      "standards": [
+        "custody-policy-engine",
+        "co-signer-callback"
+      ],
+      "scenario": "Custody co-signer callback is blocked after an explicit provider policy deny.",
+      "expectedSignal": "blocked",
+      "expectedReceiptClassification": "blocked",
+      "expectedPlanOutcome": "deny",
+      "expectedDownstreamAction": "return-provider-deny",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-custody-policy-engine-blocked-v1",
+        "createdAt": "2026-04-22T22:07:00.000Z",
+        "integrationRef": "integration:conformance:custody-policy-engine",
+        "simulationId": "simulation-custody-policy-engine-blocked-v1",
+        "simulationDigest": "sha256:5a332d2d51973d61be740a68abf539705a7f002d655cb657b6107688df961ef4",
+        "intentId": "intent-custody-policy-engine-blocked-v1",
+        "consequenceKind": "custody-withdrawal",
+        "adapterKind": "custody-cosigner",
+        "surface": "custody-policy-engine",
+        "outcome": "deny",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000007",
+        "standards": [
+          "custody-policy-engine",
+          "co-signer-callback"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "custody-policy-decision",
+          "co-signer-response"
+        ],
+        "transportHeaders": [],
+        "steps": [
+          {
+            "stepId": "custody-policy-engine-blocked-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "custody-policy-engine",
+            "status": "blocked",
+            "reasonCode": "release-authorization-blocked",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "custody-policy-engine-blocked-v1"
+            }
+          },
+          {
+            "stepId": "custody-policy-engine-blocked-v1:downstream-action",
+            "kind": "block-execution",
+            "surface": "custody-policy-engine",
+            "status": "blocked",
+            "reasonCode": "downstream-execution-blocked",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "custody-policy-engine",
+              "co-signer-callback"
+            ],
+            "evidence": {
+              "action": "return-provider-deny"
+            }
+          },
+          {
+            "stepId": "custody-policy-engine-blocked-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "recommended",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [
+          "provider-policy-deny"
+        ],
+        "nextActions": [
+          "do-not-submit-downstream-execution",
+          "record-blocked-admission-receipt"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:ccbbf146df2cab5752081df4e4b11c7311e8551d860332754f04c16f875f2cbf"
+      },
+      "subject": {
+        "subjectKind": "custody-policy-engine-handoff",
+        "subjectId": "subject-custody-policy-engine-blocked-v1",
+        "subjectDigest": "sha256:c6da518ffa23793a8c85b9e89be472c5c028d9049defaa94fe052f4711c71bea",
+        "surface": "custody-policy-engine",
+        "adapterKind": "custody-cosigner",
+        "outcome": "blocked",
+        "action": "return-provider-deny",
+        "planId": "plan-custody-policy-engine-blocked-v1",
+        "planDigest": "sha256:ccbbf146df2cab5752081df4e4b11c7311e8551d860332754f04c16f875f2cbf"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_04688fcad11e4af890440339b8585781",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "custody-policy-engine/custody-policy-engine-handoff/subject-custody-policy-engine-blocked-v1",
+        "time": "2026-04-22T22:07:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-055d170d6d108e5c8ecca6987124cf47-78691c6084ec1a51-01",
+        "tracestate": null,
+        "signal": "blocked",
+        "severityText": "ERROR",
+        "severityNumber": 17,
+        "attributes": {
+          "attestor.crypto_admission.signal": "blocked",
+          "attestor.crypto_admission.surface": "custody-policy-engine",
+          "attestor.crypto_admission.adapter_kind": "custody-cosigner",
+          "attestor.crypto_admission.plan_outcome": "deny",
+          "attestor.crypto_admission.subject_kind": "custody-policy-engine-handoff",
+          "attestor.crypto_admission.subject_outcome": "blocked",
+          "attestor.crypto_admission.failure_reason_count": 1,
+          "attestor.crypto_admission.failure_reasons": [
+            "provider-policy-deny"
+          ],
+          "attestor.crypto_admission.receipt_id": "receipt-custody-policy-engine-blocked-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "custody-policy-engine-blocked-v1",
+          "attestor.conformance.surface": "custody-policy-engine"
+        },
+        "data": {
+          "planId": "plan-custody-policy-engine-blocked-v1",
+          "planDigest": "sha256:ccbbf146df2cab5752081df4e4b11c7311e8551d860332754f04c16f875f2cbf",
+          "simulationId": "simulation-custody-policy-engine-blocked-v1",
+          "simulationDigest": "sha256:5a332d2d51973d61be740a68abf539705a7f002d655cb657b6107688df961ef4",
+          "intentId": "intent-custody-policy-engine-blocked-v1",
+          "surface": "custody-policy-engine",
+          "adapterKind": "custody-cosigner",
+          "planOutcome": "deny",
+          "signal": "blocked",
+          "subjectKind": "custody-policy-engine-handoff",
+          "subjectId": "subject-custody-policy-engine-blocked-v1",
+          "subjectDigest": "sha256:c6da518ffa23793a8c85b9e89be472c5c028d9049defaa94fe052f4711c71bea",
+          "subjectOutcome": "blocked",
+          "failureReasons": [
+            "provider-policy-deny"
+          ],
+          "receiptId": "receipt-custody-policy-engine-blocked-v1"
+        },
+        "body": "custody-policy-engine conformance fixture blocked",
+        "eventDigest": "sha256:60c738f87c64ff30b87a3b7a634f7e7409d6e486d80917110669810d37f46cfe"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-custody-policy-engine-blocked-v1",
+        "issuedAt": "2026-04-22T22:07:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "blocked",
+        "planId": "plan-custody-policy-engine-blocked-v1",
+        "planDigest": "sha256:ccbbf146df2cab5752081df4e4b11c7311e8551d860332754f04c16f875f2cbf",
+        "simulationId": "simulation-custody-policy-engine-blocked-v1",
+        "simulationDigest": "sha256:5a332d2d51973d61be740a68abf539705a7f002d655cb657b6107688df961ef4",
+        "intentId": "intent-custody-policy-engine-blocked-v1",
+        "surface": "custody-policy-engine",
+        "adapterKind": "custody-cosigner",
+        "planOutcome": "deny",
+        "subject": {
+          "subjectKind": "custody-policy-engine-handoff",
+          "subjectId": "subject-custody-policy-engine-blocked-v1",
+          "subjectDigest": "sha256:c6da518ffa23793a8c85b9e89be472c5c028d9049defaa94fe052f4711c71bea",
+          "surface": "custody-policy-engine",
+          "adapterKind": "custody-cosigner",
+          "outcome": "blocked",
+          "action": "return-provider-deny",
+          "planId": "plan-custody-policy-engine-blocked-v1",
+          "planDigest": "sha256:ccbbf146df2cab5752081df4e4b11c7311e8551d860332754f04c16f875f2cbf"
+        },
+        "trace": {
+          "traceparent": "00-055d170d6d108e5c8ecca6987124cf47-78691c6084ec1a51-01",
+          "tracestate": null
+        },
+        "failureReasons": [
+          "provider-policy-deny"
+        ],
+        "evidenceDigest": "sha256:73483d1c5e01e7b56a24d222954bcbf7c31f49d93067bafe892ffe4b426f9c48",
+        "receiptDigest": "sha256:e9dfd2593675eb626968446a8cbfbc9bc1f17b78a8715d677dbe2c75331cbf70",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:e9dfd2593675eb626968446a8cbfbc9bc1f17b78a8715d677dbe2c75331cbf70",
+          "value": "hmac-sha256:bd1c4d2f73d41c30a08b8a22ed672bb5ec4c4a463b9bf611f7250c137c886e25"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    },
+    {
+      "fixtureId": "intent-solver-admitted-v1",
+      "surface": "intent-solver",
+      "adapterKind": "intent-settlement",
+      "standards": [
+        "ERC-7683",
+        "intent-settlement",
+        "solver-preflight"
+      ],
+      "scenario": "Intent route is admitted after route, liquidity, replay, and settlement evidence are bound.",
+      "expectedSignal": "admitted",
+      "expectedReceiptClassification": "admitted",
+      "expectedPlanOutcome": "admit",
+      "expectedDownstreamAction": "open-intent-route",
+      "plan": {
+        "version": "attestor.crypto-execution-admission.v1",
+        "planId": "plan-intent-solver-admitted-v1",
+        "createdAt": "2026-04-22T22:08:00.000Z",
+        "integrationRef": "integration:conformance:intent-solver",
+        "simulationId": "simulation-intent-solver-admitted-v1",
+        "simulationDigest": "sha256:999716f819cba5689f6ed6a4c75b35f0f43c8129cbf5bde33173cabee11cb663",
+        "intentId": "intent-intent-solver-admitted-v1",
+        "consequenceKind": "bridge",
+        "adapterKind": "intent-settlement",
+        "surface": "intent-solver",
+        "outcome": "admit",
+        "chainId": "eip155:8453",
+        "accountAddress": "0x0000000000000000000000000000000000000008",
+        "standards": [
+          "ERC-7683",
+          "intent-settlement",
+          "solver-preflight"
+        ],
+        "requiredHandoffArtifacts": [
+          "attestor-release-authorization",
+          "solver-route-commitment",
+          "settlement-preflight"
+        ],
+        "transportHeaders": [],
+        "steps": [
+          {
+            "stepId": "intent-solver-admitted-v1:release-authorization",
+            "kind": "collect-release-authorization",
+            "surface": "intent-solver",
+            "status": "satisfied",
+            "reasonCode": "release-authorization-ready",
+            "message": "Conformance fixture binds Attestor release authorization before downstream execution.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-release-layer"
+            ],
+            "evidence": {
+              "fixtureId": "intent-solver-admitted-v1"
+            }
+          },
+          {
+            "stepId": "intent-solver-admitted-v1:downstream-action",
+            "kind": "submit-execution",
+            "surface": "intent-solver",
+            "status": "required",
+            "reasonCode": "downstream-execution-admitted",
+            "message": "External integrator must honor the admitted, blocked, or missing-evidence decision.",
+            "source": "admission-planner",
+            "standards": [
+              "ERC-7683",
+              "intent-settlement",
+              "solver-preflight"
+            ],
+            "evidence": {
+              "action": "open-intent-route"
+            }
+          },
+          {
+            "stepId": "intent-solver-admitted-v1:receipt",
+            "kind": "record-admission-receipt",
+            "surface": "attestor-core",
+            "status": "required",
+            "reasonCode": "admission-receipt-required",
+            "message": "External integrator records the signed admission receipt for audit and replay protection.",
+            "source": "admission-planner",
+            "standards": [
+              "attestor-evidence"
+            ],
+            "evidence": {
+              "receiptRequired": true
+            }
+          }
+        ],
+        "blockedReasons": [],
+        "nextActions": [
+          "open-intent-route",
+          "record-admission-receipt"
+        ],
+        "operatorNote": null,
+        "canonical": "{}",
+        "digest": "sha256:46a9a2cfc70708de813e8ea4bf02cde0214701d254d4efb190c5af6131ed7977"
+      },
+      "subject": {
+        "subjectKind": "intent-solver-handoff",
+        "subjectId": "subject-intent-solver-admitted-v1",
+        "subjectDigest": "sha256:304f6eda5c22d3a52352812fd6d28906dd7e066e4c20e4ea21119f7e92e4f8bb",
+        "surface": "intent-solver",
+        "adapterKind": "intent-settlement",
+        "outcome": "ready",
+        "action": "open-intent-route",
+        "planId": "plan-intent-solver-admitted-v1",
+        "planDigest": "sha256:46a9a2cfc70708de813e8ea4bf02cde0214701d254d4efb190c5af6131ed7977"
+      },
+      "telemetryEvent": {
+        "version": "attestor.crypto-execution-admission-telemetry.v1",
+        "specversion": "1.0",
+        "id": "cate_548cfbd4986541228d578c4995337bf4",
+        "type": "attestor.crypto_execution_admission.decision",
+        "source": "attestor.crypto-execution-admission.conformance",
+        "subject": "intent-solver/intent-solver-handoff/subject-intent-solver-admitted-v1",
+        "time": "2026-04-22T22:08:01.000Z",
+        "datacontenttype": "application/json",
+        "traceparent": "00-9615c18dce942a99225c98158d419e92-3cf19ec55872be92-01",
+        "tracestate": null,
+        "signal": "admitted",
+        "severityText": "INFO",
+        "severityNumber": 9,
+        "attributes": {
+          "attestor.crypto_admission.signal": "admitted",
+          "attestor.crypto_admission.surface": "intent-solver",
+          "attestor.crypto_admission.adapter_kind": "intent-settlement",
+          "attestor.crypto_admission.plan_outcome": "admit",
+          "attestor.crypto_admission.subject_kind": "intent-solver-handoff",
+          "attestor.crypto_admission.subject_outcome": "ready",
+          "attestor.crypto_admission.failure_reason_count": 0,
+          "attestor.crypto_admission.failure_reasons": [],
+          "attestor.crypto_admission.receipt_id": "receipt-intent-solver-admitted-v1",
+          "event.name": "attestor.crypto_execution_admission.decision",
+          "attestor.conformance.fixture_id": "intent-solver-admitted-v1",
+          "attestor.conformance.surface": "intent-solver"
+        },
+        "data": {
+          "planId": "plan-intent-solver-admitted-v1",
+          "planDigest": "sha256:46a9a2cfc70708de813e8ea4bf02cde0214701d254d4efb190c5af6131ed7977",
+          "simulationId": "simulation-intent-solver-admitted-v1",
+          "simulationDigest": "sha256:999716f819cba5689f6ed6a4c75b35f0f43c8129cbf5bde33173cabee11cb663",
+          "intentId": "intent-intent-solver-admitted-v1",
+          "surface": "intent-solver",
+          "adapterKind": "intent-settlement",
+          "planOutcome": "admit",
+          "signal": "admitted",
+          "subjectKind": "intent-solver-handoff",
+          "subjectId": "subject-intent-solver-admitted-v1",
+          "subjectDigest": "sha256:304f6eda5c22d3a52352812fd6d28906dd7e066e4c20e4ea21119f7e92e4f8bb",
+          "subjectOutcome": "ready",
+          "failureReasons": [],
+          "receiptId": "receipt-intent-solver-admitted-v1"
+        },
+        "body": "intent-solver conformance fixture admitted",
+        "eventDigest": "sha256:4e7aef280ce56969a63790ba157ab7f0831bd98773f8976d1146926355213c30"
+      },
+      "receipt": {
+        "version": "attestor.crypto-execution-admission-receipt.v1",
+        "receiptId": "receipt-intent-solver-admitted-v1",
+        "issuedAt": "2026-04-22T22:08:00.000Z",
+        "issuer": "attestor.crypto-execution-admission",
+        "serviceId": "attestor-crypto-execution-admission-conformance",
+        "classification": "admitted",
+        "planId": "plan-intent-solver-admitted-v1",
+        "planDigest": "sha256:46a9a2cfc70708de813e8ea4bf02cde0214701d254d4efb190c5af6131ed7977",
+        "simulationId": "simulation-intent-solver-admitted-v1",
+        "simulationDigest": "sha256:999716f819cba5689f6ed6a4c75b35f0f43c8129cbf5bde33173cabee11cb663",
+        "intentId": "intent-intent-solver-admitted-v1",
+        "surface": "intent-solver",
+        "adapterKind": "intent-settlement",
+        "planOutcome": "admit",
+        "subject": {
+          "subjectKind": "intent-solver-handoff",
+          "subjectId": "subject-intent-solver-admitted-v1",
+          "subjectDigest": "sha256:304f6eda5c22d3a52352812fd6d28906dd7e066e4c20e4ea21119f7e92e4f8bb",
+          "surface": "intent-solver",
+          "adapterKind": "intent-settlement",
+          "outcome": "ready",
+          "action": "open-intent-route",
+          "planId": "plan-intent-solver-admitted-v1",
+          "planDigest": "sha256:46a9a2cfc70708de813e8ea4bf02cde0214701d254d4efb190c5af6131ed7977"
+        },
+        "trace": {
+          "traceparent": "00-9615c18dce942a99225c98158d419e92-3cf19ec55872be92-01",
+          "tracestate": null
+        },
+        "failureReasons": [],
+        "evidenceDigest": "sha256:749283c76ff0d7a22d0455381303cff22fff889c65b241ef74f150cb7dfcef30",
+        "receiptDigest": "sha256:256f9e29a09750ffc9b17b3562fe82cdc2e76f2d938c070489ff2b897bfb7a70",
+        "signature": {
+          "mode": "hmac-sha256",
+          "keyId": "attestor-crypto-admission-conformance-fixture-key-v1",
+          "signedPayloadDigest": "sha256:256f9e29a09750ffc9b17b3562fe82cdc2e76f2d938c070489ff2b897bfb7a70",
+          "value": "hmac-sha256:c8ef06afa736f7fc2f39b60988461dd10157e8562c852b4a2e9dafc7dda2a52c"
+        }
+      },
+      "externalIntegratorAssertions": [
+        "MUST NOT submit downstream execution when plan.outcome is deny.",
+        "MUST collect the missing evidence and rerun admission when plan.outcome is needs-evidence.",
+        "MUST bind telemetry subject planId and planDigest to the admission plan before emitting telemetry.",
+        "MUST verify the signed admission receipt with the fixture signer before treating the fixture as passed.",
+        "MUST preserve the fixture surface and adapterKind across the downstream handoff."
+      ]
+    }
+  ]
+}

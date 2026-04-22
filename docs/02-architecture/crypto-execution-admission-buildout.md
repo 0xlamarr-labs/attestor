@@ -43,6 +43,10 @@ Reviewed on 2026-04-22 before opening this track:
 - OpenTelemetry models events as log records with event names, severity, body, and attributes, so Attestor crypto admission telemetry should emit structured event objects instead of free-form strings: [OpenTelemetry events](https://opentelemetry.io/docs/specs/semconv/general/events/), [OpenTelemetry logs data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/)
 - CloudEvents provides a common envelope for event metadata and routing, which fits cross-surface admission events that may be shipped to different customer-operated observability stacks: [CloudEvents CNCF project](https://www.cncf.io/projects/cloudevents/)
 - W3C Trace Context standardizes `traceparent` and `tracestate` propagation, so crypto admission events and receipts should preserve trace correlation without inventing a custom trace header: [W3C Trace Context](https://www.w3.org/TR/trace-context/)
+- JSON Schema Draft 2020-12 is the current fixture/schema target because it is the documented meta-schema family for portable JSON validation and structured output contracts: [JSON Schema Draft 2020-12](https://json-schema.org/draft/2020-12)
+- The CloudEvents 1.0 specification defines vendor-neutral event metadata and requires `specversion` `1.0`, which keeps admission fixture telemetry aligned with standard event envelopes: [CloudEvents specification](https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md)
+- ERC-4337's bundler compatibility suite shows that external crypto infrastructure benefits from shared conformance fixtures that test EntryPoint support, simulation/validation rules, edge cases, and submission behavior: [ERC-4337 compatibility test suite](https://docs.erc4337.io/bundlers/compatibility-test-suite)
+- WalletConnect's Wallet Call API documents EIP-5792 methods such as `wallet_sendCalls` and `wallet_getCapabilities` and CAIP-25 capability negotiation, which supports explicit wallet-RPC conformance fixtures instead of implicit wallet behavior: [WalletConnect Wallet Call API](https://docs.walletconnect.network/wallet-sdk/ios/eip5792)
 
 ## Architecture Decision
 
@@ -58,9 +62,9 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 12 |
-| Completed | 10 |
+| Completed | 11 |
 | In progress | 0 |
-| Not started | 2 |
+| Not started | 1 |
 | Current posture | Active; continue frozen crypto execution-admission buildout before the broader product packaging pass |
 
 ## Frozen Step List
@@ -77,9 +81,9 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 | 08 | complete | Add custody policy admission callback contract | `src/crypto-execution-admission/custody-policy-callback.ts`, `tests/crypto-execution-admission-custody-policy-callback.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | Custody/co-signer provider callbacks now normalize into deterministic Attestor `allow` / `needs-review` / `deny` outputs with provider callback mode, auth protocol, response deadline, policy decision, approval quorum, callback authentication, freshness, Attestor token binding, screening, velocity, key posture, and post-execution expectations. |
 | 09 | complete | Add intent-solver admission handoff | `src/crypto-execution-admission/intent-solver.ts`, `tests/crypto-execution-admission-intent-solver.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | Intent-solver routes now project into deterministic pre-execution handoffs that bind ERC-7683-style order evidence, solver route commitments, settlement contracts, fill instructions, slippage bounds, deadline windows, liquidity/refund posture, counterparty screening, Attestor sidecar evidence, replay protection, and post-settlement observation hooks before any route is opened, filled, submitted, or broadcast. |
 | 10 | complete | Add admission telemetry and receipts | `src/crypto-execution-admission/telemetry-receipts.ts`, `tests/crypto-execution-admission-telemetry-receipts.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | Crypto execution admission now emits uniform admitted / blocked / missing-evidence / receipt-issued telemetry with CloudEvents-style metadata, OpenTelemetry-compatible severity and attributes, W3C trace-context correlation, in-memory sink and summary helpers, sensitive-marker safety checks, and HMAC-SHA256 signed admission receipts with verification across all admission surfaces. |
-| 11 | not-started | Add conformance fixtures for external integrators |  | Provide adapter-neutral JSON fixtures that wallets, guards, bundlers, payment servers, custody engines, and solvers can test against. |
+| 11 | complete | Add conformance fixtures for external integrators | `src/crypto-execution-admission/conformance-fixtures.ts`, `fixtures/crypto-execution-admission/conformance-fixtures.v1.json`, `fixtures/crypto-execution-admission/conformance-fixtures.schema.json`, `tests/crypto-execution-admission-conformance-fixtures.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | External integrators now get adapter-neutral JSON conformance fixtures covering wallet RPC, smart-account guard, ERC-4337 bundler, modular-account runtime, delegated-EOA runtime, x402 resource server, custody policy engine, and intent solver surfaces, with JSON Schema Draft 2020-12 shape metadata, plan/subject/telemetry/receipt binding checks, fixture-only signed receipt verification, and fail-closed integrator assertions. |
 | 12 | not-started | Package and document the execution-admission platform surface |  | Promote the mature admission layer into a final documented platform surface with package-boundary probes and extraction criteria. |
 
 ## Immediate Next Step
 
-Step 11 should add conformance fixtures for external integrators. That is the next layer because wallets, guards, bundlers, payment servers, custody engines, and solvers now need adapter-neutral JSON fixtures that prove their integrations honor the same admission plan, handoff, telemetry, and receipt contracts.
+Step 12 should package and document the execution-admission platform surface. That is the final layer because the admission module now has planner, wallet, guard, bundler, modular-account, delegated-EOA, x402, custody, solver, telemetry, receipt, and conformance fixture surfaces that need one final platform contract and extraction-readiness statement.
