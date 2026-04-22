@@ -687,3 +687,5 @@ CryptoExecutionAdmissionDescriptor {
     ]),
   });
 }
+
+export * from './wallet-rpc.js';

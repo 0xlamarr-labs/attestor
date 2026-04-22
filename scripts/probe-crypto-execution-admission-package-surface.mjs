@@ -14,6 +14,14 @@ assert.equal(
   admission.cryptoExecutionAdmissionAdapterProfile('x402-payment').surface,
   'agent-payment-http',
 );
+assert.equal(
+  admission.walletRpcAdmissionDescriptor().methods.includes('wallet_sendCalls'),
+  true,
+);
+assert.equal(
+  admission.walletRpcAdmissionDescriptor().erc7902Capabilities.includes('eip7702Auth'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {

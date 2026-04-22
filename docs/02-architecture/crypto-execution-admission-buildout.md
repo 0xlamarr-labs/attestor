@@ -49,16 +49,16 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 12 |
-| Completed | 1 |
+| Completed | 2 |
 | In progress | 0 |
-| Not started | 11 |
+| Not started | 10 |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
 | 01 | complete | Define the crypto execution admission planner | `src/crypto-execution-admission/index.ts`, `tests/crypto-execution-admission.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | The first admission slice converts crypto authorization simulations into deterministic admission plans with adapter-to-surface mapping, required handoff artifacts, HTTP payment headers, fail-closed deny plans, missing-evidence next actions, canonical digests, and a packaged `attestor/crypto-execution-admission` subpath. |
-| 02 | not-started | Add wallet RPC admission for EIP-5792, ERC-7715, and ERC-7902 |  | Turn admission plans into wallet-call and wallet-permission handoff objects without making Attestor a wallet. |
+| 02 | complete | Add wallet RPC admission for EIP-5792, ERC-7715, and ERC-7902 | `src/crypto-execution-admission/wallet-rpc.ts`, `tests/crypto-execution-admission-wallet-rpc.test.ts`, `scripts/probe-crypto-execution-admission-package-surface.mjs`, `package.json`, `docs/02-architecture/crypto-execution-admission-platform-surface.md` | Admission plans now project into wallet RPC handoffs for capability discovery, `wallet_sendCalls`, status tracking, ERC-7715 execution-permission requests, supported-permission discovery, ERC-7902 capability expectations, optional Attestor sidecar metadata, canonical handoff digests, fail-closed unsupported-capability blocking, and missing-wallet-evidence next actions without making Attestor a wallet. |
 | 03 | not-started | Add Safe guard admission receipts |  | Bind Safe transaction and module guard prechecks to durable admission receipts and recovery posture. |
 | 04 | not-started | Add ERC-4337 bundler admission handoff |  | Project admission plans into UserOperation simulation/submission envelopes with EntryPoint and paymaster evidence. |
 | 05 | not-started | Add modular account admission handoff |  | Project ERC-7579/ERC-6900 module, hook, and plugin preflight evidence into admission receipts. |
@@ -72,4 +72,4 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 
 ## Immediate Next Step
 
-Step 02 should use the planner surface to build the wallet RPC admission handoff for EIP-5792, ERC-7715, and ERC-7902. That is the best next move because wallet capability negotiation is the broadest entry point for ordinary users, smart accounts, and delegated EOA flows.
+Step 03 should use the planner and wallet RPC handoff surface to add Safe guard admission receipts. That is the best next move because Safe guards are a concrete institutional smart-account enforcement point where Attestor admission can become a pre-check and a durable receipt without requiring a new chain or wallet.

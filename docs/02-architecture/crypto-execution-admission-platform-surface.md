@@ -25,9 +25,12 @@ The admission layer answers:
 The public subpath exposes:
 
 - `createCryptoExecutionAdmissionPlan()`
+- `createWalletRpcAdmissionHandoff()`
 - `cryptoExecutionAdmissionAdapterProfile()`
 - `cryptoExecutionAdmissionDescriptor()`
 - `cryptoExecutionAdmissionLabel()`
+- `walletRpcAdmissionDescriptor()`
+- `walletRpcAdmissionHandoffLabel()`
 - versioned admission outcomes, surfaces, step kinds, and step statuses
 
 The first planner maps existing crypto authorization simulation results onto these surfaces:
@@ -44,6 +47,16 @@ The first planner maps existing crypto authorization simulation results onto the
 | `x402-payment` | `agent-payment-http` |
 | `custody-cosigner` | `custody-policy-engine` |
 | `intent-settlement` | `intent-solver` |
+
+The wallet RPC handoff maps a wallet-ready admission plan into:
+
+| Standard | Handoff role |
+|---|---|
+| EIP-5792 | capability discovery, `wallet_sendCalls`, call status tracking, and atomic execution expectations |
+| ERC-7715 | execution-permission request construction, supported-permission discovery, rule validation, and permission next actions |
+| ERC-7902 | account-abstraction capability expectations such as `eip7702Auth`, validity windows, paymaster configuration, multidimensional nonce, and gas override support |
+
+The handoff deliberately keeps Attestor outside the wallet role. It creates JSON-RPC request objects and an optional `attestorAdmission` sidecar capability for compatible wallets, but the admission receipt and policy proof remain Attestor artifacts.
 
 ## Why It Is Separate From The Core
 
@@ -62,6 +75,7 @@ flowchart LR
 ```ts
 import {
   createCryptoExecutionAdmissionPlan,
+  createWalletRpcAdmissionHandoff,
 } from 'attestor/crypto-execution-admission';
 
 const plan = createCryptoExecutionAdmissionPlan({
@@ -72,6 +86,21 @@ const plan = createCryptoExecutionAdmissionPlan({
 
 if (plan.outcome === 'deny') {
   throw new Error(plan.blockedReasons.join(', '));
+}
+
+const walletHandoff = createWalletRpcAdmissionHandoff({
+  plan,
+  createdAt: new Date().toISOString(),
+  calls: [
+    {
+      to: '0x2222222222222222222222222222222222222222',
+      data: '0x1234',
+    },
+  ],
+});
+
+if (walletHandoff.outcome === 'blocked') {
+  throw new Error(walletHandoff.blockingReasons.join(', '));
 }
 ```
 
