@@ -32,6 +32,18 @@ function testApiServerDoesNotOwnNodeServerLifecycle(): void {
   assert.doesNotMatch(apiServer, /shutdownTenantRuntimeBackends\(/u);
 }
 
+function testApiServerStaysThinCompositionRoot(): void {
+  const apiServer = readFileSync(API_SERVER, 'utf8');
+  const lineCount = apiServer.split(/\r?\n/u).length;
+
+  assert.ok(
+    lineCount <= 120,
+    `api-server.ts should stay a thin composition root; current line count is ${lineCount}`,
+  );
+  assert.doesNotMatch(apiServer, /build[A-Z][A-Za-z]+RouteDeps\(/u);
+  assert.doesNotMatch(apiServer, /const [a-zA-Z]+RouteDeps\s*=/u);
+}
+
 function testApiServerDoesNotRegisterRoutesDirectly(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
 
@@ -494,6 +506,7 @@ function testApiServerUsesExtractedRouteSupport(): void {
 
 testApiServerUsesBootstrapComposition();
 testApiServerDoesNotOwnNodeServerLifecycle();
+testApiServerStaysThinCompositionRoot();
 testApiServerDoesNotRegisterRoutesDirectly();
 testBootstrapModulesOwnTheirBoundaries();
 testRuntimeUsesStructuredComposition();
@@ -502,4 +515,4 @@ testHttpRouteBuildersOwnApplicationServiceConstruction();
 testReleaseRuntimeBootstrapOwnsReleaseSetup();
 testApiServerUsesExtractedRouteSupport();
 
-console.log('Service bootstrap boundary tests: 9 passed, 0 failed');
+console.log('Service bootstrap boundary tests: 10 passed, 0 failed');
