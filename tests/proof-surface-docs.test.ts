@@ -1,0 +1,121 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+let passed = 0;
+
+function readProjectFile(...segments: string[]): string {
+  return readFileSync(join(process.cwd(), ...segments), 'utf8');
+}
+
+function includes(content: string, expected: string, message: string): void {
+  assert.ok(
+    content.includes(expected),
+    `${message}\nExpected to find: ${expected}`,
+  );
+  passed += 1;
+}
+
+function excludes(content: string, unexpected: RegExp, message: string): void {
+  assert.doesNotMatch(content, unexpected, message);
+  passed += 1;
+}
+
+function testProofSurfaceIsFindableFromReadme(): void {
+  const readme = readProjectFile('README.md');
+
+  includes(
+    readme,
+    'docs/02-architecture/proof-console-buildout.md',
+    'Proof surface docs: README links the proof surface tracker',
+  );
+  includes(
+    readme,
+    'Want the next visible proof surface?',
+    'Proof surface docs: README keeps the proof surface as a next visible surface, not a shipped console claim',
+  );
+}
+
+function testTrackerPreservesOneProductScope(): void {
+  const tracker = readProjectFile('docs', '02-architecture', 'proof-console-buildout.md');
+
+  includes(
+    tracker,
+    'The goal is not to add another product line.',
+    'Proof surface docs: tracker blocks a new product line',
+  );
+  includes(
+    tracker,
+    'Keep Attestor as one product with one platform core and modular packs.',
+    'Proof surface docs: tracker preserves one-product framing',
+  );
+  includes(
+    tracker,
+    'Treat finance and crypto scenarios as demonstrations of the same platform core, not as separate product identities.',
+    'Proof surface docs: tracker blocks finance/crypto product split',
+  );
+}
+
+function testTrackerBlocksOverclaimsAndMockMarketing(): void {
+  const tracker = readProjectFile('docs', '02-architecture', 'proof-console-buildout.md');
+
+  includes(
+    tracker,
+    'Do not ship mock-only marketing output.',
+    'Proof surface docs: tracker blocks mock-only marketing demo posture',
+  );
+  includes(
+    tracker,
+    'Do not describe crypto as generally available through a public hosted HTTP route',
+    'Proof surface docs: tracker keeps crypto hosted-route overclaim blocked',
+  );
+  includes(
+    tracker,
+    'Do not turn the proof surface into a wallet, custody platform, model runtime, agent runtime, orchestration layer, or generic dashboard.',
+    'Proof surface docs: tracker keeps non-goals explicit',
+  );
+}
+
+function testTrackerDefinesTheMentalModelAndVocabulary(): void {
+  const tracker = readProjectFile('docs', '02-architecture', 'proof-console-buildout.md');
+
+  includes(
+    tracker,
+    'Before consequence, there must be proof.',
+    'Proof surface docs: tracker anchors the public mental model',
+  );
+  includes(
+    tracker,
+    'proposed consequence -> Attestor checks policy, authority, and evidence -> decision -> proof',
+    'Proof surface docs: tracker keeps the operating model simple',
+  );
+  for (const term of [
+    'Proposed consequence',
+    'Policy check',
+    'Authority check',
+    'Evidence check',
+    'Decision',
+    'Proof material',
+  ]) {
+    includes(tracker, `| ${term} |`, `Proof surface docs: vocabulary includes ${term}`);
+  }
+}
+
+function testFrozenPlanStartsNarrow(): void {
+  const tracker = readProjectFile('docs', '02-architecture', 'proof-console-buildout.md');
+
+  includes(tracker, '| Total frozen steps | 8 |', 'Proof surface docs: step count is explicit');
+  includes(tracker, '| Completed | 1 |', 'Proof surface docs: only scope step is complete');
+  includes(tracker, '| 01 | complete | Define the proof surface purpose, scope, vocabulary, and guardrails |', 'Proof surface docs: step 01 is complete');
+  includes(tracker, '| 02 | not started | Add the proof scenario registry |', 'Proof surface docs: next step is scenario registry');
+  includes(tracker, 'Prefer a deterministic CLI/static artifact first.', 'Proof surface docs: tracker avoids premature broad UI');
+  excludes(tracker, /\bfirst[- ]slice\b/iu, 'Proof surface docs: tracker avoids stale first-slice language');
+}
+
+testProofSurfaceIsFindableFromReadme();
+testTrackerPreservesOneProductScope();
+testTrackerBlocksOverclaimsAndMockMarketing();
+testTrackerDefinesTheMentalModelAndVocabulary();
+testFrozenPlanStartsNarrow();
+
+console.log(`Proof surface docs tests: ${passed} passed, 0 failed`);

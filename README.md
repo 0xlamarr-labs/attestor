@@ -141,6 +141,7 @@ npm run verify
 - [Enforcement-plane buildout](docs/02-architecture/release-enforcement-plane-buildout.md)
 - [Crypto authorization core buildout](docs/02-architecture/crypto-authorization-core-buildout.md)
 - [Crypto execution-admission buildout](docs/02-architecture/crypto-execution-admission-buildout.md)
+- [Proof surface buildout](docs/02-architecture/proof-console-buildout.md)
 - [Hosted product flow buildout](docs/02-architecture/hosted-product-flow-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
 
@@ -152,6 +153,7 @@ npm run verify
 - Want the first API call after signup? Start with [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 - Want the first finance or crypto integration path? Start with [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
 - Want to see where plan, usage, entitlement, and billing state live? Start with [Hosted account visibility](docs/01-overview/hosted-account-visibility.md).
+- Want the next visible proof surface? Start with [Proof surface buildout](docs/02-architecture/proof-console-buildout.md).
 
 ## What Attestor is not
 
