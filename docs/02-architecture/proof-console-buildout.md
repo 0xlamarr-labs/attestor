@@ -82,6 +82,13 @@ Reviewed again on 2026-04-22 before Step 07:
 - Diataxis separates tutorials, how-to guides, reference, and explanation; the README should act as a short entry point and point deeper readers to the proof-surface tracker instead of becoming the whole proof-surface guide: [Diataxis](https://diataxis.fr/)
 - The Good Docs Project describes quickstarts as first-use entry points; the README should let evaluators run one proof command before asking them to understand every pack and verification path: [The Good Docs Project templates](https://www.thegooddocsproject.dev/template)
 
+Reviewed again on 2026-04-22 before Step 08:
+
+- SLSA requires provenance to identify produced artifacts by cryptographic digest and to be available to consumers, which supports adding an automated gate that validates proof manifests, output digests, and deterministic file refs: [SLSA requirements](https://slsa.dev/spec/v1.0/requirements)
+- in-toto attestations keep proof statements structured around subjects and predicates; the readiness gate should therefore validate explicit proof material and evidence anchors instead of relying on prose-only claims: [in-toto attestation framework](https://github.com/in-toto/attestation)
+- OpenSSF Scorecard frames repository health as automated checks, reinforcing that proof-surface readiness must run in `npm test` and `npm run verify`, not live as a manual review checklist: [OpenSSF Scorecard](https://securityscorecards.dev/)
+- NIST SSDF emphasizes repeatable secure development practices; the proof surface needs repeatable anti-drift gates for one-product positioning, shipped source grounding, and overclaim prevention: [NIST SSDF SP 800-218](https://csrc.nist.gov/pubs/sp/800/218/final)
+
 ## Architecture Decision
 
 Start the proof surface as a small, testable product-adoption layer inside the existing modular monolith:
@@ -111,10 +118,10 @@ The proof surface uses one shared vocabulary across packs:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 7 |
+| Completed | 8 |
 | In progress | 0 |
-| Not started | 1 |
-| Current posture | The README now gives evaluators a compact run path for the local proof surface: `npm run proof:surface`, inspect `.attestor/proof-surface/latest/manifest.json`, then follow the proof-surface tracker for the deeper buildout. The proof surface remains local and inspectable; it does not claim a broad hosted console or public crypto HTTP route |
+| Not started | 0 |
+| Current posture | The proof surface buildout is complete for this frozen track. Evaluators can run `npm run proof:surface`, inspect `.attestor/proof-surface/latest/manifest.json`, and rely on automated readiness gates that keep runnable outputs, registry definitions, artifact digests, shipped source grounding, proof material exposure, README positioning, and no-hosted-route claims aligned |
 
 ## Frozen Step List
 
@@ -127,8 +134,8 @@ The proof surface uses one shared vocabulary across packs:
 | 05 | complete | Add unified proof output shape | `src/proof-surface/unified-output.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-unified-output.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance and crypto scenario runs now normalize into `attestor.proof-surface.output.v1`: source, proposed consequence, shared policy/authority/evidence checks, bounded decision, proof materials, evidence anchors, canonical JSON, output id, and digest. The shape intentionally keeps pack-specific finance material and crypto admission internals out of the top-level output while preserving evidence refs and anchors for later rendering. |
 | 06 | complete | Add runnable local proof command or artifact generator | `src/proof-surface/artifact-generator.ts`, `src/proof-surface/index.ts`, `scripts/render-proof-surface.ts`, `tests/proof-surface-artifact-generator.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | `npm run proof:surface` renders a deterministic local artifact set under `.attestor/proof-surface/latest` by default: manifest, bundle, markdown summary, and per-scenario unified proof outputs. The manifest records decision counts, pack-family counts, file refs, and digests. This remains a local artifact generator, not a hosted console or public crypto HTTP route. |
 | 07 | complete | Add README "Run the proof" path | `README.md`, `tests/proof-surface-docs.test.ts`, `docs/02-architecture/proof-console-buildout.md` | The README now names `npm run proof:surface`, explains the local `.attestor/proof-surface/latest/` output set, links the proof-surface tracker from Start here, and preserves the no-hosted-console / no-public-hosted-crypto-route guardrail. |
-| 08 | not started | Add proof-surface readiness and anti-drift gates |  | Guard that scenarios use real shipped logic or fixtures, cover admit/review/block behavior, expose proof material, and preserve one-product positioning. |
+| 08 | complete | Add proof-surface readiness and anti-drift gates | `tests/proof-surface-readiness.test.ts`, `package.json`, `tests/proof-surface-docs.test.ts`, `docs/02-architecture/proof-console-buildout.md` | `npm run test:proof-surface-readiness` now verifies runnable output order, admit/review/block coverage, registry-vs-output decision alignment, fail-closed posture, proof material exposure, evidence anchors, canonical digest integrity, manifest file refs, real source/fixture/command grounding, one-product README/tracker positioning, no hosted-console/public-hosted-crypto-route overclaims, and `npm test`/`npm run verify` wiring. |
 
 ## Immediate Next Step
 
-Implement Step 08: add proof-surface readiness and anti-drift gates that guard real shipped logic or fixtures, admit/review/block coverage, proof material exposure, and one-product positioning.
+No frozen proof-surface step remains. Future proof-surface expansion should start from a new explicit tracker or an intentional extension to this completed track.

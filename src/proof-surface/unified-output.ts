@@ -282,8 +282,8 @@ function financeAnchors(
     anchor({
       kind: 'release-material',
       label: 'Evidence chain terminal',
-      id: `${run.scenarioId}:evidence-chain-terminal`,
-      digest: run.material.evidenceChainTerminal,
+      id: run.material.evidenceChainTerminal,
+      digest: null,
     }),
   ]);
 }

@@ -115,7 +115,7 @@ function testFrozenPlanStartsNarrow(): void {
   const tracker = readProjectFile('docs', '02-architecture', 'proof-console-buildout.md');
 
   includes(tracker, '| Total frozen steps | 8 |', 'Proof surface docs: step count is explicit');
-  includes(tracker, '| Completed | 7 |', 'Proof surface docs: scope, scenario registry, finance scenarios, crypto scenarios, unified output, local artifact generation, and README run path are complete');
+  includes(tracker, '| Completed | 8 |', 'Proof surface docs: all frozen proof-surface steps are complete');
   includes(tracker, '| 01 | complete | Define the proof surface purpose, scope, vocabulary, and guardrails |', 'Proof surface docs: step 01 is complete');
   includes(tracker, '| 02 | complete | Add the proof scenario registry |', 'Proof surface docs: scenario registry step is complete');
   includes(tracker, '| 03 | complete | Add finance proof scenarios |', 'Proof surface docs: finance proof scenario step is complete');
@@ -123,9 +123,11 @@ function testFrozenPlanStartsNarrow(): void {
   includes(tracker, '| 05 | complete | Add unified proof output shape |', 'Proof surface docs: unified output step is complete');
   includes(tracker, '| 06 | complete | Add runnable local proof command or artifact generator |', 'Proof surface docs: local artifact generator step is complete');
   includes(tracker, '| 07 | complete | Add README "Run the proof" path |', 'Proof surface docs: README run-the-proof step is complete');
+  includes(tracker, '| 08 | complete | Add proof-surface readiness and anti-drift gates |', 'Proof surface docs: readiness gate step is complete');
   includes(tracker, '`npm run proof:surface` renders a deterministic local artifact set', 'Proof surface docs: artifact generator command is named');
-  includes(tracker, 'Implement Step 08: add proof-surface readiness and anti-drift gates', 'Proof surface docs: next step is readiness and anti-drift gates');
-  includes(tracker, 'it does not claim a broad hosted console or public crypto HTTP route', 'Proof surface docs: tracker avoids premature broad UI and route claims');
+  includes(tracker, '`npm run test:proof-surface-readiness` now verifies runnable output order', 'Proof surface docs: readiness gate evidence is named');
+  includes(tracker, 'No frozen proof-surface step remains.', 'Proof surface docs: completed track has no remaining frozen step');
+  includes(tracker, 'no hosted-console/public-hosted-crypto-route overclaims', 'Proof surface docs: tracker avoids premature broad UI and route claims');
   excludes(tracker, /\bfirst[- ]slice\b/iu, 'Proof surface docs: tracker avoids stale first-slice language');
 }
 
