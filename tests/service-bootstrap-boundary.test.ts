@@ -227,6 +227,7 @@ function testApiServerUsesExtractedRouteSupport(): void {
     join(SERVICE_ROOT, 'request-observability-middleware.ts'),
     'utf8',
   );
+  const siteSupport = readFileSync(join(SERVICE_ROOT, 'site-support.ts'), 'utf8');
   const stripeWebhookSupport = readFileSync(
     join(SERVICE_ROOT, 'stripe-webhook-support.ts'),
     'utf8',
@@ -238,6 +239,7 @@ function testApiServerUsesExtractedRouteSupport(): void {
   assert.match(apiServer, /from '\.\/pipeline-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/request-context\.js'/u);
   assert.match(apiServer, /from '\.\/request-observability-middleware\.js'/u);
+  assert.match(apiServer, /from '\.\/site-support\.js'/u);
   assert.match(apiServer, /from '\.\/stripe-webhook-support\.js'/u);
 
   for (const helperName of [
@@ -284,6 +286,10 @@ function testApiServerUsesExtractedRouteSupport(): void {
     'appendStructuredRequestLog(',
     'function accountMfaErrorResponse(',
     'function stripeBillingErrorResponse(',
+    'function committedEvidenceContentType(',
+    'function readCommittedEvidence(',
+    'loadCommittedFinancialReportingPacket(',
+    'financialReportingEvidenceRoot(',
     'async function currentHostedAccount(',
     'async function projectBillingEntitlementForAccount(',
     'async function readHostedBillingEntitlement(',
@@ -408,6 +414,18 @@ function testApiServerUsesExtractedRouteSupport(): void {
       requestObservabilityMiddleware.includes(requestObservabilityHelper),
       true,
       `request-observability-middleware.ts should own ${requestObservabilityHelper}`,
+    );
+  }
+
+  for (const siteHelper of [
+    'export function committedEvidenceContentType(',
+    'export function readCommittedEvidence(',
+    'export const committedFinancialPacket = loadCommittedFinancialReportingPacket();',
+  ]) {
+    assert.equal(
+      siteSupport.includes(siteHelper),
+      true,
+      `site-support.ts should own ${siteHelper}`,
     );
   }
 

@@ -47,8 +47,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { extname, resolve } from 'node:path';
 import { Hono } from 'hono';
 import { deleteCookie, getCookie } from 'hono/cookie';
 import { runFinancialPipeline } from '../financial/pipeline.js';
@@ -330,12 +328,15 @@ import {
 } from './billing-export.js';
 import { buildHostedBillingReconciliation } from './billing-reconciliation.js';
 import {
-  financialReportingEvidenceRoot,
-  loadCommittedFinancialReportingPacket,
   renderFinancialReportingLandingPage,
   renderFinancialReportingProofPage,
   renderHostedReturnPage,
 } from './site.js';
+import {
+  committedEvidenceContentType,
+  committedFinancialPacket,
+  readCommittedEvidence,
+} from './site-support.js';
 import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
@@ -379,38 +380,6 @@ const { domainRegistry, connectorRegistry, filingRegistry } = registries;
 const app = new Hono();
 const startTime = Date.now();
 const serviceInstanceId = resolveServiceInstanceId();
-
-function committedEvidenceContentType(path: string): string {
-  const extension = extname(path).toLowerCase();
-  switch (extension) {
-    case '.json':
-      return 'application/json; charset=utf-8';
-    case '.pem':
-    case '.md':
-      return 'text/plain; charset=utf-8';
-    case '.html':
-      return 'text/html; charset=utf-8';
-    default:
-      return 'application/octet-stream';
-  }
-}
-
-function readCommittedEvidence(relativePath: string): { path: string; content: string } | null {
-  const normalized = relativePath.replaceAll('\\', '/').replace(/^\/+/u, '');
-  const safeSegments = normalized
-    .split('/')
-    .filter(Boolean)
-    .filter((segment) => segment !== '.' && segment !== '..');
-  const baseDir = financialReportingEvidenceRoot();
-  const resolvedPath = resolve(baseDir, ...safeSegments);
-  if (!resolvedPath.startsWith(baseDir) || !existsSync(resolvedPath)) return null;
-  return {
-    path: resolvedPath,
-    content: readFileSync(resolvedPath, 'utf8'),
-  };
-}
-
-const committedFinancialPacket = loadCommittedFinancialReportingPacket();
 type ApiRouteDeps = AppRouteDeps<typeof committedFinancialPacket>;
 
 
