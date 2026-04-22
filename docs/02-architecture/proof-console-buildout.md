@@ -68,6 +68,13 @@ Reviewed again on 2026-04-22 before Step 05:
 - OpenTelemetry event semantic conventions emphasize named events with attributes for context, supporting a uniform proof output that separates the bounded decision from structured check attributes and evidence references: [OpenTelemetry events](https://opentelemetry.io/docs/specs/semconv/general/events/)
 - NIST AI RMF guidance keeps governance, measurement, and management tied to documentation and transparency; Attestor's proof output therefore needs a single inspectable record across packs, not finance-only or crypto-only output shapes: [NIST AI RMF Playbook](https://www.nist.gov/itl/ai-risk-management-framework/nist-ai-rmf-playbook)
 
+Reviewed again on 2026-04-22 before Step 06:
+
+- SLSA provenance guidance keeps attestations attached to artifacts and emphasizes immutable, inspectable provenance, so the proof surface should emit a file manifest and digest chain instead of only console text: [SLSA provenance](https://slsa.dev/spec/v1.0/requirements)
+- in-toto attestations model a signed statement around a subject and predicate, reinforcing the need for explicit proof outputs and artifact references that can later be wrapped by stronger signing flows without changing the local artifact contract: [in-toto attestations](https://github.com/in-toto/attestation)
+- JSON Schema Draft 2020-12 keeps machine validation as a first-class JSON document concern; Step 06 therefore keeps proof output as structured JSON with stable version fields rather than a markdown-only demo: [JSON Schema Draft 2020-12](https://json-schema.org/draft/2020-12)
+- CloudEvents JSON format keeps event envelopes portable through `id`, `source`, `type`, and related context attributes; the local artifact generator keeps the unified output envelope stable so later event publishing can be added without reshaping scenario evidence: [CloudEvents JSON format](https://github.com/cloudevents/spec/blob/main/cloudevents/formats/json-format.md)
+
 ## Architecture Decision
 
 Start the proof surface as a small, testable product-adoption layer inside the existing modular monolith:
@@ -97,10 +104,10 @@ The proof surface uses one shared vocabulary across packs:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 5 |
+| Completed | 6 |
 | In progress | 0 |
-| Not started | 3 |
-| Current posture | Finance and crypto proof scenarios now execute through a shared proof output envelope with proposed consequence, policy check, authority check, evidence check, decision, proof materials, evidence anchors, canonical JSON, and digest. The proof surface can add a runnable local artifact generator next without changing the proof contract |
+| Not started | 2 |
+| Current posture | Finance and crypto proof scenarios now execute through a shared proof output envelope and can be rendered locally as a deterministic artifact set with `manifest.json`, `bundle.json`, `summary.md`, and one JSON output per runnable scenario. The proof surface remains local and inspectable; it does not claim a broad hosted console or public crypto HTTP route |
 
 ## Frozen Step List
 
@@ -111,10 +118,10 @@ The proof surface uses one shared vocabulary across packs:
 | 03 | complete | Add finance proof scenarios | `src/proof-surface/finance-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-finance-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance proof runs now execute the shipped finance filing release bridge, release decision engine, deterministic checks, canonical release material, and domain finalization. The admit scenario reaches `accepted` with canonical hashes and authority satisfied; the review scenario keeps evidence sufficient while authority remains pending, producing `review-required` and fail-closed downstream behavior. |
 | 04 | complete | Add crypto admission proof scenarios | `src/proof-surface/crypto-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-crypto-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Crypto proof runs now execute the shipped x402 agentic payment adapter, EIP-7702 delegation adapter, crypto authorization simulation, crypto execution-admission planner, and signed admission receipt verifier. The x402 scenario reaches `admit` on the `agent-payment-http` surface with PAYMENT handoff artifacts; the delegated EOA scenario injects invalid authorization tuple evidence and reaches fail-closed `deny` on the `delegated-eoa-runtime` surface. No public hosted crypto HTTP route is claimed. |
 | 05 | complete | Add unified proof output shape | `src/proof-surface/unified-output.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-unified-output.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance and crypto scenario runs now normalize into `attestor.proof-surface.output.v1`: source, proposed consequence, shared policy/authority/evidence checks, bounded decision, proof materials, evidence anchors, canonical JSON, output id, and digest. The shape intentionally keeps pack-specific finance material and crypto admission internals out of the top-level output while preserving evidence refs and anchors for later rendering. |
-| 06 | not started | Add runnable local proof command or artifact generator |  | Prefer a deterministic CLI/static artifact first. A broad hosted console waits until the proof output shape is stable and tested. |
+| 06 | complete | Add runnable local proof command or artifact generator | `src/proof-surface/artifact-generator.ts`, `src/proof-surface/index.ts`, `scripts/render-proof-surface.ts`, `tests/proof-surface-artifact-generator.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | `npm run proof:surface` renders a deterministic local artifact set under `.attestor/proof-surface/latest` by default: manifest, bundle, markdown summary, and per-scenario unified proof outputs. The manifest records decision counts, pack-family counts, file refs, and digests. This remains a local artifact generator, not a hosted console or public crypto HTTP route. |
 | 07 | not started | Add README "Run the proof" path |  | Link the runnable proof scenarios from the README without bloating the opening product story or claiming unfinished hosted capability. |
 | 08 | not started | Add proof-surface readiness and anti-drift gates |  | Guard that scenarios use real shipped logic or fixtures, cover admit/review/block behavior, expose proof material, and preserve one-product positioning. |
 
 ## Immediate Next Step
 
-Implement Step 06: add a deterministic local proof command or static artifact generator that renders the unified proof output without claiming a broad hosted console.
+Implement Step 07: add a compact README "Run the proof" path that points to the local proof artifact generator without bloating the product story or claiming unfinished hosted capability.

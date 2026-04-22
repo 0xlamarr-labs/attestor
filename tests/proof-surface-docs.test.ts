@@ -105,14 +105,16 @@ function testFrozenPlanStartsNarrow(): void {
   const tracker = readProjectFile('docs', '02-architecture', 'proof-console-buildout.md');
 
   includes(tracker, '| Total frozen steps | 8 |', 'Proof surface docs: step count is explicit');
-  includes(tracker, '| Completed | 5 |', 'Proof surface docs: scope, scenario registry, finance scenarios, crypto scenarios, and unified output are complete');
+  includes(tracker, '| Completed | 6 |', 'Proof surface docs: scope, scenario registry, finance scenarios, crypto scenarios, unified output, and local artifact generation are complete');
   includes(tracker, '| 01 | complete | Define the proof surface purpose, scope, vocabulary, and guardrails |', 'Proof surface docs: step 01 is complete');
   includes(tracker, '| 02 | complete | Add the proof scenario registry |', 'Proof surface docs: scenario registry step is complete');
   includes(tracker, '| 03 | complete | Add finance proof scenarios |', 'Proof surface docs: finance proof scenario step is complete');
   includes(tracker, '| 04 | complete | Add crypto admission proof scenarios |', 'Proof surface docs: crypto proof scenario step is complete');
   includes(tracker, '| 05 | complete | Add unified proof output shape |', 'Proof surface docs: unified output step is complete');
-  includes(tracker, 'Implement Step 06: add a deterministic local proof command or static artifact generator', 'Proof surface docs: next step is local proof command or artifact generator');
-  includes(tracker, 'Prefer a deterministic CLI/static artifact first.', 'Proof surface docs: tracker avoids premature broad UI');
+  includes(tracker, '| 06 | complete | Add runnable local proof command or artifact generator |', 'Proof surface docs: local artifact generator step is complete');
+  includes(tracker, '`npm run proof:surface` renders a deterministic local artifact set', 'Proof surface docs: artifact generator command is named');
+  includes(tracker, 'Implement Step 07: add a compact README "Run the proof" path', 'Proof surface docs: next step is README run-the-proof path');
+  includes(tracker, 'it does not claim a broad hosted console or public crypto HTTP route', 'Proof surface docs: tracker avoids premature broad UI and route claims');
   excludes(tracker, /\bfirst[- ]slice\b/iu, 'Proof surface docs: tracker avoids stale first-slice language');
 }
 

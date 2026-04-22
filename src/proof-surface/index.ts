@@ -67,3 +67,20 @@ export {
   type ProofSurfaceOutputSource,
   type RunnableProofScenarioId,
 } from './unified-output.js';
+
+export {
+  DEFAULT_PROOF_SURFACE_ARTIFACT_DIR,
+  PROOF_SURFACE_ARTIFACT_BUNDLE_SPEC_VERSION,
+  PROOF_SURFACE_ARTIFACT_SPEC_VERSION,
+  buildProofSurfaceArtifactBundle,
+  proofSurfaceArtifactGeneratorDescriptor,
+  renderProofSurfaceArtifactMarkdown,
+  writeProofSurfaceArtifactBundle,
+  type BuildProofSurfaceArtifactBundleOptions,
+  type ProofSurfaceArtifactBundle,
+  type ProofSurfaceArtifactBundleFile,
+  type ProofSurfaceArtifactFileRef,
+  type ProofSurfaceArtifactManifest,
+  type WriteProofSurfaceArtifactBundleOptions,
+  type WrittenProofSurfaceArtifactBundle,
+} from './artifact-generator.js';
