@@ -91,6 +91,11 @@ function testTruthSources(): void {
     'docs/01-overview/finance-and-crypto-first-integrations.md',
     'Hosted journey contract: first integration examples truth source is exported',
   );
+  equal(
+    contract.truthSources.accountVisibilityGuide,
+    'docs/01-overview/hosted-account-visibility.md',
+    'Hosted journey contract: account visibility guide truth source is exported',
+  );
 }
 
 function testRouteContractsMapToShippedRoutes(): void {
@@ -110,8 +115,14 @@ function testRouteContractsStayFocused(): void {
   ok(routeKeys.includes('signup'), 'Hosted journey contract: signup route is included');
   ok(routeKeys.includes('checkout'), 'Hosted journey contract: checkout route is included');
   ok(routeKeys.includes('stripe_webhook'), 'Hosted journey contract: Stripe webhook route is included');
+  ok(routeKeys.includes('features'), 'Hosted journey contract: features route is included');
+  ok(routeKeys.includes('billing_export'), 'Hosted journey contract: billing export route is included');
+  ok(routeKeys.includes('billing_reconciliation'), 'Hosted journey contract: billing reconciliation route is included');
   ok(routePaths.includes('/api/v1/pipeline/run'), 'Hosted journey contract: first consequence call is included');
   ok(routePaths.includes('/api/v1/verify'), 'Hosted journey contract: verification route is included');
+  ok(routePaths.includes('/api/v1/account/features'), 'Hosted journey contract: account features route is included');
+  ok(routePaths.includes('/api/v1/account/billing/export'), 'Hosted journey contract: billing export route is included');
+  ok(routePaths.includes('/api/v1/account/billing/reconciliation'), 'Hosted journey contract: billing reconciliation route is included');
   ok(routePaths.includes(STRIPE_WEBHOOK_ROUTE), 'Hosted journey contract: Stripe webhook path uses canonical constant');
   ok(
     HOSTED_JOURNEY_ROUTE_CONTRACTS.every((route) => route.requiredHeaders.length > 0),
@@ -124,11 +135,15 @@ function testAuthAndBillingBoundaries(): void {
   const webhook = HOSTED_JOURNEY_ROUTE_CONTRACTS.find((route) => route.key === 'stripe_webhook');
   const signup = HOSTED_JOURNEY_ROUTE_CONTRACTS.find((route) => route.key === 'signup');
   const firstCall = HOSTED_JOURNEY_ROUTE_CONTRACTS.find((route) => route.key === 'first_consequence_call');
+  const billingExport = HOSTED_JOURNEY_ROUTE_CONTRACTS.find((route) => route.key === 'billing_export');
+  const billingReconciliation = HOSTED_JOURNEY_ROUTE_CONTRACTS.find((route) => route.key === 'billing_reconciliation');
 
   equal(signup?.authBoundary, 'none', 'Hosted journey contract: signup starts without auth');
   equal(firstCall?.authBoundary, 'tenant_api_key', 'Hosted journey contract: first consequence call uses tenant API key');
   equal(checkout?.authBoundary, 'account_session', 'Hosted journey contract: checkout uses account session');
   ok(checkout?.requiredHeaders.includes('Idempotency-Key'), 'Hosted journey contract: checkout requires Idempotency-Key');
+  equal(billingExport?.authBoundary, 'account_session_or_tenant_api_key', 'Hosted journey contract: billing export can be read from account plane or tenant API key');
+  equal(billingReconciliation?.authBoundary, 'account_session', 'Hosted journey contract: billing reconciliation stays account-session bound');
   equal(webhook?.authBoundary, 'stripe_signature', 'Hosted journey contract: webhook uses Stripe signature');
   ok(webhook?.failureSignals.some((signal) => signal.includes('payload hash')), 'Hosted journey contract: webhook conflict handling is explicit');
 }
@@ -168,8 +183,11 @@ function testApiTypeContractsExist(): void {
     'AuthSignupResponse',
     'AccountSummaryResponse',
     'AccountUsageResponse',
+    'AccountFeaturesResponse',
     'AccountBillingCheckoutResponse',
     'AccountBillingPortalResponse',
+    'AccountBillingExportResponse',
+    'AccountBillingReconciliationResponse',
     'AccountApiKeysListResponse',
     'AccountIssueApiKeyResponse',
     'VerifyResponse',
@@ -189,10 +207,12 @@ function testDocsReflectContract(): void {
   ok(contractDoc.includes('src/service/hosted-journey-contract.ts'), 'Hosted journey contract: doc links machine-readable descriptor');
   ok(contractDoc.includes('First hosted API call](hosted-first-api-call.md)'), 'Hosted journey contract: doc links first API-call quickstart');
   ok(contractDoc.includes('Finance and crypto first integrations](finance-and-crypto-first-integrations.md)'), 'Hosted journey contract: doc links first integration examples');
+  ok(contractDoc.includes('Hosted account visibility](hosted-account-visibility.md)'), 'Hosted journey contract: doc links account visibility guide');
   ok(contractDoc.includes('Attestor does not auto-detect what pack to run'), 'Hosted journey contract: doc rejects auto-detect promise');
   ok(contractDoc.includes('Idempotency-Key'), 'Hosted journey contract: doc names checkout idempotency');
   ok(contractDoc.includes('Stripe-Signature'), 'Hosted journey contract: doc names webhook signature boundary');
   ok(customerJourney.includes('Hosted journey contract](hosted-journey-contract.md)'), 'Hosted journey contract: hosted journey links contract');
+  ok(customerJourney.includes('Hosted account visibility](hosted-account-visibility.md)'), 'Hosted journey contract: hosted journey links account visibility guide');
   ok(packaging.includes('Hosted journey contract](hosted-journey-contract.md)'), 'Hosted journey contract: packaging links contract');
 }
 

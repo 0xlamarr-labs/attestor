@@ -10,6 +10,8 @@ For the first customer-owned API call after signup, use [First hosted API call](
 
 For the first finance and crypto integration paths, use [Finance and crypto first integrations](finance-and-crypto-first-integrations.md).
 
+For current plan, usage, entitlement, feature, and billing visibility, use [Hosted account visibility](hosted-account-visibility.md).
+
 ## What this path is for
 
 The hosted path is for teams that want a managed Attestor product surface without turning Attestor into the place where their files, workflows, wallets, or business systems live.
@@ -26,6 +28,8 @@ The hosted path should be easy to understand:
 4. upgrade through Stripe Checkout if a paid hosted plan is needed
 
 After that, the same account remains the control point for keys, usage, entitlement, and billing.
+
+The concrete account-plane visibility map lives in [Hosted account visibility](hosted-account-visibility.md).
 
 ## Buying flow
 
@@ -57,11 +61,12 @@ Use this sequence:
 2. use the one-time plaintext `initialKey.apiKey` as `Authorization: Bearer <tenant_api_key>`
 3. make the first hosted API call with `POST /api/v1/pipeline/run`
 4. inspect usage or entitlement with `GET /api/v1/account/usage`, `GET /api/v1/account/entitlement`, or `GET /api/v1/account`
-5. start checkout for a paid hosted plan
+5. inspect feature or billing state with `GET /api/v1/account/features`, `GET /api/v1/account/billing/export`, or `GET /api/v1/account/billing/reconciliation`
+6. start checkout for a paid hosted plan
    send `planId` (`starter`, `pro`, or `enterprise`) to `POST /api/v1/account/billing/checkout`
-6. open the returned `checkoutUrl` and finish payment in Stripe
-7. keep using the same account after checkout completes
-8. manage billing later through `POST /api/v1/account/billing/portal`
+7. open the returned `checkoutUrl` and finish payment in Stripe
+8. keep using the same account after checkout completes
+9. manage billing later through `POST /api/v1/account/billing/portal`
 
 The concrete first API-call example lives in [First hosted API call](hosted-first-api-call.md).
 
@@ -69,10 +74,10 @@ The concrete first API-call example lives in [First hosted API call](hosted-firs
 
 The hosted account plane only needs to cover:
 
-- current plan and entitlement state
-- usage against quota
+- current plan, entitlement, and feature state
+- usage against quota and rate limit
 - API key lifecycle
-- billing checkout and billing portal
+- billing checkout, billing portal, export, and reconciliation visibility
 - onboarding and docs links
 
 That is enough to make the hosted product purchasable and usable.
@@ -87,6 +92,7 @@ The canonical contract lives in [Hosted journey contract](hosted-journey-contrac
 - `GET /api/v1/account`
 - `GET /api/v1/account/usage`
 - `GET /api/v1/account/entitlement`
+- `GET /api/v1/account/features`
 - `GET /api/v1/account/api-keys`
 - `POST /api/v1/account/api-keys`
 - `POST /api/v1/account/api-keys/:id/rotate`
@@ -95,6 +101,8 @@ The canonical contract lives in [Hosted journey contract](hosted-journey-contrac
 - `POST /api/v1/account/api-keys/:id/revoke`
 - `POST /api/v1/account/billing/checkout`
 - `POST /api/v1/account/billing/portal`
+- `GET /api/v1/account/billing/export`
+- `GET /api/v1/account/billing/reconciliation`
 - `POST /api/v1/billing/stripe/webhook`
 
 ## What this document does not do

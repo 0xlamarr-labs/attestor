@@ -19,6 +19,7 @@ The hosted API and billing pieces are real. The remaining work is not "build Str
 | Hosted customer journey | `docs/01-overview/hosted-customer-journey.md` | signup, first API key, checkout, portal, account plane, customer flow |
 | First customer API call | `docs/01-overview/hosted-first-api-call.md` | first tenant-key call, usage preflight, consequence gate, decision handling |
 | Finance and crypto first integrations | `docs/01-overview/finance-and-crypto-first-integrations.md` | one-product mapping from hosted adoption into finance HTTP and crypto package integration paths |
+| Hosted account visibility | `docs/01-overview/hosted-account-visibility.md` | current plan, usage, entitlement, feature, invoice, charge, and billing visibility map |
 | Stripe operator setup | `docs/01-overview/stripe-commercial-bootstrap.md` | live Stripe prices, live account, payout setup, env vars, webhook configuration |
 | Architecture posture | `docs/02-architecture/system-overview.md` | one-product architecture, core/pack maturity, active work posture |
 | Hardening plan | `docs/02-architecture/hosted-product-flow-buildout.md` | frozen step list for adoption hardening |
@@ -73,11 +74,11 @@ These are the remaining gaps that matter before calling the hosted product path 
 3. **Focused billing convergence probe.** Addressed by `tests/hosted-stripe-billing-convergence-flow.test.ts`, which proves checkout idempotency, checkout-completed pending posture, portal readiness, signed webhook processing, duplicate replay, payload conflict rejection, subscription suspension/reactivation, invoice delinquency/recovery, entitlement summary convergence, and fail-closed tenant API behavior.
 4. **Customer first-call quickstart.** Addressed by `docs/01-overview/hosted-first-api-call.md`, which shows the first tenant API-key usage preflight, first `POST /api/v1/pipeline/run` consequence gate, expected decision/tenant/usage shape, secret handling, failure signals, and downstream fail-closed responsibility.
 5. **Finance and crypto adoption examples.** Addressed by `docs/01-overview/finance-and-crypto-first-integrations.md`, which keeps one-product language while separating the real first integration surfaces: finance starts with the hosted `POST /api/v1/pipeline/run` route, and crypto starts with the packaged `attestor/crypto-authorization-core` / `attestor/crypto-execution-admission` surfaces until a future route contract exists.
-6. **Usage and billing visibility guide.** Customers should know which endpoint tells them current plan, usage, entitlement, rate limit, invoices/charges, and what remains in Stripe.
+6. **Usage and billing visibility guide.** Addressed by `docs/01-overview/hosted-account-visibility.md`, which maps current plan, usage, rate limit, entitlement, feature, billing export, reconciliation, checkout, and portal visibility onto the shipped hosted account-plane routes while keeping pricing truth and operator Stripe truth separate.
 7. **Final truth-source gate.** README, pricing, hosted journey, Stripe bootstrap, system overview, route contract, and probes should be tested together so future edits cannot silently reintroduce duplication or contradiction.
 
 ## Decision
 
 Continue with the hosted product flow hardening track before reopening new crypto work.
 
-The next implementation step is to add the usage, quota, billing, and entitlement visibility guide.
+The next implementation step is to add the final docs truth-source and readiness gate.

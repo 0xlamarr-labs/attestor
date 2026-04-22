@@ -8,6 +8,7 @@ It defines the supported customer sequence, route ownership, auth boundary, succ
 - The short narrative buying flow lives in [Hosted customer journey](hosted-customer-journey.md).
 - The first customer API-call quickstart lives in [First hosted API call](hosted-first-api-call.md).
 - The first finance and crypto integration examples live in [Finance and crypto first integrations](finance-and-crypto-first-integrations.md).
+- The current account-plane visibility map lives in [Hosted account visibility](hosted-account-visibility.md).
 - Operator Stripe setup lives in [Stripe commercial bootstrap](stripe-commercial-bootstrap.md).
 - The machine-readable contract descriptor lives in `src/service/hosted-journey-contract.ts`.
 
@@ -34,11 +35,11 @@ It defines the supported customer sequence, route ownership, auth boundary, succ
 | Step | Route(s) | Caller | Success means | Fails when |
 |---|---|---|---|---|
 | create hosted account | `POST /api/v1/auth/signup` | customer | `201`, account session cookie, account admin user, first tenant API key, evaluation commercial metadata | signup input is incomplete or account/user state conflicts |
-| inspect evaluation state | `GET /api/v1/account`, `GET /api/v1/account/usage`, `GET /api/v1/account/entitlement` | customer | current account, plan, usage, rate limit, and entitlement state are visible | tenant/account context is not resolvable or account lifecycle blocks access |
+| inspect evaluation state | `GET /api/v1/account`, `GET /api/v1/account/usage`, `GET /api/v1/account/entitlement`, `GET /api/v1/account/features` | customer | current account, plan, usage, rate limit, entitlement, and feature state are visible | tenant/account context is not resolvable or account lifecycle blocks access |
 | make first Attestor call | `POST /api/v1/pipeline/run`, `POST /api/v1/verify` | customer system | decision/proof material is produced before downstream consequence, and proof can be verified | request shape is invalid, quota/rate limit blocks the run, or required proof material is missing |
 | upgrade through checkout | `POST /api/v1/account/billing/checkout` | customer | Stripe checkout session and URL are returned for `starter`, `pro`, or `enterprise`; `Idempotency-Key` protects retries | idempotency key is missing, plan is unsupported, or account/billing admin authority is missing |
 | converge billing state | `POST /api/v1/billing/stripe/webhook` | Stripe | signed billing event is applied, ignored, deduped, or rejected deterministically; entitlement state converges | signature is missing/invalid, payload hash conflicts, or webhook secret is not configured |
-| operate account plane | `POST /api/v1/account/billing/portal`, `GET /api/v1/account/api-keys`, `POST /api/v1/account/api-keys` | customer | billing portal opens for Stripe-backed accounts; API keys can be listed or issued from the same account plane | required account role is missing, billing state is not ready, or active key limit is reached |
+| operate account plane | `POST /api/v1/account/billing/portal`, `GET /api/v1/account/billing/export`, `GET /api/v1/account/billing/reconciliation`, `GET /api/v1/account/api-keys`, `POST /api/v1/account/api-keys` | customer | billing portal opens for Stripe-backed accounts; invoice/export/reconciliation views stay attached to the same account plane; API keys can be listed or issued from the same account plane | required account role is missing, billing state is not ready, active key limit is reached, or billing export input is invalid |
 
 ## Route Contract
 
@@ -48,10 +49,13 @@ It defines the supported customer sequence, route ownership, auth boundary, succ
 | `GET /api/v1/account` | account session or tenant API key | account context | `AccountSummaryResponse` |
 | `GET /api/v1/account/usage` | account session or tenant API key | account/tenant context | `AccountUsageResponse` |
 | `GET /api/v1/account/entitlement` | account session or tenant API key | account/tenant context | account entitlement view |
+| `GET /api/v1/account/features` | account session or tenant API key | account/tenant context | `AccountFeaturesResponse` |
 | `POST /api/v1/pipeline/run` | tenant API key for hosted use | `PipelineRunRequest` | `PipelineRunResponse` |
 | `POST /api/v1/verify` | tenant API key for hosted use | certificate, public key, and PKI material | `VerifyResponse` |
 | `POST /api/v1/account/billing/checkout` | account session with account or billing admin role | `planId` plus `Idempotency-Key` | `AccountBillingCheckoutResponse` |
 | `POST /api/v1/account/billing/portal` | account session with account or billing admin role | account session | `AccountBillingPortalResponse` |
+| `GET /api/v1/account/billing/export` | account session or tenant API key | `format=json|csv`, optional `limit` | `AccountBillingExportResponse` or CSV export |
+| `GET /api/v1/account/billing/reconciliation` | account session with account, billing, or read-only role | optional `limit` | `AccountBillingReconciliationResponse` |
 | `GET /api/v1/account/api-keys` | account session with account admin role | account session | `AccountApiKeysListResponse` |
 | `POST /api/v1/account/api-keys` | account session with account admin role | account session | `AccountIssueApiKeyResponse` |
 | `POST /api/v1/billing/stripe/webhook` | Stripe signature | raw Stripe event payload | billing webhook processing result |
@@ -72,7 +76,10 @@ The customer-facing result is visible through:
 
 - `GET /api/v1/account`
 - `GET /api/v1/account/entitlement`
+- `GET /api/v1/account/features`
 - `GET /api/v1/account/usage`
+- `GET /api/v1/account/billing/export`
+- `GET /api/v1/account/billing/reconciliation`
 - `POST /api/v1/account/billing/portal`
 
 ## What This Contract Does Not Do

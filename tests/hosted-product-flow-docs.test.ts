@@ -28,6 +28,7 @@ function testCommercialTruthSourcesStayLinked(): void {
   const contract = readProjectFile('docs', '01-overview', 'hosted-journey-contract.md');
   const firstApiCall = readProjectFile('docs', '01-overview', 'hosted-first-api-call.md');
   const firstIntegrations = readProjectFile('docs', '01-overview', 'finance-and-crypto-first-integrations.md');
+  const visibilityGuide = readProjectFile('docs', '01-overview', 'hosted-account-visibility.md');
   const stripeBootstrap = readProjectFile('docs', '01-overview', 'stripe-commercial-bootstrap.md');
 
   includes(
@@ -49,6 +50,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     readme,
     'docs/01-overview/finance-and-crypto-first-integrations.md',
     'Hosted product flow docs: README links to first finance/crypto integration examples',
+  );
+  includes(
+    readme,
+    'docs/01-overview/hosted-account-visibility.md',
+    'Hosted product flow docs: README links to account visibility guide',
   );
   includes(
     packaging,
@@ -76,6 +82,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: hosted journey links to first integration examples',
   );
   includes(
+    journey,
+    'Hosted account visibility](hosted-account-visibility.md)',
+    'Hosted product flow docs: hosted journey links to account visibility guide',
+  );
+  includes(
     packaging,
     'Hosted journey contract](hosted-journey-contract.md)',
     'Hosted product flow docs: product packaging links to canonical journey contract',
@@ -96,6 +107,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: contract doc links first integration examples',
   );
   includes(
+    contract,
+    'Hosted account visibility](hosted-account-visibility.md)',
+    'Hosted product flow docs: contract doc links account visibility guide',
+  );
+  includes(
     firstApiCall,
     'This quickstart shows the first customer-owned API call after hosted signup.',
     'Hosted product flow docs: first API-call quickstart declares its scope',
@@ -106,10 +122,46 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: first integration examples preserve one-product pack framing',
   );
   includes(
+    visibilityGuide,
+    'This guide shows hosted customers where current plan, usage, quota, entitlement, feature, invoice, charge, and billing state live today.',
+    'Hosted product flow docs: account visibility guide declares its scope',
+  );
+  includes(
     stripeBootstrap,
     'operator-facing and should not become a second public pricing page',
     'Hosted product flow docs: Stripe bootstrap stays operator-facing',
   );
+}
+
+function testAccountVisibilityGuideStaysGrounded(): void {
+  const guide = readProjectFile('docs', '01-overview', 'hosted-account-visibility.md');
+  const contract = readProjectFile('src', 'service', 'hosted-journey-contract.ts');
+  const accountRoutes = readProjectFile('src', 'service', 'http', 'routes', 'account-routes.ts');
+  const apiTypes = readProjectFile('src', 'service', 'api-types.ts');
+
+  includes(guide, '`GET /api/v1/account`', 'Hosted account visibility: summary route is documented');
+  includes(guide, '`GET /api/v1/account/usage`', 'Hosted account visibility: usage route is documented');
+  includes(guide, '`GET /api/v1/account/entitlement`', 'Hosted account visibility: entitlement route is documented');
+  includes(guide, '`GET /api/v1/account/features`', 'Hosted account visibility: features route is documented');
+  includes(guide, '`GET /api/v1/account/billing/export?format=json|csv&limit=<n>`', 'Hosted account visibility: billing export route is documented');
+  includes(guide, '`GET /api/v1/account/billing/reconciliation?limit=<n>`', 'Hosted account visibility: billing reconciliation route is documented');
+  includes(guide, '`POST /api/v1/account/billing/portal`', 'Hosted account visibility: billing portal route is documented');
+  includes(guide, '`POST /api/v1/account/billing/checkout`', 'Hosted account visibility: billing checkout route is documented');
+  includes(guide, '`rateLimit`', 'Hosted account visibility: rateLimit body field is documented');
+  includes(guide, '`summary.dataSource`', 'Hosted account visibility: billing export data source field is documented');
+  includes(guide, 'Stripe still owns the billing system itself:', 'Hosted account visibility: Stripe ownership boundary is documented');
+  includes(guide, 'use [Stripe commercial bootstrap](stripe-commercial-bootstrap.md) only for operator setup, not as a customer pricing page', 'Hosted account visibility: operator truth source separation is documented');
+  includes(
+    contract,
+    "accountVisibilityGuide: 'docs/01-overview/hosted-account-visibility.md'",
+    'Hosted account visibility: machine-readable truth source is exported',
+  );
+  includes(accountRoutes, "app.get('/api/v1/account/features'", 'Hosted account visibility: features route exists');
+  includes(accountRoutes, "app.get('/api/v1/account/billing/export'", 'Hosted account visibility: billing export route exists');
+  includes(accountRoutes, "app.get('/api/v1/account/billing/reconciliation'", 'Hosted account visibility: billing reconciliation route exists');
+  includes(apiTypes, 'interface AccountFeaturesResponse', 'Hosted account visibility: account features response type exists');
+  includes(apiTypes, 'interface AccountBillingExportResponse', 'Hosted account visibility: billing export response type exists');
+  includes(apiTypes, 'interface AccountBillingReconciliationResponse', 'Hosted account visibility: billing reconciliation response type exists');
 }
 
 function testFinanceAndCryptoFirstIntegrationsStayGrounded(): void {
@@ -273,19 +325,21 @@ function testTrackerAndAuditStayInSync(): void {
   const systemOverview = readProjectFile('docs', '02-architecture', 'system-overview.md');
 
   includes(tracker, 'Total frozen steps | 8', 'Hosted product flow docs: tracker declares eight frozen steps');
-  includes(tracker, '| Completed | 6 |', 'Hosted product flow docs: tracker has six completed steps after first integration examples');
+  includes(tracker, '| Completed | 7 |', 'Hosted product flow docs: tracker has seven completed steps after account visibility guide');
   includes(tracker, '| 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces |', 'Hosted product flow docs: Step 01 is complete');
   includes(tracker, '| 02 | complete | Define one canonical hosted journey contract |', 'Hosted product flow docs: Step 02 is complete');
   includes(tracker, '| 03 | complete | Harden signup-to-first-API-key verification |', 'Hosted product flow docs: Step 03 is complete');
   includes(tracker, '| 04 | complete | Harden Stripe checkout, portal, webhook, and entitlement convergence |', 'Hosted product flow docs: Step 04 is complete');
   includes(tracker, '| 05 | complete | Add the first customer API-call quickstart |', 'Hosted product flow docs: Step 05 is complete');
   includes(tracker, '| 06 | complete | Add finance and crypto first-integration examples |', 'Hosted product flow docs: Step 06 is complete');
-  includes(tracker, '| 07 | not_started | Add usage, quota, billing, and entitlement visibility guide |', 'Hosted product flow docs: Step 07 is the next step');
+  includes(tracker, '| 07 | complete | Add usage, quota, billing, and entitlement visibility guide |', 'Hosted product flow docs: Step 07 is complete');
+  includes(tracker, '| 08 | not_started | Add final docs truth-source and readiness gate |', 'Hosted product flow docs: Step 08 is the next step');
   includes(audit, 'The hosted API and billing pieces are real.', 'Hosted product flow docs: audit records the current conclusion');
   includes(audit, '**Focused hosted flow probe.** Addressed by `tests/hosted-signup-first-api-key-flow.test.ts`', 'Hosted product flow docs: audit records Step 03 evidence');
   includes(audit, '**Focused billing convergence probe.** Addressed by `tests/hosted-stripe-billing-convergence-flow.test.ts`', 'Hosted product flow docs: audit records Step 04 evidence');
   includes(audit, '**Customer first-call quickstart.** Addressed by `docs/01-overview/hosted-first-api-call.md`', 'Hosted product flow docs: audit records Step 05 evidence');
   includes(audit, '**Finance and crypto adoption examples.** Addressed by `docs/01-overview/finance-and-crypto-first-integrations.md`', 'Hosted product flow docs: audit records Step 06 evidence');
+  includes(audit, '**Usage and billing visibility guide.** Addressed by `docs/01-overview/hosted-account-visibility.md`', 'Hosted product flow docs: audit records Step 07 evidence');
   includes(systemOverview, 'Hosted product flow and adoption hardening', 'Hosted product flow docs: system overview names active hosted flow track');
 }
 
@@ -296,6 +350,7 @@ async function main(): Promise<void> {
   testRuntimeCoverageGatesAreNamed();
   testFirstApiCallQuickstartStaysGrounded();
   testFinanceAndCryptoFirstIntegrationsStayGrounded();
+  testAccountVisibilityGuideStaysGrounded();
   testTrackerAndAuditStayInSync();
 
   ok(passed > 0, 'Hosted product flow docs: tests executed');

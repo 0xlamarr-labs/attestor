@@ -77,6 +77,8 @@ Need the first hosted API call after signup? See [First hosted API call](docs/01
 
 Need first finance and crypto integration paths? See [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
 
+Need to know where current plan, usage, billing, and entitlements live? See [Hosted account visibility](docs/01-overview/hosted-account-visibility.md).
+
 ## Platform core
 
 | Core layer | Role | Status |
@@ -147,6 +149,7 @@ npm run verify
 - Want the managed customer path, sign-up flow, and billing handoff? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
 - Want the first API call after signup? Start with [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 - Want the first finance or crypto integration path? Start with [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
+- Want to see where plan, usage, entitlement, and billing state live? Start with [Hosted account visibility](docs/01-overview/hosted-account-visibility.md).
 
 ## What Attestor is not
 
