@@ -17,6 +17,7 @@ The hosted API and billing pieces are real. The remaining work is not "build Str
 | Product framing | `README.md` | one product, platform core, modular packs, adoption links |
 | Pricing and packaging | `docs/01-overview/product-packaging.md` | public plans, prices, free evaluation, trial posture, production license boundary |
 | Hosted customer journey | `docs/01-overview/hosted-customer-journey.md` | signup, first API key, checkout, portal, account plane, customer flow |
+| First customer API call | `docs/01-overview/hosted-first-api-call.md` | first tenant-key call, usage preflight, consequence gate, decision handling |
 | Stripe operator setup | `docs/01-overview/stripe-commercial-bootstrap.md` | live Stripe prices, live account, payout setup, env vars, webhook configuration |
 | Architecture posture | `docs/02-architecture/system-overview.md` | one-product architecture, core/pack maturity, active work posture |
 | Hardening plan | `docs/02-architecture/hosted-product-flow-buildout.md` | frozen step list for adoption hardening |
@@ -69,7 +70,7 @@ These are the remaining gaps that matter before calling the hosted product path 
 1. **Canonical hosted journey contract.** Addressed after this audit by `docs/01-overview/hosted-journey-contract.md` and `src/service/hosted-journey-contract.ts`; keep that pair as the route/auth/success/failure contract.
 2. **Focused hosted flow probe.** Addressed by `tests/hosted-signup-first-api-key-flow.test.ts`, which proves signup -> first API key -> usage/quota -> first consequence call -> quota rejection -> API-key listing/issue/revoke without pulling in the entire service matrix.
 3. **Focused billing convergence probe.** Addressed by `tests/hosted-stripe-billing-convergence-flow.test.ts`, which proves checkout idempotency, checkout-completed pending posture, portal readiness, signed webhook processing, duplicate replay, payload conflict rejection, subscription suspension/reactivation, invoice delinquency/recovery, entitlement summary convergence, and fail-closed tenant API behavior.
-4. **Customer first-call quickstart.** The README explains the product, but a buyer still benefits from a short "after signup, make this first call" path tied to the hosted account and API key.
+4. **Customer first-call quickstart.** Addressed by `docs/01-overview/hosted-first-api-call.md`, which shows the first tenant API-key usage preflight, first `POST /api/v1/pipeline/run` consequence gate, expected decision/tenant/usage shape, secret handling, failure signals, and downstream fail-closed responsibility.
 5. **Finance and crypto adoption examples.** The pack story is correct; the adoption examples should show how one hosted API model maps into finance and crypto without making them separate products.
 6. **Usage and billing visibility guide.** Customers should know which endpoint tells them current plan, usage, entitlement, rate limit, invoices/charges, and what remains in Stripe.
 7. **Final truth-source gate.** README, pricing, hosted journey, Stripe bootstrap, system overview, route contract, and probes should be tested together so future edits cannot silently reintroduce duplication or contradiction.
@@ -78,4 +79,4 @@ These are the remaining gaps that matter before calling the hosted product path 
 
 Continue with the hosted product flow hardening track before reopening new crypto work.
 
-The next implementation step is to add the first customer API-call quickstart.
+The next implementation step is to add finance and crypto first-integration examples.

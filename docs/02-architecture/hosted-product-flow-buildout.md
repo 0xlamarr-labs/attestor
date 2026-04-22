@@ -62,6 +62,13 @@ Reviewed again on 2026-04-22 before Step 04:
 - Stripe webhook verification depends on the exact raw request body and the `Stripe-Signature` header, so Attestor must keep signature verification ahead of event processing: [Stripe webhook signature verification](https://docs.stripe.com/webhooks/signature)
 - Stripe Entitlements emits active entitlement summary updates as billing-managed feature-access truth, so Attestor must converge those events into account-plane authorization rather than treating checkout as sufficient by itself: [Stripe Entitlements](https://docs.stripe.com/billing/entitlements), [Stripe event types](https://docs.stripe.com/api/events/types)
 
+Reviewed again on 2026-04-22 before Step 05:
+
+- RFC 9110 defines the HTTP `Authorization` request header as the standard place for credentials used by a client to authenticate to an origin server, so the first-call quickstart should show tenant API keys in headers, not URLs: [RFC 9110 Authorization](https://www.rfc-editor.org/rfc/rfc9110.html#name-authorization)
+- RFC 6750 keeps `Authorization: Bearer <token>` as the interoperable protected-resource pattern and warns that bearer tokens need protection from disclosure in storage and transport: [RFC 6750 Bearer Token Usage](https://www.rfc-editor.org/rfc/rfc6750)
+- OWASP API2:2023 lists sensitive authentication details in URLs and unvalidated tokens as broken-authentication risks; the quickstart should teach secret handling before it teaches the first API call: [OWASP API2:2023 Broken Authentication](https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/)
+- OWASP API4:2023 recommends limiting how often clients interact with APIs, so the first-call path should show quota/rate-limit response handling as expected product behavior, not as a surprise: [OWASP API4:2023 Unrestricted Resource Consumption](https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/)
+
 ## Architecture Decision
 
 Treat the hosted product flow as an adoption shell around the existing Attestor core:
@@ -77,10 +84,10 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 4 |
+| Completed | 5 |
 | In progress | 0 |
-| Not started | 4 |
-| Current posture | Active; hosted signup and Stripe billing convergence gates are hardened, and the next gap is a customer-facing first API-call quickstart |
+| Not started | 3 |
+| Current posture | Active; hosted signup, Stripe billing convergence, and first customer API-call guidance are hardened; the next gap is finance and crypto first-integration examples |
 
 ## Frozen Step List
 
@@ -90,11 +97,11 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | 02 | complete | Define one canonical hosted journey contract | `src/service/hosted-journey-contract.ts`, `docs/01-overview/hosted-journey-contract.md`, `tests/hosted-product-flow-contract.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/product-packaging.md` | The hosted path now has a machine-readable journey descriptor plus a customer-facing contract doc covering route order, auth boundaries, success signals, failure signals, pricing/operator truth-source separation, checkout idempotency, Stripe signature boundaries, and webhook-based entitlement convergence without adding a second product story. |
 | 03 | complete | Harden signup-to-first-API-key verification | `tests/hosted-signup-first-api-key-flow.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `package.json`, `docs/01-overview/hosted-product-flow-audit.md` | The focused gate proves hosted signup, session issuance, one-time plaintext first API key, bearer-authenticated account/usage/entitlement access, first governed consequence call, community quota exhaustion at run 11, hidden historical plaintext secrets, second key issue, revoked signup-key rejection, and replacement-key continuity without running the full live API suite. |
 | 04 | complete | Harden Stripe checkout, portal, webhook, and entitlement convergence | `tests/hosted-stripe-billing-convergence-flow.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `package.json`, `docs/01-overview/hosted-product-flow-audit.md` | The focused gate proves paid hosted checkout idempotency, hosted portal readiness, raw-body Stripe signature enforcement, duplicate replay behavior, payload conflict rejection, checkout-completed pending posture, subscription past_due fail-closed suspension, active subscription recovery, invoice delinquency/recovery, entitlement summary convergence, and Stripe-backed feature grants without relying on the full live API suite. |
-| 05 | not_started | Add the first customer API-call quickstart |  | Add a short customer-facing flow showing how a hosted account uses its first API key to call Attestor before a consequence, without inventing broad app UI or domain-specific magic. |
+| 05 | complete | Add the first customer API-call quickstart | `docs/01-overview/hosted-first-api-call.md`, `README.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/hosted-journey-contract.md`, `src/service/hosted-journey-contract.ts`, `tests/hosted-product-flow-docs.test.ts`, `tests/hosted-product-flow-contract.test.ts`, `docs/01-overview/hosted-product-flow-audit.md` | The quickstart shows the first tenant API-key usage preflight, the first `POST /api/v1/pipeline/run` consequence gate, expected decision/proof/tenant/usage shape, Bearer-header secret handling, quota/rate-limit failure signals, optional signed proof verification, and downstream fail-closed responsibility without adding a new product surface or claiming automatic pack detection. |
 | 06 | not_started | Add finance and crypto first-integration examples |  | Show how the same hosted API/adoption model maps into finance and crypto packs while preserving the one-product model and avoiding separate-product language. |
 | 07 | not_started | Add usage, quota, billing, and entitlement visibility guide |  | Make account-plane visibility obvious: what customers can inspect, which endpoint owns it, what Stripe owns, and what operators must not expose as customer-facing pricing truth. |
 | 08 | not_started | Add final docs truth-source and readiness gate |  | Add a final guard that README, product packaging, hosted customer journey, Stripe bootstrap, system overview, route contract, probes, and tests agree before calling the hosted product flow sale-ready. |
 
 ## Immediate Next Step
 
-Step 05 should add a short customer-facing first API-call quickstart tied to hosted signup and the first tenant API key.
+Step 06 should add finance and crypto first-integration examples that reuse the same hosted API/adoption model while preserving one-product modular-pack language.

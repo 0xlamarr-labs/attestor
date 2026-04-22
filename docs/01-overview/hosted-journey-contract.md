@@ -6,6 +6,7 @@ It defines the supported customer sequence, route ownership, auth boundary, succ
 
 - Pricing, free evaluation, trial posture, and production licensing live in [Commercial packaging, pricing, and evaluation](product-packaging.md).
 - The short narrative buying flow lives in [Hosted customer journey](hosted-customer-journey.md).
+- The first customer API-call quickstart lives in [First hosted API call](hosted-first-api-call.md).
 - Operator Stripe setup lives in [Stripe commercial bootstrap](stripe-commercial-bootstrap.md).
 - The machine-readable contract descriptor lives in `src/service/hosted-journey-contract.ts`.
 

@@ -73,6 +73,8 @@ Need pricing, free evaluation, or hosted trial details? See [Commercial packagin
 
 Need the hosted sign-up, first API key, and checkout flow? See [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
 
+Need the first hosted API call after signup? See [First hosted API call](docs/01-overview/hosted-first-api-call.md).
+
 ## Platform core
 
 | Core layer | Role | Status |
@@ -141,6 +143,7 @@ npm run verify
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 - Want pricing, free evaluation, or hosted trial details? Start with [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
 - Want the managed customer path, sign-up flow, and billing handoff? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
+- Want the first API call after signup? Start with [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 
 ## What Attestor is not
 

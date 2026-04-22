@@ -51,6 +51,7 @@ export const HOSTED_JOURNEY_TRUTH_SOURCES = {
   productPositioning: 'README.md',
   pricingPackaging: 'docs/01-overview/product-packaging.md',
   customerNarrative: 'docs/01-overview/hosted-customer-journey.md',
+  firstApiCallQuickstart: 'docs/01-overview/hosted-first-api-call.md',
   customerContract: 'docs/01-overview/hosted-journey-contract.md',
   operatorStripe: 'docs/01-overview/stripe-commercial-bootstrap.md',
   architectureTracker: 'docs/02-architecture/hosted-product-flow-buildout.md',

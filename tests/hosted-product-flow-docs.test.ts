@@ -26,6 +26,7 @@ function testCommercialTruthSourcesStayLinked(): void {
   const packaging = readProjectFile('docs', '01-overview', 'product-packaging.md');
   const journey = readProjectFile('docs', '01-overview', 'hosted-customer-journey.md');
   const contract = readProjectFile('docs', '01-overview', 'hosted-journey-contract.md');
+  const firstApiCall = readProjectFile('docs', '01-overview', 'hosted-first-api-call.md');
   const stripeBootstrap = readProjectFile('docs', '01-overview', 'stripe-commercial-bootstrap.md');
 
   includes(
@@ -37,6 +38,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     readme,
     'docs/01-overview/hosted-customer-journey.md',
     'Hosted product flow docs: README links to hosted customer journey',
+  );
+  includes(
+    readme,
+    'docs/01-overview/hosted-first-api-call.md',
+    'Hosted product flow docs: README links to first hosted API-call quickstart',
   );
   includes(
     packaging,
@@ -54,6 +60,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: hosted journey links to canonical journey contract',
   );
   includes(
+    journey,
+    'First hosted API call](hosted-first-api-call.md)',
+    'Hosted product flow docs: hosted journey links to first API-call quickstart',
+  );
+  includes(
     packaging,
     'Hosted journey contract](hosted-journey-contract.md)',
     'Hosted product flow docs: product packaging links to canonical journey contract',
@@ -64,9 +75,64 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: contract doc declares canonical role',
   );
   includes(
+    contract,
+    'First hosted API call](hosted-first-api-call.md)',
+    'Hosted product flow docs: contract doc links first API-call quickstart',
+  );
+  includes(
+    firstApiCall,
+    'This quickstart shows the first customer-owned API call after hosted signup.',
+    'Hosted product flow docs: first API-call quickstart declares its scope',
+  );
+  includes(
     stripeBootstrap,
     'operator-facing and should not become a second public pricing page',
     'Hosted product flow docs: Stripe bootstrap stays operator-facing',
+  );
+}
+
+function testFirstApiCallQuickstartStaysGrounded(): void {
+  const firstApiCall = readProjectFile('docs', '01-overview', 'hosted-first-api-call.md');
+  const contract = readProjectFile('src', 'service', 'hosted-journey-contract.ts');
+  const pipelineRoute = readProjectFile('src', 'service', 'http', 'routes', 'pipeline-execution-routes.ts');
+  const accountRoutes = readProjectFile('src', 'service', 'http', 'routes', 'account-routes.ts');
+
+  includes(firstApiCall, 'Authorization: Bearer $ATTESTOR_API_KEY', 'Hosted first API-call docs: Bearer header is used');
+  includes(firstApiCall, 'Do not put it in URLs', 'Hosted first API-call docs: API key is not documented as a URL parameter');
+  includes(firstApiCall, 'GET /api/v1/account/usage', 'Hosted first API-call docs: usage preflight route is documented');
+  includes(firstApiCall, 'POST /api/v1/pipeline/run', 'Hosted first API-call docs: first consequence route is documented');
+  includes(firstApiCall, '"candidateSql"', 'Hosted first API-call docs: pipeline request uses shipped candidateSql field');
+  includes(firstApiCall, '"intent"', 'Hosted first API-call docs: pipeline request uses shipped intent field');
+  includes(firstApiCall, '"fixtures"', 'Hosted first API-call docs: reference payload uses fixture evidence explicitly');
+  includes(firstApiCall, '"decision": "pass"', 'Hosted first API-call docs: expected decision shape is shown');
+  includes(firstApiCall, '"tenantContext"', 'Hosted first API-call docs: tenant context response shape is shown');
+  includes(firstApiCall, '"usage"', 'Hosted first API-call docs: usage response shape is shown');
+  includes(firstApiCall, '`401`', 'Hosted first API-call docs: invalid key failure is documented');
+  includes(firstApiCall, '`429`', 'Hosted first API-call docs: quota/rate-limit failure is documented');
+  includes(
+    firstApiCall,
+    'The downstream system should gate on the returned decision.',
+    'Hosted first API-call docs: downstream gating responsibility is explicit',
+  );
+  includes(
+    firstApiCall,
+    'Attestor does not auto-detect packs from magic input.',
+    'Hosted first API-call docs: no auto-detect promise is made',
+  );
+  includes(
+    contract,
+    "firstApiCallQuickstart: 'docs/01-overview/hosted-first-api-call.md'",
+    'Hosted first API-call docs: quickstart is a machine-readable truth source',
+  );
+  includes(
+    pipelineRoute,
+    "app.post('/api/v1/pipeline/run'",
+    'Hosted first API-call docs: pipeline route exists',
+  );
+  includes(
+    accountRoutes,
+    "app.get('/api/v1/account/usage'",
+    'Hosted first API-call docs: usage route exists',
   );
 }
 
@@ -146,15 +212,17 @@ function testTrackerAndAuditStayInSync(): void {
   const systemOverview = readProjectFile('docs', '02-architecture', 'system-overview.md');
 
   includes(tracker, 'Total frozen steps | 8', 'Hosted product flow docs: tracker declares eight frozen steps');
-  includes(tracker, '| Completed | 4 |', 'Hosted product flow docs: tracker has four completed steps after billing convergence');
+  includes(tracker, '| Completed | 5 |', 'Hosted product flow docs: tracker has five completed steps after first API-call quickstart');
   includes(tracker, '| 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces |', 'Hosted product flow docs: Step 01 is complete');
   includes(tracker, '| 02 | complete | Define one canonical hosted journey contract |', 'Hosted product flow docs: Step 02 is complete');
   includes(tracker, '| 03 | complete | Harden signup-to-first-API-key verification |', 'Hosted product flow docs: Step 03 is complete');
   includes(tracker, '| 04 | complete | Harden Stripe checkout, portal, webhook, and entitlement convergence |', 'Hosted product flow docs: Step 04 is complete');
-  includes(tracker, '| 05 | not_started | Add the first customer API-call quickstart |', 'Hosted product flow docs: Step 05 is the next step');
+  includes(tracker, '| 05 | complete | Add the first customer API-call quickstart |', 'Hosted product flow docs: Step 05 is complete');
+  includes(tracker, '| 06 | not_started | Add finance and crypto first-integration examples |', 'Hosted product flow docs: Step 06 is the next step');
   includes(audit, 'The hosted API and billing pieces are real.', 'Hosted product flow docs: audit records the current conclusion');
   includes(audit, '**Focused hosted flow probe.** Addressed by `tests/hosted-signup-first-api-key-flow.test.ts`', 'Hosted product flow docs: audit records Step 03 evidence');
   includes(audit, '**Focused billing convergence probe.** Addressed by `tests/hosted-stripe-billing-convergence-flow.test.ts`', 'Hosted product flow docs: audit records Step 04 evidence');
+  includes(audit, '**Customer first-call quickstart.** Addressed by `docs/01-overview/hosted-first-api-call.md`', 'Hosted product flow docs: audit records Step 05 evidence');
   includes(systemOverview, 'Hosted product flow and adoption hardening', 'Hosted product flow docs: system overview names active hosted flow track');
 }
 
@@ -163,6 +231,7 @@ async function main(): Promise<void> {
   testPricingAndTrialTruthsStayAnchored();
   testHostedJourneyRoutesMatchShippedRoutes();
   testRuntimeCoverageGatesAreNamed();
+  testFirstApiCallQuickstartStaysGrounded();
   testTrackerAndAuditStayInSync();
 
   ok(passed > 0, 'Hosted product flow docs: tests executed');

@@ -6,19 +6,22 @@ For plan definitions, pricing, free evaluation, hosted trial posture, hosted vs 
 
 For exact hosted route order, auth boundaries, success signals, and failure signals, use [Hosted journey contract](hosted-journey-contract.md).
 
+For the first customer-owned API call after signup, use [First hosted API call](hosted-first-api-call.md).
+
 ## What this path is for
 
 The hosted path is for teams that want a managed Attestor product surface without turning Attestor into the place where their files, workflows, wallets, or business systems live.
 
 The customer keeps those systems where they already are, then calls Attestor where release decisions, proof, verification, authorization, and operational control are required.
 
-## The 3-step view
+## The 4-step view
 
 The hosted path should be easy to understand:
 
 1. create the hosted account
 2. receive the first API key
-3. upgrade through Stripe Checkout if a paid hosted plan is needed
+3. make the first Attestor API call before consequence
+4. upgrade through Stripe Checkout if a paid hosted plan is needed
 
 After that, the same account remains the control point for keys, usage, entitlement, and billing.
 
@@ -29,18 +32,18 @@ The first hosted commercial flow is:
 1. the customer reads the docs and chooses a hosted plan
 2. the customer signs up for a hosted account
 3. Attestor returns the first tenant API key
-4. the customer upgrades through Stripe Checkout when moving to a paid hosted plan
-5. the same account carries the paid entitlement after checkout
-6. the customer manages keys, usage, and billing from the hosted account plane
-7. the customer calls Attestor from their own environment
+4. the customer calls Attestor from their own environment before a consequence
+5. the customer upgrades through Stripe Checkout when moving to a paid hosted plan
+6. the same account carries the paid entitlement after checkout
+7. the customer manages keys, usage, and billing from the hosted account plane
 
 ```mermaid
 flowchart LR
   D["Docs and pricing"] --> S["Sign up hosted account"]
   S --> K["Receive first API key"]
-  K --> U["Upgrade through Stripe if needed"]
+  K --> C["Customer systems call Attestor"]
+  C --> U["Upgrade through Stripe if needed"]
   U --> A["Account plane: usage, billing, keys"]
-  A --> C["Customer systems call Attestor"]
 ```
 
 ## What to send and when
@@ -49,11 +52,16 @@ Use this sequence:
 
 1. create the account
    send `accountName`, `email`, `displayName`, and `password` to `POST /api/v1/auth/signup`
-2. start checkout for a paid hosted plan
+2. use the one-time plaintext `initialKey.apiKey` as `Authorization: Bearer <tenant_api_key>`
+3. make the first hosted API call with `POST /api/v1/pipeline/run`
+4. inspect usage or entitlement with `GET /api/v1/account/usage`, `GET /api/v1/account/entitlement`, or `GET /api/v1/account`
+5. start checkout for a paid hosted plan
    send `planId` (`starter`, `pro`, or `enterprise`) to `POST /api/v1/account/billing/checkout`
-3. open the returned `checkoutUrl` and finish payment in Stripe
-4. keep using the same account after checkout completes
-5. manage billing later through `POST /api/v1/account/billing/portal`
+6. open the returned `checkoutUrl` and finish payment in Stripe
+7. keep using the same account after checkout completes
+8. manage billing later through `POST /api/v1/account/billing/portal`
+
+The concrete first API-call example lives in [First hosted API call](hosted-first-api-call.md).
 
 ## Minimum hosted account plane
 
