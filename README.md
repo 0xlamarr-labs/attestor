@@ -4,6 +4,8 @@
 
 One product. One platform core. Hosted and customer-operated delivery paths. Modular packs for finance, crypto, and later consequence domains.
 
+![Attestor gateway: proof before consequence](docs/assets/attestor-gateway.png)
+
 Attestor sits between a proposed consequence and the system that would make it real. Teams use it before accepting AI-assisted outputs, writing financial records, sending controlled communications, or allowing programmable-money execution.
 
 Its job is simple: decide whether the proposed consequence may proceed, under what policy, with what authority, and with what durable evidence left behind.
