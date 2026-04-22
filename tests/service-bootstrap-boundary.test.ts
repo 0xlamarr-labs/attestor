@@ -61,9 +61,12 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   assert.match(server, /export function startHttpServer\(app: Hono, port: number = 3700\): HttpServerHandle/u);
   assert.match(server, /export function installGracefulShutdown\(handle: HttpServerHandle\): void/u);
   assert.match(runtime, /export interface AppRuntime<Packet = unknown>/u);
+  assert.match(runtime, /export function createRuntimeInfra\(input: CreateRuntimeInfraInput\): AppRuntimeInfra/u);
+  assert.match(runtime, /export function createHttpRouteRuntime<Packet>/u);
   assert.match(httpRouteBuilders, /export function buildAccountRouteDeps/u);
   assert.match(httpRouteBuilders, /export function buildAdminRouteDeps/u);
   assert.match(httpRouteBuilders, /export function buildPipelineRouteDeps/u);
+  assert.match(httpRouteBuilders, /export function buildWebhookRouteDeps/u);
 }
 
 function testRuntimeUsesStructuredComposition(): void {
@@ -82,8 +85,9 @@ function testRuntimeUsesStructuredComposition(): void {
   assert.match(routes, /runtime\.services\.httpRoutes\.account/u);
   assert.doesNotMatch(routes, /runtime\.routeDeps/u);
 
-  assert.match(apiServer, /const apiRuntimeInfra = \{/u);
-  assert.match(apiServer, /services:\s*\{\s*httpRoutes:/u);
+  assert.match(apiServer, /createRuntimeInfra\(\{/u);
+  assert.match(apiServer, /createHttpRouteRuntime\(\{/u);
+  assert.match(apiServer, /httpRoutes:\s*\{/u);
   assert.doesNotMatch(apiServer, /routeDeps:\s*\{/u);
 }
 
@@ -127,6 +131,9 @@ function testHttpRouteBuildersOwnApplicationServiceConstruction(): void {
     'createAdminQueryService',
     'createPipelineUsageService',
     'createPipelineDeadLetterService',
+    'createStripeWebhookService',
+    'createStripeWebhookBillingProcessor',
+    'createEmailWebhookService',
   ]) {
     assert.equal(
       apiServer.includes(`${serviceFactory}(`),
@@ -144,6 +151,7 @@ function testHttpRouteBuildersOwnApplicationServiceConstruction(): void {
     'const accountRouteDeps = {',
     'const adminRouteDeps = {',
     'const pipelineRouteDeps = {',
+    'const webhookRouteDeps = {',
   ]) {
     assert.equal(
       apiServer.includes(routeDepsConstant),

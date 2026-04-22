@@ -53,6 +53,22 @@ export interface CreateAppRuntimeInput<Packet = unknown> {
   services: AppRuntimeServices<Packet>;
 }
 
+export interface CreateRuntimeInfraInput {
+  instanceId: string;
+  startedAtEpochMs: number;
+  asyncExecution?: AppRuntimeResourceMap;
+  telemetry?: AppRuntimeResourceMap;
+  security?: AppRuntimeResourceMap;
+}
+
+export interface CreateHttpRouteRuntimeInput<Packet = unknown> {
+  registries: AppRegistries;
+  infra: AppRuntimeInfra;
+  httpRoutes: AppRouteDeps<Packet>;
+  stores?: AppRuntimeStores;
+  extraServices?: AppRuntimeResourceMap;
+}
+
 export function createRuntime<Packet>(input: CreateAppRuntimeInput<Packet>): AppRuntime<Packet> {
   return {
     registries: input.registries,
@@ -60,4 +76,32 @@ export function createRuntime<Packet>(input: CreateAppRuntimeInput<Packet>): App
     stores: input.stores ?? {},
     services: input.services,
   };
+}
+
+export function createRuntimeInfra(input: CreateRuntimeInfraInput): AppRuntimeInfra {
+  return {
+    service: {
+      instanceId: input.instanceId,
+      startedAtEpochMs: input.startedAtEpochMs,
+    },
+    ...(input.asyncExecution ? { asyncExecution: input.asyncExecution } : {}),
+    ...(input.telemetry ? { telemetry: input.telemetry } : {}),
+    ...(input.security ? { security: input.security } : {}),
+  };
+}
+
+export function createHttpRouteRuntime<Packet>(
+  input: CreateHttpRouteRuntimeInput<Packet>,
+): AppRuntime<Packet> {
+  const services = {
+    ...(input.extraServices ?? {}),
+    httpRoutes: input.httpRoutes,
+  } as AppRuntimeServices<Packet>;
+
+  return createRuntime({
+    registries: input.registries,
+    infra: input.infra,
+    stores: input.stores,
+    services,
+  });
 }

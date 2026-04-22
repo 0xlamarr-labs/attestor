@@ -29,6 +29,10 @@ import {
   type AdminQueryServiceDeps,
 } from '../application/admin-query-service.js';
 import {
+  createEmailWebhookService,
+  type EmailWebhookServiceDeps,
+} from '../application/email-webhook-service.js';
+import {
   createPipelineDeadLetterService,
   type PipelineDeadLetterServiceDeps,
 } from '../application/pipeline-dead-letter-service.js';
@@ -36,11 +40,20 @@ import {
   createPipelineUsageService,
   type PipelineUsageServiceDeps,
 } from '../application/pipeline-usage-service.js';
+import {
+  createStripeWebhookBillingProcessor,
+  type StripeWebhookBillingProcessorDeps,
+} from '../application/stripe-webhook-billing-processor.js';
+import {
+  createStripeWebhookService,
+  type StripeWebhookServiceDeps,
+} from '../application/stripe-webhook-service.js';
 import type { AccountRouteDeps } from '../http/routes/account-routes.js';
 import type { AdminRouteDeps } from '../http/routes/admin-routes.js';
 import type { PipelineRouteDeps } from '../http/routes/pipeline-routes.js';
 import type { ReleasePolicyControlRouteDeps } from '../http/routes/release-policy-control-routes.js';
 import type { ReleaseReviewRouteDeps } from '../http/routes/release-review-routes.js';
+import type { WebhookRouteDeps } from '../http/routes/webhook-routes.js';
 
 export type BuildAccountRouteDepsInput =
   AccountAuthServiceDeps &
@@ -320,5 +333,22 @@ export function buildPipelineRouteDeps(input: BuildPipelineRouteDepsInput): Pipe
     pki: input.pki,
     pipelineDeadLetterService,
     getJobStatus: input.getJobStatus,
+  };
+}
+
+export type BuildWebhookRouteDepsInput =
+  EmailWebhookServiceDeps &
+  StripeWebhookServiceDeps &
+  StripeWebhookBillingProcessorDeps;
+
+export function buildWebhookRouteDeps(input: BuildWebhookRouteDepsInput): WebhookRouteDeps {
+  const stripeWebhookService = createStripeWebhookService(input);
+  const stripeWebhookBillingProcessor = createStripeWebhookBillingProcessor(input);
+  const emailWebhookService = createEmailWebhookService(input);
+
+  return {
+    emailWebhookService,
+    stripeWebhookService,
+    stripeWebhookBillingProcessor,
   };
 }

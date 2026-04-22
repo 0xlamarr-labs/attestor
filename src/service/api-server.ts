@@ -355,19 +355,21 @@ import {
   renderReleaseReviewerQueueDetailPage,
   renderReleaseReviewerQueueInboxPage,
 } from './release-review-site.js';
-import { createEmailWebhookService } from './application/email-webhook-service.js';
-import { createStripeWebhookBillingProcessor } from './application/stripe-webhook-billing-processor.js';
-import { createStripeWebhookService } from './application/stripe-webhook-service.js';
 import { createRegistries } from './bootstrap/registries.js';
-import { createRuntime, type AppRouteDeps, type AppRuntimeInfra } from './bootstrap/runtime.js';
-import { registerAllRoutes } from './bootstrap/routes.js';
 import {
   buildAccountRouteDeps,
   buildAdminRouteDeps,
   buildPipelineRouteDeps,
   buildReleasePolicyControlRouteDeps,
   buildReleaseReviewRouteDeps,
+  buildWebhookRouteDeps,
 } from './bootstrap/http-route-builders.js';
+import { registerAllRoutes } from './bootstrap/routes.js';
+import {
+  createHttpRouteRuntime,
+  createRuntimeInfra,
+  type AppRouteDeps,
+} from './bootstrap/runtime.js';
 import {
   installGracefulShutdown,
   startHttpServer,
@@ -1748,7 +1750,7 @@ const pipelineRouteDeps = buildPipelineRouteDeps({
   getJobStatus,
 });
 
-const stripeWebhookService = createStripeWebhookService({
+const webhookRouteDeps = buildWebhookRouteDeps({
   stripeClient,
   observeBillingWebhookEvent,
   isBillingEventLedgerConfigured,
@@ -1761,10 +1763,6 @@ const stripeWebhookService = createStripeWebhookService({
   releaseProcessedStripeWebhookClaimState,
   finalizeStripeBillingEvent,
   releaseStripeBillingEventClaim,
-});
-
-const stripeWebhookBillingProcessor = createStripeWebhookBillingProcessor({
-  observeBillingWebhookEvent,
   isSupportedStripeWebhookEvent,
   stripeReferenceId,
   parseStripeInvoiceStatus,
@@ -1792,9 +1790,6 @@ const stripeWebhookBillingProcessor = createStripeWebhookBillingProcessor({
   upsertStripeCharges,
   unixSecondsToIso,
   resolvePlanStripePrice,
-});
-
-const emailWebhookService = createEmailWebhookService({
   getSendGridWebhookStatus,
   verifySignedSendGridWebhook,
   parseSendGridWebhookEvents,
@@ -1814,41 +1809,29 @@ const emailWebhookService = createEmailWebhookService({
   now: () => new Date().toISOString(),
 });
 
-const webhookRouteDeps = {
-  emailWebhookService,
-  stripeWebhookService,
-  stripeWebhookBillingProcessor,
-} satisfies ApiRouteDeps['webhook'];
-
-const apiRuntimeInfra = {
-  service: {
+const runtime = createHttpRouteRuntime({
+  registries,
+  infra: createRuntimeInfra({
     instanceId: serviceInstanceId,
     startedAtEpochMs: startTime,
-  },
-  asyncExecution: {
-    backendMode: asyncBackendMode,
-    redisMode,
-  },
-  security: {
-    rlsActivationResult,
-    pkiReady,
-  },
-} satisfies AppRuntimeInfra;
-
-const runtime = createRuntime({
-  registries,
-  infra: apiRuntimeInfra,
-  services: {
-    httpRoutes: {
-      publicSite: publicSiteRouteDeps,
-      core: coreRouteDeps,
-      account: accountRouteDeps,
-      admin: adminRouteDeps,
-      releaseReview: releaseReviewRouteDeps,
-      releasePolicyControl: releasePolicyControlRouteDeps,
-      pipeline: pipelineRouteDeps,
-      webhook: webhookRouteDeps,
+    asyncExecution: {
+      backendMode: asyncBackendMode,
+      redisMode,
     },
+    security: {
+      rlsActivationResult,
+      pkiReady,
+    },
+  }),
+  httpRoutes: {
+    publicSite: publicSiteRouteDeps,
+    core: coreRouteDeps,
+    account: accountRouteDeps,
+    admin: adminRouteDeps,
+    releaseReview: releaseReviewRouteDeps,
+    releasePolicyControl: releasePolicyControlRouteDeps,
+    pipeline: pipelineRouteDeps,
+    webhook: webhookRouteDeps,
   },
 });
 
