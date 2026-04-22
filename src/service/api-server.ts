@@ -102,6 +102,7 @@ import {
   createHostedAccountSupport,
   stripeBillingErrorResponse,
 } from './hosted-account-support.js';
+import { createRequestObservabilityMiddleware } from './request-observability-middleware.js';
 import {
   applyRateLimitHeaders,
   schemaAttestationSummaryFromConnector,
@@ -164,7 +165,6 @@ import {
   resolveServiceInstanceId,
 } from './high-availability.js';
 import { tenantKeyStorePolicy } from './tenant-key-store.js';
-import { type HostedAccountRecord } from './account-store.js';
 import {
   type AccountUserRole,
   verifyAccountUserPasswordRecord,
@@ -293,13 +293,8 @@ import {
   upsertStripeInvoiceLineItems,
 } from './billing-event-ledger.js';
 import {
-  appendStructuredRequestLog,
-  beginRequestTrace,
-  completeRequestTrace,
   getTelemetryStatus,
   observeBillingWebhookEvent,
-  observeRequestComplete,
-  observeRequestStart,
   renderPrometheusMetrics,
 } from './observability.js';
 import {
@@ -419,108 +414,10 @@ const committedFinancialPacket = loadCommittedFinancialReportingPacket();
 type ApiRouteDeps = AppRouteDeps<typeof committedFinancialPacket>;
 
 
-app.use('/api/*', async (c, next) => {
-  const requestUrl = new URL(c.req.url);
-  const remoteAddress = c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-    || c.req.header('x-real-ip')
-    || null;
-  const trace = beginRequestTrace(c.req.header('traceparent'), {
-    method: c.req.method,
-    path: c.req.path,
-    url: c.req.url,
-    remoteAddress,
-    userAgent: c.req.header('user-agent') ?? null,
-    serverAddress: requestUrl.hostname || null,
-    serverPort: requestUrl.port ? Number.parseInt(requestUrl.port, 10) : null,
-  });
-  const startedAt = process.hrtime.bigint();
-  observeRequestStart();
-
-  let statusCode = 500;
-  let route = c.req.path;
-  let rateLimited = false;
-  let quotaRejected = false;
-  let thrownError: unknown = null;
-
-  try {
-    await next();
-    statusCode = c.res.status;
-    route = c.req.routePath || c.req.path;
-    rateLimited = c.res.headers.get('retry-after') !== null;
-    quotaRejected = statusCode === 429 && route === '/api/v1/pipeline/run';
-  } catch (err) {
-    route = c.req.routePath || c.req.path;
-    thrownError = err;
-    throw err;
-  } finally {
-    const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
-    const tenant = currentTenant(c);
-    const observedTenantId = c.get('obs.tenantId') as string | null | undefined;
-    const observedPlanId = c.get('obs.planId') as string | null | undefined;
-    const observedAccountId = c.get('obs.accountId') as string | null | undefined;
-    const observedAccountStatus = c.get('obs.accountStatus') as string | null | undefined;
-    let account: HostedAccountRecord | null = null;
-
-    if (!observedAccountId && tenant.tenantId && tenant.tenantId !== 'default') {
-      try {
-        account = await findHostedAccountByTenantIdState(tenant.tenantId);
-      } catch {
-        // Observability should never take down request handling if the hosted control-plane
-        // backend is temporarily unreachable.
-      }
-    }
-
-    observeRequestComplete({
-      route,
-      method: c.req.method,
-      statusCode,
-      durationSeconds,
-      traceContextStatus: trace.incomingStatus,
-    });
-    completeRequestTrace(trace, {
-      route,
-      method: c.req.method,
-      path: c.req.path,
-      statusCode,
-      durationSeconds,
-      tenantId: observedTenantId ?? tenant.tenantId ?? null,
-      planId: observedPlanId ?? tenant.planId ?? null,
-      accountId: observedAccountId ?? account?.id ?? null,
-      accountStatus: observedAccountStatus ?? account?.status ?? null,
-      rateLimited,
-      quotaRejected,
-      remoteAddress,
-      userAgent: c.req.header('user-agent') ?? null,
-      error: thrownError,
-    });
-
-    appendStructuredRequestLog({
-      occurredAt: new Date().toISOString(),
-      route,
-      path: c.req.path,
-      method: c.req.method,
-      statusCode,
-      durationMs: Math.round(durationSeconds * 1000),
-      traceId: trace.traceId,
-      spanId: trace.spanId,
-      parentSpanId: trace.parentSpanId,
-      traceFlags: trace.traceFlags,
-      tenantId: observedTenantId ?? tenant.tenantId ?? null,
-      planId: observedPlanId ?? tenant.planId ?? null,
-      accountId: observedAccountId ?? account?.id ?? null,
-      accountStatus: observedAccountStatus ?? account?.status ?? null,
-      rateLimited,
-      quotaRejected,
-      remoteAddress,
-      userAgent: c.req.header('user-agent') ?? null,
-    });
-
-    c.header('traceparent', trace.responseTraceparent);
-    c.header('x-attestor-trace-id', trace.traceId);
-    c.header('x-attestor-span-id', trace.spanId);
-    c.header('x-attestor-instance-id', serviceInstanceId);
-  }
-});
+app.use('/api/*', createRequestObservabilityMiddleware({
+  serviceInstanceId,
+  findHostedAccountByTenantId: findHostedAccountByTenantIdState,
+}));
 
 // Apply tenant isolation middleware to all API routes
 app.use('/api/*', tenantMiddleware());

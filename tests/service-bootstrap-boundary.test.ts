@@ -223,6 +223,10 @@ function testApiServerUsesExtractedRouteSupport(): void {
     'utf8',
   );
   const requestContext = readFileSync(join(SERVICE_ROOT, 'request-context.ts'), 'utf8');
+  const requestObservabilityMiddleware = readFileSync(
+    join(SERVICE_ROOT, 'request-observability-middleware.ts'),
+    'utf8',
+  );
   const stripeWebhookSupport = readFileSync(
     join(SERVICE_ROOT, 'stripe-webhook-support.ts'),
     'utf8',
@@ -233,6 +237,7 @@ function testApiServerUsesExtractedRouteSupport(): void {
   assert.match(apiServer, /from '\.\/hosted-account-support\.js'/u);
   assert.match(apiServer, /from '\.\/pipeline-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/request-context\.js'/u);
+  assert.match(apiServer, /from '\.\/request-observability-middleware\.js'/u);
   assert.match(apiServer, /from '\.\/stripe-webhook-support\.js'/u);
 
   for (const helperName of [
@@ -271,6 +276,12 @@ function testApiServerUsesExtractedRouteSupport(): void {
     'function currentAdminAuthorized(',
     'function currentMetricsAuthorized(',
     'function constantTimeSecretEquals(',
+    "app.use('/api/*', async (",
+    'beginRequestTrace(',
+    'observeRequestStart(',
+    'observeRequestComplete(',
+    'completeRequestTrace(',
+    'appendStructuredRequestLog(',
     'function accountMfaErrorResponse(',
     'function stripeBillingErrorResponse(',
     'async function currentHostedAccount(',
@@ -381,6 +392,22 @@ function testApiServerUsesExtractedRouteSupport(): void {
       requestContext.includes(requestHelper),
       true,
       `request-context.ts should own ${requestHelper}`,
+    );
+  }
+
+  for (const requestObservabilityHelper of [
+    'export function createRequestObservabilityMiddleware(',
+    'function remoteAddressFromHeaders(',
+    'beginRequestTrace(',
+    'observeRequestStart(',
+    'observeRequestComplete(',
+    'completeRequestTrace(',
+    'appendStructuredRequestLog(',
+  ]) {
+    assert.equal(
+      requestObservabilityMiddleware.includes(requestObservabilityHelper),
+      true,
+      `request-observability-middleware.ts should own ${requestObservabilityHelper}`,
     );
   }
 
