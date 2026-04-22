@@ -40,6 +40,7 @@ export let bullmqQueue: Awaited<ReturnType<typeof createPipelineQueue>> | null =
 export let redisMode: TenantRedisMode = 'none';
 
 let sharedRedisUrl: string | null = null;
+let shutdownSharedRedis: (() => Promise<void>) | null = null;
 // Keep the worker module-scoped so BullMQ processing stays alive for the server lifetime.
 let bullmqWorker: Awaited<ReturnType<typeof createPipelineWorker>> | null = null;
 
@@ -127,10 +128,23 @@ export function configureTenantRuntimeBackends(): void {
 }
 
 export async function shutdownTenantRuntimeBackends(): Promise<void> {
+  const worker = bullmqWorker;
+  const queue = bullmqQueue;
+  const redisShutdown = shutdownSharedRedis;
+  bullmqWorker = null;
+  bullmqQueue = null;
+  shutdownSharedRedis = null;
+  sharedRedisUrl = null;
+  asyncBackendMode = 'in_process';
+  redisMode = 'none';
+
   await Promise.allSettled([
     shutdownTenantAsyncExecutionCoordinator(),
     shutdownTenantAsyncWeightedDispatchCoordinator(),
     shutdownTenantRateLimiter(),
+    worker?.close(),
+    queue?.close(),
+    redisShutdown?.(),
   ]);
 }
 
@@ -138,6 +152,7 @@ try {
   const resolved = await resolveRedis();
   const redisUrl = `redis://${resolved.host}:${resolved.port}`;
   sharedRedisUrl = redisUrl;
+  shutdownSharedRedis = resolved.shutdown;
   configureTenantAsyncExecutionCoordinator({ redisUrl, redisMode: resolved.mode });
   configureTenantAsyncWeightedDispatchCoordinator({ redisUrl, redisMode: resolved.mode });
   bullmqQueue = createPipelineQueue({ redisUrl });

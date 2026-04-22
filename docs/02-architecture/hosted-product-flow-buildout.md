@@ -48,6 +48,13 @@ Reviewed again on 2026-04-22 before Step 02:
 - Stripe Checkout is a hosted payment collection surface, while the Billing Customer Portal is the customer-managed billing/subscription surface after checkout: [Stripe Checkout](https://docs.stripe.com/payments/checkout), [Stripe Customer Portal](https://docs.stripe.com/customer-management)
 - Stripe subscription and entitlement docs keep webhook-driven convergence as the reliable source for subscription, invoice, and feature-access changes after checkout: [Stripe subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks), [Stripe Entitlements](https://docs.stripe.com/billing/entitlements)
 
+Reviewed again on 2026-04-22 before Step 03:
+
+- OAuth bearer-token usage keeps the `Authorization: Bearer <token>` header as the interoperable protected-resource pattern and warns that bearer tokens must be protected from disclosure in storage and transport: [RFC 6750](https://datatracker.ietf.org/doc/html/rfc6750)
+- OpenAPI 3.1 models API-key, HTTP bearer, and mutual TLS security schemes explicitly, so the hosted journey contract should keep auth boundaries route-specific instead of implying automatic pack detection or magical routing: [OpenAPI Security Scheme Object](https://spec.openapis.org/oas/latest.html#security-scheme-object)
+- OWASP API2:2023 keeps broken authentication as a primary API risk; the signup path must prove that issued credentials work and revoked/anonymous credentials fail closed: [OWASP API2:2023 Broken Authentication](https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/)
+- OWASP API4:2023 calls out missing interaction/resource limits as a serious API risk; the free community evaluation path must show quota enforcement, not just a documented limit: [OWASP API4:2023 Unrestricted Resource Consumption](https://owasp.org/API-Security/editions/2023/en/0xa4-unrestricted-resource-consumption/)
+
 ## Architecture Decision
 
 Treat the hosted product flow as an adoption shell around the existing Attestor core:
@@ -63,10 +70,10 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 2 |
+| Completed | 3 |
 | In progress | 0 |
-| Not started | 6 |
-| Current posture | Active; canonical hosted journey contract is defined, and the next gap is focused signup-to-first-API-key verification |
+| Not started | 5 |
+| Current posture | Active; signup-to-first-API-key verification is hardened, and the next gap is Stripe checkout, portal, webhook, and entitlement convergence |
 
 ## Frozen Step List
 
@@ -74,7 +81,7 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 |---|---|---|---|---|
 | 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces | `docs/01-overview/hosted-product-flow-audit.md`, `tests/hosted-product-flow-docs.test.ts`, `docs/01-overview/product-packaging.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/stripe-commercial-bootstrap.md`, `src/service/http/routes/account-routes.ts`, `src/service/http/routes/stripe-webhook-routes.ts`, `scripts/probe-production-hosted-flow.ts`, `tests/live-api.test.ts` | Existing surfaces cover signup, first API key, account overview, usage, entitlement, API key lifecycle, checkout, portal, webhook processing, and billing entitlement convergence. Remaining work is hardening the external customer journey contract, examples, and readiness gates. |
 | 02 | complete | Define one canonical hosted journey contract | `src/service/hosted-journey-contract.ts`, `docs/01-overview/hosted-journey-contract.md`, `tests/hosted-product-flow-contract.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/product-packaging.md` | The hosted path now has a machine-readable journey descriptor plus a customer-facing contract doc covering route order, auth boundaries, success signals, failure signals, pricing/operator truth-source separation, checkout idempotency, Stripe signature boundaries, and webhook-based entitlement convergence without adding a second product story. |
-| 03 | not_started | Harden signup-to-first-API-key verification |  | Prove the hosted evaluation path from signup through first API key, community quota, account usage, and API-key lifecycle in a focused test/probe that is smaller than the full live API suite. |
+| 03 | complete | Harden signup-to-first-API-key verification | `tests/hosted-signup-first-api-key-flow.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `package.json`, `docs/01-overview/hosted-product-flow-audit.md` | The focused gate proves hosted signup, session issuance, one-time plaintext first API key, bearer-authenticated account/usage/entitlement access, first governed consequence call, community quota exhaustion at run 11, hidden historical plaintext secrets, second key issue, revoked signup-key rejection, and replacement-key continuity without running the full live API suite. |
 | 04 | not_started | Harden Stripe checkout, portal, webhook, and entitlement convergence |  | Prove paid hosted upgrade behavior: idempotent checkout start, portal creation, signed webhook processing, duplicate/conflict behavior, subscription state transitions, entitlement summary updates, and fail-closed delinquency/suspension behavior. |
 | 05 | not_started | Add the first customer API-call quickstart |  | Add a short customer-facing flow showing how a hosted account uses its first API key to call Attestor before a consequence, without inventing broad app UI or domain-specific magic. |
 | 06 | not_started | Add finance and crypto first-integration examples |  | Show how the same hosted API/adoption model maps into finance and crypto packs while preserving the one-product model and avoiding separate-product language. |
@@ -83,4 +90,4 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 
 ## Immediate Next Step
 
-Step 03 should harden signup-to-first-API-key verification with a focused test or probe that is smaller than the full live API suite.
+Step 04 should harden Stripe checkout, portal, webhook, and entitlement convergence with a focused gate covering idempotent checkout start, portal creation, signed webhook processing, duplicate/conflict behavior, entitlement summary updates, and fail-closed delinquency/suspension behavior.

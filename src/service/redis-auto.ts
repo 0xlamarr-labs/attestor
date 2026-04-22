@@ -22,6 +22,7 @@ export interface RedisResolution {
   mode: 'external' | 'localhost' | 'embedded';
   host: string;
   port: number;
+  shutdown(): Promise<void>;
 }
 
 /**
@@ -51,7 +52,16 @@ export async function resolveRedis(): Promise<RedisResolution> {
           if (typeof t.unref === 'function') t.unref();
         }),
       ]);
-      return { connection: t1Conn, mode: 'external', host, port };
+      const connection = t1Conn;
+      return {
+        connection,
+        mode: 'external',
+        host,
+        port,
+        async shutdown() {
+          connection.disconnect();
+        },
+      };
     } catch {
       try { t1Conn?.disconnect(); } catch {}
     }
@@ -77,7 +87,16 @@ export async function resolveRedis(): Promise<RedisResolution> {
           if (typeof t.unref === 'function') t.unref();
         }),
       ]);
-      return { connection: probeConn, mode: 'localhost' as const, host: '127.0.0.1', port: 6379 };
+      const connection = probeConn;
+      return {
+        connection,
+        mode: 'localhost' as const,
+        host: '127.0.0.1',
+        port: 6379,
+        async shutdown() {
+          connection.disconnect();
+        },
+      };
     } catch {
       try { probeConn?.disconnect(); } catch {}
     }
@@ -107,12 +126,23 @@ export async function resolveRedis(): Promise<RedisResolution> {
     await conn.ping();
     console.log(`[redis] Embedded Redis started on ${host}:${port} (dev mode — not for production)`);
 
+    const shutdown = async () => {
+      try { await conn.quit(); } catch { conn.disconnect(); }
+      try { await embeddedServer.stop(); } catch {}
+    };
+
     // Cleanup on process exit
-    const cleanup = async () => { try { await embeddedServer.stop(); } catch {} };
+    const cleanup = async () => { await shutdown(); };
     process.on('SIGTERM', cleanup);
     process.on('SIGINT', cleanup);
 
-    return { connection: conn, mode: 'embedded', host, port };
+    return {
+      connection: conn,
+      mode: 'embedded',
+      host,
+      port,
+      shutdown,
+    };
   } catch (err: any) {
     // Clean up embedded server if it was partially started
     if (embeddedServer) {
