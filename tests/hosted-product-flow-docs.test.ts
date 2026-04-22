@@ -351,7 +351,7 @@ function testTrackerAndAuditStayInSync(): void {
   includes(audit, '**Finance and crypto adoption examples.** Addressed by `docs/01-overview/finance-and-crypto-first-integrations.md`', 'Hosted product flow docs: audit records Step 06 evidence');
   includes(audit, '**Usage and billing visibility guide.** Addressed by `docs/01-overview/hosted-account-visibility.md`', 'Hosted product flow docs: audit records Step 07 evidence');
   includes(audit, '**Final truth-source gate.** Addressed by `tests/hosted-product-flow-readiness.test.ts`', 'Hosted product flow docs: audit records Step 08 evidence');
-  includes(systemOverview, 'hosted product flow hardening track is complete at `8 / 8`', 'Hosted product flow docs: system overview records hosted flow completion');
+  includes(systemOverview, 'hosted product flow hardening track is complete', 'Hosted product flow docs: system overview records hosted flow completion');
 }
 
 async function main(): Promise<void> {

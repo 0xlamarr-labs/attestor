@@ -91,4 +91,4 @@ Without that, Attestor is a strong policy decision and policy administration sys
 
 ## Immediate Next Step
 
-The frozen enforcement-plane buildout track is complete at `20 / 20`. The stable `attestor/release-enforcement-plane` entrypoint now exposes the finished enforcement contract behind explicit package-boundary checks, and any future work should start from a new tracker instead of extending this frozen step list.
+The frozen enforcement-plane buildout track is complete. The stable `attestor/release-enforcement-plane` entrypoint now exposes the finished enforcement contract behind explicit package-boundary checks, and any future work should start from a new tracker instead of extending this frozen step list.

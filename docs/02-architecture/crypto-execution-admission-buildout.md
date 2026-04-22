@@ -87,4 +87,4 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 
 ## Immediate Next Step
 
-The frozen crypto execution-admission buildout track is complete at `12 / 12`. Future work should start from a new tracker rather than extending this frozen step list.
+The frozen crypto execution-admission buildout track is complete. Future work should start from a new tracker rather than extending this frozen step list.

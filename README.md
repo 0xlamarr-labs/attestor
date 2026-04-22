@@ -83,17 +83,17 @@ Need to know where current plan, usage, billing, and entitlements live? See [Hos
 
 | Core layer | Role | Status |
 |---|---|---|
-| Release layer | consequence decisions, deterministic checks, tokens, reviewer queue, evidence packs | `24 / 24` complete, packaged |
-| Policy control plane | signed policy bundles, activation, rollback, scoping, simulation, audit trail | `20 / 20` complete, packaged |
-| Enforcement plane | offline/online verification, gateways, DPoP, mTLS/SPIFFE, HTTP message signatures | `20 / 20` complete, packaged |
-| Crypto authorization core | programmable-money authorization vocabulary, bindings, simulation, adapter preflight | `20 / 20` complete, packaged |
+| Release layer | consequence decisions, deterministic checks, tokens, reviewer queue, evidence packs | complete, packaged |
+| Policy control plane | signed policy bundles, activation, rollback, scoping, simulation, audit trail | complete, packaged |
+| Enforcement plane | offline/online verification, gateways, DPoP, mTLS/SPIFFE, HTTP message signatures | complete, packaged |
+| Crypto authorization core | programmable-money authorization vocabulary, bindings, simulation, adapter preflight | complete, packaged |
 
 ## Pack status
 
 | Pack | What it means today | Status |
 |---|---|---|
 | Finance | deepest proven path today; financial reporting is the current proving wedge | mature proving pack |
-| Crypto | real programmable-money core on the same model, with packaged admission surfaces for external integrations | `attestor/crypto-authorization-core` `20 / 20` complete, packaged; `attestor/crypto-execution-admission` `12 / 12` complete, packaged |
+| Crypto | real programmable-money core on the same model, with packaged admission surfaces for external integrations | `attestor/crypto-authorization-core` complete, packaged; `attestor/crypto-execution-admission` complete, packaged |
 
 The crypto pack already covers the authorization core and execution-admission surfaces, including wallet RPC, Safe guard, ERC-4337 bundler, modular-account runtime, delegated-EOA runtime, x402 resource-server middleware, custody policy callback paths, intent-solver handoffs, uniform admission telemetry / signed receipts, JSON conformance fixtures, and a curated package surface for external integrators. It extends the same Attestor control model; it is not a separate product identity.
 

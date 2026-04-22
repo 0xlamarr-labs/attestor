@@ -24,10 +24,10 @@ The platform core is made of reusable layers:
 
 | Layer | Role | Status |
 |---|---|---|
-| Release layer | decides whether a proposed consequence may proceed | `24 / 24` complete, packaged |
-| Policy control plane | stores, signs, scopes, activates, rolls out, simulates, and audits policy | `20 / 20` complete, packaged |
-| Enforcement plane | verifies authorization at downstream boundaries and fails closed without it | `20 / 20` complete, packaged |
-| Crypto authorization core | extends the same decision model into programmable-money authorization objects and simulations | `20 / 20` complete, packaged |
+| Release layer | decides whether a proposed consequence may proceed | complete, packaged |
+| Policy control plane | stores, signs, scopes, activates, rolls out, simulates, and audits policy | complete, packaged |
+| Enforcement plane | verifies authorization at downstream boundaries and fails closed without it | complete, packaged |
+| Crypto authorization core | extends the same decision model into programmable-money authorization objects and simulations | complete, packaged |
 
 The public package surfaces already reflect that shared core:
 
@@ -82,8 +82,8 @@ Current status:
 
 | Surface | Status |
 |---|---|
-| `attestor/crypto-authorization-core` | `20 / 20` complete, packaged |
-| `attestor/crypto-execution-admission` | `12 / 12` complete, packaged |
+| `attestor/crypto-authorization-core` | complete, packaged |
+| `attestor/crypto-execution-admission` | complete, packaged |
 
 What the crypto pack already covers:
 
@@ -99,7 +99,7 @@ What the crypto pack already covers:
 
 Current crypto execution-admission posture:
 
-- the frozen execution-admission buildout is complete at `12 / 12`
+- the frozen execution-admission buildout is complete
 - future crypto work should start from a new tracker rather than extending the frozen list
 
 ## Product Truth Versus First Slices
@@ -123,12 +123,12 @@ Active priority:
 
 - keep the product story centered on one Attestor platform
 - keep the README and architecture docs aligned with the trackers
-- treat the frozen crypto execution-admission track as complete at `12 / 12`
-- keep the hosted product flow truth sources, focused gates, and production probe aligned now that the hosted product flow hardening track is complete at `8 / 8`
+- treat the frozen crypto execution-admission track as complete
+- keep the hosted product flow truth sources, focused gates, and production probe aligned now that the hosted product flow hardening track is complete
 - avoid widening supporting hosted surfaces faster than their customer journey, billing, and readiness gates can stay honest
 
 Hosted product flow status:
 
-- [Hosted product flow and adoption hardening](hosted-product-flow-buildout.md) is complete at `8 / 8`
+- [Hosted product flow and adoption hardening](hosted-product-flow-buildout.md) is complete
 
 Future hosted product-flow changes should preserve the docs, contract, readiness, and probe gates before the public story expands again.

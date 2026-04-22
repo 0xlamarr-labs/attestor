@@ -93,7 +93,7 @@ function testCompletionSourcesAgree(): void {
   includes(tracker, '| 08 | complete | Add final docs truth-source and readiness gate |', 'Hosted readiness: tracker records Step 08 completion');
   includes(audit, 'The hosted product path is sale-ready for its current scope.', 'Hosted readiness: audit records sale-ready conclusion');
   includes(audit, '**Final truth-source gate.** Addressed by `tests/hosted-product-flow-readiness.test.ts`', 'Hosted readiness: audit records final gate evidence');
-  includes(systemOverview, 'hosted product flow hardening track is complete at `8 / 8`', 'Hosted readiness: system overview records completion');
+  includes(systemOverview, 'hosted product flow hardening track is complete', 'Hosted readiness: system overview records completion');
   includes(systemOverview, 'Future hosted product-flow changes should preserve the docs, contract, readiness, and probe gates', 'Hosted readiness: system overview records future guardrail');
   includes(liveApi, '/api/v1/account/features', 'Hosted readiness: live API covers features');
   includes(liveApi, '/api/v1/account/billing/export?limit=5', 'Hosted readiness: live API covers billing export');

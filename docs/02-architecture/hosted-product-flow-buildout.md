@@ -124,4 +124,4 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 
 ## Immediate Next Step
 
-This track is complete at `8 / 8`. Future hosted-flow changes should preserve the same truth-source and readiness gates.
+This track is complete. Future hosted-flow changes should preserve the same truth-source and readiness gates.
