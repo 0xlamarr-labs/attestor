@@ -61,6 +61,13 @@ Reviewed again on 2026-04-22 before Step 04:
 - ERC-4337 documentation and the EIP both keep UserOperation simulation and EntryPoint validation as the account-abstraction pre-execution surface; this remains adjacent evidence for later proof scenarios but Step 04 stays on x402 and EIP-7702: [ERC-4337 docs](https://docs.erc4337.io/core-standards/erc-4337.html), [EIP-4337](https://eips.ethereum.org/EIPS/eip-4337)
 - Safe guard documentation names `checkTransaction` and `checkAfterExecution` as guard hooks; this confirms the broader admission mental model while Step 04 avoids adding a Safe-specific proof run: [Safe guard docs](https://docs.safe.global/advanced/smart-account-guards/smart-account-guard-tutorial)
 
+Reviewed again on 2026-04-22 before Step 05:
+
+- W3C Verifiable Credentials 2.0 keeps evidence as supporting information that a verifier can inspect, which reinforces the proof surface need for explicit proof materials and evidence anchors instead of a UI-only status: [W3C VC Data Model 2.0](https://www.w3.org/TR/vc-data-model-2.0/)
+- CloudEvents defines a compact interoperable envelope with required context attributes such as `id`, `source`, `type`, and `specversion`; the proof output should keep stable context fields now so Step 06 can later render static artifacts or events without reshaping the contract: [CloudEvents specification](https://github.com/cloudevents/spec/blob/main/cloudevents/spec.md)
+- OpenTelemetry event semantic conventions emphasize named events with attributes for context, supporting a uniform proof output that separates the bounded decision from structured check attributes and evidence references: [OpenTelemetry events](https://opentelemetry.io/docs/specs/semconv/general/events/)
+- NIST AI RMF guidance keeps governance, measurement, and management tied to documentation and transparency; Attestor's proof output therefore needs a single inspectable record across packs, not finance-only or crypto-only output shapes: [NIST AI RMF Playbook](https://www.nist.gov/itl/ai-risk-management-framework/nist-ai-rmf-playbook)
+
 ## Architecture Decision
 
 Start the proof surface as a small, testable product-adoption layer inside the existing modular monolith:
@@ -90,10 +97,10 @@ The proof surface uses one shared vocabulary across packs:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 4 |
+| Completed | 5 |
 | In progress | 0 |
-| Not started | 4 |
-| Current posture | Finance and crypto proof scenarios now execute against shipped Attestor release, crypto authorization, crypto execution-admission, and signed receipt behavior. The proof surface can unify output shape next without widening into a separate product or mock demo |
+| Not started | 3 |
+| Current posture | Finance and crypto proof scenarios now execute through a shared proof output envelope with proposed consequence, policy check, authority check, evidence check, decision, proof materials, evidence anchors, canonical JSON, and digest. The proof surface can add a runnable local artifact generator next without changing the proof contract |
 
 ## Frozen Step List
 
@@ -103,11 +110,11 @@ The proof surface uses one shared vocabulary across packs:
 | 02 | complete | Add the proof scenario registry | `src/proof-surface/scenario-registry.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-scenario-registry.test.ts`, `package.json` | The registry defines five grounded proof scenarios across finance, crypto, and general fail-closed consequences. Each scenario carries a human hook, proposed consequence, real package/source entry points, expected bounded decision, proof material, customer value, and non-goals. The guard test verifies scenario uniqueness, package-surface binding, source/export grounding, proof material existence, finance/crypto/general coverage, admit/review/block coverage, and the no-hosted-crypto-route constraint. |
 | 03 | complete | Add finance proof scenarios | `src/proof-surface/finance-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-finance-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance proof runs now execute the shipped finance filing release bridge, release decision engine, deterministic checks, canonical release material, and domain finalization. The admit scenario reaches `accepted` with canonical hashes and authority satisfied; the review scenario keeps evidence sufficient while authority remains pending, producing `review-required` and fail-closed downstream behavior. |
 | 04 | complete | Add crypto admission proof scenarios | `src/proof-surface/crypto-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-crypto-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Crypto proof runs now execute the shipped x402 agentic payment adapter, EIP-7702 delegation adapter, crypto authorization simulation, crypto execution-admission planner, and signed admission receipt verifier. The x402 scenario reaches `admit` on the `agent-payment-http` surface with PAYMENT handoff artifacts; the delegated EOA scenario injects invalid authorization tuple evidence and reaches fail-closed `deny` on the `delegated-eoa-runtime` surface. No public hosted crypto HTTP route is claimed. |
-| 05 | not started | Add unified proof output shape |  | Output proposed consequence, policy check, authority check, evidence check, decision, reason, and proof material in one shared structure across packs. |
+| 05 | complete | Add unified proof output shape | `src/proof-surface/unified-output.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-unified-output.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance and crypto scenario runs now normalize into `attestor.proof-surface.output.v1`: source, proposed consequence, shared policy/authority/evidence checks, bounded decision, proof materials, evidence anchors, canonical JSON, output id, and digest. The shape intentionally keeps pack-specific finance material and crypto admission internals out of the top-level output while preserving evidence refs and anchors for later rendering. |
 | 06 | not started | Add runnable local proof command or artifact generator |  | Prefer a deterministic CLI/static artifact first. A broad hosted console waits until the proof output shape is stable and tested. |
 | 07 | not started | Add README "Run the proof" path |  | Link the runnable proof scenarios from the README without bloating the opening product story or claiming unfinished hosted capability. |
 | 08 | not started | Add proof-surface readiness and anti-drift gates |  | Guard that scenarios use real shipped logic or fixtures, cover admit/review/block behavior, expose proof material, and preserve one-product positioning. |
 
 ## Immediate Next Step
 
-Implement Step 05: add one unified proof output shape across finance and crypto runs so proposed consequence, policy check, authority check, evidence check, decision, reason, and proof material can be rendered consistently.
+Implement Step 06: add a deterministic local proof command or static artifact generator that renders the unified proof output without claiming a broad hosted console.

@@ -45,3 +45,25 @@ export {
   type CryptoProofScenarioRun,
   type CryptoProofSimulationSummary,
 } from './crypto-scenarios.js';
+
+export {
+  PROOF_SURFACE_CHECK_NAMES,
+  PROOF_SURFACE_CHECK_OUTCOMES,
+  PROOF_SURFACE_OUTPUT_ANCHOR_KINDS,
+  PROOF_SURFACE_OUTPUT_DEFAULT_GENERATED_AT,
+  PROOF_SURFACE_OUTPUT_SPEC_VERSION,
+  RUNNABLE_PROOF_SCENARIO_IDS,
+  createProofSurfaceOutput,
+  runProofSurfaceScenario,
+  runProofSurfaceScenarios,
+  type CreateProofSurfaceOutputOptions,
+  type ProofSurfaceCheckName,
+  type ProofSurfaceCheckOutcome,
+  type ProofSurfaceOutput,
+  type ProofSurfaceOutputAnchor,
+  type ProofSurfaceOutputAnchorKind,
+  type ProofSurfaceOutputCheck,
+  type ProofSurfaceOutputDecision,
+  type ProofSurfaceOutputSource,
+  type RunnableProofScenarioId,
+} from './unified-output.js';
