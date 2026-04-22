@@ -53,6 +53,7 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 | Completed | 4 |
 | In progress | 0 |
 | Not started | 8 |
+| Current posture | Paused after Step 04 while repository scope and documentation truth sources are tightened |
 
 ## Frozen Step List
 
@@ -73,4 +74,4 @@ Start this layer as a packaged module inside the Attestor modular monolith:
 
 ## Immediate Next Step
 
-Step 05 should project admission plans into modular account admission handoffs for ERC-7579 and ERC-6900 module/hook/plugin execution. That is the next layer because modular accounts compose execution behavior dynamically and need module-scoped admission evidence before installed hooks or plugins can execute.
+Crypto execution-admission implementation is paused after Step 04. When the pause is lifted, Step 05 should project admission plans into modular account admission handoffs for ERC-7579 and ERC-6900 module/hook/plugin execution. That is the next layer because modular accounts compose execution behavior dynamically and need module-scoped admission evidence before installed hooks or plugins can execute.

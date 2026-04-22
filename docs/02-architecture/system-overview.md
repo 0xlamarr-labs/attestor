@@ -1,40 +1,56 @@
 # System Overview
 
-Architecture of Attestor as of April 2026.
+Architecture of Attestor as of April 22, 2026.
 
-This document assumes the public framing already covered in the [README](../../README.md) and focuses on the architecture only.
+This document is the short architectural truth source. Detailed inventories stay in the buildout trackers and platform-surface documents linked from the README.
 
 ## Current Architectural Identity
 
-Attestor is being shaped as an **AI output release and acceptance layer**.
+Attestor is the policy-bound release, enforcement, and execution-authorization layer that sits before a proposed consequence is allowed to happen.
 
-That means the architecture is converging on a common kernel that sits between generated output and consequence:
+The common pattern is:
 
-- consequence type
-- risk class
-- release decision
-- review authority
-- evidence pack
-- release token
+```text
+proposed output or operation -> policy, authority, and evidence -> admitted, reviewed, narrowed, or blocked consequence
+```
 
-Today, the strongest implemented proving path is still financial reporting. The broader release-layer identity is the architectural direction, while finance remains the deepest end-to-end slice in the repository.
+Finance remains the deepest proven domain wedge, but the platform architecture is broader than finance:
 
-## Engine Architecture
+- release decisions govern AI-assisted outputs before they become communication, records, actions, or decision support
+- policy-control-plane bundles decide which rules are active for a scoped workload or tenant
+- enforcement-plane verifiers and PEP adapters fail closed at downstream boundaries
+- crypto authorization and admission modules extend the same release discipline toward programmable-money execution
 
-The engine is built from reusable layers:
+## Packaged Platform Surfaces
 
-- **Typed contracts** constrain what a proposal is allowed to do.
-- **Deterministic evidence** records governance, execution, validation, and lineage independent of generation.
-- **Scoring and review** translate evidence into governed decisions and reviewer escalation.
-- **Authority artifacts** close acceptance through warrant -> escrow -> receipt -> capsule.
-- **Portable proof** issues signed verifier-facing artifacts.
-- **Live proof** records what was actually observed at runtime.
+The reusable platform surfaces that are complete today are:
 
-The current codebase already has the core ingredients for a release layer. What is still being built is the common release kernel that can carry those ingredients consistently across multiple consequence types.
+| Surface | Package subpath | Status |
+|---|---|---|
+| Release layer | `attestor/release-layer`, `attestor/release-layer/finance` | `24 / 24` complete, packaged |
+| Release policy control plane | `attestor/release-policy-control-plane` | `20 / 20` complete, packaged |
+| Release enforcement plane | `attestor/release-enforcement-plane` | `20 / 20` complete, packaged |
+| Crypto authorization core | `attestor/crypto-authorization-core` | `20 / 20` complete, packaged |
+| Crypto execution admission | `attestor/crypto-execution-admission` | `4 / 12` complete, packaged first slices, paused |
 
-## Reference Financial Shape
+The codebase is still one repository and one modular monolith. Package surfaces are stable import boundaries, not a claim that every module is already a separately operated service.
 
-The financial reference path currently includes:
+## Shipped Capabilities
+
+The shipped platform capabilities include:
+
+- typed release vocabulary, object model, consequence rollout, deterministic checks, risk controls, release decisions, decision logging, canonicalization, and release tokens
+- token introspection, revocation, expiry, replay protection, reviewer queue, named review, dual approval, break-glass override, evidence packs, and release-layer package boundaries
+- signed policy bundles, activation records, scoped policy resolution, simulation, impact summaries, audit logs, activation approvals, and policy-control package boundaries
+- offline and online enforcement verification, freshness and replay rules, token exchange, DPoP, mTLS/SPIFFE, HTTP message signatures, async envelopes, Hono/Node middleware, webhook receiver, record-write gateway, communication-send gateway, action-dispatch gateway, Envoy/Istio external authorization, degraded-mode control, telemetry, conformance, and enforcement package boundaries
+- crypto authorization vocabulary, object model, canonical chain/account/asset references, risk mapping, EIP-712 envelopes, ERC-1271 projection, replay/freshness rules, release/policy/enforcement binding, simulation, Safe adapters, ERC-4337, ERC-7579, ERC-6900, EIP-7702, x402, custody/co-signer adapters, and crypto authorization package boundaries
+- crypto execution admission first slices for admission planning, wallet RPC handoffs, Safe guard receipts, and ERC-4337 bundler handoffs
+
+## Deepest Proven Domain
+
+Finance is still the strongest end-to-end proving surface.
+
+The financial reference path includes:
 
 - SQL governance
 - policy and entitlement checks
@@ -45,45 +61,31 @@ The financial reference path currently includes:
 - filing readiness
 - signed certificates and verification kits
 - reviewer endorsement and authority closure
+- finance record-release enforcement as the first hard gateway wedge
+- finance communication and action release flows in shadow-first posture
 
-This remains the strongest proving surface in the repository.
+Finance is the current proof wedge, not the ceiling of the platform.
 
-## Release-Layer Direction
+## First-Slice Or Not Yet Complete
 
-The release-layer buildout is not trying to replace model runtimes, agent frameworks, or data systems.
+The following areas exist, but should not be presented as fully complete products:
 
-It is trying to add a common decision boundary before output becomes:
+- hosted account, billing, SSO, passkey, and tenant operations are implemented as product-surface slices inside the service, not as a separately operated commercial SaaS deployment
+- healthcare, Snowflake, VSAC, and other domain/connector paths are useful supporting slices, not as deep as the finance path
+- distributed control-plane operation is not extracted into an independent multi-region service
+- crypto execution admission is paused after Step 04; it has a packaged API for the first execution surfaces, but it is not yet a full crypto platform, wallet, custody product, bundler, payment facilitator, or intent-solver network
 
-- `communication`
-- `record`
-- `action`
-- `decision-support`
+## Current Work Posture
 
-That direction is tracked here:
+Active priority:
 
-- [Release layer buildout tracker](release-layer-buildout.md)
+- keep the core platform story coherent
+- keep docs aligned with the trackers
+- keep README scope tight enough to be readable
+- avoid presenting first-slice product surfaces as complete markets
 
-## Current Boundary
+Paused:
 
-**Shipped**
+- new crypto execution-admission buildout work after Step 04
 
-- financial reference implementation
-- signed single-query and multi-query proof
-- real PostgreSQL-backed proof path
-- bounded API service
-- domain, connector, and filing registries
-- Snowflake connector module
-- XBRL mapping adapter
-- OIDC verification first slice
-- async API submission/status first slice
-- first release-kernel vocabulary and object-model work
-
-**Not shipped yet**
-
-- consequence-specific release enforcement across the four canonical consequence types
-- signed release token issuance for downstream consequence gating
-- downstream verifier SDK/middleware
-- centralized revocation/introspection for high-risk release paths
-- reviewer queue UX for release decisions
-- broader end-to-end domain implementations beyond finance
-- distributed control plane
+When resumed, the next frozen crypto execution-admission step is Step 05: modular account admission handoffs for ERC-7579 and ERC-6900.
