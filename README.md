@@ -2,7 +2,7 @@
 
 **Policy-bound release and authorization platform that sits before real consequence.**
 
-One platform core. Shared front-door product shape. Modular packs for finance, crypto, and later consequence domains.
+One product. One platform core. Hosted and customer-operated delivery paths. Modular packs for finance, crypto, and later consequence domains.
 
 Attestor sits between a proposed consequence and the system that would make it real. Teams use it before accepting AI-assisted outputs, writing financial records, sending controlled communications, or allowing programmable-money execution.
 
@@ -57,15 +57,17 @@ Teams buy a control layer, not a replacement for their existing systems.
 
 Attestor is called from the customer's own environment. Customer data, business workflows, models, agents, wallets, and operational systems stay where they already are.
 
-A buyer should be able to see the path clearly:
+Teams are buying governed release and authorization infrastructure, portable proof, independent verification, and a bounded control point before consequence.
 
-- **What teams are buying:** governed release and authorization infrastructure, portable proof, independent verification, and a bounded control point before consequence.
-- **How evaluation starts:** start with one narrow consequence boundary and prove the control model locally from this repo, the proof path, or the hosted account path described in the docs.
-- **Hosted path:** use the hosted account, API key, usage, and billing surfaces when a managed product path fits the control boundary.
-- **Customer-operated path:** use a customer-run deployment boundary when the team needs stricter runtime, isolation, or operating control.
-- **When commercial licensing applies:** production use is commercial under BSL 1.1 until the Change Date in [LICENSE](LICENSE).
+A practical buying path is simple:
+
+- Evaluation starts on the free `community` path or locally from this repo.
+- If the hosted path fits, teams sign up, receive the first API key, and upgrade through Stripe when moving onto a paid hosted plan.
+- If stricter runtime or isolation is required, production moves through the enterprise customer-operated path.
 
 In both paths, Attestor stays in front of an existing system that would otherwise write, send, file, or execute the consequence directly.
+
+Paid hosted starts at `starter`; customer-operated production fits the enterprise path. Production use is commercial under BSL 1.1 until the Change Date in [LICENSE](LICENSE).
 
 Need pricing, free evaluation, or hosted trial details? See [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
 
@@ -126,9 +128,6 @@ npm run verify
 ## Documentation map
 
 - [System overview](docs/02-architecture/system-overview.md)
-- [Financial reporting acceptance wedge](docs/01-overview/financial-reporting-acceptance.md)
-- [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md)
-- [Hosted customer journey](docs/01-overview/hosted-customer-journey.md)
 - [Release layer buildout](docs/02-architecture/release-layer-buildout.md)
 - [Policy control-plane buildout](docs/02-architecture/release-policy-control-plane-buildout.md)
 - [Enforcement-plane buildout](docs/02-architecture/release-enforcement-plane-buildout.md)
