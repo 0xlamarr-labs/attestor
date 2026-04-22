@@ -2,6 +2,8 @@
 
 This is the minimum operator checklist for turning Attestor from a technically live hosted API into a product that customers can actually buy.
 
+For public plan definitions, pricing, free evaluation, and hosted trial posture, use [Commercial packaging, pricing, and evaluation](product-packaging.md) as the source of truth. This document is operator-facing and should not become a second public pricing page.
+
 ## What Customers See
 
 From the customer's side, the commercial shape stays simple:
@@ -24,11 +26,7 @@ Create recurring Stripe prices for:
 - `pro`
 - `enterprise`
 
-The recommended public list prices are:
-
-- `starter`: `EUR 499 / month`
-- `pro`: `EUR 1,999 / month`
-- `enterprise`: `from EUR 7,500 / month`
+Those live Stripe prices should mirror [Commercial packaging, pricing, and evaluation](product-packaging.md).
 
 Map those live Stripe price ids into:
 
@@ -36,11 +34,12 @@ Map those live Stripe price ids into:
 - `ATTESTOR_STRIPE_PRICE_PRO`
 - `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
 
-For the default hosted funnel, keep the same commercial rule as the README:
+For the shipped default hosted funnel:
 
-- `community` = free evaluation plus the first `10` hosted runs
-- `starter` = the first paid hosted plan, with a `14-day` free trial
-- `pro` and `enterprise` = paid upgrades on that same account
+- `community` stays outside Stripe as the free evaluation path
+- `starter` is the first paid hosted plan
+- `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS` defaults to `14` for the starter trial unless you deliberately set a different approved value
+- any change to public price or trial posture should be reflected first in [Commercial packaging, pricing, and evaluation](product-packaging.md)
 
 ### 2. Activate Your Stripe Live Account
 

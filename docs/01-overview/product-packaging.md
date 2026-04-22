@@ -1,6 +1,6 @@
-# Commercial Packaging and Pricing
+# Commercial Packaging, Pricing, and Evaluation
 
-This document is the commercial truth source for Attestor plan structure, pricing, delivery paths, and the production licensing boundary.
+This document is the commercial truth source for Attestor plan structure, pricing, free evaluation, hosted trial posture, delivery paths, and the production licensing boundary.
 
 Attestor is one product: a **policy-bound release and authorization platform for high-consequence systems**. Finance is the deepest proven wedge today. Crypto extends the same platform core and control model.
 
@@ -43,20 +43,28 @@ What they get:
 - a commercial deployment path under customer control
 - enterprise packaging around deployment boundary, scale, and operating requirements
 
-## Plans and pricing
+## Plans, pricing, and evaluation path
 
-| Plan | Price | Intended use |
+| Plan | Price | Evaluation / trial posture | Intended use |
 |---|---|---|
-| `community` | free | zero-cost evaluation path and the first `10` hosted runs |
-| `starter` | EUR `499` / month | one serious team and one live workflow |
-| `pro` | EUR `1,999` / month | several workflows or one business unit |
-| `enterprise` | from EUR `7,500` / month | negotiated scale, stricter rollout, or a customer-operated deployment boundary |
+| `community` | free | zero-cost evaluation path and the first `10` hosted runs | local proof work, non-production evaluation, and first hosted tests |
+| `starter` | EUR `499` / month | first paid hosted plan; shipped hosted checkout supports an operator-configured Stripe trial, with `14` days as the default bootstrap value | one serious team and one live workflow |
+| `pro` | EUR `1,999` / month | paid hosted upgrade on the same account plane | several workflows or one business unit |
+| `enterprise` | from EUR `7,500` / month | negotiated commercial path for stricter rollout or customer-operated deployment | negotiated scale, stricter rollout, or a customer-operated deployment boundary |
 
 Pricing should be read together with the product shape:
 
 - `community` is for evaluation, not a broad production commitment
+- `starter` is the first paid hosted step after evaluation and can carry the hosted Stripe trial configured by the operator
 - paid hosted plans stay on the same account surface
 - `enterprise` is where customer-operated deployment and stricter control boundaries fit commercially
+
+If a reader comes here from the README asking "what is free?" the answer is:
+
+- the `community` path is the zero-cost evaluation route
+- the first `10` hosted runs are included there
+- the first paid hosted plan is `starter`
+- the shipped hosted bootstrap supports a Stripe-backed `starter` trial with `14` days as the default bootstrap value
 
 ## How buying works
 
@@ -95,24 +103,11 @@ The hosted commercial surface only needs to cover:
 
 It does not need to become a broad document workspace or generic AI application.
 
-## Operator pricing configuration
+## Operator handoff
 
-Hosted paid plans map to these Stripe configuration values:
+This document defines the public commercial shape only.
 
-- `ATTESTOR_STRIPE_PRICE_STARTER`
-- `ATTESTOR_STRIPE_PRICE_PRO`
-- `ATTESTOR_STRIPE_PRICE_ENTERPRISE`
-- `ATTESTOR_STRIPE_STARTER_TRIAL_DAYS`
-
-The minimum operator bootstrap for hosted billing also requires:
-
-- `STRIPE_API_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `ATTESTOR_BILLING_SUCCESS_URL`
-- `ATTESTOR_BILLING_CANCEL_URL`
-- `ATTESTOR_BILLING_PORTAL_RETURN_URL`
-
-The deeper operator setup lives outside this overview document.
+The operator-side Stripe and billing bootstrap lives in [Stripe commercial bootstrap](stripe-commercial-bootstrap.md).
 
 ## Product truth to preserve
 

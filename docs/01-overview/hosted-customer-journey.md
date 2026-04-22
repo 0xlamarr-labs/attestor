@@ -2,7 +2,7 @@
 
 This document covers the hosted buying and onboarding flow only.
 
-For plan definitions, pricing, hosted vs customer-operated packaging, and the production licensing boundary, use [Commercial packaging and pricing](product-packaging.md) as the source of truth.
+For plan definitions, pricing, free evaluation, hosted trial posture, hosted vs customer-operated packaging, and the production licensing boundary, use [Commercial packaging, pricing, and evaluation](product-packaging.md) as the source of truth.
 
 ## What this path is for
 
@@ -94,4 +94,4 @@ This document does not define:
 - customer-operated deployment packaging
 - production licensing terms
 
-Those live in [Commercial packaging and pricing](product-packaging.md).
+Those live in [Commercial packaging, pricing, and evaluation](product-packaging.md).

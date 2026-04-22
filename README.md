@@ -67,6 +67,10 @@ A buyer should be able to see the path clearly:
 
 In both paths, Attestor stays in front of an existing system that would otherwise write, send, file, or execute the consequence directly.
 
+Need pricing, free evaluation, or hosted trial details? See [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
+
+Need the hosted sign-up, first API key, and checkout flow? See [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
+
 ## Platform core
 
 | Core layer | Role | Status |
@@ -123,7 +127,7 @@ npm run verify
 
 - [System overview](docs/02-architecture/system-overview.md)
 - [Financial reporting acceptance wedge](docs/01-overview/financial-reporting-acceptance.md)
-- [Product packaging and pricing](docs/01-overview/product-packaging.md)
+- [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md)
 - [Hosted customer journey](docs/01-overview/hosted-customer-journey.md)
 - [Release layer buildout](docs/02-architecture/release-layer-buildout.md)
 - [Policy control-plane buildout](docs/02-architecture/release-policy-control-plane-buildout.md)
@@ -135,8 +139,8 @@ npm run verify
 ## Start here
 
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
-- Want packaging and commercial structure? Start with [Product packaging and pricing](docs/01-overview/product-packaging.md).
-- Want the managed customer path? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
+- Want pricing, free evaluation, or hosted trial details? Start with [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
+- Want the managed customer path, sign-up flow, and billing handoff? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
 
 ## What Attestor is not
 
