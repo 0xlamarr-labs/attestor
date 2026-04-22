@@ -320,6 +320,26 @@ async function main(): Promise<void> {
     assert.equal(accountSummary.body.account?.status, 'active');
     assert.equal(accountSummary.body.account?.billing?.stripeSubscriptionStatus, 'trialing');
 
+    const features = await fetchJson(`${baseUrl}/api/v1/account/features`, {
+      headers: { Authorization: `Bearer ${initialApiKey}` },
+    });
+    assert.equal(features.res.status, 200, `Account features failed: ${features.res.status} ${features.text}`);
+    assert.ok(Array.isArray(features.body.features), 'Account features did not return a features array.');
+
+    const billingExport = await fetchJson(`${baseUrl}/api/v1/account/billing/export?limit=5`, {
+      headers: { Authorization: `Bearer ${initialApiKey}` },
+    });
+    assert.equal(billingExport.res.status, 200, `Billing export failed: ${billingExport.res.status} ${billingExport.text}`);
+    assert.equal(billingExport.body.accountId, account.id, 'Billing export account id mismatch.');
+    assert.ok(Array.isArray(billingExport.body.invoices), 'Billing export did not return invoices.');
+
+    const billingReconciliation = await fetchJson(`${baseUrl}/api/v1/account/billing/reconciliation?limit=5`, {
+      headers: { Cookie: sessionCookie },
+    });
+    assert.equal(billingReconciliation.res.status, 200, `Billing reconciliation failed: ${billingReconciliation.res.status} ${billingReconciliation.text}`);
+    assert.equal(billingReconciliation.body.accountId, account.id, 'Billing reconciliation account id mismatch.');
+    assert.ok(billingReconciliation.body.reconciliation?.summary, 'Billing reconciliation summary missing.');
+
     const usageAfter = await fetchJson(`${baseUrl}/api/v1/account/usage`, {
       headers: { Authorization: `Bearer ${initialApiKey}` },
     });
@@ -344,6 +364,12 @@ async function main(): Promise<void> {
         entitlementStatus: entitlement.body.entitlement.status,
         effectivePlanId: entitlement.body.entitlement.effectivePlanId,
         subscriptionStatus: accountSummary.body.account.billing.stripeSubscriptionStatus,
+        billingExportDataSource: billingExport.body.summary?.dataSource ?? null,
+        billingReconciliationStatus: billingReconciliation.body.reconciliation?.summary?.status ?? null,
+      },
+      features: {
+        count: Array.isArray(features.body.features) ? features.body.features.length : null,
+        stripeSummaryPresent: features.body.summary?.stripeSummaryPresent ?? null,
       },
       usage: {
         before: usageBefore.body.usage?.used ?? null,

@@ -59,6 +59,15 @@ export const HOSTED_JOURNEY_TRUTH_SOURCES = {
   architectureTracker: 'docs/02-architecture/hosted-product-flow-buildout.md',
 } as const;
 
+export const HOSTED_PRODUCT_FLOW_READINESS_GATES = {
+  docsGuard: 'test:hosted-product-flow-docs',
+  contractGuard: 'test:hosted-product-flow-contract',
+  readinessGuard: 'test:hosted-product-flow-readiness',
+  signupFlowGate: 'test:hosted-signup-first-api-key-flow',
+  billingConvergenceGate: 'test:hosted-stripe-billing-convergence-flow',
+  productionProbe: 'probe:production-hosted-flow',
+} as const;
+
 export const HOSTED_JOURNEY_ROUTE_CONTRACTS = [
   {
     key: 'signup',
@@ -478,6 +487,7 @@ export function hostedJourneyContract() {
     billingConvergence:
       'checkout starts the paid hosted path, while signed Stripe webhooks converge account entitlement state',
     truthSources: HOSTED_JOURNEY_TRUTH_SOURCES,
+    readinessGates: HOSTED_PRODUCT_FLOW_READINESS_GATES,
     routeContracts: HOSTED_JOURNEY_ROUTE_CONTRACTS,
     steps: HOSTED_JOURNEY_STEP_CONTRACTS,
     supportedStripeWebhookEvents: [...STRIPE_SUPPORTED_WEBHOOK_EVENTS],

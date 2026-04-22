@@ -83,6 +83,12 @@ Reviewed again on 2026-04-22 before Step 07:
 - Stripe's Billing APIs describe entitlements as the feature-access layer created from subscriptions and note that active entitlements can be retrieved or tracked through the Active Entitlement Summary event, which matches Attestor's `entitlement` and `features` account-plane views: [Stripe Billing APIs](https://docs.stripe.com/billing/billing-apis), [Stripe event types](https://docs.stripe.com/api/events/types)
 - Stripe's subscription webhook guidance still treats most subscription activity as asynchronous and says integrations should verify webhook events from Stripe, which reinforces Attestor's model of converging billing state into visibility routes after checkout: [Stripe subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks)
 
+Reviewed again on 2026-04-22 before Step 08:
+
+- The latest published OpenAPI Specification remains the machine-readable API description reference for eliminating guesswork between documentation and implementation, which supports keeping a final hosted-flow truth-source gate instead of relying on prose drift alone: [OpenAPI Specification v3.2.0](https://spec.openapis.org/oas/latest.html)
+- Stripe's customer-portal API guidance says a portal session is the entry point into the customer portal and returns a short-lived URL, which supports documenting portal creation as a handoff instead of treating it as durable Attestor billing state: [Stripe customer portal API integration](https://docs.stripe.com/customer-management/integrate-customer-portal)
+- Stripe's webhook-signature guidance still requires the exact raw request body and `Stripe-Signature` header, which supports keeping the production probe and readiness gate tied to the real webhook boundary rather than to mocked JSON parsing alone: [Stripe webhook signature verification](https://docs.stripe.com/webhooks/signature)
+
 ## Architecture Decision
 
 Treat the hosted product flow as an adoption shell around the existing Attestor core:
@@ -98,10 +104,10 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 7 |
+| Completed | 8 |
 | In progress | 0 |
-| Not started | 1 |
-| Current posture | Active; hosted signup, Stripe billing convergence, first customer API-call guidance, finance/crypto first-integration examples, and account-plane visibility guidance are hardened; the next gap is the final truth-source readiness gate |
+| Not started | 0 |
+| Current posture | Complete for the current hosted scope; truth sources, focused gates, and the production-oriented probe are aligned, so the hosted product path can be treated as sale-ready without widening the product story |
 
 ## Frozen Step List
 
@@ -114,8 +120,8 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | 05 | complete | Add the first customer API-call quickstart | `docs/01-overview/hosted-first-api-call.md`, `README.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/hosted-journey-contract.md`, `src/service/hosted-journey-contract.ts`, `tests/hosted-product-flow-docs.test.ts`, `tests/hosted-product-flow-contract.test.ts`, `docs/01-overview/hosted-product-flow-audit.md` | The quickstart shows the first tenant API-key usage preflight, the first `POST /api/v1/pipeline/run` consequence gate, expected decision/proof/tenant/usage shape, Bearer-header secret handling, quota/rate-limit failure signals, optional signed proof verification, and downstream fail-closed responsibility without adding a new product surface or claiming automatic pack detection. |
 | 06 | complete | Add finance and crypto first-integration examples | `docs/01-overview/finance-and-crypto-first-integrations.md`, `README.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/hosted-journey-contract.md`, `src/service/hosted-journey-contract.ts`, `tests/hosted-product-flow-docs.test.ts`, `tests/hosted-product-flow-contract.test.ts`, `docs/01-overview/hosted-product-flow-audit.md` | The first-integration guide preserves the one-product model while making the real first surfaces explicit: finance starts through the hosted `POST /api/v1/pipeline/run` path, and crypto starts through the packaged `attestor/crypto-authorization-core` and `attestor/crypto-execution-admission` surfaces for wallets, Safe guards, ERC-4337 bundlers, modular accounts, EIP-7702 delegated EOAs, x402 resource servers, custody policy engines, and intent solvers. It also states that crypto must not be described as generally available through a public hosted route until a committed route contract, test, and tracker exist. |
 | 07 | complete | Add usage, quota, billing, and entitlement visibility guide | `docs/01-overview/hosted-account-visibility.md`, `README.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/hosted-journey-contract.md`, `src/service/hosted-journey-contract.ts`, `tests/hosted-product-flow-docs.test.ts`, `tests/hosted-product-flow-contract.test.ts`, `docs/01-overview/hosted-product-flow-audit.md` | The visibility guide makes the hosted account plane mechanically legible: `GET /api/v1/account` is the first summary read, `usage`/`entitlement`/`features` expose runtime and access posture, `billing/export` and `billing/reconciliation` expose invoice and review views, and checkout or portal routes are documented as Stripe handoff points rather than duplicate billing systems. Pricing remains in product packaging, and operator Stripe setup remains separate from customer-facing truth. |
-| 08 | not_started | Add final docs truth-source and readiness gate |  | Add a final guard that README, product packaging, hosted customer journey, Stripe bootstrap, system overview, route contract, probes, and tests agree before calling the hosted product flow sale-ready. |
+| 08 | complete | Add final docs truth-source and readiness gate | `tests/hosted-product-flow-readiness.test.ts`, `package.json`, `scripts/probe-production-hosted-flow.ts`, `docs/01-overview/hosted-product-flow-audit.md`, `docs/02-architecture/system-overview.md` | The final gate ties the customer docs, route contract, package scripts, focused hosted-flow tests, and production-oriented probe together before calling the hosted path sale-ready. The production probe now exercises the account summary, usage, entitlement, features, billing export, reconciliation, checkout, portal, and webhook surfaces, and the readiness guard locks those boundaries against future doc drift. |
 
 ## Immediate Next Step
 
-Step 08 should add the final docs truth-source and readiness gate so the hosted product flow can be called sale-ready without drifting again.
+This track is complete at `8 / 8`. Future hosted-flow changes should preserve the same truth-source and readiness gates.

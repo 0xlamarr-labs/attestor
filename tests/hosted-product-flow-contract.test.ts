@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   HOSTED_JOURNEY_CONTRACT_VERSION,
   HOSTED_JOURNEY_PRODUCT_MODEL,
+  HOSTED_PRODUCT_FLOW_READINESS_GATES,
   HOSTED_JOURNEY_ROUTE_CONTRACTS,
   HOSTED_JOURNEY_STEP_CONTRACTS,
   HOSTED_JOURNEY_TRUTH_SOURCES,
@@ -56,6 +57,11 @@ function testDescriptorShape(): void {
   ok(contract.consequenceBoundary.includes('before the downstream system'), 'Hosted journey contract: consequence boundary is explicit');
   ok(contract.packSelection.includes('does not auto-detect packs'), 'Hosted journey contract: no auto-detect promise');
   ok(contract.billingConvergence.includes('signed Stripe webhooks'), 'Hosted journey contract: billing convergence belongs to signed webhooks');
+  deepEqual(
+    contract.readinessGates,
+    HOSTED_PRODUCT_FLOW_READINESS_GATES,
+    'Hosted journey contract: readiness gates are exported machine-readably',
+  );
   deepEqual(
     contract.supportedStripeWebhookEvents,
     [...STRIPE_SUPPORTED_WEBHOOK_EVENTS],

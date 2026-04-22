@@ -8,7 +8,9 @@ It does not reopen the crypto buildout, change the one-product positioning, or t
 
 ## Current Conclusion
 
-The hosted API and billing pieces are real. The remaining work is not "build Stripe" or "invent an API." The remaining work is to make the customer journey contract, proof examples, and readiness gates tight enough that the product is understandable and hard to mis-document.
+The hosted product path is sale-ready for its current scope.
+
+That scope is narrow and explicit: one product, one hosted account plane, one pricing truth source, one customer journey contract, one first-call path, one finance/crypto entry map, one account visibility map, Stripe-backed checkout and portal handoffs, webhook-driven billing convergence, and a final docs/probe/test gate that guards the public story against drift.
 
 ## Truth Sources Already In Place
 
@@ -37,6 +39,8 @@ The shipped hosted customer path maps to these service routes:
 | Inspect usage/quota | `GET /api/v1/account/usage` | `src/service/http/routes/account-routes.ts`, `tests/live-api.test.ts`, `tests/live-control-plane-pg.test.ts` |
 | Inspect billing entitlement | `GET /api/v1/account/entitlement` | `src/service/http/routes/account-routes.ts`, `tests/live-api.test.ts`, `tests/live-control-plane-pg.test.ts` |
 | Inspect feature posture | `GET /api/v1/account/features` | `src/service/http/routes/account-routes.ts` |
+| Inspect invoice, charge, and entitlement export shape | `GET /api/v1/account/billing/export` | `src/service/http/routes/account-routes.ts`, `src/service/billing-export.ts`, `tests/live-api.test.ts` |
+| Inspect billing reconciliation status | `GET /api/v1/account/billing/reconciliation` | `src/service/http/routes/account-routes.ts`, `src/service/billing-reconciliation.ts`, `tests/live-api.test.ts` |
 | Manage API keys | `GET /api/v1/account/api-keys`, `POST /api/v1/account/api-keys`, `POST /api/v1/account/api-keys/:id/rotate`, `POST /api/v1/account/api-keys/:id/deactivate`, `POST /api/v1/account/api-keys/:id/reactivate`, `POST /api/v1/account/api-keys/:id/revoke` | `src/service/http/routes/account-routes.ts`, `src/service/application/account-api-key-service.ts`, `tests/live-api.test.ts` |
 | Start paid hosted checkout | `POST /api/v1/account/billing/checkout` | `src/service/http/routes/account-routes.ts`, `src/service/stripe-billing.ts`, `tests/stripe-commercial-config.test.ts`, `tests/live-api.test.ts` |
 | Open billing portal | `POST /api/v1/account/billing/portal` | `src/service/http/routes/account-routes.ts`, `src/service/stripe-billing.ts`, `tests/stripe-commercial-config.test.ts`, `tests/live-api.test.ts` |
@@ -63,7 +67,8 @@ The current repo already covers important parts of the hosted product path:
 - `tests/stripe-webhook-events.test.ts` guards the supported Stripe event list and canonical webhook route.
 - `tests/service-stripe-webhook-service.test.ts` covers signature enforcement, dedupe, replay, conflict, and shared-ledger/control-plane claim behavior.
 - `tests/service-stripe-webhook-billing-processor.test.ts` covers billing event processing behavior behind the route.
-- `scripts/probe-production-hosted-flow.ts` exists as a production-oriented probe for account creation, first API key use, governed pipeline call, checkout, portal, signed webhook simulation, and cleanup.
+- `tests/hosted-product-flow-readiness.test.ts` is the final docs/probe/test gate that checks truth-source separation, script exposure, production probe coverage, tracker completion, and sale-ready posture before the hosted path can be called clean.
+- `scripts/probe-production-hosted-flow.ts` exists as a production-oriented probe for account creation, first API key use, governed pipeline call, summary/usage/entitlement/features visibility, billing export and reconciliation reads, checkout, portal, signed webhook simulation, and cleanup.
 
 ## Hardening Gaps
 
@@ -75,10 +80,10 @@ These are the remaining gaps that matter before calling the hosted product path 
 4. **Customer first-call quickstart.** Addressed by `docs/01-overview/hosted-first-api-call.md`, which shows the first tenant API-key usage preflight, first `POST /api/v1/pipeline/run` consequence gate, expected decision/tenant/usage shape, secret handling, failure signals, and downstream fail-closed responsibility.
 5. **Finance and crypto adoption examples.** Addressed by `docs/01-overview/finance-and-crypto-first-integrations.md`, which keeps one-product language while separating the real first integration surfaces: finance starts with the hosted `POST /api/v1/pipeline/run` route, and crypto starts with the packaged `attestor/crypto-authorization-core` / `attestor/crypto-execution-admission` surfaces until a future route contract exists.
 6. **Usage and billing visibility guide.** Addressed by `docs/01-overview/hosted-account-visibility.md`, which maps current plan, usage, rate limit, entitlement, feature, billing export, reconciliation, checkout, and portal visibility onto the shipped hosted account-plane routes while keeping pricing truth and operator Stripe truth separate.
-7. **Final truth-source gate.** README, pricing, hosted journey, Stripe bootstrap, system overview, route contract, and probes should be tested together so future edits cannot silently reintroduce duplication or contradiction.
+7. **Final truth-source gate.** Addressed by `tests/hosted-product-flow-readiness.test.ts`, `package.json`, and `scripts/probe-production-hosted-flow.ts`, which keep README, pricing, hosted journey, account visibility, Stripe bootstrap, system overview, route contract, runtime probes, and focused hosted-flow gates aligned before calling the hosted path sale-ready.
 
 ## Decision
 
-Continue with the hosted product flow hardening track before reopening new crypto work.
+The hosted product flow hardening track is complete for its current scope.
 
-The next implementation step is to add the final docs truth-source and readiness gate.
+Future hosted-flow edits should preserve the docs, contract, readiness, and production-probe gates before widening the product story again.

@@ -275,6 +275,7 @@ function testHostedJourneyRoutesMatchShippedRoutes(): void {
     'GET /api/v1/account',
     'GET /api/v1/account/usage',
     'GET /api/v1/account/entitlement',
+    'GET /api/v1/account/features',
     'GET /api/v1/account/api-keys',
     'POST /api/v1/account/api-keys',
     'POST /api/v1/account/api-keys/:id/rotate',
@@ -283,6 +284,8 @@ function testHostedJourneyRoutesMatchShippedRoutes(): void {
     'POST /api/v1/account/api-keys/:id/revoke',
     'POST /api/v1/account/billing/checkout',
     'POST /api/v1/account/billing/portal',
+    'GET /api/v1/account/billing/export',
+    'GET /api/v1/account/billing/reconciliation',
   ];
 
   for (const routeContract of accountRouteContracts) {
@@ -309,11 +312,18 @@ function testRuntimeCoverageGatesAreNamed(): void {
   includes(packageJson, '"test:hosted-product-flow-docs"', 'Hosted product flow docs: package script exposes docs guard');
   includes(packageJson, '"test:hosted-signup-first-api-key-flow"', 'Hosted product flow docs: package script exposes signup-to-first-key gate');
   includes(packageJson, '"test:hosted-stripe-billing-convergence-flow"', 'Hosted product flow docs: package script exposes Stripe billing convergence gate');
+  includes(packageJson, '"test:hosted-product-flow-readiness"', 'Hosted product flow docs: package script exposes hosted readiness gate');
   includes(packageJson, '"probe:production-hosted-flow"', 'Hosted product flow docs: production hosted flow probe is exposed');
   includes(liveApi, '/api/v1/auth/signup', 'Hosted product flow docs: live API suite covers hosted signup');
+  includes(liveApi, '/api/v1/account/features', 'Hosted product flow docs: live API suite covers hosted features');
+  includes(liveApi, '/api/v1/account/billing/export?limit=5', 'Hosted product flow docs: live API suite covers hosted billing export');
+  includes(liveApi, '/api/v1/account/billing/reconciliation?limit=5', 'Hosted product flow docs: live API suite covers hosted billing reconciliation');
   includes(liveApi, '/api/v1/account/billing/checkout', 'Hosted product flow docs: live API suite covers checkout');
   includes(liveApi, '/api/v1/billing/stripe/webhook', 'Hosted product flow docs: live API suite covers Stripe webhook');
   includes(liveApi, 'entitlements.active_entitlement_summary.updated', 'Hosted product flow docs: live API suite covers Stripe entitlement summary updates');
+  includes(productionProbe, '/api/v1/account/features', 'Hosted product flow docs: production probe covers hosted features');
+  includes(productionProbe, '/api/v1/account/billing/export?limit=5', 'Hosted product flow docs: production probe covers hosted billing export');
+  includes(productionProbe, '/api/v1/account/billing/reconciliation?limit=5', 'Hosted product flow docs: production probe covers hosted billing reconciliation');
   includes(productionProbe, '/api/v1/account/billing/checkout', 'Hosted product flow docs: production probe covers checkout');
   includes(productionProbe, '/api/v1/account/billing/portal', 'Hosted product flow docs: production probe covers portal');
   includes(productionProbe, 'generateTestHeaderString', 'Hosted product flow docs: production probe signs Stripe webhook payloads');
@@ -325,7 +335,7 @@ function testTrackerAndAuditStayInSync(): void {
   const systemOverview = readProjectFile('docs', '02-architecture', 'system-overview.md');
 
   includes(tracker, 'Total frozen steps | 8', 'Hosted product flow docs: tracker declares eight frozen steps');
-  includes(tracker, '| Completed | 7 |', 'Hosted product flow docs: tracker has seven completed steps after account visibility guide');
+  includes(tracker, '| Completed | 8 |', 'Hosted product flow docs: tracker has eight completed steps after readiness gate');
   includes(tracker, '| 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces |', 'Hosted product flow docs: Step 01 is complete');
   includes(tracker, '| 02 | complete | Define one canonical hosted journey contract |', 'Hosted product flow docs: Step 02 is complete');
   includes(tracker, '| 03 | complete | Harden signup-to-first-API-key verification |', 'Hosted product flow docs: Step 03 is complete');
@@ -333,14 +343,15 @@ function testTrackerAndAuditStayInSync(): void {
   includes(tracker, '| 05 | complete | Add the first customer API-call quickstart |', 'Hosted product flow docs: Step 05 is complete');
   includes(tracker, '| 06 | complete | Add finance and crypto first-integration examples |', 'Hosted product flow docs: Step 06 is complete');
   includes(tracker, '| 07 | complete | Add usage, quota, billing, and entitlement visibility guide |', 'Hosted product flow docs: Step 07 is complete');
-  includes(tracker, '| 08 | not_started | Add final docs truth-source and readiness gate |', 'Hosted product flow docs: Step 08 is the next step');
-  includes(audit, 'The hosted API and billing pieces are real.', 'Hosted product flow docs: audit records the current conclusion');
+  includes(tracker, '| 08 | complete | Add final docs truth-source and readiness gate |', 'Hosted product flow docs: Step 08 is complete');
+  includes(audit, 'The hosted product path is sale-ready for its current scope.', 'Hosted product flow docs: audit records the final current conclusion');
   includes(audit, '**Focused hosted flow probe.** Addressed by `tests/hosted-signup-first-api-key-flow.test.ts`', 'Hosted product flow docs: audit records Step 03 evidence');
   includes(audit, '**Focused billing convergence probe.** Addressed by `tests/hosted-stripe-billing-convergence-flow.test.ts`', 'Hosted product flow docs: audit records Step 04 evidence');
   includes(audit, '**Customer first-call quickstart.** Addressed by `docs/01-overview/hosted-first-api-call.md`', 'Hosted product flow docs: audit records Step 05 evidence');
   includes(audit, '**Finance and crypto adoption examples.** Addressed by `docs/01-overview/finance-and-crypto-first-integrations.md`', 'Hosted product flow docs: audit records Step 06 evidence');
   includes(audit, '**Usage and billing visibility guide.** Addressed by `docs/01-overview/hosted-account-visibility.md`', 'Hosted product flow docs: audit records Step 07 evidence');
-  includes(systemOverview, 'Hosted product flow and adoption hardening', 'Hosted product flow docs: system overview names active hosted flow track');
+  includes(audit, '**Final truth-source gate.** Addressed by `tests/hosted-product-flow-readiness.test.ts`', 'Hosted product flow docs: audit records Step 08 evidence');
+  includes(systemOverview, 'hosted product flow hardening track is complete at `8 / 8`', 'Hosted product flow docs: system overview records hosted flow completion');
 }
 
 async function main(): Promise<void> {
