@@ -26,9 +26,12 @@ The public subpath exposes:
 
 - `createCryptoExecutionAdmissionPlan()`
 - `createWalletRpcAdmissionHandoff()`
+- `createSafeGuardAdmissionReceipt()`
 - `cryptoExecutionAdmissionAdapterProfile()`
 - `cryptoExecutionAdmissionDescriptor()`
 - `cryptoExecutionAdmissionLabel()`
+- `safeGuardAdmissionDescriptor()`
+- `safeGuardAdmissionReceiptLabel()`
 - `walletRpcAdmissionDescriptor()`
 - `walletRpcAdmissionHandoffLabel()`
 - versioned admission outcomes, surfaces, step kinds, and step statuses
@@ -58,6 +61,15 @@ The wallet RPC handoff maps a wallet-ready admission plan into:
 
 The handoff deliberately keeps Attestor outside the wallet role. It creates JSON-RPC request objects and an optional `attestorAdmission` sidecar capability for compatible wallets, but the admission receipt and policy proof remain Attestor artifacts.
 
+Safe guard admission receipts map Safe pre/post hook evidence into durable Attestor receipts:
+
+| Safe surface | Receipt role |
+|---|---|
+| Transaction guard | Binds `checkTransaction` / `checkAfterExecution`, Safe transaction hash, guard interface support, and owner recovery posture |
+| Module guard | Binds `checkModuleTransaction` / `checkAfterModuleExecution`, module transaction hash, module address, module-guard interface support, and module disablement recovery |
+
+The receipt does not deploy or replace a Safe guard. It proves that the Safe guard path was admitted by Attestor, names the required interface id, carries the canonical preflight digest, and fails closed if the guard is not enabled, lacks ERC-165/interface support, mismatches the admitted Safe, or cannot be recovered by owners.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -75,21 +87,22 @@ flowchart LR
 ```ts
 import {
   createCryptoExecutionAdmissionPlan,
+  createSafeGuardAdmissionReceipt,
   createWalletRpcAdmissionHandoff,
 } from 'attestor/crypto-execution-admission';
 
-const plan = createCryptoExecutionAdmissionPlan({
+const walletPlan = createCryptoExecutionAdmissionPlan({
   simulation,
   createdAt: new Date().toISOString(),
-  integrationRef: 'integration:x402:premium-api',
+  integrationRef: 'integration:wallet-rpc:treasury',
 });
 
-if (plan.outcome === 'deny') {
-  throw new Error(plan.blockedReasons.join(', '));
+if (walletPlan.outcome === 'deny') {
+  throw new Error(walletPlan.blockedReasons.join(', '));
 }
 
 const walletHandoff = createWalletRpcAdmissionHandoff({
-  plan,
+  plan: walletPlan,
   createdAt: new Date().toISOString(),
   calls: [
     {
@@ -101,6 +114,32 @@ const walletHandoff = createWalletRpcAdmissionHandoff({
 
 if (walletHandoff.outcome === 'blocked') {
   throw new Error(walletHandoff.blockingReasons.join(', '));
+}
+
+const safePlan = createCryptoExecutionAdmissionPlan({
+  simulation: safeGuardSimulation,
+  createdAt: new Date().toISOString(),
+  integrationRef: 'integration:safe-guard:treasury',
+});
+
+const safeReceipt = createSafeGuardAdmissionReceipt({
+  plan: safePlan,
+  preflight: safeGuardPreflight,
+  createdAt: new Date().toISOString(),
+  installation: {
+    guardAddress: '0x4444444444444444444444444444444444444444',
+    supportsErc165: true,
+    supportsGuardInterface: true,
+    enabledOnSafe: true,
+  },
+  recovery: {
+    guardCanBeRemovedByOwners: true,
+    emergencySafeTxPrepared: true,
+  },
+});
+
+if (safeReceipt.outcome === 'blocked') {
+  throw new Error(safeReceipt.blockingReasons.join(', '));
 }
 ```
 

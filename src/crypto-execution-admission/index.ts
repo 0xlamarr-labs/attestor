@@ -689,3 +689,4 @@ CryptoExecutionAdmissionDescriptor {
 }
 
 export * from './wallet-rpc.js';
+export * from './safe-guard.js';

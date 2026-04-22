@@ -22,6 +22,14 @@ assert.equal(
   admission.walletRpcAdmissionDescriptor().erc7902Capabilities.includes('eip7702Auth'),
   true,
 );
+assert.equal(
+  admission.safeGuardAdmissionDescriptor().interfaceIds.transactionGuard,
+  '0xe6d7a83a',
+);
+assert.equal(
+  admission.safeGuardAdmissionDescriptor().interfaceIds.moduleGuard,
+  '0x58401ed8',
+);
 
 let blockedInternalPath = false;
 try {
