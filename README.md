@@ -1,160 +1,101 @@
 # Attestor
 
-**Policy-bound release and authorization platform for high-consequence systems.**
+**Policy-bound release and authorization platform that sits before real consequence.**
 
-One API. One platform core. Modular packs for finance, crypto, and later consequence domains.
+One front door. One platform core. Modular packs for finance, crypto, and later consequence domains.
 
-Attestor sits before consequence.
+Attestor sits between a proposed consequence and the system that would make it real. Teams use it before accepting AI-assisted outputs, writing financial records, sending controlled communications, or allowing programmable-money execution.
 
-It is built for teams that will not let AI-assisted outputs, operational actions, financial records, or programmable-money movements cross into real consequence without policy, authority, and durable evidence.
-
-Attestor decides whether a proposed consequence may proceed; under what policy; with what authority; and with what evidence left behind.
-
-In practice, that means teams use Attestor to:
-
-- admit, narrow, review, or block proposed consequences before they become real
-- bind release decisions to policy and authority instead of informal operator judgment
-- produce portable proof and independent verification artifacts
-- enforce the same control model across finance and programmable-money execution paths
-
-Attestor is not the model, agent runtime, wallet, custody platform, or orchestration layer. It is the release, authorization, and evidence layer between a proposed consequence and the system that would carry it out.
+Its job is simple: decide whether the proposed consequence may proceed, under what policy, with what authority, and with what durable evidence left behind. It keeps high-consequence workflows from crossing into production on informal trust alone.
 
 > [!IMPORTANT]
-> Attestor does not try to prove that AI or programmable execution is universally trustworthy. It gives teams a disciplined way to decide when a proposed consequence can be accepted, and when it must be blocked, reviewed, narrowed, or bounded more tightly.
+> Attestor is the release / authorization / evidence layer before consequence. It is not the model, agent runtime, wallet, custody platform, or orchestration layer.
 
 > [!NOTE]
-> This repository is source-available under the Business Source License 1.1. Public source access is allowed, non-production use is allowed, and production use requires a commercial license until the Change Date listed in [LICENSE](LICENSE).
+> This repository is source-available under Business Source License 1.1. Non-production use is allowed. Production use requires a commercial license until the Change Date in [LICENSE](LICENSE).
 
 ## What Attestor Is
 
-Attestor answers four questions:
+Attestor answers four practical questions:
 
 - may this proposed consequence proceed at all?
 - under what policy may it move forward?
 - who or what authority can approve it?
 - what evidence survives after the decision?
 
-That pattern applies across both AI and programmable-money workflows.
+That pattern holds across both finance and programmable-money workflows.
 
-```mermaid
-flowchart LR
-  P["models, agents, apps, wallets"] --> A["Attestor: policy, authority, evidence"]
-  A --> C["communication, record, action, decision-support, programmable-money movement"]
-```
+## How Attestor works in practice
 
-## One Product, Modular Packs
+- A customer system proposes a sensitive output, record, action, or programmable-money move.
+- It calls Attestor before the downstream system accepts or executes that consequence.
+- Attestor evaluates active policy, required authority, and evidence requirements.
+- Attestor returns a bounded decision: admit, narrow, review, or block, plus proof material.
+- The downstream system proceeds only when the decision allows it and otherwise fails closed.
+- The result can be reviewed and independently verified later.
 
-Attestor is one product.
+## One product, modular packs
 
-The core platform stays the same across domains:
+Attestor is one product, not a collection of unrelated products.
 
-- release decisions decide whether a proposed consequence can move at all
-- policy control-plane bundles define which rules are active for a scoped workload or tenant
-- enforcement-plane verifiers and gateways fail closed at downstream boundaries
-- authorization objects and simulations provide the portable substrate for higher-consequence execution paths
+The same platform core stays in place across domains: release decisions, policy activation, enforcement verification, and portable authorization objects. Finance and crypto sit on top of that shared core as modular packs.
 
-The packs sit on top of that shared platform:
+- **Finance pack:** the strongest proof wedge today
+- **Crypto pack:** the programmable-money extension on the same policy / authority / proof / fail-closed model
+- **Later packs:** additional consequence domains can attach to the same core without becoming separate primary products by default
 
-- **finance pack**: the deepest proven wedge today, centered on financial reporting and finance operations
-- **crypto pack**: the programmable-money extension, built on the same policy, proof, and authorization model
-- **later packs**: additional consequence or domain packs can attach to the same Attestor core without turning into separate products by default
+Attestor does not magically guess what to run. Customer systems call the relevant Attestor path for the consequence they want to control.
 
-## Current Proof Wedge
+## Current proof wedge
 
-The strongest end-to-end proving path today is finance.
+The deepest proven wedge today is finance.
 
-The first hard gateway wedge is:
+The first hard boundary is:
 
 **AI output -> structured financial record release**
 
-That is the point where weak acceptance models break fast: silent errors are expensive, controls must be legible, auditability is mandatory, and reviewer authority matters.
+That is where weak acceptance models break quickly: reviewer authority matters, deterministic checks matter, portable proof matters, and auditability is not optional.
 
 Finance is the current proving ground, not the ceiling of the platform.
 
-For the detailed wedge framing, see [AI-assisted financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
+See [AI-assisted financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 
-## Platform Core
+## How teams adopt Attestor
 
-The platform core is where Attestor already has the strongest product truth:
+Teams buy a control layer, not a replacement for their existing systems.
+
+Attestor is called from the customer's own environment. Customer data, business workflows, models, agents, wallets, and operational systems stay where they already are.
+
+A practical adoption path is usually:
+
+1. Start with one narrow consequence boundary, not a full platform rewrite.
+2. Evaluate locally from this repo and the proof path, or through the hosted account path described in the docs.
+3. Put Attestor in front of the downstream system that would otherwise accept or execute the sensitive consequence.
+4. Move to production on the hosted path or a customer-operated deployment boundary, depending on control requirements.
+
+The hosted path in this repo/docs includes account, API key, usage, and billing surfaces. The customer-operated path exists for teams that need stricter runtime and control boundaries. Production use is commercial under BSL 1.1 until the Change Date in [LICENSE](LICENSE).
+
+## Platform core
 
 | Core layer | Role | Status |
 |---|---|---|
-| Release layer | release decisions, tokens, canonicalization, deterministic checks, reviewer queue, evidence packs | `24 / 24` complete, packaged |
-| Policy control plane | signed policy bundles, activation, rollback, scoping, simulation, impact summaries, audit log | `20 / 20` complete, packaged |
-| Enforcement plane | offline/online verification, DPoP, mTLS/SPIFFE, HTTP message signatures, gateways, proxy enforcement | `20 / 20` complete, packaged |
-| Crypto authorization core | programmable-money authorization vocabulary, object model, bindings, simulation, and adapter preflight | `20 / 20` complete, packaged |
+| Release layer | consequence decisions, deterministic checks, tokens, reviewer queue, evidence packs | `24 / 24` complete, packaged |
+| Policy control plane | signed policy bundles, activation, rollback, scoping, simulation, audit trail | `20 / 20` complete, packaged |
+| Enforcement plane | offline/online verification, gateways, DPoP, mTLS/SPIFFE, HTTP message signatures | `20 / 20` complete, packaged |
+| Crypto authorization core | programmable-money authorization vocabulary, bindings, simulation, adapter preflight | `20 / 20` complete, packaged |
 
-### Public Package Surfaces
+## Pack status
 
-| Layer | Public package surface |
-|---|---|
-| Release layer | `attestor/release-layer` |
-| Finance proving pack | `attestor/release-layer/finance` |
-| Policy control plane | `attestor/release-policy-control-plane` |
-| Enforcement plane | `attestor/release-enforcement-plane` |
-| Crypto authorization pack | `attestor/crypto-authorization-core` |
-| Crypto execution-admission pack | `attestor/crypto-execution-admission` |
+| Pack | What it means today | Status |
+|---|---|---|
+| Finance | strongest end-to-end proof path; financial reporting is the deepest proving wedge | mature proving pack |
+| Crypto | same core control model applied to programmable-money authorization and admission | `attestor/crypto-authorization-core` `20 / 20` complete; `attestor/crypto-execution-admission` `6 / 12` active buildout |
 
-## Pack Status
+The crypto pack already covers the authorization core and several execution-admission surfaces, including wallet RPC, Safe guard, ERC-4337 bundler, modular-account runtime, and delegated-EOA runtime paths. It extends the same Attestor control model; it is not a separate product identity.
 
-### Finance Pack
+## Proof and verification
 
-The finance pack is the most mature Attestor pack today.
-
-It includes:
-
-- SQL governance
-- policy and entitlement checks
-- execution guardrails
-- fixture, SQLite, and bounded PostgreSQL execution
-- data contracts and reconciliation logic
-- semantic clauses
-- filing readiness
-- signed certificates and verification kits
-- reviewer endorsement and authority closure
-- finance record-release enforcement as the first hard gateway wedge
-
-### Crypto Pack
-
-The crypto pack is an extension of the same Attestor core, not a separate product.
-
-Its job is simple: apply the same policy, authority, proof, and fail-closed admission discipline to programmable-money execution before value actually moves.
-
-Current status:
-
-- `attestor/crypto-authorization-core`: `20 / 20` complete, packaged
-- `attestor/crypto-execution-admission`: `6 / 12` complete, active buildout
-
-What the crypto pack already covers:
-
-- canonical chain/account/asset/consequence vocabulary
-- EIP-712 authorization envelopes
-- ERC-1271 validation projection
-- replay, nonce, expiry, and revocation rules
-- release, policy, and enforcement binding
-- pre-execution simulation
-- Safe transaction and module guard adapters
-- ERC-4337 UserOperation adapter
-- ERC-7579 and ERC-6900 modular account adapters
-- EIP-7702 delegation-aware adapter
-- x402 agentic payment adapter
-- custody co-signer and policy-engine adapter
-- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, modular-account runtime handoffs, and delegated-EOA runtime handoffs
-
-Next frozen crypto step:
-
-- Step 07: x402 resource-server admission middleware
-
-## Proof And Verification
-
-The strongest black-and-white evidence in this repository is reproducible proof generation and independent verification.
-
-| Evidence path | What it proves |
-|---|---|
-| `npm run showcase:proof:hybrid` | generates a live hybrid packet from a real upstream model call, bounded SQLite execution, reviewer endorsement, and PKI-backed proof material |
-| `npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json` | independently verifies the generated portable verification kit outside the main runtime |
-| `npm run showcase:proof` | generates a PostgreSQL-grounded packet with deeper schema/data-state evidence |
-| `docs/evidence/financial-reporting-acceptance-live-hybrid/` | committed sample packet for the counterparty exposure reporting-acceptance flow |
+Attestor does not stop at policy text. It produces portable proof material and supports independent verification.
 
 Shortest proof path:
 
@@ -163,93 +104,48 @@ npm run showcase:proof:hybrid
 npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
 ```
 
-## Quick Start
+That path generates a live hybrid packet, then verifies the resulting kit outside the main runtime.
+
+## Quick start
 
 ```bash
 npm install
 
-# List financial reference scenarios
+# Explore the reference scenarios
 npm run list
 
-# Fixture run, no keys or database needed
+# Run the bounded fixture scenario
 npm run scenario -- counterparty
 
-# Check signing / model / database readiness
-npm run start -- doctor
-
-# Signed single-query proof
+# Generate a signed proof for the same scenario
 npm run prove -- counterparty
 
-# Live hybrid proof + packet, requires OPENAI_API_KEY
+# Generate a live hybrid packet
 npm run showcase:proof:hybrid
 
-# Verify a kit
-npm run verify:cert -- .attestor/proofs/<run>/kit.json
-
-# Core verification gate
-npm test
-
-# Local safe gate
+# Run the local verification gate
 npm run verify
 ```
 
-## Main Commands
+## Documentation map
 
-| Command | Purpose |
-|---|---|
-| `npm run typecheck` | TypeScript check without emit |
-| `npm test` | Core verification gate |
-| `npm run build` | Compile TypeScript to `dist/` |
-| `npm run verify` | Typecheck, core tests, build, and package-surface probes |
-| `npm run verify:full` | Wider local and env-gated integration verification |
-| `npm run test:release-layer-package-surface` | Probe packaged release-layer imports |
-| `npm run test:release-policy-control-plane-package-surface` | Probe packaged policy-control-plane imports |
-| `npm run test:release-enforcement-plane-package-surface` | Probe packaged enforcement-plane imports |
-| `npm run test:crypto-authorization-core-package-surface` | Probe packaged crypto-authorization-core imports |
-| `npm run test:crypto-execution-admission-package-surface` | Probe packaged crypto-execution-admission imports |
+- [System overview](docs/02-architecture/system-overview.md)
+- [Financial reporting acceptance wedge](docs/01-overview/financial-reporting-acceptance.md)
+- [Product packaging and pricing](docs/01-overview/product-packaging.md)
+- [Hosted customer journey](docs/01-overview/hosted-customer-journey.md)
+- [Release layer buildout](docs/02-architecture/release-layer-buildout.md)
+- [Policy control-plane buildout](docs/02-architecture/release-policy-control-plane-buildout.md)
+- [Enforcement-plane buildout](docs/02-architecture/release-enforcement-plane-buildout.md)
+- [Crypto authorization core buildout](docs/02-architecture/crypto-authorization-core-buildout.md)
+- [Crypto execution-admission buildout](docs/02-architecture/crypto-execution-admission-buildout.md)
+- [Production readiness](docs/08-deployment/production-readiness.md)
 
-## Documentation Map
+## What Attestor is not
 
-| Topic | Link |
-|---|---|
-| System overview | [docs/02-architecture/system-overview.md](docs/02-architecture/system-overview.md) |
-| Release layer tracker | [docs/02-architecture/release-layer-buildout.md](docs/02-architecture/release-layer-buildout.md) |
-| Release layer package surface | [docs/02-architecture/release-layer-platform-surface.md](docs/02-architecture/release-layer-platform-surface.md) |
-| Policy control-plane tracker | [docs/02-architecture/release-policy-control-plane-buildout.md](docs/02-architecture/release-policy-control-plane-buildout.md) |
-| Policy control-plane package surface | [docs/02-architecture/release-policy-control-plane-platform-surface.md](docs/02-architecture/release-policy-control-plane-platform-surface.md) |
-| Enforcement-plane tracker | [docs/02-architecture/release-enforcement-plane-buildout.md](docs/02-architecture/release-enforcement-plane-buildout.md) |
-| Enforcement-plane package surface | [docs/02-architecture/release-enforcement-plane-platform-surface.md](docs/02-architecture/release-enforcement-plane-platform-surface.md) |
-| Crypto authorization core tracker | [docs/02-architecture/crypto-authorization-core-buildout.md](docs/02-architecture/crypto-authorization-core-buildout.md) |
-| Crypto authorization core package surface | [docs/02-architecture/crypto-authorization-core-platform-surface.md](docs/02-architecture/crypto-authorization-core-platform-surface.md) |
-| Crypto execution-admission tracker | [docs/02-architecture/crypto-execution-admission-buildout.md](docs/02-architecture/crypto-execution-admission-buildout.md) |
-| Crypto execution-admission package surface | [docs/02-architecture/crypto-execution-admission-platform-surface.md](docs/02-architecture/crypto-execution-admission-platform-surface.md) |
-| Financial reporting wedge | [docs/01-overview/financial-reporting-acceptance.md](docs/01-overview/financial-reporting-acceptance.md) |
-| Product packaging and pricing | [docs/01-overview/product-packaging.md](docs/01-overview/product-packaging.md) |
-| Hosted customer journey | [docs/01-overview/hosted-customer-journey.md](docs/01-overview/hosted-customer-journey.md) |
-| Production readiness | [docs/08-deployment/production-readiness.md](docs/08-deployment/production-readiness.md) |
-| Deployment and DR | [docs/08-deployment/deployment.md](docs/08-deployment/deployment.md), [docs/08-deployment/backup-restore-dr.md](docs/08-deployment/backup-restore-dr.md) |
-
-## Project Status
-
-| Field | Value |
-|---|---|
-| Version | `1.0.0` |
-| Runtime | Node.js 22+, TypeScript, split API + worker CLI + bounded HTTP API |
-| Release layer | `24 / 24` complete |
-| Release policy control plane | `20 / 20` complete |
-| Release enforcement plane | `20 / 20` complete |
-| Crypto authorization core | `20 / 20` complete, packaged |
-| Crypto execution admission | `6 / 12` complete, active buildout |
-| Verification | covered by `npm test`, `npm run verify`, and `npm run verify:full` |
-| Package probes | release layer, policy control plane, enforcement plane, crypto authorization core, and crypto execution admission package surfaces are covered |
-| License | Business Source License 1.1, Change License `GPL-2.0-or-later` on 2030-04-13 |
-
-## What Attestor Is Not
-
-- Not a financial chatbot
-- Not an LLM orchestration framework
-- Not a BI dashboard
-- Not a customer-facing automated decision engine
-- Not a regulatory submission platform
+- Not the model
+- Not the agent runtime
+- Not the downstream system that actually writes, sends, files, executes, or settles
 - Not a wallet or custody platform
-- Not proof that AI is inherently trustworthy
+- Not an orchestration framework or generic AI workspace
+- Not a magical system that guesses the right path automatically
+- Not proof that AI or programmable execution is inherently trustworthy
