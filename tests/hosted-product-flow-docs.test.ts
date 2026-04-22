@@ -129,6 +129,7 @@ function testRuntimeCoverageGatesAreNamed(): void {
 
   includes(packageJson, '"test:hosted-product-flow-docs"', 'Hosted product flow docs: package script exposes docs guard');
   includes(packageJson, '"test:hosted-signup-first-api-key-flow"', 'Hosted product flow docs: package script exposes signup-to-first-key gate');
+  includes(packageJson, '"test:hosted-stripe-billing-convergence-flow"', 'Hosted product flow docs: package script exposes Stripe billing convergence gate');
   includes(packageJson, '"probe:production-hosted-flow"', 'Hosted product flow docs: production hosted flow probe is exposed');
   includes(liveApi, '/api/v1/auth/signup', 'Hosted product flow docs: live API suite covers hosted signup');
   includes(liveApi, '/api/v1/account/billing/checkout', 'Hosted product flow docs: live API suite covers checkout');
@@ -145,13 +146,15 @@ function testTrackerAndAuditStayInSync(): void {
   const systemOverview = readProjectFile('docs', '02-architecture', 'system-overview.md');
 
   includes(tracker, 'Total frozen steps | 8', 'Hosted product flow docs: tracker declares eight frozen steps');
-  includes(tracker, '| Completed | 3 |', 'Hosted product flow docs: tracker has three completed steps after signup verification');
+  includes(tracker, '| Completed | 4 |', 'Hosted product flow docs: tracker has four completed steps after billing convergence');
   includes(tracker, '| 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces |', 'Hosted product flow docs: Step 01 is complete');
   includes(tracker, '| 02 | complete | Define one canonical hosted journey contract |', 'Hosted product flow docs: Step 02 is complete');
   includes(tracker, '| 03 | complete | Harden signup-to-first-API-key verification |', 'Hosted product flow docs: Step 03 is complete');
-  includes(tracker, '| 04 | not_started | Harden Stripe checkout, portal, webhook, and entitlement convergence |', 'Hosted product flow docs: Step 04 is the next step');
+  includes(tracker, '| 04 | complete | Harden Stripe checkout, portal, webhook, and entitlement convergence |', 'Hosted product flow docs: Step 04 is complete');
+  includes(tracker, '| 05 | not_started | Add the first customer API-call quickstart |', 'Hosted product flow docs: Step 05 is the next step');
   includes(audit, 'The hosted API and billing pieces are real.', 'Hosted product flow docs: audit records the current conclusion');
   includes(audit, '**Focused hosted flow probe.** Addressed by `tests/hosted-signup-first-api-key-flow.test.ts`', 'Hosted product flow docs: audit records Step 03 evidence');
+  includes(audit, '**Focused billing convergence probe.** Addressed by `tests/hosted-stripe-billing-convergence-flow.test.ts`', 'Hosted product flow docs: audit records Step 04 evidence');
   includes(systemOverview, 'Hosted product flow and adoption hardening', 'Hosted product flow docs: system overview names active hosted flow track');
 }
 
