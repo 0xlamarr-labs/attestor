@@ -77,17 +77,17 @@ The proof surface uses one shared vocabulary across packs:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 1 |
+| Completed | 2 |
 | In progress | 0 |
-| Not started | 7 |
-| Current posture | Track opened; scope, vocabulary, research anchors, and anti-drift guardrails are defined before implementation starts |
+| Not started | 6 |
+| Current posture | Scenario registry exists and is guarded; proof-surface work can now attach real finance and crypto runs without widening into a separate product or mock demo |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
 | 01 | complete | Define the proof surface purpose, scope, vocabulary, and guardrails | `docs/02-architecture/proof-console-buildout.md`, `tests/proof-surface-docs.test.ts`, `README.md`, `package.json` | The track is explicitly an adoption/proof layer around the existing Attestor product, not a new product, wallet, custody platform, agent runtime, orchestration layer, or mock-only marketing demo. |
-| 02 | not started | Add the proof scenario registry |  | Define a small typed registry for finance, crypto, and blocked/review scenarios. The registry should describe proposed consequence, pack family, Attestor entry point, expected decision, and proof material without invoking broad UI concerns. |
+| 02 | complete | Add the proof scenario registry | `src/proof-surface/scenario-registry.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-scenario-registry.test.ts`, `package.json` | The registry defines five grounded proof scenarios across finance, crypto, and general fail-closed consequences. Each scenario carries a human hook, proposed consequence, real package/source entry points, expected bounded decision, proof material, customer value, and non-goals. The guard test verifies scenario uniqueness, package-surface binding, source/export grounding, proof material existence, finance/crypto/general coverage, admit/review/block coverage, and the no-hosted-crypto-route constraint. |
 | 03 | not started | Add finance proof scenarios |  | Include at least one admit path and one review/block path tied to shipped finance/release proof behavior. Finance remains the deepest proof wedge. |
 | 04 | not started | Add crypto admission proof scenarios |  | Include at least one admit path and one deny/needs-evidence path tied to `attestor/crypto-authorization-core` or `attestor/crypto-execution-admission`. Do not claim a public hosted crypto HTTP route. |
 | 05 | not started | Add unified proof output shape |  | Output proposed consequence, policy check, authority check, evidence check, decision, reason, and proof material in one shared structure across packs. |
@@ -97,4 +97,4 @@ The proof surface uses one shared vocabulary across packs:
 
 ## Immediate Next Step
 
-Implement Step 02: add the proof scenario registry as a small typed surface that can describe finance, crypto, and blocked/review proof scenarios before any UI is added.
+Implement Step 03: attach finance proof scenarios to shipped finance/release behavior so the first proof surface can show an admit path and a review/block path without mock-only output.
