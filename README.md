@@ -103,6 +103,14 @@ The crypto pack already covers the authorization core and execution-admission su
 
 Attestor does not stop at policy text. It produces portable proof material and supports independent verification.
 
+To inspect the shared finance/crypto proof surface locally:
+
+```bash
+npm run proof:surface
+```
+
+That command writes `.attestor/proof-surface/latest/` with a manifest, machine-readable bundle, markdown summary, and one unified proof output per runnable scenario. It is a local static proof surface; it does not start a hosted console or claim a public hosted crypto route.
+
 Shortest proof path:
 
 ```bash
@@ -116,6 +124,9 @@ That path generates a live hybrid packet, then verifies the resulting kit outsid
 
 ```bash
 npm install
+
+# Render the cross-pack local proof surface
+npm run proof:surface
 
 # Explore the reference scenarios
 npm run list
@@ -153,7 +164,7 @@ npm run verify
 - Want the first API call after signup? Start with [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 - Want the first finance or crypto integration path? Start with [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
 - Want to see where plan, usage, entitlement, and billing state live? Start with [Hosted account visibility](docs/01-overview/hosted-account-visibility.md).
-- Want the next visible proof surface? Start with [Proof surface buildout](docs/02-architecture/proof-console-buildout.md).
+- Want to run the visible proof surface? Use `npm run proof:surface`, then inspect `.attestor/proof-surface/latest/manifest.json`; background is in [Proof surface buildout](docs/02-architecture/proof-console-buildout.md).
 
 ## What Attestor is not
 

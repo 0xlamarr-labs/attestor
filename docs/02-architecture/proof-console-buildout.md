@@ -75,6 +75,13 @@ Reviewed again on 2026-04-22 before Step 06:
 - JSON Schema Draft 2020-12 keeps machine validation as a first-class JSON document concern; Step 06 therefore keeps proof output as structured JSON with stable version fields rather than a markdown-only demo: [JSON Schema Draft 2020-12](https://json-schema.org/draft/2020-12)
 - CloudEvents JSON format keeps event envelopes portable through `id`, `source`, `type`, and related context attributes; the local artifact generator keeps the unified output envelope stable so later event publishing can be added without reshaping scenario evidence: [CloudEvents JSON format](https://github.com/cloudevents/spec/blob/main/cloudevents/formats/json-format.md)
 
+Reviewed again on 2026-04-22 before Step 07:
+
+- GitHub README guidance says the README should contain the information needed to get started while longer documentation belongs elsewhere; Step 07 should therefore add a compact run path and keep tracker detail in architecture docs: [GitHub Docs: About READMEs](https://docs.github.com/articles/about-readmes/)
+- Google developer documentation style guidance emphasizes clear, consistent technical writing for developer audiences; the README proof path should use plain command-and-output language rather than architecture-first explanation: [Google developer documentation style guide](https://developers.google.com/style)
+- Diataxis separates tutorials, how-to guides, reference, and explanation; the README should act as a short entry point and point deeper readers to the proof-surface tracker instead of becoming the whole proof-surface guide: [Diataxis](https://diataxis.fr/)
+- The Good Docs Project describes quickstarts as first-use entry points; the README should let evaluators run one proof command before asking them to understand every pack and verification path: [The Good Docs Project templates](https://www.thegooddocsproject.dev/template)
+
 ## Architecture Decision
 
 Start the proof surface as a small, testable product-adoption layer inside the existing modular monolith:
@@ -104,10 +111,10 @@ The proof surface uses one shared vocabulary across packs:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 6 |
+| Completed | 7 |
 | In progress | 0 |
-| Not started | 2 |
-| Current posture | Finance and crypto proof scenarios now execute through a shared proof output envelope and can be rendered locally as a deterministic artifact set with `manifest.json`, `bundle.json`, `summary.md`, and one JSON output per runnable scenario. The proof surface remains local and inspectable; it does not claim a broad hosted console or public crypto HTTP route |
+| Not started | 1 |
+| Current posture | The README now gives evaluators a compact run path for the local proof surface: `npm run proof:surface`, inspect `.attestor/proof-surface/latest/manifest.json`, then follow the proof-surface tracker for the deeper buildout. The proof surface remains local and inspectable; it does not claim a broad hosted console or public crypto HTTP route |
 
 ## Frozen Step List
 
@@ -119,9 +126,9 @@ The proof surface uses one shared vocabulary across packs:
 | 04 | complete | Add crypto admission proof scenarios | `src/proof-surface/crypto-scenarios.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-crypto-scenarios.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Crypto proof runs now execute the shipped x402 agentic payment adapter, EIP-7702 delegation adapter, crypto authorization simulation, crypto execution-admission planner, and signed admission receipt verifier. The x402 scenario reaches `admit` on the `agent-payment-http` surface with PAYMENT handoff artifacts; the delegated EOA scenario injects invalid authorization tuple evidence and reaches fail-closed `deny` on the `delegated-eoa-runtime` surface. No public hosted crypto HTTP route is claimed. |
 | 05 | complete | Add unified proof output shape | `src/proof-surface/unified-output.ts`, `src/proof-surface/index.ts`, `tests/proof-surface-unified-output.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | Finance and crypto scenario runs now normalize into `attestor.proof-surface.output.v1`: source, proposed consequence, shared policy/authority/evidence checks, bounded decision, proof materials, evidence anchors, canonical JSON, output id, and digest. The shape intentionally keeps pack-specific finance material and crypto admission internals out of the top-level output while preserving evidence refs and anchors for later rendering. |
 | 06 | complete | Add runnable local proof command or artifact generator | `src/proof-surface/artifact-generator.ts`, `src/proof-surface/index.ts`, `scripts/render-proof-surface.ts`, `tests/proof-surface-artifact-generator.test.ts`, `package.json`, `docs/02-architecture/proof-console-buildout.md` | `npm run proof:surface` renders a deterministic local artifact set under `.attestor/proof-surface/latest` by default: manifest, bundle, markdown summary, and per-scenario unified proof outputs. The manifest records decision counts, pack-family counts, file refs, and digests. This remains a local artifact generator, not a hosted console or public crypto HTTP route. |
-| 07 | not started | Add README "Run the proof" path |  | Link the runnable proof scenarios from the README without bloating the opening product story or claiming unfinished hosted capability. |
+| 07 | complete | Add README "Run the proof" path | `README.md`, `tests/proof-surface-docs.test.ts`, `docs/02-architecture/proof-console-buildout.md` | The README now names `npm run proof:surface`, explains the local `.attestor/proof-surface/latest/` output set, links the proof-surface tracker from Start here, and preserves the no-hosted-console / no-public-hosted-crypto-route guardrail. |
 | 08 | not started | Add proof-surface readiness and anti-drift gates |  | Guard that scenarios use real shipped logic or fixtures, cover admit/review/block behavior, expose proof material, and preserve one-product positioning. |
 
 ## Immediate Next Step
 
-Implement Step 07: add a compact README "Run the proof" path that points to the local proof artifact generator without bloating the product story or claiming unfinished hosted capability.
+Implement Step 08: add proof-surface readiness and anti-drift gates that guard real shipped logic or fixtures, admit/review/block coverage, proof material exposure, and one-product positioning.
