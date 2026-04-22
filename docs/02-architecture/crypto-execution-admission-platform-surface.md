@@ -25,11 +25,14 @@ The admission layer answers:
 The public subpath exposes:
 
 - `createCryptoExecutionAdmissionPlan()`
+- `createErc4337BundlerAdmissionHandoff()`
 - `createWalletRpcAdmissionHandoff()`
 - `createSafeGuardAdmissionReceipt()`
 - `cryptoExecutionAdmissionAdapterProfile()`
 - `cryptoExecutionAdmissionDescriptor()`
 - `cryptoExecutionAdmissionLabel()`
+- `erc4337BundlerAdmissionDescriptor()`
+- `erc4337BundlerAdmissionHandoffLabel()`
 - `safeGuardAdmissionDescriptor()`
 - `safeGuardAdmissionReceiptLabel()`
 - `walletRpcAdmissionDescriptor()`
@@ -70,6 +73,18 @@ Safe guard admission receipts map Safe pre/post hook evidence into durable Attes
 
 The receipt does not deploy or replace a Safe guard. It proves that the Safe guard path was admitted by Attestor, names the required interface id, carries the canonical preflight digest, and fails closed if the guard is not enabled, lacks ERC-165/interface support, mismatches the admitted Safe, or cannot be recovered by owners.
 
+ERC-4337 bundler admission handoffs map UserOperation preflight evidence into ERC-7769 JSON-RPC requests:
+
+| Bundler method | Handoff role |
+|---|---|
+| `eth_chainId` | Confirm the bundler endpoint is serving the admitted EIP-155 chain |
+| `eth_supportedEntryPoints` | Confirm the admitted EntryPoint is accepted by the bundler |
+| `eth_estimateUserOperationGas` | Collect gas evidence before submission and block under-provisioned UserOperations |
+| `eth_sendUserOperation` | Submit only after Attestor admission, EntryPoint support, ERC-7562 posture, and gas fit are satisfied |
+| `eth_getUserOperationByHash` / `eth_getUserOperationReceipt` | Track inclusion and persist the downstream result against the Attestor handoff |
+
+The handoff does not become a bundler or paymaster. It packages the UserOperation, EntryPoint, chain, gas estimate, ERC-7562 validation-scope expectation, paymaster posture, and Attestor sidecar into a deterministic pre-submission object.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -87,6 +102,7 @@ flowchart LR
 ```ts
 import {
   createCryptoExecutionAdmissionPlan,
+  createErc4337BundlerAdmissionHandoff,
   createSafeGuardAdmissionReceipt,
   createWalletRpcAdmissionHandoff,
 } from 'attestor/crypto-execution-admission';
@@ -140,6 +156,23 @@ const safeReceipt = createSafeGuardAdmissionReceipt({
 
 if (safeReceipt.outcome === 'blocked') {
   throw new Error(safeReceipt.blockingReasons.join(', '));
+}
+
+const bundlerPlan = createCryptoExecutionAdmissionPlan({
+  simulation: erc4337Simulation,
+  createdAt: new Date().toISOString(),
+  integrationRef: 'integration:erc4337:bundler',
+});
+
+const bundlerHandoff = createErc4337BundlerAdmissionHandoff({
+  plan: bundlerPlan,
+  preflight: erc4337Preflight,
+  userOperation,
+  createdAt: new Date().toISOString(),
+});
+
+if (bundlerHandoff.outcome === 'blocked') {
+  throw new Error(bundlerHandoff.blockingReasons.join(', '));
 }
 ```
 

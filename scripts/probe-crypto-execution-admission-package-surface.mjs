@@ -30,6 +30,14 @@ assert.equal(
   admission.safeGuardAdmissionDescriptor().interfaceIds.moduleGuard,
   '0x58401ed8',
 );
+assert.equal(
+  admission.erc4337BundlerAdmissionDescriptor().methods.includes('eth_sendUserOperation'),
+  true,
+);
+assert.equal(
+  admission.erc4337BundlerAdmissionDescriptor().standards.includes('ERC-7769'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {
