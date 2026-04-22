@@ -218,6 +218,10 @@ function testApiServerUsesExtractedRouteSupport(): void {
     join(SERVICE_ROOT, 'hosted-account-support.ts'),
     'utf8',
   );
+  const financeReleaseRouteSupport = readFileSync(
+    join(SERVICE_ROOT, 'finance-release-route-support.ts'),
+    'utf8',
+  );
   const pipelineRouteSupport = readFileSync(
     join(SERVICE_ROOT, 'pipeline-route-support.ts'),
     'utf8',
@@ -236,6 +240,7 @@ function testApiServerUsesExtractedRouteSupport(): void {
   assert.match(apiServer, /from '\.\/account-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/hosted-surface-support\.js'/u);
   assert.match(apiServer, /from '\.\/hosted-account-support\.js'/u);
+  assert.match(apiServer, /from '\.\/finance-release-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/pipeline-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/request-context\.js'/u);
   assert.match(apiServer, /from '\.\/request-observability-middleware\.js'/u);
@@ -290,6 +295,11 @@ function testApiServerUsesExtractedRouteSupport(): void {
     'function readCommittedEvidence(',
     'loadCommittedFinancialReportingPacket(',
     'financialReportingEvidenceRoot(',
+    "from '../release-layer/index.js'",
+    "from '../release-layer/finance.js'",
+    '} = financeCommunicationRelease;',
+    '} = financeActionRelease;',
+    '} = financeRecordRelease;',
     'async function currentHostedAccount(',
     'async function projectBillingEntitlementForAccount(',
     'async function readHostedBillingEntitlement(',
@@ -366,6 +376,22 @@ function testApiServerUsesExtractedRouteSupport(): void {
       hostedAccountSupport.includes(hostedAccountHelper),
       true,
       `hosted-account-support.ts should own ${hostedAccountHelper}`,
+    );
+  }
+
+  for (const financeReleaseHelper of [
+    'export const {',
+    'buildFinanceCommunicationReleaseMaterial',
+    'buildFinanceActionReleaseMaterial',
+    'buildFinanceFilingReleaseMaterial',
+    'createFinanceReviewerQueueItem',
+    'resolveReleaseTokenFromRequest',
+    'verifyReleaseAuthorization',
+  ]) {
+    assert.equal(
+      financeReleaseRouteSupport.includes(financeReleaseHelper),
+      true,
+      `finance-release-route-support.ts should own ${financeReleaseHelper}`,
     );
   }
 

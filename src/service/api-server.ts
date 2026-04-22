@@ -59,8 +59,6 @@ import type { FinancialPipelineInput } from '../financial/pipeline.js';
 import { buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
 import { verifyTrustChain } from '../signing/pki-chain.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
-import { review, verification } from '../release-layer/index.js';
-import { action as financeActionRelease, communication as financeCommunicationRelease, record as financeRecordRelease } from '../release-layer/finance.js';
 import {
   canEnqueueTenantAsyncJob,
   getAsyncQueueSummary,
@@ -127,27 +125,23 @@ import {
   stripeReferenceId,
   unixSecondsToIso,
 } from './stripe-webhook-support.js';
-
-const {
-  buildFinanceCommunicationReleaseMaterial,
-  buildFinanceCommunicationReleaseObservation,
-  createFinanceCommunicationReleaseCandidateFromReport,
-} = financeCommunicationRelease;
-const {
+import {
   buildFinanceActionReleaseMaterial,
   buildFinanceActionReleaseObservation,
-  createFinanceActionReleaseCandidateFromReport,
-} = financeActionRelease;
-const {
+  buildFinanceCommunicationReleaseMaterial,
+  buildFinanceCommunicationReleaseObservation,
   buildFinanceFilingReleaseMaterial,
-  createFinanceFilingReleaseCandidateFromReport,
-  FINANCE_FILING_ADAPTER_ID,
-  finalizeFinanceFilingReleaseDecision,
   buildFinanceFilingReleaseObservation,
-} = financeRecordRelease;
-const { createFinanceReviewerQueueItem } = review;
-const { ReleaseVerificationError, resolveReleaseTokenFromRequest, verifyReleaseAuthorization } =
-  verification;
+  createFinanceActionReleaseCandidateFromReport,
+  createFinanceCommunicationReleaseCandidateFromReport,
+  createFinanceFilingReleaseCandidateFromReport,
+  createFinanceReviewerQueueItem,
+  finalizeFinanceFilingReleaseDecision,
+  FINANCE_FILING_ADAPTER_ID,
+  ReleaseVerificationError,
+  resolveReleaseTokenFromRequest,
+  verifyReleaseAuthorization,
+} from './finance-release-route-support.js';
 import {
   getTenantPipelineRateLimit,
   reserveTenantPipelineRequest,
