@@ -89,9 +89,9 @@ The hosted path in this repo/docs includes account, API key, usage, and billing 
 | Pack | What it means today | Status |
 |---|---|---|
 | Finance | strongest end-to-end proof path; financial reporting is the deepest proving wedge | mature proving pack |
-| Crypto | same core control model applied to programmable-money authorization and admission | `attestor/crypto-authorization-core` `20 / 20` complete; `attestor/crypto-execution-admission` `6 / 12` active buildout |
+| Crypto | same core control model applied to programmable-money authorization and admission | `attestor/crypto-authorization-core` `20 / 20` complete; `attestor/crypto-execution-admission` `7 / 12` active buildout |
 
-The crypto pack already covers the authorization core and several execution-admission surfaces, including wallet RPC, Safe guard, ERC-4337 bundler, modular-account runtime, and delegated-EOA runtime paths. It extends the same Attestor control model; it is not a separate product identity.
+The crypto pack already covers the authorization core and several execution-admission surfaces, including wallet RPC, Safe guard, ERC-4337 bundler, modular-account runtime, delegated-EOA runtime, and x402 resource-server middleware paths. It extends the same Attestor control model; it is not a separate product identity.
 
 ## Proof and verification
 

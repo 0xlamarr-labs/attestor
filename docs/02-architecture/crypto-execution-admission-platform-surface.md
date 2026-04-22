@@ -30,6 +30,7 @@ The public subpath exposes:
 - `createModularAccountAdmissionHandoff()`
 - `createWalletRpcAdmissionHandoff()`
 - `createSafeGuardAdmissionReceipt()`
+- `createX402ResourceServerAdmissionMiddleware()`
 - `cryptoExecutionAdmissionAdapterProfile()`
 - `cryptoExecutionAdmissionDescriptor()`
 - `cryptoExecutionAdmissionLabel()`
@@ -43,6 +44,8 @@ The public subpath exposes:
 - `safeGuardAdmissionReceiptLabel()`
 - `walletRpcAdmissionDescriptor()`
 - `walletRpcAdmissionHandoffLabel()`
+- `x402ResourceServerAdmissionDescriptor()`
+- `x402ResourceServerAdmissionLabel()`
 - versioned admission outcomes, surfaces, step kinds, and step statuses
 
 The first planner maps existing crypto authorization simulation results onto these surfaces:
@@ -110,6 +113,16 @@ Delegated EOA admission handoffs map EIP-7702 delegation preflight evidence into
 
 The handoff does not become a wallet, relayer, or delegated account implementation. It proves that the delegated-EOA execution path Attestor admitted still has the required tuple, delegate, nonce, wallet/runtime capability, initialization, sponsorship, and recovery posture before value-moving execution is attempted.
 
+x402 resource-server admission middleware maps x402 payment preflight evidence into a fail-closed HTTP fulfillment contract:
+
+| Middleware phase | Admission role |
+|---|---|
+| `payment-challenge` | Require HTTP `402 Payment Required` with `PAYMENT-REQUIRED` and block fulfillment until a valid retry path exists |
+| `payment-retry` | Require `PAYMENT-SIGNATURE`, facilitator `/verify`, facilitator `/settle`, payment-identifier posture, and `PAYMENT-RESPONSE` binding before any paid response may be returned |
+| `resource-fulfillment` | Allow fulfillment only after settlement succeeds, duplicate payment posture stays clean, and the paid response remains bound to Attestor admission evidence |
+
+The middleware does not become the x402 resource server or facilitator. It gives the resource server a deterministic Attestor contract for when to challenge, when to verify, when to settle, when to fulfill, and when to fail closed.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -132,6 +145,7 @@ import {
   createModularAccountAdmissionHandoff,
   createSafeGuardAdmissionReceipt,
   createWalletRpcAdmissionHandoff,
+  createX402ResourceServerAdmissionMiddleware,
 } from 'attestor/crypto-execution-admission';
 
 const walletPlan = createCryptoExecutionAdmissionPlan({
@@ -239,6 +253,30 @@ const modularHandoff = createModularAccountAdmissionHandoff({
 
 if (modularHandoff.outcome === 'blocked') {
   throw new Error(modularHandoff.blockingReasons.join(', '));
+}
+
+const x402Plan = createCryptoExecutionAdmissionPlan({
+  simulation: x402Simulation,
+  createdAt: new Date().toISOString(),
+  integrationRef: 'integration:x402:resource-server',
+});
+
+const x402Middleware = createX402ResourceServerAdmissionMiddleware({
+  plan: x402Plan,
+  preflight: x402Preflight,
+  resource: x402Resource,
+  paymentRequirements: x402Requirements,
+  paymentPayload: x402Payload,
+  facilitator: x402Facilitator,
+  budget: x402Budget,
+  serviceTrust: x402ServiceTrust,
+  privacy: x402Privacy,
+  phase: 'payment-retry',
+  createdAt: new Date().toISOString(),
+});
+
+if (x402Middleware.outcome === 'blocked') {
+  throw new Error(x402Middleware.blockingReasons.join(', '));
 }
 ```
 

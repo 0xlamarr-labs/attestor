@@ -83,7 +83,7 @@ Current status:
 | Surface | Status |
 |---|---|
 | `attestor/crypto-authorization-core` | `20 / 20` complete, packaged |
-| `attestor/crypto-execution-admission` | `6 / 12` complete, active buildout |
+| `attestor/crypto-execution-admission` | `7 / 12` complete, active buildout |
 
 What the crypto pack already covers:
 
@@ -95,11 +95,11 @@ What the crypto pack already covers:
 - ERC-7579 and ERC-6900 modular account adapters
 - EIP-7702 delegation-aware adapter
 - x402 and custody/co-signer adapters
-- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, modular-account handoffs, and delegated-EOA handoffs
+- execution-admission planning, wallet RPC handoffs, Safe guard receipts, ERC-4337 bundler handoffs, modular-account handoffs, delegated-EOA handoffs, and x402 resource-server middleware
 
 Next frozen crypto execution-admission step:
 
-- Step 07: x402 resource-server admission middleware
+- Step 08: custody policy admission callback contract
 
 ## Product Truth Versus First Slices
 

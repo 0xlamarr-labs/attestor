@@ -54,6 +54,14 @@ assert.equal(
   admission.delegatedEoaAdmissionDescriptor().runtimeChecks.includes('eip7702Auth'),
   true,
 );
+assert.equal(
+  admission.x402ResourceServerAdmissionDescriptor().standards.includes('x402-v2'),
+  true,
+);
+assert.equal(
+  admission.x402ResourceServerAdmissionDescriptor().runtimeChecks.includes('PAYMENT-REQUIRED'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {
