@@ -25,6 +25,9 @@ The admission layer answers:
 The public subpath exposes:
 
 - `createCryptoExecutionAdmissionPlan()`
+- `createCryptoAdmissionReceipt()`
+- `createCryptoAdmissionTelemetryEvent()`
+- `createCryptoAdmissionTelemetrySubject()`
 - `createDelegatedEoaAdmissionHandoff()`
 - `createErc4337BundlerAdmissionHandoff()`
 - `createCustodyPolicyAdmissionCallbackContract()`
@@ -33,9 +36,13 @@ The public subpath exposes:
 - `createWalletRpcAdmissionHandoff()`
 - `createSafeGuardAdmissionReceipt()`
 - `createX402ResourceServerAdmissionMiddleware()`
+- `buildCryptoAdmissionTelemetrySummary()`
+- `createInMemoryCryptoAdmissionTelemetrySink()`
 - `cryptoExecutionAdmissionAdapterProfile()`
 - `cryptoExecutionAdmissionDescriptor()`
 - `cryptoExecutionAdmissionLabel()`
+- `cryptoAdmissionTelemetryDescriptor()`
+- `cryptoAdmissionTelemetryEventSafetyFindings()`
 - `erc4337BundlerAdmissionDescriptor()`
 - `erc4337BundlerAdmissionHandoffLabel()`
 - `custodyPolicyAdmissionCallbackDescriptor()`
@@ -48,6 +55,7 @@ The public subpath exposes:
 - `modularAccountAdmissionHandoffLabel()`
 - `safeGuardAdmissionDescriptor()`
 - `safeGuardAdmissionReceiptLabel()`
+- `verifyCryptoAdmissionReceipt()`
 - `walletRpcAdmissionDescriptor()`
 - `walletRpcAdmissionHandoffLabel()`
 - `x402ResourceServerAdmissionDescriptor()`
@@ -149,6 +157,16 @@ Intent-solver admission handoffs map solver route evidence into deterministic pr
 
 The handoff does not become a solver, bridge, relayer, orderbook, or settlement contract. It proves that the solver route Attestor admitted still matches the policy-bound order, slippage bounds, counterparties, settlement contracts, deadlines, and replay posture before an intent route can be opened, filled, or broadcast.
 
+Admission telemetry and receipts provide one uniform observability and proof shape across all crypto execution surfaces:
+
+| Output | Role |
+|---|---|
+| Telemetry event | CloudEvents-style envelope with OpenTelemetry-compatible severity/attributes, W3C `traceparent` / `tracestate` correlation, surface, plan, subject, signal, and failure reasons |
+| Admission receipt | HMAC-SHA256 signed Attestor receipt binding the admission plan, subject handoff, evidence digest, trace context, classification, and failure reasons |
+| Summary / sink | In-memory sink and summary helpers for tests, local operators, and integration harnesses to count admitted, blocked, missing-evidence, and receipt-issued events by surface |
+
+The telemetry layer does not replace an observability backend, SIEM, tracing collector, or transparency log. It emits stable Attestor objects that those systems can carry, index, verify, or archive.
+
 ## Why It Is Separate From The Core
 
 The crypto authorization core must stay stable and adapter-neutral. Execution admission is closer to integration surfaces. It is allowed to know that an x402 handoff needs `PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, and `PAYMENT-RESPONSE`, or that ERC-4337 admission must carry bundler simulation evidence.
@@ -166,6 +184,9 @@ flowchart LR
 ```ts
 import {
   createCryptoExecutionAdmissionPlan,
+  createCryptoAdmissionReceipt,
+  createCryptoAdmissionTelemetryEvent,
+  createCryptoAdmissionTelemetrySubject,
   createDelegatedEoaAdmissionHandoff,
   createErc4337BundlerAdmissionHandoff,
   createCustodyPolicyAdmissionCallbackContract,
@@ -174,6 +195,7 @@ import {
   createSafeGuardAdmissionReceipt,
   createWalletRpcAdmissionHandoff,
   createX402ResourceServerAdmissionMiddleware,
+  verifyCryptoAdmissionReceipt,
 } from 'attestor/crypto-execution-admission';
 
 const walletPlan = createCryptoExecutionAdmissionPlan({
@@ -349,6 +371,46 @@ const intentSolverHandoff = createIntentSolverAdmissionHandoff({
 
 if (intentSolverHandoff.outcome === 'blocked') {
   throw new Error(intentSolverHandoff.blockingReasons.join(', '));
+}
+
+const telemetrySubject = createCryptoAdmissionTelemetrySubject({
+  plan: intentSolverPlan,
+  subjectKind: 'intent-solver-handoff',
+  subjectId: intentSolverHandoff.handoffId,
+  subjectDigest: intentSolverHandoff.digest,
+  outcome: intentSolverHandoff.outcome,
+  action: intentSolverHandoff.action,
+});
+
+const admissionReceipt = createCryptoAdmissionReceipt({
+  plan: intentSolverPlan,
+  subject: telemetrySubject,
+  issuedAt: new Date().toISOString(),
+  serviceId: 'attestor-crypto-admission',
+  signer: {
+    keyId: 'customer-operated-admission-key',
+    secret: process.env.ATTESTOR_CRYPTO_ADMISSION_RECEIPT_KEY!,
+  },
+});
+
+const telemetryEvent = createCryptoAdmissionTelemetryEvent({
+  source: 'attestor.crypto-execution-admission',
+  observedAt: new Date().toISOString(),
+  plan: intentSolverPlan,
+  subject: telemetrySubject,
+  receipt: admissionReceipt,
+});
+
+const receiptVerification = verifyCryptoAdmissionReceipt({
+  receipt: admissionReceipt,
+  signer: {
+    keyId: 'customer-operated-admission-key',
+    secret: process.env.ATTESTOR_CRYPTO_ADMISSION_RECEIPT_KEY!,
+  },
+});
+
+if (receiptVerification.status !== 'valid') {
+  throw new Error(receiptVerification.failureReasons.join(', '));
 }
 ```
 

@@ -78,6 +78,14 @@ assert.equal(
   admission.intentSolverAdmissionDescriptor().runtimeChecks.includes('replayProtection'),
   true,
 );
+assert.equal(
+  admission.cryptoAdmissionTelemetryDescriptor().conventions.includes('CloudEvents 1.0 envelope fields'),
+  true,
+);
+assert.equal(
+  admission.cryptoAdmissionTelemetryDescriptor().safetyChecks.includes('signature verification'),
+  true,
+);
 
 let blockedInternalPath = false;
 try {
