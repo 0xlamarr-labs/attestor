@@ -42,6 +42,12 @@ Reviewed on 2026-04-22 before opening this track:
 - OpenAPI 3.1 defines a machine-readable API description format for HTTP APIs, so the hosted customer journey should eventually have a compact external contract instead of relying only on prose: [OpenAPI Specification](https://spec.openapis.org/oas/latest.html)
 - OWASP API Security Top 10 2023 keeps broken object-level authorization, broken authentication, broken function-level authorization, and unrestricted resource consumption as first-order API risks, so the hosted path must keep account/session/API-key/role/quota boundaries explicit: [OWASP API Security Top 10](https://owasp.org/API-Security/editions/2023/en/0x11-t10/)
 
+Reviewed again on 2026-04-22 before Step 02:
+
+- Stripe idempotent request guidance supports requiring a unique idempotency key on checkout creation so customer retries do not create accidental duplicate operations: [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests)
+- Stripe Checkout is a hosted payment collection surface, while the Billing Customer Portal is the customer-managed billing/subscription surface after checkout: [Stripe Checkout](https://docs.stripe.com/payments/checkout), [Stripe Customer Portal](https://docs.stripe.com/customer-management)
+- Stripe subscription and entitlement docs keep webhook-driven convergence as the reliable source for subscription, invoice, and feature-access changes after checkout: [Stripe subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks), [Stripe Entitlements](https://docs.stripe.com/billing/entitlements)
+
 ## Architecture Decision
 
 Treat the hosted product flow as an adoption shell around the existing Attestor core:
@@ -57,17 +63,17 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 1 |
+| Completed | 2 |
 | In progress | 0 |
-| Not started | 7 |
-| Current posture | Active; existing hosted API and billing surfaces are real, but the external adoption contract still needs hardening |
+| Not started | 6 |
+| Current posture | Active; canonical hosted journey contract is defined, and the next gap is focused signup-to-first-API-key verification |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
 | 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces | `docs/01-overview/hosted-product-flow-audit.md`, `tests/hosted-product-flow-docs.test.ts`, `docs/01-overview/product-packaging.md`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/stripe-commercial-bootstrap.md`, `src/service/http/routes/account-routes.ts`, `src/service/http/routes/stripe-webhook-routes.ts`, `scripts/probe-production-hosted-flow.ts`, `tests/live-api.test.ts` | Existing surfaces cover signup, first API key, account overview, usage, entitlement, API key lifecycle, checkout, portal, webhook processing, and billing entitlement convergence. Remaining work is hardening the external customer journey contract, examples, and readiness gates. |
-| 02 | not_started | Define one canonical hosted journey contract |  | Turn the public customer path into a compact contract that names the required route sequence, auth boundary, success signals, failure signals, and ownership of pricing/billing truth without duplicating internal operator setup. |
+| 02 | complete | Define one canonical hosted journey contract | `src/service/hosted-journey-contract.ts`, `docs/01-overview/hosted-journey-contract.md`, `tests/hosted-product-flow-contract.test.ts`, `tests/hosted-product-flow-docs.test.ts`, `docs/01-overview/hosted-customer-journey.md`, `docs/01-overview/product-packaging.md` | The hosted path now has a machine-readable journey descriptor plus a customer-facing contract doc covering route order, auth boundaries, success signals, failure signals, pricing/operator truth-source separation, checkout idempotency, Stripe signature boundaries, and webhook-based entitlement convergence without adding a second product story. |
 | 03 | not_started | Harden signup-to-first-API-key verification |  | Prove the hosted evaluation path from signup through first API key, community quota, account usage, and API-key lifecycle in a focused test/probe that is smaller than the full live API suite. |
 | 04 | not_started | Harden Stripe checkout, portal, webhook, and entitlement convergence |  | Prove paid hosted upgrade behavior: idempotent checkout start, portal creation, signed webhook processing, duplicate/conflict behavior, subscription state transitions, entitlement summary updates, and fail-closed delinquency/suspension behavior. |
 | 05 | not_started | Add the first customer API-call quickstart |  | Add a short customer-facing flow showing how a hosted account uses its first API key to call Attestor before a consequence, without inventing broad app UI or domain-specific magic. |
@@ -77,4 +83,4 @@ Treat the hosted product flow as an adoption shell around the existing Attestor 
 
 ## Immediate Next Step
 
-Step 02 should define the canonical hosted journey contract. It should start from the shipped route surface and existing docs, not from a new product concept.
+Step 03 should harden signup-to-first-API-key verification with a focused test or probe that is smaller than the full live API suite.

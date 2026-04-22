@@ -4,6 +4,8 @@ This document covers the hosted buying and onboarding flow only.
 
 For plan definitions, pricing, free evaluation, hosted trial posture, hosted vs customer-operated packaging, and the production licensing boundary, use [Commercial packaging, pricing, and evaluation](product-packaging.md) as the source of truth.
 
+For exact hosted route order, auth boundaries, success signals, and failure signals, use [Hosted journey contract](hosted-journey-contract.md).
+
 ## What this path is for
 
 The hosted path is for teams that want a managed Attestor product surface without turning Attestor into the place where their files, workflows, wallets, or business systems live.
@@ -67,7 +69,7 @@ That is enough to make the hosted product purchasable and usable.
 
 ## Hosted route contract
 
-The hosted customer journey already maps to the shipped API surface:
+The canonical contract lives in [Hosted journey contract](hosted-journey-contract.md). The hosted customer journey already maps to the shipped API surface:
 
 - `POST /api/v1/auth/signup`
 - `POST /api/v1/auth/login`

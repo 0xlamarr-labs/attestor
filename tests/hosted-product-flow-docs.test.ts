@@ -25,6 +25,7 @@ function testCommercialTruthSourcesStayLinked(): void {
   const readme = readProjectFile('README.md');
   const packaging = readProjectFile('docs', '01-overview', 'product-packaging.md');
   const journey = readProjectFile('docs', '01-overview', 'hosted-customer-journey.md');
+  const contract = readProjectFile('docs', '01-overview', 'hosted-journey-contract.md');
   const stripeBootstrap = readProjectFile('docs', '01-overview', 'stripe-commercial-bootstrap.md');
 
   includes(
@@ -46,6 +47,21 @@ function testCommercialTruthSourcesStayLinked(): void {
     journey,
     'use [Commercial packaging, pricing, and evaluation](product-packaging.md) as the source of truth',
     'Hosted product flow docs: hosted journey points pricing back to product packaging',
+  );
+  includes(
+    journey,
+    'Hosted journey contract](hosted-journey-contract.md)',
+    'Hosted product flow docs: hosted journey links to canonical journey contract',
+  );
+  includes(
+    packaging,
+    'Hosted journey contract](hosted-journey-contract.md)',
+    'Hosted product flow docs: product packaging links to canonical journey contract',
+  );
+  includes(
+    contract,
+    'This is the canonical customer journey contract',
+    'Hosted product flow docs: contract doc declares canonical role',
   );
   includes(
     stripeBootstrap,
@@ -128,9 +144,10 @@ function testTrackerAndAuditStayInSync(): void {
   const systemOverview = readProjectFile('docs', '02-architecture', 'system-overview.md');
 
   includes(tracker, 'Total frozen steps | 8', 'Hosted product flow docs: tracker declares eight frozen steps');
-  includes(tracker, '| Completed | 1 |', 'Hosted product flow docs: tracker has one completed step after audit');
+  includes(tracker, '| Completed | 2 |', 'Hosted product flow docs: tracker has two completed steps after contract');
   includes(tracker, '| 01 | complete | Audit existing hosted API, account, billing, Stripe, and documentation surfaces |', 'Hosted product flow docs: Step 01 is complete');
-  includes(tracker, '| 02 | not_started | Define one canonical hosted journey contract |', 'Hosted product flow docs: Step 02 is the next step');
+  includes(tracker, '| 02 | complete | Define one canonical hosted journey contract |', 'Hosted product flow docs: Step 02 is complete');
+  includes(tracker, '| 03 | not_started | Harden signup-to-first-API-key verification |', 'Hosted product flow docs: Step 03 is the next step');
   includes(audit, 'The hosted API and billing pieces are real.', 'Hosted product flow docs: audit records the current conclusion');
   includes(audit, 'Hardening Gaps', 'Hosted product flow docs: audit records remaining gaps');
   includes(systemOverview, 'Hosted product flow and adoption hardening', 'Hosted product flow docs: system overview names active hosted flow track');

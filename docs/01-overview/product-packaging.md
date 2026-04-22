@@ -77,7 +77,7 @@ The commercial path should be simple:
 5. use the same account for usage, billing, entitlement, and key management
 6. for customer-operated deployment, move into the enterprise commercial path before production use
 
-For the detailed hosted signup and checkout flow, see [Hosted customer journey](hosted-customer-journey.md).
+For the detailed hosted signup and checkout flow, see [Hosted customer journey](hosted-customer-journey.md). For exact route order, auth boundaries, success signals, and failure signals, see [Hosted journey contract](hosted-journey-contract.md).
 
 ## Production licensing
 

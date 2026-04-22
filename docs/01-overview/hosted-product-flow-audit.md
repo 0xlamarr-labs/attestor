@@ -66,7 +66,7 @@ The current repo already covers important parts of the hosted product path:
 
 These are the remaining gaps that matter before calling the hosted product path truly clean:
 
-1. **Canonical hosted journey contract.** The route list exists, but there is not yet one compact contract that says exactly which customer sequence is supported, what each step returns, what auth is required, and what success/failure signals mean.
+1. **Canonical hosted journey contract.** Addressed after this audit by `docs/01-overview/hosted-journey-contract.md` and `src/service/hosted-journey-contract.ts`; keep that pair as the route/auth/success/failure contract.
 2. **Focused hosted flow probe.** The full live API suite is broad. A smaller focused probe/test should prove signup -> first API key -> usage/quota -> first consequence call without pulling in the entire service matrix.
 3. **Focused billing convergence probe.** Stripe checkout/portal/webhook behavior is covered, but the sale-ready path should have a dedicated gate for checkout idempotency, signed webhook processing, entitlement convergence, duplicate/conflict handling, and suspended/delinquent fail-closed behavior.
 4. **Customer first-call quickstart.** The README explains the product, but a buyer still benefits from a short "after signup, make this first call" path tied to the hosted account and API key.
