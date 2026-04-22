@@ -51,10 +51,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie } from 'hono/cookie';
-import type {
-  AuthenticationResponseJSON,
-  RegistrationResponseJSON,
-} from '@simplewebauthn/server';
 import { runFinancialPipeline } from '../financial/pipeline.js';
 import { generateKeyPair } from '../signing/keys.js';
 import { verifyCertificate } from '../signing/certificate.js';
@@ -80,6 +76,35 @@ import {
   tenantMiddleware,
   type TenantContext,
 } from './tenant-isolation.js';
+import {
+  accountPasskeyCredentialView,
+  accountUserActionTokenView,
+  accountUserDetailedMfaView,
+  accountUserDetailedOidcView,
+  accountUserDetailedPasskeyView,
+  accountUserDetailedSamlView,
+  accountUserView,
+  asAuthenticationResponse,
+  asRegistrationResponse,
+  deriveSignupTenantId,
+  normalizePasskeyAuthenticatorHint,
+  parsePasskeyAuthenticationChallenge,
+  parsePasskeyRegistrationChallenge,
+} from './account-route-support.js';
+import {
+  accountApiKeyView,
+  adminAccountView,
+  adminAuditView,
+  adminPlanView,
+  adminTenantKeyView,
+  billingEntitlementView,
+  billingEventView,
+} from './hosted-surface-support.js';
+import {
+  applyRateLimitHeaders,
+  schemaAttestationSummaryFromConnector,
+  schemaAttestationSummaryFromFull,
+} from './pipeline-route-support.js';
 import {
   createRequestSigners,
   currentAccountAccess,
@@ -136,20 +161,15 @@ import {
   evaluateApiHighAvailabilityState,
   resolveServiceInstanceId,
 } from './high-availability.js';
-import {
-  tenantKeyStorePolicy,
-  type TenantKeyRecord,
-} from './tenant-key-store.js';
+import { tenantKeyStorePolicy } from './tenant-key-store.js';
 import {
   AccountStoreError,
   type HostedAccountRecord,
 } from './account-store.js';
 import {
-  type AccountUserRecord,
   type AccountUserRole,
   verifyAccountUserPasswordRecord,
 } from './account-user-store.js';
-import { type AccountUserActionTokenRecord } from './account-user-token-store.js';
 import {
   buildTotpOtpAuthUrl,
   decryptTotpSecret,
@@ -161,24 +181,19 @@ import {
   verifyTotpCode,
 } from './account-mfa.js';
 import {
-  accountUserOidcSummary,
   buildHostedOidcAuthorizationRequest,
   completeHostedOidcAuthorization,
   hostedOidcAllowsAutomaticLinking,
-  hostedOidcSummary,
   linkAccountUserOidcIdentity,
 } from './account-oidc.js';
 import {
-  accountUserSamlSummary,
   buildHostedSamlAuthorizationRequest,
   completeHostedSamlAuthorization,
   getHostedSamlMetadata,
   hostedSamlAllowsAutomaticLinking,
   linkAccountUserSamlIdentity,
-  loadHostedSamlSummary,
 } from './account-saml.js';
 import {
-  accountUserPasskeySummary,
   buildAccountUserPasskeyCredentialRecord,
   buildHostedPasskeyAuthenticationOptions,
   buildHostedPasskeyRegistrationOptions,
@@ -186,15 +201,9 @@ import {
   passkeyCredentialToWebAuthnCredential,
   verifyHostedPasskeyAuthentication,
   verifyHostedPasskeyRegistration,
-  type HostedPasskeyAuthenticationChallengeState,
-  type HostedPasskeyAuthenticatorHint,
-  type HostedPasskeyRegistrationChallengeState,
 } from './account-passkeys.js';
 import { type AsyncDeadLetterRecord } from './async-dead-letter-store.js';
-import {
-  sessionCookieName,
-  sessionCookieSecure,
-} from './account-session-store.js';
+import { sessionCookieName } from './account-session-store.js';
 import {
   findHostedBillingEntitlementByAccountIdState,
   applyStripeCheckoutCompletionState,
@@ -274,16 +283,10 @@ import {
   defaultRateLimitWindowSeconds,
   findHostedPlanByStripePriceId,
   getHostedPlan,
-  listHostedPlans,
-  resolvePlanAsyncDispatch,
-  resolvePlanAsyncExecution,
-  resolvePlanAsyncQueue,
-  resolvePlanRateLimit,
   resolvePlanSpec,
   resolvePlanStripePrice,
   resolvePlanStripeTrialDays,
 } from './plan-catalog.js';
-import { type AdminAuditAction } from './admin-audit-log.js';
 import { hashJsonValue } from './json-stable.js';
 import {
   claimStripeBillingEvent,
@@ -548,382 +551,6 @@ const {
   financeActionReleaseShadowEvaluator,
 } = createReleaseRuntimeBootstrap();
 
-function accountUserView(record: AccountUserRecord) {
-  const mfa = totpSummary(record.mfa.totp);
-  const passkeys = accountUserPasskeySummary(record);
-  const oidc = accountUserOidcSummary(record);
-  const saml = accountUserSamlSummary(record);
-  return {
-    id: record.id,
-    accountId: record.accountId,
-    email: record.email,
-    displayName: record.displayName,
-    role: record.role,
-    status: record.status,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    deactivatedAt: record.deactivatedAt,
-    lastLoginAt: record.lastLoginAt,
-    mfa: {
-      enabled: mfa.enabled,
-      method: mfa.method,
-      enrolledAt: mfa.enrolledAt,
-      pendingEnrollment: mfa.pendingEnrollment,
-    },
-    passkeys: {
-      enabled: passkeys.enabled,
-      credentialCount: passkeys.credentialCount,
-      userHandleConfigured: passkeys.userHandleConfigured,
-      lastUsedAt: passkeys.lastUsedAt,
-    },
-    federation: {
-      oidcLinked: oidc.linked,
-      oidcIdentityCount: oidc.identityCount,
-      lastOidcLoginAt: oidc.lastLoginAt,
-      samlLinked: saml.linked,
-      samlIdentityCount: saml.identityCount,
-      lastSamlLoginAt: saml.lastLoginAt,
-    },
-  };
-}
-
-function accountUserDetailedMfaView(record: AccountUserRecord) {
-  return totpSummary(record.mfa.totp);
-}
-
-function accountUserDetailedOidcView(record: AccountUserRecord, requestOrigin?: string | URL | null) {
-  const summary = hostedOidcSummary(requestOrigin);
-  return {
-    configured: summary.enabled,
-    issuerUrl: summary.issuerUrl,
-    redirectUrl: summary.redirectUrl,
-    scopes: summary.scopes,
-    identities: record.federation.oidc.identities.map((identity) => ({
-      id: identity.id,
-      issuer: identity.issuer,
-      subject: identity.subject,
-      email: identity.email,
-      linkedAt: identity.linkedAt,
-      lastLoginAt: identity.lastLoginAt,
-    })),
-  };
-}
-
-function accountUserDetailedSamlView(record: AccountUserRecord, requestOrigin?: string | URL | null) {
-  const summary = loadHostedSamlSummary(requestOrigin);
-  return {
-    configured: summary.enabled,
-    entityId: summary.entityId,
-    metadataUrl: summary.metadataUrl,
-    acsUrl: summary.acsUrl,
-    authnRequestsSigned: summary.authnRequestsSigned,
-    identities: record.federation.saml.identities.map((identity) => ({
-      id: identity.id,
-      issuer: identity.issuer,
-      subject: identity.subject,
-      email: identity.email,
-      nameIdFormat: identity.nameIdFormat,
-      linkedAt: identity.linkedAt,
-      lastLoginAt: identity.lastLoginAt,
-    })),
-  };
-}
-
-function accountUserDetailedPasskeyView(record: AccountUserRecord) {
-  const summary = accountUserPasskeySummary(record);
-  return {
-    enabled: summary.enabled,
-    credentialCount: summary.credentialCount,
-    userHandleConfigured: summary.userHandleConfigured,
-    lastUsedAt: summary.lastUsedAt,
-    updatedAt: summary.updatedAt,
-    credentials: record.passkeys.credentials.map((credential) => ({
-      id: credential.id,
-      credentialId: credential.credentialId,
-      transports: credential.transports,
-      aaguid: credential.aaguid,
-      deviceType: credential.deviceType,
-      backedUp: credential.backedUp,
-      createdAt: credential.createdAt,
-      lastUsedAt: credential.lastUsedAt,
-    })),
-  };
-}
-
-function accountPasskeyCredentialView(record: AccountUserRecord['passkeys']['credentials'][number]) {
-  return {
-    id: record.id,
-    credentialId: record.credentialId,
-    transports: record.transports,
-    aaguid: record.aaguid,
-    deviceType: record.deviceType,
-    backedUp: record.backedUp,
-    createdAt: record.createdAt,
-    lastUsedAt: record.lastUsedAt,
-  };
-}
-
-function schemaAttestationSummaryFromFull(attestation: any) {
-  return {
-    present: true,
-    scope: 'schema_attestation_full' as const,
-    executionContextHash: attestation.executionContextHash,
-    provider: 'postgres',
-    txidSnapshot: attestation.txidSnapshot ?? null,
-    columnFingerprint: attestation.columnFingerprint ?? null,
-    constraintFingerprint: attestation.constraintFingerprint ?? null,
-    indexFingerprint: attestation.indexFingerprint ?? null,
-    schemaFingerprint: attestation.schemaFingerprint,
-    sentinelFingerprint: attestation.sentinelFingerprint,
-    contentFingerprint: attestation.contentFingerprint ?? null,
-    tableNames: attestation.tables,
-    attestationHash: attestation.attestationHash,
-    tableFingerprints: Array.isArray(attestation.tableContentFingerprints)
-      ? attestation.tableContentFingerprints.map((entry: any) => {
-        const sentinel = Array.isArray(attestation.sentinels)
-          ? attestation.sentinels.find((candidate: any) => candidate.tableName === entry.tableName)
-          : null;
-        return {
-          tableName: entry.tableName,
-          rowCount: entry.rowCount,
-          sampledRowCount: entry.sampledRowCount,
-          rowLimit: entry.rowLimit,
-          mode: entry.mode,
-          orderBy: entry.orderBy,
-          maxXmin: sentinel?.maxXmin ?? null,
-          contentHash: entry.contentHash ?? null,
-        };
-      })
-      : null,
-    historicalComparison: attestation.historicalComparison ?? null,
-  };
-}
-
-function schemaAttestationSummaryFromConnector(
-  connectorExecution: any,
-  connectorProvider: string | null,
-) {
-  const attestation = connectorExecution?.schemaAttestation;
-  if (attestation) {
-    return {
-      present: true,
-      scope: 'schema_attestation_connector' as const,
-      executionContextHash: connectorExecution.executionContextHash,
-      provider: connectorProvider,
-      txidSnapshot: attestation.txidSnapshot ?? null,
-      columnFingerprint: attestation.columnFingerprint ?? null,
-      constraintFingerprint: attestation.constraintFingerprint ?? null,
-      indexFingerprint: attestation.indexFingerprint ?? null,
-      schemaFingerprint: attestation.schemaFingerprint,
-      sentinelFingerprint: attestation.sentinelFingerprint,
-      contentFingerprint: attestation.contentFingerprint ?? null,
-      tableNames: attestation.tables,
-      attestationHash: attestation.attestationHash,
-      tableFingerprints: attestation.tableFingerprints ?? null,
-      historicalComparison: attestation.historicalComparison ?? null,
-    };
-  }
-  if (connectorExecution?.executionContextHash) {
-    return {
-      present: true,
-      scope: 'execution_context_only' as const,
-      executionContextHash: connectorExecution.executionContextHash,
-      provider: connectorProvider,
-      txidSnapshot: null,
-      columnFingerprint: null,
-      constraintFingerprint: null,
-      indexFingerprint: null,
-      schemaFingerprint: null,
-      sentinelFingerprint: null,
-      contentFingerprint: null,
-      tableNames: null,
-      attestationHash: null,
-      tableFingerprints: null,
-      historicalComparison: null,
-    };
-  }
-  return null;
-}
-
-function accountUserActionTokenStatus(record: AccountUserActionTokenRecord): 'pending' | 'consumed' | 'revoked' | 'expired' {
-  if (record.consumedAt) return 'consumed';
-  if (record.revokedAt) return 'revoked';
-  if (Date.parse(record.expiresAt) <= Date.now()) return 'expired';
-  return 'pending';
-}
-
-function accountUserActionTokenView(record: AccountUserActionTokenRecord) {
-  return {
-    id: record.id,
-    purpose: record.purpose,
-    accountId: record.accountId,
-    accountUserId: record.accountUserId,
-    email: record.email,
-    displayName: record.displayName,
-    role: record.role,
-    status: accountUserActionTokenStatus(record),
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    expiresAt: record.expiresAt,
-    consumedAt: record.consumedAt,
-    revokedAt: record.revokedAt,
-  };
-}
-
-function accountUserActionTokenContext(record: AccountUserActionTokenRecord): Record<string, unknown> {
-  return record.context && typeof record.context === 'object' ? record.context : {};
-}
-
-function parsePasskeyRegistrationChallenge(
-  record: AccountUserActionTokenRecord,
-): HostedPasskeyRegistrationChallengeState | null {
-  if (record.purpose !== 'passkey_registration') return null;
-  const context = accountUserActionTokenContext(record);
-  const challenge = typeof context.challenge === 'string' ? context.challenge.trim() : '';
-  const rpId = typeof context.rpId === 'string' ? context.rpId.trim() : '';
-  const origin = typeof context.origin === 'string' ? context.origin.trim() : '';
-  const userHandle = typeof context.userHandle === 'string' ? context.userHandle.trim() : '';
-  if (!record.accountUserId || !challenge || !rpId || !origin || !userHandle) return null;
-  return {
-    version: 1,
-    purpose: 'registration',
-    accountId: record.accountId,
-    accountUserId: record.accountUserId,
-    rpId,
-    origin,
-    challenge,
-    userHandle,
-    issuedAt: record.createdAt,
-    expiresAt: record.expiresAt,
-  };
-}
-
-function parsePasskeyAuthenticationChallenge(
-  record: AccountUserActionTokenRecord,
-): HostedPasskeyAuthenticationChallengeState | null {
-  if (record.purpose !== 'passkey_authentication') return null;
-  const context = accountUserActionTokenContext(record);
-  const challenge = typeof context.challenge === 'string' ? context.challenge.trim() : '';
-  const rpId = typeof context.rpId === 'string' ? context.rpId.trim() : '';
-  const origin = typeof context.origin === 'string' ? context.origin.trim() : '';
-  if (!record.accountUserId || !challenge || !rpId || !origin) return null;
-  return {
-    version: 1,
-    purpose: 'authentication',
-    accountUserId: record.accountUserId,
-    rpId,
-    origin,
-    challenge,
-    issuedAt: record.createdAt,
-    expiresAt: record.expiresAt,
-  };
-}
-
-function normalizePasskeyAuthenticatorHint(value: unknown): HostedPasskeyAuthenticatorHint | null {
-  if (value !== 'securityKey' && value !== 'localDevice' && value !== 'remoteDevice') {
-    return null;
-  }
-  return value;
-}
-
-function asRegistrationResponse(value: unknown): RegistrationResponseJSON | null {
-  if (!value || typeof value !== 'object') return null;
-  const response = value as RegistrationResponseJSON;
-  if (response.type !== 'public-key' || !response.response || typeof response.response !== 'object') {
-    return null;
-  }
-  return response;
-}
-
-function asAuthenticationResponse(value: unknown): AuthenticationResponseJSON | null {
-  if (!value || typeof value !== 'object') return null;
-  const response = value as AuthenticationResponseJSON;
-  if (response.type !== 'public-key' || !response.response || typeof response.response !== 'object') {
-    return null;
-  }
-  return response;
-}
-
-function adminTenantKeyView(record: TenantKeyRecord) {
-  return {
-    id: record.id,
-    tenantId: record.tenantId,
-    tenantName: record.tenantName,
-    planId: record.planId,
-    monthlyRunQuota: record.monthlyRunQuota,
-    apiKeyPreview: record.apiKeyPreview,
-    status: record.status,
-    createdAt: record.createdAt,
-    lastUsedAt: record.lastUsedAt,
-    deactivatedAt: record.deactivatedAt,
-    revokedAt: record.revokedAt,
-    rotatedFromKeyId: record.rotatedFromKeyId,
-    supersededByKeyId: record.supersededByKeyId,
-    supersededAt: record.supersededAt,
-    sealedStorage: {
-      enabled: Boolean(record.recoveryEnvelope),
-      provider: record.recoveryEnvelope?.provider ?? null,
-      keyName: record.recoveryEnvelope?.keyName ?? null,
-      sealedAt: record.recoveryEnvelope?.sealedAt ?? null,
-      breakGlassRecoverable: Boolean(record.recoveryEnvelope),
-    },
-  };
-}
-
-function accountApiKeyView(record: TenantKeyRecord) {
-  return adminTenantKeyView(record);
-}
-
-function normalizeSignupTenantSegment(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/-{2,}/g, '-')
-    .slice(0, 32);
-}
-
-function deriveSignupTenantId(accountName: string, email: string): string {
-  const [emailLocalPart] = email.split('@', 1);
-  const base = normalizeSignupTenantSegment(accountName)
-    || normalizeSignupTenantSegment(emailLocalPart ?? '')
-    || 'account';
-  return `${base}-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
-}
-
-function adminAccountView(record: HostedAccountRecord) {
-  return {
-    id: record.id,
-    accountName: record.accountName,
-    contactEmail: record.contactEmail,
-    primaryTenantId: record.primaryTenantId,
-    status: record.status,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    suspendedAt: record.suspendedAt,
-    archivedAt: record.archivedAt,
-    billing: record.billing,
-  };
-}
-
-function adminPlanView() {
-  return listHostedPlans().map((plan) => ({
-    id: plan.id,
-    displayName: plan.displayName,
-    description: plan.description,
-    defaultStripeTrialDays: resolvePlanStripeTrialDays(plan.id).trialDays,
-    defaultMonthlyRunQuota: plan.defaultMonthlyRunQuota,
-    defaultPipelineRequestsPerWindow: resolvePlanRateLimit(plan.id).requestsPerWindow,
-    defaultAsyncPendingJobsPerTenant: resolvePlanAsyncQueue(plan.id).pendingJobsPerTenant,
-    defaultAsyncActiveJobsPerTenant: resolvePlanAsyncExecution(plan.id).activeJobsPerTenant,
-    defaultAsyncDispatchWeight: resolvePlanAsyncDispatch(plan.id).dispatchWeight,
-    defaultAsyncDispatchWindowMs: resolvePlanAsyncDispatch(plan.id).dispatchWindowMs,
-    stripePriceConfigured: resolvePlanStripePrice(plan.id).configured,
-    intendedFor: plan.intendedFor,
-    defaultForHostedProvisioning: plan.defaultForHostedProvisioning,
-  }));
-}
-
 function accountStoreErrorResponse(c: Context, err: unknown): Response | null {
   if (!(err instanceof AccountStoreError)) return null;
   if (err.code === 'NOT_FOUND') {
@@ -970,41 +597,6 @@ async function currentHostedAccount(c: Context): Promise<{
     account,
     usage: await getUsageContextState(tenant.tenantId, tenant.planId, tenant.monthlyRunQuota),
     rateLimit: await getTenantPipelineRateLimit(tenant.tenantId, tenant.planId),
-  };
-}
-
-function billingEntitlementView(record: HostedBillingEntitlementRecord) {
-  return {
-    id: record.id,
-    accountId: record.accountId,
-    tenantId: record.tenantId,
-    provider: record.provider,
-    status: record.status,
-    accessEnabled: record.accessEnabled,
-    effectivePlanId: record.effectivePlanId,
-    requestedPlanId: record.requestedPlanId,
-    monthlyRunQuota: record.monthlyRunQuota,
-    requestsPerWindow: record.requestsPerWindow,
-    asyncPendingJobsPerTenant: record.asyncPendingJobsPerTenant,
-    accountStatus: record.accountStatus,
-    stripeCustomerId: record.stripeCustomerId,
-    stripeSubscriptionId: record.stripeSubscriptionId,
-    stripeSubscriptionStatus: record.stripeSubscriptionStatus,
-    stripePriceId: record.stripePriceId,
-    stripeCheckoutSessionId: record.stripeCheckoutSessionId,
-    stripeInvoiceId: record.stripeInvoiceId,
-    stripeInvoiceStatus: record.stripeInvoiceStatus,
-    stripeEntitlementLookupKeys: record.stripeEntitlementLookupKeys,
-    stripeEntitlementFeatureIds: record.stripeEntitlementFeatureIds,
-    stripeEntitlementSummaryUpdatedAt: record.stripeEntitlementSummaryUpdatedAt,
-    lastEventId: record.lastEventId,
-    lastEventType: record.lastEventType,
-    lastEventAt: record.lastEventAt,
-    effectiveAt: record.effectiveAt,
-    delinquentSince: record.delinquentSince,
-    reason: record.reason,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
   };
 }
 
@@ -1124,96 +716,6 @@ async function revokeAccountSessionsForLifecycleChange(options: {
   if (options.nextStatus !== 'suspended' && options.nextStatus !== 'archived') return 0;
   const result = await revokeAccountSessionsForAccountState(options.account.id);
   return result.revokedCount;
-}
-
-function applyRateLimitHeaders(
-  c: Context,
-  rateLimit: {
-    requestsPerWindow: number | null;
-    remaining: number | null;
-    resetAt: string;
-    retryAfterSeconds: number;
-    enforced: boolean;
-  },
-  options?: { includeRetryAfter?: boolean },
-): void {
-  if (!rateLimit.enforced || rateLimit.requestsPerWindow === null) return;
-  c.header('x-attestor-rate-limit-limit', String(rateLimit.requestsPerWindow));
-  c.header('x-attestor-rate-limit-remaining', String(rateLimit.remaining ?? 0));
-  c.header('x-attestor-rate-limit-reset', rateLimit.resetAt);
-  if (options?.includeRetryAfter) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds));
-  }
-}
-
-function adminAuditView(record: {
-  id: string;
-  occurredAt: string;
-  actorType: 'admin_api_key' | 'stripe_webhook';
-  actorLabel: string;
-  action: AdminAuditAction;
-  routeId: string;
-  accountId: string | null;
-  tenantId: string | null;
-  tenantKeyId: string | null;
-  planId: string | null;
-  monthlyRunQuota: number | null;
-  idempotencyKey: string | null;
-  requestHash: string;
-  metadata: Record<string, unknown>;
-  previousHash: string | null;
-  eventHash: string;
-}) {
-  return {
-    id: record.id,
-    occurredAt: record.occurredAt,
-    actorType: record.actorType,
-    actorLabel: record.actorLabel,
-    action: record.action,
-    routeId: record.routeId,
-    accountId: record.accountId,
-    tenantId: record.tenantId,
-    tenantKeyId: record.tenantKeyId,
-    planId: record.planId,
-    monthlyRunQuota: record.monthlyRunQuota,
-    idempotencyKey: record.idempotencyKey,
-    requestHash: record.requestHash,
-    metadata: record.metadata,
-    previousHash: record.previousHash,
-    eventHash: record.eventHash,
-  };
-}
-
-function billingEventView(record: Awaited<ReturnType<typeof listBillingEvents>>[number]) {
-  return {
-    id: record.id,
-    provider: record.provider,
-    source: record.source,
-    providerEventId: record.providerEventId,
-    eventType: record.eventType,
-    payloadHash: record.payloadHash,
-    outcome: record.outcome,
-    reason: record.reason,
-    accountId: record.accountId,
-    tenantId: record.tenantId,
-    stripeCheckoutSessionId: record.stripeCheckoutSessionId,
-    stripeCustomerId: record.stripeCustomerId,
-    stripeSubscriptionId: record.stripeSubscriptionId,
-    stripePriceId: record.stripePriceId,
-    stripeInvoiceId: record.stripeInvoiceId,
-    stripeInvoiceStatus: record.stripeInvoiceStatus,
-    stripeInvoiceCurrency: record.stripeInvoiceCurrency,
-    stripeInvoiceAmountPaid: record.stripeInvoiceAmountPaid,
-    stripeInvoiceAmountDue: record.stripeInvoiceAmountDue,
-    accountStatusBefore: record.accountStatusBefore,
-    accountStatusAfter: record.accountStatusAfter,
-    billingStatusBefore: record.billingStatusBefore,
-    billingStatusAfter: record.billingStatusAfter,
-    mappedPlanId: record.mappedPlanId,
-    receivedAt: record.receivedAt,
-    processedAt: record.processedAt,
-    metadata: record.metadata,
-  };
 }
 
 const publicSiteRouteDeps = {

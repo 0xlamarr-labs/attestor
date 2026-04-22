@@ -206,16 +206,54 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
 
 function testApiServerUsesExtractedRouteSupport(): void {
   const apiServer = readFileSync(API_SERVER, 'utf8');
+  const accountRouteSupport = readFileSync(
+    join(SERVICE_ROOT, 'account-route-support.ts'),
+    'utf8',
+  );
+  const hostedSurfaceSupport = readFileSync(
+    join(SERVICE_ROOT, 'hosted-surface-support.ts'),
+    'utf8',
+  );
+  const pipelineRouteSupport = readFileSync(
+    join(SERVICE_ROOT, 'pipeline-route-support.ts'),
+    'utf8',
+  );
   const requestContext = readFileSync(join(SERVICE_ROOT, 'request-context.ts'), 'utf8');
   const stripeWebhookSupport = readFileSync(
     join(SERVICE_ROOT, 'stripe-webhook-support.ts'),
     'utf8',
   );
 
+  assert.match(apiServer, /from '\.\/account-route-support\.js'/u);
+  assert.match(apiServer, /from '\.\/hosted-surface-support\.js'/u);
+  assert.match(apiServer, /from '\.\/pipeline-route-support\.js'/u);
   assert.match(apiServer, /from '\.\/request-context\.js'/u);
   assert.match(apiServer, /from '\.\/stripe-webhook-support\.js'/u);
 
   for (const helperName of [
+    'function accountUserView(',
+    'function accountUserDetailedMfaView(',
+    'function accountUserDetailedOidcView(',
+    'function accountUserDetailedSamlView(',
+    'function accountUserDetailedPasskeyView(',
+    'function accountPasskeyCredentialView(',
+    'function accountUserActionTokenView(',
+    'function parsePasskeyRegistrationChallenge(',
+    'function parsePasskeyAuthenticationChallenge(',
+    'function normalizePasskeyAuthenticatorHint(',
+    'function asRegistrationResponse(',
+    'function asAuthenticationResponse(',
+    'function deriveSignupTenantId(',
+    'function adminTenantKeyView(',
+    'function accountApiKeyView(',
+    'function adminAccountView(',
+    'function adminPlanView(',
+    'function billingEntitlementView(',
+    'function schemaAttestationSummaryFromFull(',
+    'function schemaAttestationSummaryFromConnector(',
+    'function applyRateLimitHeaders(',
+    'function adminAuditView(',
+    'function billingEventView(',
     'function createRequestSigners(',
     'function currentTenant(',
     'function currentAccountAccess(',
@@ -239,6 +277,56 @@ function testApiServerUsesExtractedRouteSupport(): void {
       apiServer.includes(helperName),
       false,
       `api-server.ts should not define ${helperName} inline`,
+    );
+  }
+
+  for (const accountHelper of [
+    'export function accountUserView(',
+    'export function accountUserDetailedMfaView(',
+    'export function accountUserDetailedOidcView(',
+    'export function accountUserDetailedSamlView(',
+    'export function accountUserDetailedPasskeyView(',
+    'export function accountPasskeyCredentialView(',
+    'export function accountUserActionTokenView(',
+    'export function parsePasskeyRegistrationChallenge(',
+    'export function parsePasskeyAuthenticationChallenge(',
+    'export function normalizePasskeyAuthenticatorHint(',
+    'export function asRegistrationResponse(',
+    'export function asAuthenticationResponse(',
+    'export function deriveSignupTenantId(',
+  ]) {
+    assert.equal(
+      accountRouteSupport.includes(accountHelper),
+      true,
+      `account-route-support.ts should own ${accountHelper}`,
+    );
+  }
+
+  for (const hostedHelper of [
+    'export function adminTenantKeyView(',
+    'export function accountApiKeyView(',
+    'export function adminAccountView(',
+    'export function adminPlanView(',
+    'export function billingEntitlementView(',
+    'export function adminAuditView(',
+    'export function billingEventView(',
+  ]) {
+    assert.equal(
+      hostedSurfaceSupport.includes(hostedHelper),
+      true,
+      `hosted-surface-support.ts should own ${hostedHelper}`,
+    );
+  }
+
+  for (const pipelineHelper of [
+    'export function schemaAttestationSummaryFromFull(',
+    'export function schemaAttestationSummaryFromConnector(',
+    'export function applyRateLimitHeaders(',
+  ]) {
+    assert.equal(
+      pipelineRouteSupport.includes(pipelineHelper),
+      true,
+      `pipeline-route-support.ts should own ${pipelineHelper}`,
     );
   }
 
