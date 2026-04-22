@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 const API_SERVER = join(process.cwd(), 'src', 'service', 'api-server.ts');
 const BOOTSTRAP_ROOT = join(process.cwd(), 'src', 'service', 'bootstrap');
+const SERVICE_ROOT = join(process.cwd(), 'src', 'service');
 
 function readProjectFile(...segments: string[]): string {
   return readFileSync(join(process.cwd(), ...segments), 'utf8');
@@ -203,6 +204,81 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
   }
 }
 
+function testApiServerUsesExtractedRouteSupport(): void {
+  const apiServer = readFileSync(API_SERVER, 'utf8');
+  const requestContext = readFileSync(join(SERVICE_ROOT, 'request-context.ts'), 'utf8');
+  const stripeWebhookSupport = readFileSync(
+    join(SERVICE_ROOT, 'stripe-webhook-support.ts'),
+    'utf8',
+  );
+
+  assert.match(apiServer, /from '\.\/request-context\.js'/u);
+  assert.match(apiServer, /from '\.\/stripe-webhook-support\.js'/u);
+
+  for (const helperName of [
+    'function createRequestSigners(',
+    'function currentTenant(',
+    'function currentAccountAccess(',
+    'function currentAccountRole(',
+    'function currentReleaseRequester(',
+    'function currentReleaseEvaluationContext(',
+    'function setSessionCookieForRecord(',
+    'function requireAccountSession(',
+    'function currentAdminAuthorized(',
+    'function currentMetricsAuthorized(',
+    'function constantTimeSecretEquals(',
+    'function stripeClient(',
+    'function parseStripeInvoiceStatus(',
+    'function parseStripeChargeStatus(',
+    'function metadataStringValue(',
+    'function stripeReferenceId(',
+    'function unixSecondsToIso(',
+    'function stripeInvoicePriceId(',
+  ]) {
+    assert.equal(
+      apiServer.includes(helperName),
+      false,
+      `api-server.ts should not define ${helperName} inline`,
+    );
+  }
+
+  for (const requestHelper of [
+    'export function createRequestSigners(',
+    'export function currentTenant(',
+    'export function currentAccountAccess(',
+    'export function currentAccountRole(',
+    'export function currentReleaseRequester(',
+    'export function currentReleaseEvaluationContext(',
+    'export function setSessionCookieForRecord(',
+    'export function requireAccountSession(',
+    'export function currentAdminAuthorized(',
+    'export function currentMetricsAuthorized(',
+    'export function constantTimeSecretEquals(',
+  ]) {
+    assert.equal(
+      requestContext.includes(requestHelper),
+      true,
+      `request-context.ts should own ${requestHelper}`,
+    );
+  }
+
+  for (const stripeHelper of [
+    'export function stripeClient(',
+    'export function parseStripeInvoiceStatus(',
+    'export function parseStripeChargeStatus(',
+    'export function metadataStringValue(',
+    'export function stripeReferenceId(',
+    'export function unixSecondsToIso(',
+    'export function stripeInvoicePriceId(',
+  ]) {
+    assert.equal(
+      stripeWebhookSupport.includes(stripeHelper),
+      true,
+      `stripe-webhook-support.ts should own ${stripeHelper}`,
+    );
+  }
+}
+
 testApiServerUsesBootstrapComposition();
 testApiServerDoesNotOwnNodeServerLifecycle();
 testApiServerDoesNotRegisterRoutesDirectly();
@@ -211,5 +287,6 @@ testRuntimeUsesStructuredComposition();
 testRegistriesOwnStaticPlatformRegistration();
 testHttpRouteBuildersOwnApplicationServiceConstruction();
 testReleaseRuntimeBootstrapOwnsReleaseSetup();
+testApiServerUsesExtractedRouteSupport();
 
-console.log('Service bootstrap boundary tests: 8 passed, 0 failed');
+console.log('Service bootstrap boundary tests: 9 passed, 0 failed');

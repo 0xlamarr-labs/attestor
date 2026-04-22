@@ -46,12 +46,11 @@
  * Integration tests hit it over the network.
  */
 
-import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { Hono, type Context } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
-import Stripe from 'stripe';
+import { deleteCookie, getCookie } from 'hono/cookie';
 import type {
   AuthenticationResponseJSON,
   RegistrationResponseJSON,
@@ -62,11 +61,9 @@ import { verifyCertificate } from '../signing/certificate.js';
 import { buildVerificationKit } from '../signing/bundle.js';
 import { verifyOidcToken, classifyIdentitySource } from '../identity/oidc-identity.js';
 import type { FinancialPipelineInput } from '../financial/pipeline.js';
-import type { ReviewerIdentity } from '../financial/types.js';
 
 import { buildCounterpartyEnvelope } from '../filing/xbrl-adapter.js';
 import { verifyTrustChain } from '../signing/pki-chain.js';
-import { createKeylessSignerPair, verifyKeylessSigner, type KeylessSigner } from '../signing/keyless-signer.js';
 import { derivePublicKeyIdentity } from '../signing/keys.js';
 import { review, verification } from '../release-layer/index.js';
 import { action as financeActionRelease, communication as financeCommunicationRelease, record as financeRecordRelease } from '../release-layer/finance.js';
@@ -81,11 +78,29 @@ import {
 } from './async-pipeline.js';
 import {
   tenantMiddleware,
-  getAccountAccessContextFromHeaders,
-  getTenantContextFromHeaders,
-  type AccountAccessContext,
   type TenantContext,
 } from './tenant-isolation.js';
+import {
+  createRequestSigners,
+  currentAccountAccess,
+  currentAccountRole,
+  currentAdminAuthorized,
+  currentMetricsAuthorized,
+  currentReleaseEvaluationContext,
+  currentReleaseRequester,
+  currentTenant,
+  requireAccountSession,
+  setSessionCookieForRecord,
+} from './request-context.js';
+import {
+  metadataStringValue,
+  parseStripeChargeStatus,
+  parseStripeInvoiceStatus,
+  stripeClient,
+  stripeInvoicePriceId,
+  stripeReferenceId,
+  unixSecondsToIso,
+} from './stripe-webhook-support.js';
 
 const {
   buildFinanceCommunicationReleaseMaterial,
@@ -442,7 +457,7 @@ app.use('/api/*', async (c, next) => {
     throw err;
   } finally {
     const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
-    const tenant = getTenantContextFromHeaders(c.req.raw.headers);
+    const tenant = currentTenant(c);
     const observedTenantId = c.get('obs.tenantId') as string | null | undefined;
     const observedPlanId = c.get('obs.planId') as string | null | undefined;
     const observedAccountId = c.get('obs.accountId') as string | null | undefined;
@@ -532,62 +547,6 @@ const {
   financeCommunicationReleaseShadowEvaluator,
   financeActionReleaseShadowEvaluator,
 } = createReleaseRuntimeBootstrap();
-
-// Keyless signer: per-request ephemeral keys with CA-issued short-lived certs (Sigstore pattern)
-function createRequestSigners(identitySource: string, reviewerName?: string) {
-  return createKeylessSignerPair(
-    { subject: 'API Runtime Signer', source: identitySource === 'oidc_verified' ? 'oidc_verified' : 'ephemeral', identifier: 'api-keyless' },
-    reviewerName ? { subject: reviewerName, source: identitySource === 'oidc_verified' ? 'oidc_verified' : 'operator_asserted', identifier: reviewerName } : undefined,
-  );
-}
-
-function currentTenant(c: Context): TenantContext {
-  return getTenantContextFromHeaders(c.req.raw.headers);
-}
-
-function currentReleaseRequester(
-  c: Context,
-  reviewerIdentity?: ReviewerIdentity,
-) {
-  if (reviewerIdentity) {
-    return {
-      id: `reviewer:${reviewerIdentity.identifier}`,
-      type: 'user' as const,
-      displayName: reviewerIdentity.name,
-      role: reviewerIdentity.role,
-    };
-  }
-
-  const tenant = currentTenant(c);
-  return {
-    id: tenant.tenantId === 'default' ? 'svc.attestor.api' : `tenant:${tenant.tenantId}`,
-    type: 'service' as const,
-    displayName: tenant.tenantId === 'default' ? 'Attestor API Runtime' : tenant.tenantId,
-    role: tenant.planId ?? 'service',
-  };
-}
-
-function currentReleaseEvaluationContext(c: Context) {
-  const tenant = currentTenant(c);
-  const account = currentAccountAccess(c);
-  const cohortHeader = c.req.header('x-attestor-release-cohort');
-  const cohortId = cohortHeader?.trim() ? cohortHeader.trim() : null;
-
-  return {
-    tenantId: tenant.tenantId !== 'default' ? tenant.tenantId : null,
-    accountId: account?.accountId ?? null,
-    planId: tenant.planId ?? null,
-    cohortId,
-  } as const;
-}
-
-function currentAccountAccess(c: Context): AccountAccessContext | null {
-  return getAccountAccessContextFromHeaders(c.req.raw.headers);
-}
-
-function currentAccountRole(c: Context): AccountUserRole | null {
-  return currentAccountAccess(c)?.role ?? null;
-}
 
 function accountUserView(record: AccountUserRecord) {
   const mfa = totpSummary(record.mfa.totp);
@@ -883,148 +842,6 @@ function asAuthenticationResponse(value: unknown): AuthenticationResponseJSON | 
     return null;
   }
   return response;
-}
-
-function setSessionCookieForRecord(c: Context, sessionToken: string, expiresAt: string): void {
-  setCookie(c, sessionCookieName(), sessionToken, {
-    httpOnly: true,
-    sameSite: 'Lax',
-    secure: sessionCookieSecure(),
-    path: '/api/v1',
-    expires: new Date(expiresAt),
-  });
-}
-
-function requireAccountSession(
-  c: Context,
-  options?: {
-    roles?: AccountUserRole[];
-    allowApiKey?: boolean;
-  },
-): Response | null {
-  const access = currentAccountAccess(c);
-  if (!access) {
-    if (options?.allowApiKey && currentTenant(c).source === 'api_key') return null;
-    return c.json({ error: 'Account session required.' }, 401);
-  }
-  if (options?.roles && !options.roles.includes(access.role)) {
-    return c.json({
-      error: `Account role '${access.role}' is not allowed to perform this action.`,
-      requiredRoles: options.roles,
-    }, 403);
-  }
-  return null;
-}
-
-function currentAdminAuthorized(c: Context): Response | null {
-  const configured = process.env.ATTESTOR_ADMIN_API_KEY?.trim();
-  if (!configured) {
-    return c.json({
-      error: 'Admin API disabled. Set ATTESTOR_ADMIN_API_KEY to enable tenant management endpoints.',
-    }, 503);
-  }
-
-  const authHeader = c.req.header('authorization') ?? '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!constantTimeSecretEquals(token, configured)) {
-    return c.json({ error: 'Valid admin API key required in Authorization header.' }, 401);
-  }
-
-  return null;
-}
-
-function currentMetricsAuthorized(c: Context): Response | null {
-  const configured = process.env.ATTESTOR_METRICS_API_KEY?.trim();
-  if (configured) {
-    const authHeader = c.req.header('authorization') ?? '';
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (!constantTimeSecretEquals(token, configured)) {
-      return c.json({ error: 'Valid metrics API key required in Authorization header.' }, 401);
-    }
-    return null;
-  }
-
-  return currentAdminAuthorized(c);
-}
-
-function constantTimeSecretEquals(candidate: string, configured: string): boolean {
-  if (!candidate || !configured) return false;
-  const candidateDigest = createHash('sha256').update(candidate).digest();
-  const configuredDigest = createHash('sha256').update(configured).digest();
-  return timingSafeEqual(candidateDigest, configuredDigest);
-}
-
-function stripeClient(): Stripe {
-  return new Stripe(process.env.STRIPE_API_KEY?.trim() || 'sk_test_attestor_local');
-}
-
-function parseStripeInvoiceStatus(
-  raw: unknown,
-): 'draft' | 'open' | 'paid' | 'uncollectible' | 'void' | null {
-  if (typeof raw !== 'string' || raw.trim() === '') return null;
-  switch (raw.trim()) {
-    case 'draft':
-    case 'open':
-    case 'paid':
-    case 'uncollectible':
-    case 'void':
-      return raw.trim() as 'draft' | 'open' | 'paid' | 'uncollectible' | 'void';
-    default:
-      return null;
-  }
-}
-
-function parseStripeChargeStatus(
-  raw: unknown,
-): 'succeeded' | 'pending' | 'failed' | null {
-  if (typeof raw !== 'string' || raw.trim() === '') return null;
-  switch (raw.trim()) {
-    case 'succeeded':
-    case 'pending':
-    case 'failed':
-      return raw.trim() as 'succeeded' | 'pending' | 'failed';
-    default:
-      return null;
-  }
-}
-
-function metadataStringValue(
-  key: string,
-  ...sources: Array<Record<string, unknown> | Stripe.Metadata | null | undefined>
-): string | null {
-  for (const source of sources) {
-    const value = source?.[key];
-    if (typeof value === 'string' && value.trim() !== '') {
-      return value.trim();
-    }
-  }
-  return null;
-}
-
-function stripeReferenceId(value: unknown): string | null {
-  if (typeof value === 'string' && value.trim() !== '') return value.trim();
-  if (value && typeof value === 'object' && 'id' in value && typeof (value as { id?: unknown }).id === 'string') {
-    return ((value as { id: string }).id).trim();
-  }
-  return null;
-}
-
-function unixSecondsToIso(value: unknown): string | null {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-    ? new Date(value * 1000).toISOString()
-    : null;
-}
-
-function stripeInvoicePriceId(invoice: Stripe.Invoice): string | null {
-  for (const entry of invoice.lines?.data ?? []) {
-    const directPriceId = stripeReferenceId((entry as { price?: unknown }).price);
-    if (directPriceId) return directPriceId;
-    const pricingPriceId = stripeReferenceId(
-      (entry as { pricing?: { price_details?: { price?: unknown } | null } | null }).pricing?.price_details?.price,
-    );
-    if (pricingPriceId) return pricingPriceId;
-  }
-  return null;
 }
 
 function adminTenantKeyView(record: TenantKeyRecord) {
