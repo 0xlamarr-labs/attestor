@@ -38,7 +38,6 @@ import type {
 } from '../../../release-enforcement-plane/types.js';
 import {
   createDegradedModeGrant,
-  createInMemoryDegradedModeGrantStore,
   degradedModeGrantStatus,
   degradedModeGrantView,
   type DegradedModeGrantState,
@@ -89,7 +88,7 @@ export interface AdminRouteDeps {
   listFailedPipelineJobs: typeof AsyncPipeline.listFailedPipelineJobs;
   retryFailedPipelineJob: typeof AsyncPipeline.retryFailedPipelineJob;
   apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
-  releaseDegradedModeGrantStore?: DegradedModeGrantStore;
+  releaseDegradedModeGrantStore: DegradedModeGrantStore;
 }
 
 function adminDegradedModeActor(value: unknown): ReleaseActorReference {
@@ -320,8 +319,7 @@ export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
     apiReleaseIntrospectionStore,
     releaseDegradedModeGrantStore,
   } = deps;
-  const degradedModeGrantStore: DegradedModeGrantStore =
-    releaseDegradedModeGrantStore ?? createInMemoryDegradedModeGrantStore();
+  const degradedModeGrantStore: DegradedModeGrantStore = releaseDegradedModeGrantStore;
 
   async function beginAdminMutation(
     context: Context,

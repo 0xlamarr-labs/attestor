@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { resolve } from 'node:path';
 import { Hono, type Context } from 'hono';
 import type { ReleaseActorReference } from '../src/release-layer/index.js';
 import {
@@ -12,6 +13,7 @@ import {
   DEFAULT_CACHE_ONLY_MAX_TTL_SECONDS,
   DEFAULT_DEGRADED_MODE_ALLOWED_FAILURE_REASONS,
   RELEASE_DEGRADED_MODE_CONTROL_SPEC_VERSION,
+  createFileBackedDegradedModeGrantStore,
   createDegradedModeGrant,
   createInMemoryDegradedModeGrantStore,
   degradedModeGrantStatus,
@@ -19,6 +21,7 @@ import {
   degradedModeScopeMatches,
   evaluateDegradedMode,
   grantToBreakGlassGrant,
+  resetFileBackedDegradedModeGrantStoreForTests,
   type DegradedModeGrant,
 } from '../src/release-enforcement-plane/degraded-mode.js';
 import { registerAdminRoutes } from '../src/service/http/routes/admin-routes.js';
@@ -299,6 +302,31 @@ function testGrantStoreAuditAndUseBudget(): void {
   equal(audits[1].previousDigest, audits[0].digest, 'Degraded mode store: audit records are hash chained');
 }
 
+function testFileBackedGrantStorePersists(): void {
+  const path = resolve('.attestor/tests/release-enforcement-degraded-mode-grants.json');
+  resetFileBackedDegradedModeGrantStoreForTests(path);
+  try {
+    const writer = createFileBackedDegradedModeGrantStore(path);
+    const grant = sampleGrant({ id: 'dmg_file_backed', maxUses: 2 });
+    writer.registerGrant(grant);
+    writer.consumeGrant({
+      id: grant.id,
+      checkedAt: CHECKED_AT,
+      actor: adminActor('svc_enforcement_gateway'),
+      failureReasons: ['introspection-unavailable'],
+      outcome: 'break-glass-allow',
+      metadata: { requestId: 'erq_degraded_mode_file_backed_1' },
+    });
+
+    const reader = createFileBackedDegradedModeGrantStore(path);
+    equal(reader.findGrant(grant.id)?.remainingUses, 1, 'Degraded mode store: file-backed grants survive restart');
+    equal(reader.listAuditRecords().length, 2, 'Degraded mode store: file-backed audit log survives restart');
+    equal(reader.auditHead(), reader.listAuditRecords().at(-1)?.digest ?? null, 'Degraded mode store: file-backed audit head remains aligned');
+  } finally {
+    resetFileBackedDegradedModeGrantStoreForTests(path);
+  }
+}
+
 function createAdminFixture(options?: { authorized?: boolean }) {
   const app = new Hono();
   const store = createInMemoryDegradedModeGrantStore();
@@ -415,6 +443,7 @@ async function main(): Promise<void> {
   testBreakGlassDecision();
   testFailClosedStates();
   testGrantStoreAuditAndUseBudget();
+  testFileBackedGrantStorePersists();
   await testAdminRoutes();
   console.log(`Release enforcement-plane degraded mode tests: ${passed} passed, 0 failed`);
 }

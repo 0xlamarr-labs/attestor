@@ -76,6 +76,7 @@ import {
   financeProving as controlPlaneFinanceProving,
   store as controlPlaneStore,
 } from '../release-policy-control-plane/index.js';
+import { createFileBackedDegradedModeGrantStore } from '../release-enforcement-plane/degraded-mode.js';
 import {
   canEnqueueTenantAsyncJob,
   getAsyncQueueSummary,
@@ -552,6 +553,7 @@ const apiReleaseEvidencePackIssuer = createReleaseEvidencePackIssuer({
   publicKeyPem: pki.signer.keyPair.publicKeyPem,
 });
 const apiReleaseVerificationKeyPromise = apiReleaseTokenIssuer.exportVerificationKey();
+const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore();
 const policyControlPlaneStore = createFileBackedPolicyControlPlaneStore();
 const policyActivationApprovalStore = createFileBackedPolicyActivationApprovalStore();
 const policyMutationAuditLog = createFileBackedPolicyMutationAuditLogWriter();
@@ -1735,6 +1737,7 @@ const adminRouteDeps = {
   listFailedPipelineJobs,
   retryFailedPipelineJob,
   apiReleaseIntrospectionStore,
+  releaseDegradedModeGrantStore: apiReleaseDegradedModeGrantStore,
 } satisfies ApiRouteDeps['admin'];
 
 const releaseReviewRouteDeps = {

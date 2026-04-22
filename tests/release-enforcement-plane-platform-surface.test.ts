@@ -128,6 +128,14 @@ function testReleaseEnforcementPlaneOperationalBindings(): void {
     'attestor.release-enforcement-degraded-mode.v1',
   );
   assert.equal(
+    typeof releaseEnforcementPlane.degradedMode.createFileBackedDegradedModeGrantStore,
+    'function',
+  );
+  assert.equal(
+    typeof releaseEnforcementPlane.degradedMode.resetFileBackedDegradedModeGrantStoreForTests,
+    'function',
+  );
+  assert.equal(
     releaseEnforcementPlane.telemetry.RELEASE_ENFORCEMENT_TELEMETRY_SPEC_VERSION,
     'attestor.release-enforcement-telemetry.v1',
   );
@@ -141,4 +149,4 @@ testReleaseEnforcementPlanePublicSurfaceDescriptor();
 testReleaseEnforcementPlaneNamespaceBindings();
 testReleaseEnforcementPlaneOperationalBindings();
 
-console.log('Release enforcement-plane platform surface tests: 27 passed, 0 failed');
+console.log('Release enforcement-plane platform surface tests: 29 passed, 0 failed');

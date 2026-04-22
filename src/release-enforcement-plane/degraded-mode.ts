@@ -1,4 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { withFileLock, writeTextFileAtomic } from '../platform/file-store.js';
 import type { ReleaseActorReference } from '../release-layer/index.js';
 import type {
   EnforcementBreakGlassGrant,
@@ -192,6 +195,12 @@ export interface DegradedModeGrantStore {
   consumeGrant(input: ConsumeDegradedModeGrantInput): DegradedModeGrant | null;
   listAuditRecords(): readonly DegradedModeAuditRecord[];
   auditHead(): string | null;
+}
+
+interface DegradedModeGrantStoreFile {
+  readonly version: 1;
+  grants: DegradedModeGrant[];
+  auditRecords: DegradedModeAuditRecord[];
 }
 
 function stableStringify(value: unknown): string {
@@ -766,96 +775,202 @@ function replaceGrantRevocation(
   });
 }
 
-export function createInMemoryDegradedModeGrantStore(): DegradedModeGrantStore {
-  const grants = new Map<string, DegradedModeGrant>();
-  const auditRecords: DegradedModeAuditRecord[] = [];
+function cloneGrant(grant: DegradedModeGrant): DegradedModeGrant {
+  return Object.freeze(structuredClone(grant)) as DegradedModeGrant;
+}
 
-  function appendAudit(input: Omit<Parameters<typeof createAuditRecord>[0], 'previousDigest'>): void {
-    auditRecords.push(
+function cloneAuditRecord(record: DegradedModeAuditRecord): DegradedModeAuditRecord {
+  return Object.freeze(structuredClone(record)) as DegradedModeAuditRecord;
+}
+
+function defaultDegradedModeGrantStoreFile(): DegradedModeGrantStoreFile {
+  return {
+    version: 1,
+    grants: [],
+    auditRecords: [],
+  };
+}
+
+function loadDegradedModeGrantStoreFile(path: string): DegradedModeGrantStoreFile {
+  if (!existsSync(path)) {
+    return defaultDegradedModeGrantStoreFile();
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as DegradedModeGrantStoreFile;
+    if (
+      parsed.version === 1 &&
+      Array.isArray(parsed.grants) &&
+      Array.isArray(parsed.auditRecords)
+    ) {
+      return parsed;
+    }
+  } catch {
+    // fall through to safe default
+  }
+  return defaultDegradedModeGrantStoreFile();
+}
+
+function saveDegradedModeGrantStoreFile(path: string, file: DegradedModeGrantStoreFile): void {
+  writeTextFileAtomic(path, `${JSON.stringify(file, null, 2)}\n`);
+}
+
+function defaultDegradedModeGrantStorePath(): string {
+  return resolve(
+    process.env.ATTESTOR_RELEASE_ENFORCEMENT_DEGRADED_MODE_STORE_PATH ??
+      '.attestor/release-enforcement-degraded-mode-store.json',
+  );
+}
+
+function ensureDegradedModeGrantStoreDirectory(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+}
+
+function createDegradedModeGrantStoreFromAccessors(accessors: {
+  readonly read: () => DegradedModeGrantStoreFile;
+  readonly mutate: <T>(action: (file: DegradedModeGrantStoreFile) => T) => T;
+}): DegradedModeGrantStore {
+  function appendAudit(
+    file: DegradedModeGrantStoreFile,
+    input: Omit<Parameters<typeof createAuditRecord>[0], 'previousDigest'>,
+  ): void {
+    file.auditRecords.push(
       createAuditRecord({
         ...input,
-        previousDigest: auditRecords.at(-1)?.digest ?? null,
+        previousDigest: file.auditRecords.at(-1)?.digest ?? null,
       }),
     );
   }
 
   return Object.freeze({
     registerGrant(grant: DegradedModeGrant): DegradedModeGrant {
-      if (grants.has(grant.id)) {
-        throw new Error(`Release enforcement-plane degraded mode grant already exists: ${grant.id}`);
-      }
-      grants.set(grant.id, grant);
-      appendAudit({
-        action: 'grant-created',
-        grant,
-        recordedAt: grant.authorizedAt,
-        actor: grant.authorizedBy,
-        failureReasons: grant.allowedFailureReasons,
-        outcome: null,
-        remainingUses: grant.remainingUses,
-        metadata: { auditDigest: grant.auditDigest },
+      const normalizedGrant = cloneGrant(grant);
+      return accessors.mutate((file) => {
+        if (file.grants.some((entry) => entry.id === normalizedGrant.id)) {
+          throw new Error(`Release enforcement-plane degraded mode grant already exists: ${grant.id}`);
+        }
+        file.grants.push(normalizedGrant);
+        appendAudit(file, {
+          action: 'grant-created',
+          grant: normalizedGrant,
+          recordedAt: normalizedGrant.authorizedAt,
+          actor: normalizedGrant.authorizedBy,
+          failureReasons: normalizedGrant.allowedFailureReasons,
+          outcome: null,
+          remainingUses: normalizedGrant.remainingUses,
+          metadata: { auditDigest: normalizedGrant.auditDigest },
+        });
+        return cloneGrant(normalizedGrant);
       });
-      return grant;
     },
     findGrant(id: string): DegradedModeGrant | null {
-      return grants.get(normalizeIdentifier(id, 'id')) ?? null;
+      const grant = accessors.read().grants.find((entry) => entry.id === normalizeIdentifier(id, 'id'));
+      return grant ? cloneGrant(grant) : null;
     },
     listGrants(options?: ListDegradedModeGrantOptions): readonly DegradedModeGrant[] {
       const checkedAt = options?.checkedAt ?? new Date().toISOString();
       const status = options?.status ?? 'all';
       const scope = options?.scope ? normalizeScope(options.scope) : null;
       return Object.freeze(
-        [...grants.values()].filter((grant) => {
+        accessors.read().grants.filter((grant) => {
           if (status !== 'all' && degradedModeGrantStatus(grant, checkedAt) !== status) {
             return false;
           }
           return scope ? degradedModeScopeMatches(grant.scope, scope) : true;
-        }),
+        }).map((grant) => cloneGrant(grant)),
       );
     },
     revokeGrant(input: RevokeDegradedModeGrantInput): DegradedModeGrant | null {
-      const existing = grants.get(normalizeIdentifier(input.id, 'id'));
-      if (!existing) {
-        return null;
-      }
-      const revoked = replaceGrantRevocation(existing, input);
-      grants.set(revoked.id, revoked);
-      appendAudit({
-        action: 'grant-revoked',
-        grant: revoked,
-        recordedAt: revoked.revokedAt ?? input.revokedAt,
-        actor: revoked.revokedBy,
-        failureReasons: [],
-        outcome: null,
-        remainingUses: revoked.remainingUses,
-        metadata: { revocationReason: revoked.revocationReason },
+      return accessors.mutate((file) => {
+        const id = normalizeIdentifier(input.id, 'id');
+        const index = file.grants.findIndex((entry) => entry.id === id);
+        if (index < 0) {
+          return null;
+        }
+        const revoked = replaceGrantRevocation(file.grants[index], input);
+        file.grants[index] = revoked;
+        appendAudit(file, {
+          action: 'grant-revoked',
+          grant: revoked,
+          recordedAt: revoked.revokedAt ?? input.revokedAt,
+          actor: revoked.revokedBy,
+          failureReasons: [],
+          outcome: null,
+          remainingUses: revoked.remainingUses,
+          metadata: { revocationReason: revoked.revocationReason },
+        });
+        return cloneGrant(revoked);
       });
-      return revoked;
     },
     consumeGrant(input: ConsumeDegradedModeGrantInput): DegradedModeGrant | null {
-      const existing = grants.get(normalizeIdentifier(input.id, 'id'));
-      if (!existing || degradedModeGrantStatus(existing, input.checkedAt) !== 'active') {
-        return null;
-      }
-      const consumed = replaceGrantUseBudget(existing, existing.remainingUses - 1);
-      grants.set(consumed.id, consumed);
-      appendAudit({
-        action: 'grant-used',
-        grant: consumed,
-        recordedAt: input.checkedAt,
-        actor: input.actor ?? null,
-        failureReasons: input.failureReasons ?? [],
-        outcome: input.outcome ?? null,
-        remainingUses: consumed.remainingUses,
-        metadata: input.metadata,
+      return accessors.mutate((file) => {
+        const id = normalizeIdentifier(input.id, 'id');
+        const index = file.grants.findIndex((entry) => entry.id === id);
+        if (index < 0 || degradedModeGrantStatus(file.grants[index], input.checkedAt) !== 'active') {
+          return null;
+        }
+        const consumed = replaceGrantUseBudget(file.grants[index], file.grants[index].remainingUses - 1);
+        file.grants[index] = consumed;
+        appendAudit(file, {
+          action: 'grant-used',
+          grant: consumed,
+          recordedAt: input.checkedAt,
+          actor: input.actor ?? null,
+          failureReasons: input.failureReasons ?? [],
+          outcome: input.outcome ?? null,
+          remainingUses: consumed.remainingUses,
+          metadata: input.metadata,
+        });
+        return cloneGrant(consumed);
       });
-      return consumed;
     },
     listAuditRecords(): readonly DegradedModeAuditRecord[] {
-      return Object.freeze([...auditRecords]);
+      return Object.freeze(accessors.read().auditRecords.map((record) => cloneAuditRecord(record)));
     },
     auditHead(): string | null {
-      return auditRecords.at(-1)?.digest ?? null;
+      return accessors.read().auditRecords.at(-1)?.digest ?? null;
     },
   });
+}
+
+export function createInMemoryDegradedModeGrantStore(): DegradedModeGrantStore {
+  let file = defaultDegradedModeGrantStoreFile();
+  return createDegradedModeGrantStoreFromAccessors({
+    read: () => file,
+    mutate: (action) => {
+      const workingCopy = structuredClone(file) as DegradedModeGrantStoreFile;
+      const result = action(workingCopy);
+      file = workingCopy;
+      return result;
+    },
+  });
+}
+
+export function createFileBackedDegradedModeGrantStore(
+  path = defaultDegradedModeGrantStorePath(),
+): DegradedModeGrantStore {
+  return createDegradedModeGrantStoreFromAccessors({
+    read: () => {
+      ensureDegradedModeGrantStoreDirectory(path);
+      return withFileLock(path, () => loadDegradedModeGrantStoreFile(path));
+    },
+    mutate: (action) => {
+      ensureDegradedModeGrantStoreDirectory(path);
+      return withFileLock(path, () => {
+        const file = loadDegradedModeGrantStoreFile(path);
+        const result = action(file);
+        saveDegradedModeGrantStoreFile(path, file);
+        return result;
+      });
+    },
+  });
+}
+
+export function resetFileBackedDegradedModeGrantStoreForTests(path?: string): void {
+  const resolvedPath = path ?? defaultDegradedModeGrantStorePath();
+  if (existsSync(resolvedPath)) {
+    rmSync(resolvedPath, { force: true });
+  }
+  if (existsSync(`${resolvedPath}.lock`)) {
+    rmSync(`${resolvedPath}.lock`, { recursive: true, force: true });
+  }
 }

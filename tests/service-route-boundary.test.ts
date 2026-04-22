@@ -263,6 +263,17 @@ function testAdminRouteDelegatesQueryUseCases(): void {
   assert.match(adminQueryService, /listUsage/u);
 }
 
+function testAdminRouteRequiresSharedDegradedModeGrantStore(): void {
+  const adminRoute = readFileSync(join(ROUTE_ROOT, 'admin-routes.ts'), 'utf8');
+  const apiServer = readProjectFile('src', 'service', 'api-server.ts');
+
+  assert.match(adminRoute, /releaseDegradedModeGrantStore: DegradedModeGrantStore;/u);
+  assert.doesNotMatch(adminRoute, /releaseDegradedModeGrantStore\?: DegradedModeGrantStore;/u);
+  assert.doesNotMatch(adminRoute, /createInMemoryDegradedModeGrantStore/u);
+  assert.match(apiServer, /const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore\(\);/u);
+  assert.match(apiServer, /releaseDegradedModeGrantStore:\s*apiReleaseDegradedModeGrantStore/u);
+}
+
 function testAccountRouteIsStronglyTyped(): void {
   const accountRoute = readFileSync(join(ROUTE_ROOT, 'account-routes.ts'), 'utf8');
 
@@ -447,6 +458,7 @@ testAdminRouteIsStronglyTyped();
 testAdminRouteDelegatesMutationUseCase();
 testAdminRouteDelegatesControlUseCases();
 testAdminRouteDelegatesQueryUseCases();
+testAdminRouteRequiresSharedDegradedModeGrantStore();
 testAccountRouteIsStronglyTyped();
 testAccountRouteDelegatesAuthUseCases();
 testAccountRouteDelegatesApiKeyUseCases();
@@ -455,4 +467,4 @@ testAccountRouteUsesStateServicePort();
 testPipelineRoutesAreSplitByUseCaseBoundary();
 testPipelineRoutesDelegateUsageAndDeadLetterUseCases();
 
-console.log('Service route boundary tests: 20 passed, 0 failed');
+console.log('Service route boundary tests: 21 passed, 0 failed');
