@@ -78,6 +78,11 @@ function testTruthSources(): void {
     'Hosted journey contract: customer contract truth source is exported',
   );
   equal(
+    contract.truthSources.operatingModel,
+    'docs/01-overview/operating-model.md',
+    'Hosted journey contract: operating model truth source is exported',
+  );
+  equal(
     contract.truthSources.pricingPackaging,
     'docs/01-overview/product-packaging.md',
     'Hosted journey contract: pricing truth source remains product packaging',
@@ -211,6 +216,7 @@ function testDocsReflectContract(): void {
 
   ok(contractDoc.includes('This is the canonical customer journey contract'), 'Hosted journey contract: doc states canonical role');
   ok(contractDoc.includes('src/service/hosted-journey-contract.ts'), 'Hosted journey contract: doc links machine-readable descriptor');
+  ok(contractDoc.includes('Operating model](operating-model.md)'), 'Hosted journey contract: doc links operating model');
   ok(contractDoc.includes('First hosted API call](hosted-first-api-call.md)'), 'Hosted journey contract: doc links first API-call quickstart');
   ok(contractDoc.includes('Finance and crypto first integrations](finance-and-crypto-first-integrations.md)'), 'Hosted journey contract: doc links first integration examples');
   ok(contractDoc.includes('Hosted account visibility](hosted-account-visibility.md)'), 'Hosted journey contract: doc links account visibility guide');

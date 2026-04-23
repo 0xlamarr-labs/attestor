@@ -18,6 +18,8 @@ proposed output or operation -> policy, authority, and evidence -> admitted, rev
 
 That same pattern spans both AI-output release and programmable-money authorization. The architecture therefore has one shared core and multiple packs, not multiple unrelated products hiding in one repository.
 
+The customer-facing operating model and decision vocabulary live in [Operating model](../01-overview/operating-model.md). Use that page when deciding how domain-native finance or crypto outcomes map to the shared `admit`, `narrow`, `review`, and `block` language.
+
 ## Shared Platform Core
 
 The platform core is made of reusable layers:
@@ -123,6 +125,7 @@ Active priority:
 
 - keep the product story centered on one Attestor platform
 - keep the README and architecture docs aligned with the trackers
+- advance the consequence-admission contract from documented operating model into typed integration surface before widening public API claims
 - treat the frozen crypto execution-admission track as complete
 - keep the hosted product flow truth sources, focused gates, and production probe aligned now that the hosted product flow hardening track is complete
 - avoid widening supporting hosted surfaces faster than their customer journey, billing, and readiness gates can stay honest
@@ -130,5 +133,6 @@ Active priority:
 Hosted product flow status:
 
 - [Hosted product flow and adoption hardening](hosted-product-flow-buildout.md) is complete
+- [Consequence admission contract](consequence-admission-buildout.md) is active at Step 01 complete
 
 Future hosted product-flow changes should preserve the docs, contract, readiness, and probe gates before the public story expands again.

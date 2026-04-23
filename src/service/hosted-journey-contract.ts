@@ -49,6 +49,7 @@ export interface HostedJourneyStepContract {
 
 export const HOSTED_JOURNEY_TRUTH_SOURCES = {
   productPositioning: 'README.md',
+  operatingModel: 'docs/01-overview/operating-model.md',
   pricingPackaging: 'docs/01-overview/product-packaging.md',
   customerNarrative: 'docs/01-overview/hosted-customer-journey.md',
   firstApiCallQuickstart: 'docs/01-overview/hosted-first-api-call.md',

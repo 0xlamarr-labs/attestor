@@ -6,6 +6,7 @@ It defines the supported customer sequence, route ownership, auth boundary, succ
 
 - Pricing, free evaluation, trial posture, and production licensing live in [Commercial packaging, pricing, and evaluation](product-packaging.md).
 - The short narrative buying flow lives in [Hosted customer journey](hosted-customer-journey.md).
+- The customer-facing operating model and decision vocabulary live in [Operating model](operating-model.md).
 - The first customer API-call quickstart lives in [First hosted API call](hosted-first-api-call.md).
 - The first finance and crypto integration examples live in [Finance and crypto first integrations](finance-and-crypto-first-integrations.md).
 - The current account-plane visibility map lives in [Hosted account visibility](hosted-account-visibility.md).

@@ -6,6 +6,8 @@ Use it when you already have a hosted account and the one-time plaintext `initia
 
 It does not replace the canonical route contract in [Hosted journey contract](hosted-journey-contract.md), and it does not define pricing. Pricing lives in [Commercial packaging, pricing, and evaluation](product-packaging.md).
 
+For the cross-pack operating model and canonical decision vocabulary, use [Operating model](operating-model.md).
+
 ## What You Are Proving
 
 Your system is not handing control to Attestor. It is adding a gate before consequence:
@@ -134,6 +136,8 @@ Expected shape:
 }
 ```
 
+This is the shipped finance route's domain-native finance decision. In the canonical admission vocabulary, `pass` is the finance allow branch and maps to canonical `admit`. Future canonical admission surfaces should expose `admit`, `narrow`, `review`, or `block` directly instead of asking callers to infer that mapping.
+
 The downstream system should gate on the returned decision. If the decision is not allowed for the consequence, do not write, send, file, execute, or settle.
 
 ## 4. Optional Signed Proof
@@ -162,4 +166,5 @@ The verify payload is built from the signed pipeline response. A valid verificat
 
 - Buying and checkout flow: [Hosted customer journey](hosted-customer-journey.md)
 - Exact route and auth contract: [Hosted journey contract](hosted-journey-contract.md)
+- Canonical operating model: [Operating model](operating-model.md)
 - Finance proof wedge: [AI-assisted financial reporting acceptance](financial-reporting-acceptance.md)

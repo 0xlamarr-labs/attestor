@@ -3,6 +3,7 @@
 Use this page as the shortest internal orientation note.
 
 For the public product framing, use the [README](../../README.md).
+For the customer-facing operating model, use [Operating model](operating-model.md).
 For the architecture map, use [System overview](../02-architecture/system-overview.md).
 For commercial packaging, use [Commercial packaging, pricing, and evaluation](product-packaging.md).
 
@@ -38,6 +39,8 @@ Attestor is a release and authorization layer before consequence.
 It is used when a customer-controlled system has a proposed output, record, communication, action, filing-like artifact, or programmable-money execution path that should not proceed on informal trust.
 
 The customer system calls Attestor before the downstream system writes, sends, files, executes, signs, broadcasts, settles, or routes the consequence. Attestor evaluates policy, authority, evidence, freshness, and enforcement posture, then returns a bounded decision and proof material.
+
+The canonical customer-facing decision vocabulary is `admit`, `narrow`, `review`, or `block`. Domain-native surfaces may still expose older values, such as the finance hosted route's `pass` allow branch or the crypto package's `needs-evidence` review branch; [Operating model](operating-model.md) owns that mapping.
 
 ## What It Is Not
 

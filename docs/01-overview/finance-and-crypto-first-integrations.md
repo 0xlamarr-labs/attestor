@@ -6,6 +6,7 @@ It is not a second product page. Finance and crypto are modular packs on the sam
 
 Use this after:
 
+- [Operating model](operating-model.md)
 - [Hosted customer journey](hosted-customer-journey.md)
 - [First hosted API call](hosted-first-api-call.md)
 - [Hosted journey contract](hosted-journey-contract.md)
@@ -22,6 +23,8 @@ Every first integration follows the same shape:
 
 Attestor does not auto-detect finance or crypto from magic input. The customer chooses the relevant path for the consequence it needs to control.
 
+Canonical admission vocabulary is shared across packs: `admit`, `narrow`, `review`, or `block`. Current shipped surfaces may expose domain-native values; this guide names the mapping when that happens.
+
 ## Finance First Integration
 
 Finance is the deepest proven path today.
@@ -34,7 +37,7 @@ The first finance integration is a hosted HTTP gate before a financial record, r
 | Attestor entry point | `POST /api/v1/pipeline/run` |
 | Auth boundary | `Authorization: Bearer <tenant_api_key>` |
 | First request object | `candidateSql`, `intent`, optional evidence fixtures or connector-backed execution, optional `sign` |
-| Returned decision | `decision`, proof posture, tenant context, usage, optional certificate and release summaries |
+| Returned decision | domain-native finance `decision`, proof posture, tenant context, usage, optional certificate and release summaries |
 | Downstream gate | only write, send, file, export, or route to review if the Attestor decision allows it |
 | Proof path | signed response material can be checked through `POST /api/v1/verify` |
 
@@ -50,6 +53,8 @@ hosted signup
 ```
 
 Use [First hosted API call](hosted-first-api-call.md) for the concrete request shape.
+
+For the finance hosted route, `pass` maps to canonical `admit`. Non-allowed or held finance decisions must fail closed or route to canonical `review` / `block` according to the returned reason.
 
 What Attestor is doing in this path:
 
@@ -78,7 +83,7 @@ The crypto pack is for systems that need a policy-bound admission decision befor
 | Auth/adoption boundary | same customer account/commercial path for adoption; execution admission is currently integrated by the customer-operated runtime or sidecar |
 | First authorization object | crypto authorization simulation result from the core/adapters |
 | First admission object | `CryptoExecutionAdmissionPlan` from `createCryptoExecutionAdmissionPlan()` |
-| Returned decision | `admit`, `needs-evidence`, or `deny` |
+| Returned decision | package-native outcome: `admit`, `needs-evidence`, or `deny` |
 | Downstream gate | only submit, broadcast, fulfill, sign, or settle if admission is `admit` |
 | Proof path | admission telemetry, signed admission receipts, and JSON conformance fixtures |
 
@@ -106,6 +111,8 @@ if (plan.outcome !== 'admit') {
 ```
 
 The `simulation` object is produced by the crypto authorization core and its adapter preflight evidence. It is not guessed from a wallet transaction by a magical router.
+
+For the crypto package path, `admit` maps to canonical `admit`, `needs-evidence` maps to canonical `review`, and `deny` maps to canonical `block`.
 
 Choose the first crypto surface by where the consequence would happen:
 

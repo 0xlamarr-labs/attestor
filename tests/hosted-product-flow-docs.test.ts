@@ -28,6 +28,7 @@ function testCommercialTruthSourcesStayLinked(): void {
   const contract = readProjectFile('docs', '01-overview', 'hosted-journey-contract.md');
   const firstApiCall = readProjectFile('docs', '01-overview', 'hosted-first-api-call.md');
   const firstIntegrations = readProjectFile('docs', '01-overview', 'finance-and-crypto-first-integrations.md');
+  const operatingModel = readProjectFile('docs', '01-overview', 'operating-model.md');
   const visibilityGuide = readProjectFile('docs', '01-overview', 'hosted-account-visibility.md');
   const stripeBootstrap = readProjectFile('docs', '01-overview', 'stripe-commercial-bootstrap.md');
 
@@ -40,6 +41,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     readme,
     'docs/01-overview/hosted-customer-journey.md',
     'Hosted product flow docs: README links to hosted customer journey',
+  );
+  includes(
+    readme,
+    'docs/01-overview/operating-model.md',
+    'Hosted product flow docs: README links to operating model truth source',
   );
   includes(
     readme,
@@ -112,6 +118,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     'Hosted product flow docs: contract doc links account visibility guide',
   );
   includes(
+    operatingModel,
+    'Use this page as the customer-facing truth source',
+    'Hosted product flow docs: operating model declares its scope',
+  );
+  includes(
     firstApiCall,
     'This quickstart shows the first customer-owned API call after hosted signup.',
     'Hosted product flow docs: first API-call quickstart declares its scope',
@@ -173,6 +184,7 @@ function testFinanceAndCryptoFirstIntegrationsStayGrounded(): void {
   const cryptoAuthorization = readProjectFile('src', 'crypto-authorization-core', 'index.ts');
 
   includes(examples, 'same Attestor adoption model', 'Hosted first integrations: shared model is explicit');
+  includes(examples, 'Canonical admission vocabulary', 'Hosted first integrations: canonical admission vocabulary is explicit');
   includes(examples, 'Finance is the deepest proven path today.', 'Hosted first integrations: finance proof wedge is explicit');
   includes(examples, '`POST /api/v1/pipeline/run`', 'Hosted first integrations: finance uses shipped hosted pipeline route');
   includes(examples, '`Authorization: Bearer <tenant_api_key>`', 'Hosted first integrations: finance auth boundary is explicit');

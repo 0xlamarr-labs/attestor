@@ -27,6 +27,8 @@ Built for teams that cannot let sensitive outputs or execution paths enter produ
 - The downstream system proceeds only when the decision allows it and otherwise fails closed.
 - The result can be reviewed and independently verified later.
 
+For the canonical customer-facing operating model and decision vocabulary, see [Attestor operating model](docs/01-overview/operating-model.md).
+
 ## One product, modular packs
 
 Attestor is one product, not a collection of unrelated products.
@@ -74,6 +76,8 @@ Paid hosted starts at `starter`; customer-operated production fits the enterpris
 Need pricing, free evaluation, or hosted trial details? See [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
 
 Need the hosted sign-up, first API key, and checkout flow? See [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
+
+Need the canonical consequence-admission vocabulary? See [Attestor operating model](docs/01-overview/operating-model.md).
 
 Need the first hosted API call after signup? See [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 
@@ -147,11 +151,13 @@ npm run verify
 ## Documentation map
 
 - [System overview](docs/02-architecture/system-overview.md)
+- [Attestor operating model](docs/01-overview/operating-model.md)
 - [Release layer buildout](docs/02-architecture/release-layer-buildout.md)
 - [Policy control-plane buildout](docs/02-architecture/release-policy-control-plane-buildout.md)
 - [Enforcement-plane buildout](docs/02-architecture/release-enforcement-plane-buildout.md)
 - [Crypto authorization core buildout](docs/02-architecture/crypto-authorization-core-buildout.md)
 - [Crypto execution-admission buildout](docs/02-architecture/crypto-execution-admission-buildout.md)
+- [Consequence admission buildout](docs/02-architecture/consequence-admission-buildout.md)
 - [Proof surface buildout](docs/02-architecture/proof-console-buildout.md)
 - [Hosted product flow buildout](docs/02-architecture/hosted-product-flow-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
@@ -161,6 +167,7 @@ npm run verify
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 - Want pricing, free evaluation, or hosted trial details? Start with [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
 - Want the managed customer path, sign-up flow, and billing handoff? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).
+- Want the simple operating model and decision vocabulary? Start with [Attestor operating model](docs/01-overview/operating-model.md).
 - Want the first API call after signup? Start with [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 - Want the first finance or crypto integration path? Start with [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
 - Want to see where plan, usage, entitlement, and billing state live? Start with [Hosted account visibility](docs/01-overview/hosted-account-visibility.md).
