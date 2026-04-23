@@ -11,6 +11,11 @@ import {
   COUNTERPARTY_REPORT_CONTRACT,
   COUNTERPARTY_SQL,
 } from '../src/financial/fixtures/scenarios.js';
+import {
+  createConsequenceAdmissionFacadeResponse,
+  evaluateConsequenceAdmissionGate,
+  type FinancePipelineAdmissionRun,
+} from '../src/consequence-admission/index.js';
 import { resetAccountSessionStoreForTests } from '../src/service/account-session-store.js';
 import { resetAccountStoreForTests } from '../src/service/account-store.js';
 import { resetAccountUserStoreForTests } from '../src/service/account-user-store.js';
@@ -242,6 +247,31 @@ async function main(): Promise<void> {
     equal(firstRunBody.tenantContext.tenantId, tenantId, 'Hosted consequence call: tenant context is preserved');
     equal(firstRunBody.usage.used, 1, 'Hosted consequence call: allowed run consumes usage');
     equal(firstRunBody.usage.remaining, 9, 'Hosted consequence call: remaining quota decrements');
+
+    const admission = createConsequenceAdmissionFacadeResponse({
+      surface: 'finance-pipeline-run',
+      run: firstRunBody as FinancePipelineAdmissionRun,
+      decidedAt: '2026-04-23T19:00:00.000Z',
+      requestInput: {
+        actorRef: 'actor:hosted-first-api-key-flow',
+        authorityMode: 'tenant-api-key',
+        summary: 'Hosted first API key asks whether the reporting consequence may proceed.',
+      },
+    });
+    equal(admission.decision, 'admit', 'Hosted consequence call: finance pass maps to canonical admit');
+    equal(admission.request.entryPoint.route, '/api/v1/pipeline/run', 'Hosted consequence call: canonical admission preserves hosted route');
+    const gate = evaluateConsequenceAdmissionGate({
+      admission,
+      downstreamAction: 'customer_reporting_store.write',
+      requireProof: false,
+    });
+    equal(gate.outcome, 'proceed', 'Hosted consequence call: customer gate proceeds after admitted response');
+    equal(gate.downstreamAction, 'customer_reporting_store.write', 'Hosted consequence call: customer gate preserves downstream action label');
+    equal(gate.failClosed, false, 'Hosted consequence call: admitted customer gate is not fail closed');
+    ok(
+      gate.reasonCodes.includes('customer-gate-proceed'),
+      'Hosted consequence call: customer gate records proceed reason',
+    );
 
     for (let usageSeed = 2; usageSeed <= 10; usageSeed += 1) {
       const seededUsage = consumePipelineRun(tenantId, 'community', 10);

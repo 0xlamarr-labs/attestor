@@ -9,6 +9,7 @@ It does not replace the canonical route contract in [Hosted journey contract](ho
 For the cross-pack operating model and canonical decision vocabulary, use [Operating model](operating-model.md).
 
 For wrapping the domain-native finance response into the shared `admit` / `narrow` / `review` / `block` shape, use [Consequence admission quickstart](consequence-admission-quickstart.md).
+For the customer-side enforcement helper, use [Customer admission gate](customer-admission-gate.md).
 
 ## What You Are Proving
 
@@ -142,7 +143,39 @@ This is the shipped finance route's domain-native finance decision. In the canon
 
 The downstream system should gate on the returned decision. If the decision is not allowed for the consequence, do not write, send, file, execute, or settle.
 
-## 4. Optional Signed Proof
+## 4. Project To Admission And Enforce The Gate
+
+The hosted finance route returns its domain-native response. Before a customer system runs the downstream action, project that response into the shared admission shape and enforce the customer gate:
+
+```ts
+import {
+  assertConsequenceAdmissionGateAllows,
+  createConsequenceAdmissionFacadeResponse,
+} from 'attestor/consequence-admission';
+
+const admission = createConsequenceAdmissionFacadeResponse({
+  surface: 'finance-pipeline-run',
+  run,
+  decidedAt: new Date().toISOString(),
+  requestInput: {
+    actorRef: 'actor:hosted-finance-workflow',
+    authorityMode: 'tenant-api-key',
+    summary: 'Hosted finance workflow asks whether the reporting consequence may proceed.',
+  },
+});
+
+assertConsequenceAdmissionGateAllows({
+  admission,
+  downstreamAction: 'customer_reporting_store.write',
+  requireProof: false,
+});
+
+// Only now may the customer system write, send, file, execute, or route onward.
+```
+
+Use `requireProof: true` when the downstream system must see certificate, verification kit, release token, or evidence-pack references before consequence.
+
+## 5. Optional Signed Proof
 
 When the customer needs portable verification material, set `sign` to `true` on the pipeline call. The response can include `certificate`, `publicKeyPem`, `trustChain`, and `caPublicKeyPem`.
 
@@ -170,4 +203,5 @@ The verify payload is built from the signed pipeline response. A valid verificat
 - Exact route and auth contract: [Hosted journey contract](hosted-journey-contract.md)
 - Canonical operating model: [Operating model](operating-model.md)
 - Customer-facing admission facade: [Consequence admission quickstart](consequence-admission-quickstart.md)
+- Customer-side enforcement helper: [Customer admission gate](customer-admission-gate.md)
 - Finance proof wedge: [AI-assisted financial reporting acceptance](financial-reporting-acceptance.md)

@@ -54,6 +54,11 @@ function testCommercialTruthSourcesStayLinked(): void {
   );
   includes(
     readme,
+    'docs/01-overview/customer-admission-gate.md',
+    'Hosted product flow docs: README links to customer admission gate',
+  );
+  includes(
+    readme,
     'docs/01-overview/finance-and-crypto-first-integrations.md',
     'Hosted product flow docs: README links to first finance/crypto integration examples',
   );
@@ -126,6 +131,11 @@ function testCommercialTruthSourcesStayLinked(): void {
     firstApiCall,
     'This quickstart shows the first customer-owned API call after hosted signup.',
     'Hosted product flow docs: first API-call quickstart declares its scope',
+  );
+  includes(
+    firstApiCall,
+    'Customer admission gate](customer-admission-gate.md)',
+    'Hosted product flow docs: first API-call quickstart links customer gate',
   );
   includes(
     firstIntegrations,
@@ -226,6 +236,10 @@ function testFirstApiCallQuickstartStaysGrounded(): void {
   includes(firstApiCall, 'Do not put it in URLs', 'Hosted first API-call docs: API key is not documented as a URL parameter');
   includes(firstApiCall, 'GET /api/v1/account/usage', 'Hosted first API-call docs: usage preflight route is documented');
   includes(firstApiCall, 'POST /api/v1/pipeline/run', 'Hosted first API-call docs: first consequence route is documented');
+  includes(firstApiCall, 'Project To Admission And Enforce The Gate', 'Hosted first API-call docs: customer gate section is documented');
+  includes(firstApiCall, 'assertConsequenceAdmissionGateAllows', 'Hosted first API-call docs: customer gate helper is shown');
+  includes(firstApiCall, "surface: 'finance-pipeline-run'", 'Hosted first API-call docs: explicit finance surface is used');
+  includes(firstApiCall, "downstreamAction: 'customer_reporting_store.write'", 'Hosted first API-call docs: downstream action label is explicit');
   includes(firstApiCall, '"candidateSql"', 'Hosted first API-call docs: pipeline request uses shipped candidateSql field');
   includes(firstApiCall, '"intent"', 'Hosted first API-call docs: pipeline request uses shipped intent field');
   includes(firstApiCall, '"fixtures"', 'Hosted first API-call docs: reference payload uses fixture evidence explicitly');
@@ -248,6 +262,11 @@ function testFirstApiCallQuickstartStaysGrounded(): void {
     contract,
     "firstApiCallQuickstart: 'docs/01-overview/hosted-first-api-call.md'",
     'Hosted first API-call docs: quickstart is a machine-readable truth source',
+  );
+  includes(
+    contract,
+    "customerAdmissionGate: 'docs/01-overview/customer-admission-gate.md'",
+    'Hosted first API-call docs: customer gate is a machine-readable truth source',
   );
   includes(
     pipelineRoute,
@@ -327,6 +346,7 @@ function testRuntimeCoverageGatesAreNamed(): void {
   includes(packageJson, '"test:hosted-product-flow-readiness"', 'Hosted product flow docs: package script exposes hosted readiness gate');
   includes(packageJson, '"probe:production-hosted-flow"', 'Hosted product flow docs: production hosted flow probe is exposed');
   includes(liveApi, '/api/v1/auth/signup', 'Hosted product flow docs: live API suite covers hosted signup');
+  includes(packageJson, '"test:consequence-admission-customer-gate"', 'Hosted product flow docs: package script exposes customer gate guard');
   includes(liveApi, '/api/v1/account/features', 'Hosted product flow docs: live API suite covers hosted features');
   includes(liveApi, '/api/v1/account/billing/export?limit=5', 'Hosted product flow docs: live API suite covers hosted billing export');
   includes(liveApi, '/api/v1/account/billing/reconciliation?limit=5', 'Hosted product flow docs: live API suite covers hosted billing reconciliation');

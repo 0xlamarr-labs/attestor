@@ -53,6 +53,7 @@ export const HOSTED_JOURNEY_TRUTH_SOURCES = {
   pricingPackaging: 'docs/01-overview/product-packaging.md',
   customerNarrative: 'docs/01-overview/hosted-customer-journey.md',
   firstApiCallQuickstart: 'docs/01-overview/hosted-first-api-call.md',
+  customerAdmissionGate: 'docs/01-overview/customer-admission-gate.md',
   firstIntegrationExamples: 'docs/01-overview/finance-and-crypto-first-integrations.md',
   accountVisibilityGuide: 'docs/01-overview/hosted-account-visibility.md',
   customerContract: 'docs/01-overview/hosted-journey-contract.md',
@@ -402,6 +403,8 @@ export const HOSTED_JOURNEY_STEP_CONTRACTS = [
     routeKeys: ['first_consequence_call', 'verify_proof'],
     successSignals: [
       'decision is returned before downstream consequence',
+      'domain-native response is projected into canonical admission',
+      'customer gate permits or holds the downstream action',
       'proof material can be verified',
       'usage is consumed only for governed execution',
     ],
@@ -410,6 +413,7 @@ export const HOSTED_JOURNEY_STEP_CONTRACTS = [
       'quota exhausted',
       'rate limit exceeded',
       'required proof material missing',
+      'customer gate holds the consequence',
     ],
   },
   {

@@ -25,7 +25,8 @@ The hosted path should be easy to understand:
 1. create the hosted account
 2. receive the first API key
 3. make the first Attestor API call before consequence
-4. upgrade through Stripe Checkout if a paid hosted plan is needed
+4. enforce the customer-side admission gate before the downstream action
+5. upgrade through Stripe Checkout if a paid hosted plan is needed
 
 After that, the same account remains the control point for keys, usage, entitlement, and billing.
 
@@ -48,7 +49,8 @@ flowchart LR
   D["Docs and pricing"] --> S["Sign up hosted account"]
   S --> K["Receive first API key"]
   K --> C["Customer systems call Attestor"]
-  C --> U["Upgrade through Stripe if needed"]
+  C --> G["Customer gate permits or holds consequence"]
+  G --> U["Upgrade through Stripe if needed"]
   U --> A["Account plane: usage, billing, keys"]
 ```
 
@@ -60,15 +62,16 @@ Use this sequence:
    send `accountName`, `email`, `displayName`, and `password` to `POST /api/v1/auth/signup`
 2. use the one-time plaintext `initialKey.apiKey` as `Authorization: Bearer <tenant_api_key>`
 3. make the first hosted API call with `POST /api/v1/pipeline/run`
-4. inspect usage or entitlement with `GET /api/v1/account/usage`, `GET /api/v1/account/entitlement`, or `GET /api/v1/account`
-5. inspect feature or billing state with `GET /api/v1/account/features`, `GET /api/v1/account/billing/export`, or `GET /api/v1/account/billing/reconciliation`
-6. start checkout for a paid hosted plan
+4. project the response with `attestor/consequence-admission` and enforce the customer-side gate before the downstream action
+5. inspect usage or entitlement with `GET /api/v1/account/usage`, `GET /api/v1/account/entitlement`, or `GET /api/v1/account`
+6. inspect feature or billing state with `GET /api/v1/account/features`, `GET /api/v1/account/billing/export`, or `GET /api/v1/account/billing/reconciliation`
+7. start checkout for a paid hosted plan
    send `planId` (`starter`, `pro`, or `enterprise`) to `POST /api/v1/account/billing/checkout`
-7. open the returned `checkoutUrl` and finish payment in Stripe
-8. keep using the same account after checkout completes
-9. manage billing later through `POST /api/v1/account/billing/portal`
+8. open the returned `checkoutUrl` and finish payment in Stripe
+9. keep using the same account after checkout completes
+10. manage billing later through `POST /api/v1/account/billing/portal`
 
-The concrete first API-call example lives in [First hosted API call](hosted-first-api-call.md).
+The concrete first API-call and gate example lives in [First hosted API call](hosted-first-api-call.md).
 
 ## Minimum hosted account plane
 
