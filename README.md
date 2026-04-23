@@ -30,6 +30,7 @@ This runs the shortest local Attestor flow: two AI-assisted finance consequences
 For the guided first run, see [Try Attestor first](docs/01-overview/try-attestor-first.md).
 For the first customer-side enforcement step, see [Customer admission gate](docs/01-overview/customer-admission-gate.md).
 For concrete use cases, see [What you can do with Attestor](docs/01-overview/what-you-can-do.md).
+For copyable placement recipes, see [Customer integration recipes](docs/01-overview/customer-integration-recipes.md).
 
 ## How Attestor works in practice
 
@@ -171,6 +172,7 @@ npm run verify
 - [System overview](docs/02-architecture/system-overview.md)
 - [Attestor operating model](docs/01-overview/operating-model.md)
 - [What you can do with Attestor](docs/01-overview/what-you-can-do.md)
+- [Customer integration recipes](docs/01-overview/customer-integration-recipes.md)
 - [Try Attestor first](docs/01-overview/try-attestor-first.md)
 - [Customer admission gate](docs/01-overview/customer-admission-gate.md)
 - [Consequence admission quickstart](docs/01-overview/consequence-admission-quickstart.md)
@@ -188,6 +190,7 @@ npm run verify
 
 - Want the shortest first run? Start with [Try Attestor first](docs/01-overview/try-attestor-first.md) or run `npm run example:admission`.
 - Want to wire the decision into your own app? Start with [Customer admission gate](docs/01-overview/customer-admission-gate.md) or run `npm run example:customer-gate`.
+- Want to know exactly where to put Attestor in your app? Start with [Customer integration recipes](docs/01-overview/customer-integration-recipes.md).
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 - Want pricing, free evaluation, or hosted trial details? Start with [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
 - Want the managed customer path, sign-up flow, and billing handoff? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).

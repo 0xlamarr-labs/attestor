@@ -50,6 +50,8 @@ For hosted evaluation:
 
 See [First hosted API call](hosted-first-api-call.md) for the hosted path and [Customer admission gate](customer-admission-gate.md) for the customer-side enforcement helper.
 
+For concrete placement examples in customer applications, see [Customer integration recipes](customer-integration-recipes.md).
+
 ## What This Is Not
 
 - Not a claim that every pack has the same hosted route.

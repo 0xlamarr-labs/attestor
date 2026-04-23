@@ -6,6 +6,8 @@ Use this after [Try Attestor first](try-attestor-first.md) when you want to see 
 npm run example:customer-gate
 ```
 
+For concrete application placements, see [Customer integration recipes](customer-integration-recipes.md).
+
 The example shows the customer-side step:
 
 ```text
