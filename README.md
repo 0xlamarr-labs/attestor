@@ -79,6 +79,8 @@ Need the hosted sign-up, first API key, and checkout flow? See [Hosted customer 
 
 Need the canonical consequence-admission vocabulary? See [Attestor operating model](docs/01-overview/operating-model.md).
 
+Need the customer-facing admission facade? See [Consequence admission quickstart](docs/01-overview/consequence-admission-quickstart.md).
+
 Need the first hosted API call after signup? See [First hosted API call](docs/01-overview/hosted-first-api-call.md).
 
 Need first finance and crypto integration paths? See [Finance and crypto first integrations](docs/01-overview/finance-and-crypto-first-integrations.md).
@@ -152,6 +154,7 @@ npm run verify
 
 - [System overview](docs/02-architecture/system-overview.md)
 - [Attestor operating model](docs/01-overview/operating-model.md)
+- [Consequence admission quickstart](docs/01-overview/consequence-admission-quickstart.md)
 - [Release layer buildout](docs/02-architecture/release-layer-buildout.md)
 - [Policy control-plane buildout](docs/02-architecture/release-policy-control-plane-buildout.md)
 - [Enforcement-plane buildout](docs/02-architecture/release-enforcement-plane-buildout.md)

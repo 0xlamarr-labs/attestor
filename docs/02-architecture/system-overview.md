@@ -126,7 +126,7 @@ Active priority:
 
 - keep the product story centered on one Attestor platform
 - keep the README and architecture docs aligned with the trackers
-- advance the consequence-admission contract from documented operating model into typed integration surface before widening public API claims
+- preserve the completed consequence-admission contract, quickstart, and readiness gates before widening public API claims
 - keep the first consequence-admission facade explicit: callers choose `finance-pipeline-run` or `crypto-execution-plan`; Attestor does not guess the pack automatically
 - treat the frozen crypto execution-admission track as complete
 - keep the hosted product flow truth sources, focused gates, and production probe aligned now that the hosted product flow hardening track is complete
@@ -135,6 +135,6 @@ Active priority:
 Hosted product flow status:
 
 - [Hosted product flow and adoption hardening](hosted-product-flow-buildout.md) is complete
-- [Consequence admission contract](consequence-admission-buildout.md) is active at Step 05 complete
+- [Consequence admission contract](consequence-admission-buildout.md) is complete
 
 Future hosted product-flow changes should preserve the docs, contract, readiness, and probe gates before the public story expands again.

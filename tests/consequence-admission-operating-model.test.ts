@@ -40,6 +40,7 @@ function testOperatingModelDefinesCanonicalDecisionVocabulary(): void {
   includes(operatingModel, 'The crypto projection lives in `src/consequence-admission/crypto.ts`.', 'Admission operating model: crypto projection is documented');
   includes(operatingModel, 'The first customer-facing facade is exported through `attestor/consequence-admission`.', 'Admission operating model: facade package is documented');
   includes(operatingModel, 'Callers must choose `finance-pipeline-run` or `crypto-execution-plan` explicitly.', 'Admission operating model: facade requires explicit surface');
+  includes(operatingModel, 'Consequence admission quickstart](consequence-admission-quickstart.md)', 'Admission operating model: quickstart is linked');
   includes(operatingModel, 'No public hosted crypto HTTP route is claimed', 'Admission operating model: hosted crypto route overclaim is blocked');
   includes(operatingModel, 'No universal hosted `admit` route is claimed', 'Admission operating model: universal route overclaim is blocked');
 }
@@ -83,15 +84,16 @@ function testTrackerDefinesTheStepwisePathWithoutSplittingTheProduct(): void {
   includes(tracker, 'Do not claim a public hosted crypto HTTP route', 'Admission tracker: public crypto route overclaim blocked');
   includes(tracker, 'Do not claim a universal hosted admission route', 'Admission tracker: universal route overclaim blocked');
   includes(tracker, '| Total frozen steps | 6 |', 'Admission tracker: frozen step count is explicit');
-  includes(tracker, '| Completed | 5 |', 'Admission tracker: Step 05 is complete');
+  includes(tracker, '| Completed | 6 |', 'Admission tracker: Step 06 is complete');
+  includes(tracker, '| Not started | 0 |', 'Admission tracker: no frozen step remains');
   includes(tracker, '| 01 | complete | Codify the operating model and canonical admission vocabulary |', 'Admission tracker: Step 01 row is complete');
   includes(tracker, '| 02 | complete | Add the typed canonical admission contract |', 'Admission tracker: Step 02 row is complete');
   includes(tracker, '| 03 | complete | Add finance decision mapping into the admission contract |', 'Admission tracker: Step 03 row is complete');
   includes(tracker, '| 04 | complete | Add crypto package outcome mapping into the admission contract |', 'Admission tracker: Step 04 row is complete');
   includes(tracker, '| 05 | complete | Add the first customer-facing admission facade |', 'Admission tracker: Step 05 row is complete');
-  includes(tracker, '| 06 | not started | Add admission readiness and quickstart gates |', 'Admission tracker: Step 06 is next');
-  includes(tracker, '`attestor/consequence-admission` now exposes the first customer-facing admission facade', 'Admission tracker: facade posture is documented');
-  includes(tracker, 'Implement Step 06 before widening the public admission quickstart or route story.', 'Admission tracker: next step blocks premature API widening');
+  includes(tracker, '| 06 | complete | Add admission readiness and quickstart gates |', 'Admission tracker: Step 06 row is complete');
+  includes(tracker, 'The first public facade is exported through `attestor/consequence-admission`.', 'Admission tracker: facade posture is documented');
+  includes(tracker, 'No frozen consequence-admission step remains.', 'Admission tracker: completed track has no remaining frozen step');
   excludes(tracker, /\bfirst[- ]slice\b/iu, 'Admission tracker: no stale first-slice language');
 }
 
@@ -104,15 +106,18 @@ function testPackageScriptsExposeTheGuard(): void {
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-finance', 'Admission operating model: finance script is exported');
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-crypto', 'Admission operating model: crypto script is exported');
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-facade', 'Admission operating model: facade script is exported');
+  includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-readiness', 'Admission operating model: readiness script is exported');
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-package-surface', 'Admission operating model: package surface script is exported');
   includes(packageJson.scripts.test, 'tsx tests/consequence-admission-operating-model.test.ts', 'Admission operating model: npm test runs the guard');
   includes(packageJson.scripts.test, 'tsx tests/consequence-admission-finance.test.ts', 'Admission operating model: npm test runs finance projection');
   includes(packageJson.scripts.test, 'tsx tests/consequence-admission-crypto.test.ts', 'Admission operating model: npm test runs crypto projection');
   includes(packageJson.scripts.test, 'tsx tests/consequence-admission-facade.test.ts', 'Admission operating model: npm test runs facade projection');
+  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-readiness.test.ts', 'Admission operating model: npm test runs readiness guard');
   includes(packageJson.scripts.verify, 'npm run test:consequence-admission-operating-model', 'Admission operating model: npm run verify runs the guard');
   includes(packageJson.scripts.verify, 'npm run test:consequence-admission-finance', 'Admission operating model: npm run verify runs finance projection');
   includes(packageJson.scripts.verify, 'npm run test:consequence-admission-crypto', 'Admission operating model: npm run verify runs crypto projection');
   includes(packageJson.scripts.verify, 'npm run test:consequence-admission-facade', 'Admission operating model: npm run verify runs facade projection');
+  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-readiness', 'Admission operating model: npm run verify runs readiness guard');
   includes(packageJson.scripts.verify, 'npm run test:consequence-admission-package-surface', 'Admission operating model: npm run verify runs package surface probe');
 }
 

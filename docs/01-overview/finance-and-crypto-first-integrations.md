@@ -7,6 +7,7 @@ It is not a second product page. Finance and crypto are modular packs on the sam
 Use this after:
 
 - [Operating model](operating-model.md)
+- [Consequence admission quickstart](consequence-admission-quickstart.md)
 - [Hosted customer journey](hosted-customer-journey.md)
 - [First hosted API call](hosted-first-api-call.md)
 - [Hosted journey contract](hosted-journey-contract.md)

@@ -6,6 +6,7 @@ For pricing and buying paths, use [Commercial packaging, pricing, and evaluation
 For hosted route order, use [Hosted journey contract](hosted-journey-contract.md).
 For the first hosted call, use [First hosted API call](hosted-first-api-call.md).
 For the finance and crypto entry points, use [Finance and crypto first integrations](finance-and-crypto-first-integrations.md).
+For the public admission facade, use [Consequence admission quickstart](consequence-admission-quickstart.md).
 
 ## The Short Version
 

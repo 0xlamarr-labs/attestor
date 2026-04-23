@@ -8,6 +8,8 @@ It does not replace the canonical route contract in [Hosted journey contract](ho
 
 For the cross-pack operating model and canonical decision vocabulary, use [Operating model](operating-model.md).
 
+For wrapping the domain-native finance response into the shared `admit` / `narrow` / `review` / `block` shape, use [Consequence admission quickstart](consequence-admission-quickstart.md).
+
 ## What You Are Proving
 
 Your system is not handing control to Attestor. It is adding a gate before consequence:
@@ -167,4 +169,5 @@ The verify payload is built from the signed pipeline response. A valid verificat
 - Buying and checkout flow: [Hosted customer journey](hosted-customer-journey.md)
 - Exact route and auth contract: [Hosted journey contract](hosted-journey-contract.md)
 - Canonical operating model: [Operating model](operating-model.md)
+- Customer-facing admission facade: [Consequence admission quickstart](consequence-admission-quickstart.md)
 - Finance proof wedge: [AI-assisted financial reporting acceptance](financial-reporting-acceptance.md)
