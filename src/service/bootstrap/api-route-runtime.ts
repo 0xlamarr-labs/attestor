@@ -284,6 +284,10 @@ import { tenantKeyStorePolicy } from '../tenant-key-store.js';
 import type { AppRegistries } from './registries.js';
 import { createReleaseRuntimeBootstrap } from './release-runtime.js';
 import {
+  releaseRuntimeDurabilitySummary,
+  resolveRuntimeProfile,
+} from './runtime-profile.js';
+import {
   buildAccountRouteDeps,
   buildAdminRouteDeps,
   buildPipelineRouteDeps,
@@ -311,7 +315,10 @@ export function createApiHttpRouteRuntime(
 ): AppRuntime<typeof committedFinancialPacket> {
   const { registries, serviceInstanceId, startTime } = input;
   const { domainRegistry, connectorRegistry, filingRegistry } = registries;
+  const runtimeProfile = resolveRuntimeProfile();
   const {
+    releaseRuntimeStoreModes,
+    releaseRuntimeDurability,
     pki,
     pkiReady,
     financeReleaseDecisionLog,
@@ -329,7 +336,7 @@ export function createApiHttpRouteRuntime(
     financeReleaseDecisionEngine,
     financeCommunicationReleaseShadowEvaluator,
     financeActionReleaseShadowEvaluator,
-  } = createReleaseRuntimeBootstrap();
+  } = createReleaseRuntimeBootstrap({ runtimeProfile });
   const {
     currentHostedAccount,
     readHostedBillingEntitlement,
@@ -719,6 +726,12 @@ export function createApiHttpRouteRuntime(
         redisMode,
       },
       security: {
+        runtimeProfile: runtimeProfile.id,
+        releaseRuntimeStoreModes,
+        releaseRuntimeDurability: {
+          ready: releaseRuntimeDurability.ready,
+          summary: releaseRuntimeDurabilitySummary(releaseRuntimeDurability),
+        },
         rlsActivationResult,
         pkiReady,
       },

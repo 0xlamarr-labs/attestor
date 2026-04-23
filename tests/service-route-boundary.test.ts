@@ -281,7 +281,8 @@ function testAdminRouteRequiresSharedDegradedModeGrantStore(): void {
   assert.match(adminRoute, /releaseDegradedModeGrantStore: DegradedModeGrantStore;/u);
   assert.doesNotMatch(adminRoute, /releaseDegradedModeGrantStore\?: DegradedModeGrantStore;/u);
   assert.doesNotMatch(adminRoute, /createInMemoryDegradedModeGrantStore/u);
-  assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\)/u);
+  assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\{ runtimeProfile \}\)/u);
+  assert.match(apiRouteRuntime, /resolveRuntimeProfile\(\)/u);
   assert.match(apiRouteRuntime, /releaseDegradedModeGrantStore:\s*apiReleaseDegradedModeGrantStore/u);
   assert.match(
     releaseRuntime,

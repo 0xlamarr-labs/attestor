@@ -30,6 +30,14 @@ import {
   createFileBackedDegradedModeGrantStore,
   type DegradedModeGrantStore,
 } from '../../release-enforcement-plane/degraded-mode.js';
+import {
+  CURRENT_RELEASE_RUNTIME_STORE_MODES,
+  assertReleaseRuntimeDurability,
+  resolveRuntimeProfile,
+  type AttestorRuntimeProfile,
+  type ReleaseRuntimeStoreModes,
+  type RuntimeProfileDurabilityEvaluation,
+} from './runtime-profile.js';
 
 const { createInMemoryReleaseDecisionLogWriter } = decisionLog;
 const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
@@ -53,6 +61,9 @@ const API_SIGNER_SUBJECT = 'API Runtime Signer';
 const API_REVIEWER_SUBJECT = 'API Reviewer';
 
 export interface ReleaseRuntimeBootstrap {
+  runtimeProfile: AttestorRuntimeProfile;
+  releaseRuntimeStoreModes: ReleaseRuntimeStoreModes;
+  releaseRuntimeDurability: RuntimeProfileDurabilityEvaluation;
   pki: ReturnType<typeof generatePkiHierarchy>;
   pkiReady: boolean;
   financeReleaseDecisionLog: ReleaseDecisionLogWriter;
@@ -73,7 +84,19 @@ export interface ReleaseRuntimeBootstrap {
   financeActionReleaseShadowEvaluator: ShadowModeReleaseEvaluator;
 }
 
-export function createReleaseRuntimeBootstrap(): ReleaseRuntimeBootstrap {
+export interface CreateReleaseRuntimeBootstrapInput {
+  runtimeProfile?: AttestorRuntimeProfile;
+}
+
+export function createReleaseRuntimeBootstrap(
+  input: CreateReleaseRuntimeBootstrapInput = {},
+): ReleaseRuntimeBootstrap {
+  const runtimeProfile = input.runtimeProfile ?? resolveRuntimeProfile();
+  const releaseRuntimeStoreModes = CURRENT_RELEASE_RUNTIME_STORE_MODES;
+  const releaseRuntimeDurability = assertReleaseRuntimeDurability(
+    runtimeProfile,
+    releaseRuntimeStoreModes,
+  );
   const pki = generatePkiHierarchy(API_CA_SUBJECT, API_SIGNER_SUBJECT, API_REVIEWER_SUBJECT);
   const pkiReady = true;
   const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
@@ -126,6 +149,9 @@ export function createReleaseRuntimeBootstrap(): ReleaseRuntimeBootstrap {
   });
 
   return {
+    runtimeProfile,
+    releaseRuntimeStoreModes,
+    releaseRuntimeDurability,
     pki,
     pkiReady,
     financeReleaseDecisionLog,
