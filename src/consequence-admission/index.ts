@@ -10,6 +10,9 @@ import type {
 import type {
   CryptoExecutionAdmissionOutcome,
 } from '../crypto-execution-admission/index.js';
+import type {
+  CryptoAuthorizationConsequenceKind,
+} from '../crypto-authorization-core/types.js';
 
 export const CONSEQUENCE_ADMISSION_CONTRACT_VERSION =
   'attestor.consequence-admission.v1';
@@ -88,6 +91,7 @@ export type ConsequenceAdmissionProofKind =
 
 export type ConsequenceAdmissionConsequenceKind =
   | ConsequenceType
+  | CryptoAuthorizationConsequenceKind
   | 'agent-payment'
   | 'account-delegation'
   | 'user-operation'
@@ -551,3 +555,4 @@ ConsequenceAdmissionDescriptor {
 }
 
 export * from './finance.js';
+export * from './crypto.js';

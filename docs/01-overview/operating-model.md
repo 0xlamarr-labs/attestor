@@ -42,13 +42,15 @@ This vocabulary is the customer-facing language. Some shipped surfaces still exp
 | Surface | Current shipped entry point | Current native decision | Canonical reading |
 |---|---|---|---|
 | Finance hosted proof wedge | `POST /api/v1/pipeline/run` | `decision`, including the finance allow value `pass`; signed runs can also include filing release status and proof material | `pass` is the finance allow branch and maps to `admit`; accepted filing releases map to `admit`; held/review-required paths map to `review`; denied, expired, revoked, or unknown paths map to `block`. |
-| Crypto package integration | `attestor/crypto-authorization-core` and `attestor/crypto-execution-admission` | `CryptoExecutionAdmissionPlan.outcome`: `admit`, `needs-evidence`, or `deny` | `admit` maps to `admit`; `needs-evidence` maps to `review`; `deny` maps to `block`. |
+| Crypto package integration | `attestor/crypto-authorization-core` and `attestor/crypto-execution-admission` | `CryptoExecutionAdmissionPlan.outcome`: `admit`, `needs-evidence`, or `deny` | package-native `admit` maps to canonical `admit`; `needs-evidence` maps to fail-closed `review`; `deny` maps to fail-closed `block`. |
 | Local proof surface | `npm run proof:surface` | unified proof output decisions | Already uses `admit`, `narrow`, `review`, or `block`. |
 | Signed proof verification | `POST /api/v1/verify` | verification status | Verifies proof material; it does not create a new consequence decision by itself. |
 
 The typed contract lives in `src/consequence-admission/index.ts`. It defines the canonical request, response, check, proof, native-decision mapping, and fail-closed problem shapes without claiming a universal hosted admission route yet.
 
 The finance projection lives in `src/consequence-admission/finance.ts`. It wraps the existing finance hosted route response into the canonical admission response shape without changing `POST /api/v1/pipeline/run` behavior.
+
+The crypto projection lives in `src/consequence-admission/crypto.ts`. It wraps `CryptoExecutionAdmissionPlan` into the same canonical admission response shape through the package boundary, without claiming a public hosted crypto route.
 
 ## What A Customer Actually Does
 

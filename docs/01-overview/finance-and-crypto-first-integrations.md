@@ -112,7 +112,7 @@ if (plan.outcome !== 'admit') {
 
 The `simulation` object is produced by the crypto authorization core and its adapter preflight evidence. It is not guessed from a wallet transaction by a magical router.
 
-For the crypto package path, `admit` maps to canonical `admit`, `needs-evidence` maps to canonical `review`, and `deny` maps to canonical `block`.
+For the crypto package path, package-native `admit` maps to canonical `admit`, `needs-evidence` maps to fail-closed `review`, and `deny` maps to fail-closed `block`. That typed projection lives in `src/consequence-admission/crypto.ts` and keeps the current entry point as a package boundary rather than a public hosted crypto route.
 
 Choose the first crypto surface by where the consequence would happen:
 
