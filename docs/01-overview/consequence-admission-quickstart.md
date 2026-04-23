@@ -8,6 +8,16 @@ proposed consequence -> explicit surface -> admit | narrow | review | block -> p
 
 This quickstart does not add a new hosted route. It uses the public package facade exported as `attestor/consequence-admission`.
 
+## Run The Local Demo
+
+Use the first useful admission demo when you want the shortest runnable version of the model:
+
+```bash
+npm run example:admission
+```
+
+The demo shows an allowed finance consequence and a blocked finance consequence. In both cases, the customer system proposes the consequence, Attestor returns a canonical admission decision, and the downstream gate proceeds only when the decision allows it.
+
 ## Rules
 
 - Choose the surface explicitly: `finance-pipeline-run` or `crypto-execution-plan`.
@@ -109,4 +119,3 @@ These gates prove that:
 ## Keep The Boundary Honest
 
 If a future step adds a universal hosted admission route or a hosted crypto route, it needs its own route contract, implementation, tests, package/readiness evidence, and tracker update first.
-
