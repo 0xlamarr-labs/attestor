@@ -22,8 +22,46 @@ Attestor is ready for production promotion when all three are true:
 1. the **repo pipeline** is green
 2. the **environment inputs** are present and reachable
 3. the **benchmark + render + probe + packet** chain returns `ready-for-environment-promotion`
+4. the selected **runtime profile** truthfully matches the deployment claim
 
 That is the practical line between "good code" and "rollout-ready system".
+
+## Runtime Profile Gate
+
+Set `ATTESTOR_RUNTIME_PROFILE` deliberately before starting the API runtime. Do not let the profile default decide the production story.
+
+| Profile | Use today | Required proof | Do not claim |
+|---|---|---|---|
+| `local-dev` | Local development, demos, and repeatable tests. | `npm test` and local API checks may run quickly with memory-backed release state. | Production readiness |
+| `single-node-durable` | Customer-operated or hosted evaluation where one runtime must survive restart. | `npm run test:production-runtime-profile`, `npm run test:production-runtime-restart-recovery`, and `/api/v1/ready` reporting `checks.releaseRuntime=true`. | Multi-node production |
+| `production-shared` | Multi-node production authority plane target. | Shared release-authority stores must satisfy the profile before API bootstrap; otherwise startup fails closed. | Any production claim until shared release-authority state is actually wired and passing |
+
+The current repository proves `single-node-durable` restart recovery. It does not claim that file-backed single-runtime release authority state is a multi-node production authority plane.
+
+The runtime diagnostics are visible at:
+
+- `GET /api/v1/health`
+- `GET /api/v1/ready`
+
+Both responses include `runtimeProfile` and `releaseRuntime`. Treat `releaseRuntime.durability.ready=false` or `/api/v1/ready` returning `503` as a stop condition.
+
+### Runtime Authority State Knobs
+
+For `single-node-durable`, point the release-authority stores at durable disk paths that survive process restart:
+
+```bash
+ATTESTOR_RUNTIME_PROFILE=single-node-durable
+ATTESTOR_RELEASE_DECISION_LOG_PATH=/var/lib/attestor/release-decision-log.jsonl
+ATTESTOR_RELEASE_REVIEWER_QUEUE_STORE_PATH=/var/lib/attestor/release-reviewer-queue.json
+ATTESTOR_RELEASE_TOKEN_INTROSPECTION_STORE_PATH=/var/lib/attestor/release-token-introspection.json
+ATTESTOR_RELEASE_EVIDENCE_PACK_STORE_PATH=/var/lib/attestor/release-evidence-packs.json
+ATTESTOR_RELEASE_ENFORCEMENT_DEGRADED_MODE_STORE_PATH=/var/lib/attestor/degraded-mode-grants.json
+ATTESTOR_POLICY_CONTROL_PLANE_STORE_PATH=/var/lib/attestor/policy-control-plane.json
+ATTESTOR_POLICY_ACTIVATION_APPROVAL_STORE_PATH=/var/lib/attestor/policy-activation-approvals.json
+ATTESTOR_POLICY_MUTATION_AUDIT_LOG_PATH=/var/lib/attestor/policy-mutation-audit.json
+```
+
+For `production-shared`, do not paper over the gate with file paths. Use it only after shared release-authority stores are implemented and the profile is satisfied without durability violations.
 
 ## Recommended Stack
 
@@ -127,6 +165,7 @@ is a **single OTLP gateway**, not a split metrics/logs/traces credential set:
 
 ### HA / runtime secrets
 
+- `ATTESTOR_RUNTIME_PROFILE`
 - `REDIS_URL`
 - `ATTESTOR_CONTROL_PLANE_PG_URL`
 - `ATTESTOR_BILLING_LEDGER_PG_URL`
@@ -193,6 +232,15 @@ npm run render:ha-promotion-packet
 
 ## Step 6: Render the Final Combined Gate
 
+Before rendering the final production packet, run the repo-side runtime gates:
+
+```bash
+npm run test:production-runtime-profile
+npm run test:production-runtime-restart-recovery
+```
+
+Then render the final environment promotion packet:
+
 ```bash
 npm run render:production-readiness-packet -- --observability-provider=grafana-alloy --observability-benchmark=.attestor/observability/calibration/latest/benchmark.json --ha-provider=gke --ha-benchmark=.attestor/ha-calibration/latest.json --prometheus-url=https://<prometheus> --alertmanager-url=https://<alertmanager>
 ```
@@ -216,9 +264,10 @@ Once the packet is green:
 6. only then treat Grafana Cloud / managed-backend auth errors as a destination-side credential problem rather than an app-runtime wiring problem
 7. confirm API `/api/v1/ready`
 8. confirm worker `/ready`
-9. confirm traces/logs/metrics reach the backend
-10. confirm alert routing reaches the real destinations
-11. confirm Stripe / hosted auth / queue / billing critical paths still behave correctly
+9. confirm API `/api/v1/health` reports the selected `runtimeProfile` and `releaseRuntime.durability.ready=true`
+10. confirm traces/logs/metrics reach the backend
+11. confirm alert routing reaches the real destinations
+12. confirm Stripe / hosted auth / queue / billing critical paths still behave correctly
 
 ## Step 8: Run a Short Production Rehearsal
 
@@ -227,6 +276,7 @@ Do not stop at "the pods came up".
 Run a short but real rehearsal:
 
 - rolling restart
+- restart recovery check for the selected runtime profile
 - worker drain / recovery
 - one alert-routing exercise
 - one benchmark refresh
@@ -239,6 +289,11 @@ That is what converts a technically correct deployment into an operationally cre
 You can call the deployment production-ready when all of these are true:
 
 - production readiness packet is green
+- `ATTESTOR_RUNTIME_PROFILE` is explicitly set
+- `/api/v1/ready` returns ready with `checks.releaseRuntime=true`
+- `/api/v1/health` reports the expected `runtimeProfile` and `releaseRuntime.durability.ready=true`
+- `single-node-durable` restart recovery has passed if you are running one API runtime
+- `production-shared` is only used if shared release-authority stores satisfy the profile
 - observability packet is green
 - HA packet is green
 - real secrets are loaded from the chosen secret backend
@@ -258,6 +313,7 @@ The repository can now:
 - verify the inputs
 - probe the endpoints
 - produce rollout checkpoints
+- prove `single-node-durable` release-authority restart recovery
 
 But it still cannot do these things without your real environment:
 
@@ -266,5 +322,6 @@ But it still cannot do these things without your real environment:
 - provide the final TLS material or let cert-manager mint certificates inside your own environment
 - provide your real OTLP / PagerDuty / webhook credentials
 - produce real production traffic on its own
+- turn file-backed single-runtime release-authority state into a multi-node shared authority plane
 
 That is not a weakness in the repo. It is the natural boundary between shipped software and real operations.

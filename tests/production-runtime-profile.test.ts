@@ -276,6 +276,11 @@ function testDocsAndApiRuntimeAreWired(): void {
     'production-runtime-hardening-buildout.md',
   );
   const readme = readProjectFile('README.md');
+  const productionReadiness = readProjectFile(
+    'docs',
+    '08-deployment',
+    'production-readiness.md',
+  );
   const apiRouteRuntime = readProjectFile('src', 'service', 'bootstrap', 'api-route-runtime.ts');
   const coreRoutes = readProjectFile('src', 'service', 'http', 'routes', 'core-routes.ts');
   const releaseRuntime = readProjectFile('src', 'service', 'bootstrap', 'release-runtime.ts');
@@ -291,7 +296,16 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(tracker, '| 01 | complete | Add the runtime profile contract |', 'Runtime docs: Step 01 is complete');
   includes(tracker, '| 06 | complete | Wire runtime profile selection through API bootstrap |', 'Runtime docs: Step 06 is complete');
   includes(tracker, '| 07 | complete | Add restart and recovery tests |', 'Runtime docs: Step 07 is complete');
+  includes(tracker, '| 08 | complete | Update production docs and readiness gates |', 'Runtime docs: Step 08 is complete');
   includes(readme, 'production-runtime-hardening-buildout.md', 'Runtime docs: README links hardening tracker');
+  includes(productionReadiness, '## Runtime Profile Gate', 'Runtime docs: production readiness guide has a runtime profile gate');
+  includes(productionReadiness, 'ATTESTOR_RUNTIME_PROFILE', 'Runtime docs: production readiness guide documents the runtime profile knob');
+  includes(productionReadiness, 'npm run test:production-runtime-restart-recovery', 'Runtime docs: production readiness guide documents restart recovery gate');
+  includes(productionReadiness, '`single-node-durable` | Customer-operated or hosted evaluation where one runtime must survive restart.', 'Runtime docs: single-node durable is scoped to one runtime');
+  includes(productionReadiness, '`production-shared` | Multi-node production authority plane target.', 'Runtime docs: production-shared is the multi-node target');
+  includes(productionReadiness, 'It does not claim that file-backed single-runtime release authority state is a multi-node production authority plane.', 'Runtime docs: anti-overclaim language blocks file-backed multi-node claims');
+  includes(productionReadiness, 'GET /api/v1/ready', 'Runtime docs: production readiness guide points operators at readiness');
+  includes(productionReadiness, 'releaseRuntime.durability.ready=true', 'Runtime docs: production readiness guide requires durable runtime readiness');
   includes(apiRouteRuntime, 'resolveRuntimeProfile()', 'Runtime docs: API route runtime resolves profile');
   includes(apiRouteRuntime, 'releaseRuntimeDurabilitySummary', 'Runtime docs: API route runtime exposes summary');
   includes(apiRouteRuntime, 'runtimeProfileDiagnostics', 'Runtime docs: API route runtime exposes startup diagnostics');
