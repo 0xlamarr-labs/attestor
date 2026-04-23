@@ -29,6 +29,7 @@ This runs the shortest local Attestor flow: two AI-assisted finance consequences
 
 For the guided first run, see [Try Attestor first](docs/01-overview/try-attestor-first.md).
 For the first customer-side enforcement step, see [Customer admission gate](docs/01-overview/customer-admission-gate.md).
+For concrete use cases, see [What you can do with Attestor](docs/01-overview/what-you-can-do.md).
 
 ## How Attestor works in practice
 
@@ -169,6 +170,7 @@ npm run verify
 
 - [System overview](docs/02-architecture/system-overview.md)
 - [Attestor operating model](docs/01-overview/operating-model.md)
+- [What you can do with Attestor](docs/01-overview/what-you-can-do.md)
 - [Try Attestor first](docs/01-overview/try-attestor-first.md)
 - [Customer admission gate](docs/01-overview/customer-admission-gate.md)
 - [Consequence admission quickstart](docs/01-overview/consequence-admission-quickstart.md)

@@ -26,13 +26,17 @@ function testTopLevelPositioningStaysAligned(): void {
   const purpose = readProjectFile('docs', '01-overview', 'purpose.md');
   const systemOverview = readProjectFile('docs', '02-architecture', 'system-overview.md');
   const packaging = readProjectFile('docs', '01-overview', 'product-packaging.md');
+  const useCases = readProjectFile('docs', '01-overview', 'what-you-can-do.md');
 
   includes(readme, 'One product. One platform core.', 'Product docs: README keeps one-product framing');
   includes(purpose, 'Attestor is one product:', 'Product docs: purpose keeps one-product framing');
   includes(systemOverview, 'Attestor should be understood as one product:', 'Product docs: system overview keeps one-product framing');
   includes(packaging, 'Attestor is one product:', 'Product docs: packaging keeps one-product framing');
+  includes(useCases, 'Attestor owns the control point before consequence:', 'Product docs: use-case bridge keeps control-point framing');
+  includes(readme, 'docs/01-overview/what-you-can-do.md', 'Product docs: README links the use-case bridge');
   includes(readme, 'Attestor does not magically guess what to run.', 'Product docs: README blocks automatic-pack overclaim');
   includes(purpose, 'not a magical router that guesses the correct pack automatically', 'Product docs: purpose blocks automatic-pack overclaim');
+  includes(useCases, 'Not automatic pack detection.', 'Product docs: use-case bridge blocks automatic-pack overclaim');
 }
 
 function testCoreAndPackStatusStayConsistent(): void {
