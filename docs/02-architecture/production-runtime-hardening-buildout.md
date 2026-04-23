@@ -43,6 +43,7 @@ Reviewed on 2026-04-23 before opening this track:
 - Redis AOF durability and PostgreSQL WAL both reinforce the same queue-state rule: pending authority work needs explicit persisted write state, not only an in-process queue, if restart recovery matters.
 - RFC 7662 defines token introspection around active token state, and RFC 7009 defines revocation as immediate invalidation; Attestor's release-token introspection state must therefore survive restart for revocation, expiry, replay, and use-count checks to remain meaningful.
 - The in-toto attestation envelope specification requires signed payloads and authenticated payload types, while SLSA provenance guidance binds produced artifacts to cryptographic digests; Attestor's durable evidence pack store must therefore preserve the signed DSSE bundle and reject persisted evidence whose digest/signature no longer verifies.
+- Kubernetes separates liveness, readiness, and startup probes, while the Twelve-Factor App treats environment-backed config as the deployment-specific control surface; Attestor's selected runtime profile and release-store posture should therefore be explicit in startup diagnostics and readiness output rather than inferred from code paths.
 
 ## Runtime Profile Vocabulary
 
@@ -57,10 +58,10 @@ Reviewed on 2026-04-23 before opening this track:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 5 |
+| Completed | 6 |
 | In progress | 0 |
-| Not started | 3 |
-| Current posture | Step 05 is complete: Attestor now has file-backed release decision logging, reviewer queue state, release-token introspection state, and release evidence pack storage. Release evidence packs, DSSE envelopes, verification keys, proof references, and bundle digests survive restart and fail closed when persisted evidence is malformed or tampered. The default `local-dev` profile still keeps fast in-memory release authority stores; the `single-node-durable` profile now satisfies its release runtime durability requirements. |
+| Not started | 2 |
+| Current posture | Step 06 is complete: Attestor now selects the runtime profile through API bootstrap, builds a versioned startup diagnostics object, exposes release runtime durability and store modes through `/api/v1/health` and `/api/v1/ready`, and logs the selected profile/store posture at server start. The default `local-dev` profile still keeps fast in-memory release authority stores; the `single-node-durable` profile satisfies its release runtime durability requirements. |
 
 ## Frozen Step List
 
@@ -71,10 +72,10 @@ Reviewed on 2026-04-23 before opening this track:
 | 03 | complete | Add a durable release reviewer queue store | `src/release-kernel/reviewer-queue.ts`, `src/platform/file-store.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/runtime-profile.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | The reviewer queue now has a file-backed snapshot store guarded by file locks and atomic fsync-backed writes. It reloads pending review items, reviewer decisions, and partial dual-approval state after restart, and fails closed on corrupt persisted queue state. `local-dev` intentionally keeps the in-memory queue for fast test/dev loops. |
 | 04 | complete | Add durable release token introspection state | `src/release-kernel/release-introspection.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/runtime-profile.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | The release-token introspection store now has a file-backed snapshot store guarded by file locks and atomic fsync-backed writes. It reloads issued, revoked, consumed, and expired token state after restart, preserves resource-server usage metadata, rejects replay/use-count exhaustion after restart, and fails closed on corrupt persisted token state. `local-dev` intentionally keeps the in-memory store for fast test/dev loops. |
 | 05 | complete | Add a durable release evidence pack store | `src/release-kernel/release-evidence-pack.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/runtime-profile.ts`, `tests/release-kernel-release-evidence-pack.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | The release evidence pack store now has a file-backed snapshot store guarded by file locks and atomic fsync-backed writes. It reloads issued evidence packs after restart, preserves DSSE envelopes, verification keys, proof references, and bundle digests, verifies persisted packs on load, and fails closed on malformed or tampered persisted evidence. `local-dev` intentionally keeps the in-memory store for fast test/dev loops. |
-| 06 | not_started | Wire runtime profile selection through API bootstrap |  | Complete profile-aware store construction across the remaining release stores and add explicit startup diagnostics for the selected runtime posture. |
+| 06 | complete | Wire runtime profile selection through API bootstrap | `src/service/bootstrap/runtime-profile.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/api-route-runtime.ts`, `src/service/bootstrap/server.ts`, `src/service/http/routes/core-routes.ts`, `src/service/api-server.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `tests/live-api.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | API bootstrap now builds a versioned runtime-profile diagnostics object after durability assertion. `/api/v1/health` and `/api/v1/ready` expose the selected profile, release-store modes, durability summary, and profile satisfaction state. Server startup logs the selected profile, durability status, and release-store mode inventory. |
 | 07 | not_started | Add restart and recovery tests |  | Prove decision log, reviewer queue, token introspection, evidence packs, policy state, and degraded-mode grants survive restart in durable profiles. |
 | 08 | not_started | Update production docs and readiness gates |  | Publish the runtime profile matrix, production limitations, operator knobs, readiness commands, and anti-overclaim tests. |
 
 ## Immediate Next Step
 
-Step 06 should wire the now-complete durable release authority store set through API bootstrap diagnostics so the selected runtime posture is explicit at startup.
+Step 07 should add restart and recovery tests that exercise durable-profile behavior across decision logs, reviewer queue, token introspection, evidence packs, policy state, and degraded-mode grants together.

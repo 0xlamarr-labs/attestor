@@ -46,6 +46,33 @@ export interface RuntimeProfileDurabilityEvaluation {
   violations: readonly RuntimeProfileDurabilityViolation[];
 }
 
+export const RUNTIME_PROFILE_STARTUP_DIAGNOSTICS_SPEC_VERSION =
+  'attestor.runtime-profile-startup-diagnostics.v1';
+
+export interface RuntimeProfileStoreDiagnostic {
+  readonly component: ReleaseRuntimeStoreComponent;
+  readonly mode: ReleaseRuntimeStoreMode;
+  readonly allowedModes: readonly ReleaseRuntimeStoreMode[];
+  readonly satisfiesSelectedProfile: boolean;
+  readonly sharedForProduction: boolean;
+}
+
+export interface RuntimeProfileStartupDiagnostics {
+  readonly version: typeof RUNTIME_PROFILE_STARTUP_DIAGNOSTICS_SPEC_VERSION;
+  readonly profile: {
+    readonly id: AttestorRuntimeProfileId;
+    readonly label: string;
+    readonly purpose: string;
+    readonly production: boolean;
+  };
+  readonly releaseStores: readonly RuntimeProfileStoreDiagnostic[];
+  readonly durability: {
+    readonly ready: boolean;
+    readonly summary: string;
+    readonly violations: readonly RuntimeProfileDurabilityViolation[];
+  };
+}
+
 const RELEASE_STORE_COMPONENTS: readonly ReleaseRuntimeStoreComponent[] = Object.freeze([
   'release-decision-log',
   'release-reviewer-queue',
@@ -211,4 +238,49 @@ export function releaseRuntimeDurabilitySummary(
     return `${evaluation.profile.id}: release runtime durability requirements satisfied`;
   }
   return `${evaluation.profile.id}: ${evaluation.violations.length} release runtime durability violation(s)`;
+}
+
+export function buildRuntimeProfileStartupDiagnostics(
+  profile: AttestorRuntimeProfile,
+  observedModes: ReleaseRuntimeStoreModes = CURRENT_RELEASE_RUNTIME_STORE_MODES,
+  evaluation: RuntimeProfileDurabilityEvaluation = evaluateReleaseRuntimeDurability(
+    profile,
+    observedModes,
+  ),
+): RuntimeProfileStartupDiagnostics {
+  return Object.freeze({
+    version: RUNTIME_PROFILE_STARTUP_DIAGNOSTICS_SPEC_VERSION,
+    profile: Object.freeze({
+      id: profile.id,
+      label: profile.label,
+      purpose: profile.purpose,
+      production: profile.production,
+    }),
+    releaseStores: Object.freeze(
+      profile.releaseStoreRequirements.map((requirement) =>
+        Object.freeze({
+          component: requirement.component,
+          mode: observedModes[requirement.component],
+          allowedModes: Object.freeze([...requirement.allowedModes]),
+          satisfiesSelectedProfile: requirement.allowedModes.includes(
+            observedModes[requirement.component],
+          ),
+          sharedForProduction: observedModes[requirement.component] === 'shared',
+        }),
+      ),
+    ),
+    durability: Object.freeze({
+      ready: evaluation.ready,
+      summary: releaseRuntimeDurabilitySummary(evaluation),
+      violations: Object.freeze(
+        evaluation.violations.map((violation) =>
+          Object.freeze({
+            component: violation.component,
+            observedMode: violation.observedMode,
+            allowedModes: Object.freeze([...violation.allowedModes]),
+          }),
+        ),
+      ),
+    }),
+  });
 }

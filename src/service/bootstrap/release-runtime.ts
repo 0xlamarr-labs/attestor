@@ -33,10 +33,12 @@ import {
 import {
   CURRENT_RELEASE_RUNTIME_STORE_MODES,
   assertReleaseRuntimeDurability,
+  buildRuntimeProfileStartupDiagnostics,
   resolveRuntimeProfile,
   type AttestorRuntimeProfile,
   type ReleaseRuntimeStoreModes,
   type RuntimeProfileDurabilityEvaluation,
+  type RuntimeProfileStartupDiagnostics,
 } from './runtime-profile.js';
 
 const {
@@ -137,6 +139,7 @@ export interface ReleaseRuntimeBootstrap {
   runtimeProfile: AttestorRuntimeProfile;
   releaseRuntimeStoreModes: ReleaseRuntimeStoreModes;
   releaseRuntimeDurability: RuntimeProfileDurabilityEvaluation;
+  runtimeProfileDiagnostics: RuntimeProfileStartupDiagnostics;
   pki: ReturnType<typeof generatePkiHierarchy>;
   pkiReady: boolean;
   financeReleaseDecisionLog: ReleaseDecisionLogWriter;
@@ -169,6 +172,11 @@ export function createReleaseRuntimeBootstrap(
   const releaseRuntimeDurability = assertReleaseRuntimeDurability(
     runtimeProfile,
     releaseRuntimeStoreModes,
+  );
+  const runtimeProfileDiagnostics = buildRuntimeProfileStartupDiagnostics(
+    runtimeProfile,
+    releaseRuntimeStoreModes,
+    releaseRuntimeDurability,
   );
   const pki = generatePkiHierarchy(API_CA_SUBJECT, API_SIGNER_SUBJECT, API_REVIEWER_SUBJECT);
   const pkiReady = true;
@@ -226,6 +234,7 @@ export function createReleaseRuntimeBootstrap(
     runtimeProfile,
     releaseRuntimeStoreModes,
     releaseRuntimeDurability,
+    runtimeProfileDiagnostics,
     pki,
     pkiReady,
     financeReleaseDecisionLog,

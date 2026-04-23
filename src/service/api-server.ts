@@ -86,7 +86,9 @@ registerAllRoutes(app, runtime);
 // ─── Server Start/Stop ──────────────────────────────────────────────────────
 
 export function startServer(port: number = 3700): HttpServerHandle {
-  return startHttpServer(app, port);
+  return startHttpServer(app, port, {
+    startupDiagnostics: runtime.infra.security,
+  });
 }
 
 export { app };

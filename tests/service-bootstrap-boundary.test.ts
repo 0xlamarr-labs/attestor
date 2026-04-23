@@ -81,7 +81,8 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   );
   assert.match(releaseRuntime, /export interface CreateReleaseRuntimeBootstrapInput/u);
   assert.match(routes, /export function registerAllRoutes<Packet>\(app: Hono, runtime: AppRuntime<Packet>\): void/u);
-  assert.match(server, /export function startHttpServer\(app: Hono, port: number = 3700\): HttpServerHandle/u);
+  assert.match(server, /export interface StartHttpServerOptions/u);
+  assert.match(server, /export function startHttpServer\(\s*app: Hono,\s*port: number = 3700,\s*options: StartHttpServerOptions = \{\},\s*\): HttpServerHandle/u);
   assert.match(server, /export function installGracefulShutdown\(handle: HttpServerHandle\): void/u);
   assert.match(runtime, /export interface AppRuntime<Packet = unknown>/u);
   assert.match(runtime, /export function createRuntimeInfra\(input: CreateRuntimeInfraInput\): AppRuntimeInfra/u);
@@ -207,6 +208,9 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
   assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\{ runtimeProfile \}\)/u);
   assert.match(apiRouteRuntime, /resolveRuntimeProfile\(\)/u);
   assert.match(apiRouteRuntime, /releaseRuntimeDurabilitySummary/u);
+  assert.match(apiRouteRuntime, /runtimeProfileDiagnostics/u);
+  assert.match(apiServer, /startupDiagnostics: runtime\.infra\.security/u);
+  assert.match(releaseRuntime, /buildRuntimeProfileStartupDiagnostics/u);
 
   for (const releaseFactory of [
     'generatePkiHierarchy(',

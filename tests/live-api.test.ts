@@ -190,6 +190,9 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(body.pki?.ready === true, 'Health: PKI ready');
       ok(body.pki?.caName === 'Attestor Keyless CA', 'Health: PKI CA name');
       ok(typeof body.pki?.caFingerprint === 'string', 'Health: PKI CA fingerprint');
+      ok(body.runtimeProfile?.id === 'local-dev', 'Health: runtime profile is exposed');
+      ok(body.releaseRuntime?.durability?.ready === true, 'Health: release runtime durability is exposed');
+      ok(Array.isArray(body.releaseRuntime?.stores), 'Health: release runtime store diagnostics are exposed');
       console.log(`    status=${body.status}, pki=${body.pki.caName} (${body.pki.caFingerprint}), domains=${body.domains.join(',')}, uptime=${body.uptime}s`);
     }
 
@@ -1064,7 +1067,10 @@ process.env.ATTESTOR_RATE_LIMIT_WINDOW_SECONDS = '5';
       ok(body.ready === true, 'Ready: ready = true');
       ok(body.checks.asyncBackend === true, 'Ready: asyncBackend check passed');
       ok(body.checks.pki === true, 'Ready: PKI check passed');
+      ok(body.checks.releaseRuntime === true, 'Ready: release runtime check passed');
       ok(body.checks.domains === true, 'Ready: domains check passed');
+      ok(body.runtimeProfile?.id === 'local-dev', 'Ready: runtime profile is exposed');
+      ok(body.releaseRuntime?.durability?.ready === true, 'Ready: release runtime durability exposed');
       console.log(`    ready=${body.ready}, mode=${body.asyncBackendMode}, redis=${body.redisMode}`);
     }
 

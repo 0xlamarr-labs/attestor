@@ -28,6 +28,31 @@ type HighAvailabilityState = {
   publicHosted: boolean;
   ready: boolean;
 };
+type RuntimeProfileDiagnostics = {
+  version: string;
+  profile: {
+    id: string;
+    label: string;
+    purpose: string;
+    production: boolean;
+  };
+  releaseStores: readonly {
+    component: string;
+    mode: string;
+    allowedModes: readonly string[];
+    satisfiesSelectedProfile: boolean;
+    sharedForProduction: boolean;
+  }[];
+  durability: {
+    ready: boolean;
+    summary: string;
+    violations: readonly {
+      component: string;
+      observedMode: string;
+      allowedModes: readonly string[];
+    }[];
+  };
+};
 
 export interface CoreRouteDeps {
   evaluateApiHighAvailabilityState(input: {
@@ -50,6 +75,7 @@ export interface CoreRouteDeps {
     signer: { certificate: { subject: string } };
     reviewer: { certificate: { subject: string } };
   };
+  runtimeProfileDiagnostics: RuntimeProfileDiagnostics;
   rlsActivationResult: {
     activated: boolean;
     policiesFound: number;
@@ -71,6 +97,7 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
     filingRegistry,
     pkiReady,
     pki,
+    runtimeProfileDiagnostics,
     rlsActivationResult,
   } = deps;
 
@@ -108,6 +135,12 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
         },
       },
       asyncBackend: { mode: asyncBackendMode, redisMode },
+      runtimeProfile: runtimeProfileDiagnostics.profile,
+      releaseRuntime: {
+        diagnosticsVersion: runtimeProfileDiagnostics.version,
+        durability: runtimeProfileDiagnostics.durability,
+        stores: runtimeProfileDiagnostics.releaseStores,
+      },
       highAvailability,
       engine: 'attestor',
     });
@@ -153,6 +186,9 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
     checks.pki = pkiReady;
     if (!checks.pki) ready = false;
 
+    checks.releaseRuntime = runtimeProfileDiagnostics.durability.ready;
+    if (!checks.releaseRuntime) ready = false;
+
     checks.domains = domainRegistry.listIds().length > 0;
     if (!checks.domains) ready = false;
 
@@ -167,6 +203,18 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
     }
 
     const status = ready ? 200 : 503;
-    return c.json({ ready, checks, instanceId: serviceInstanceId, asyncBackendMode, redisMode, highAvailability }, status);
+    return c.json({
+      ready,
+      checks,
+      instanceId: serviceInstanceId,
+      asyncBackendMode,
+      redisMode,
+      runtimeProfile: runtimeProfileDiagnostics.profile,
+      releaseRuntime: {
+        durability: runtimeProfileDiagnostics.durability,
+        stores: runtimeProfileDiagnostics.releaseStores,
+      },
+      highAvailability,
+    }, status);
   });
 }

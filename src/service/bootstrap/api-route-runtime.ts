@@ -319,6 +319,7 @@ export function createApiHttpRouteRuntime(
   const {
     releaseRuntimeStoreModes,
     releaseRuntimeDurability,
+    runtimeProfileDiagnostics,
     pki,
     pkiReady,
     financeReleaseDecisionLog,
@@ -378,6 +379,7 @@ export function createApiHttpRouteRuntime(
     filingRegistry,
     pkiReady,
     pki,
+    runtimeProfileDiagnostics,
     rlsActivationResult,
   } satisfies ApiRouteDeps['core'];
 
@@ -732,6 +734,7 @@ export function createApiHttpRouteRuntime(
           ready: releaseRuntimeDurability.ready,
           summary: releaseRuntimeDurabilitySummary(releaseRuntimeDurability),
         },
+        runtimeProfileDiagnostics,
         rlsActivationResult,
         pkiReady,
       },

@@ -20,6 +20,28 @@ export interface HttpServerHandle {
   close(): void;
 }
 
+export interface HttpServerStartupDiagnostics {
+  runtimeProfileDiagnostics?: {
+    profile: {
+      id: string;
+      label: string;
+      production: boolean;
+    };
+    releaseStores: readonly {
+      component: string;
+      mode: string;
+    }[];
+    durability: {
+      ready: boolean;
+      summary: string;
+    };
+  };
+}
+
+export interface StartHttpServerOptions {
+  startupDiagnostics?: HttpServerStartupDiagnostics;
+}
+
 type HonoNodeServer = ReturnType<typeof serve>;
 
 function closeServer(server: HonoNodeServer): void {
@@ -41,7 +63,27 @@ function logTelemetryStartup(telemetry: ReturnType<typeof initializeTelemetry>):
   }
 }
 
-export function startHttpServer(app: Hono, port: number = 3700): HttpServerHandle {
+function logRuntimeStartupDiagnostics(
+  diagnostics?: HttpServerStartupDiagnostics,
+): void {
+  const runtime = diagnostics?.runtimeProfileDiagnostics;
+  if (!runtime) return;
+
+  const storeModes = runtime.releaseStores
+    .map((store) => `${store.component}=${store.mode}`)
+    .join(', ');
+  console.log(
+    `[runtime] profile=${runtime.profile.id} (${runtime.profile.label}), production=${runtime.profile.production}, durability=${runtime.durability.ready ? 'ready' : 'not-ready'}`,
+  );
+  console.log(`[runtime] ${runtime.durability.summary}`);
+  console.log(`[runtime] release stores: ${storeModes}`);
+}
+
+export function startHttpServer(
+  app: Hono,
+  port: number = 3700,
+  options: StartHttpServerOptions = {},
+): HttpServerHandle {
   const telemetry = initializeTelemetry('1.0.0');
   configureTenantRuntimeBackends();
 
@@ -65,6 +107,7 @@ export function startHttpServer(app: Hono, port: number = 3700): HttpServerHandl
   }
 
   logTelemetryStartup(telemetry);
+  logRuntimeStartupDiagnostics(options.startupDiagnostics);
 
   const server = serve({ fetch: app.fetch, port });
   return {

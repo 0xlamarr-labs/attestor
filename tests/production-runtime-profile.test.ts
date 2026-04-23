@@ -7,6 +7,7 @@ import {
   RuntimeProfileConfigurationError,
   RuntimeProfileDurabilityError,
   assertReleaseRuntimeDurability,
+  buildRuntimeProfileStartupDiagnostics,
   evaluateReleaseRuntimeDurability,
   findRuntimeProfile,
   releaseRuntimeDurabilitySummary,
@@ -174,6 +175,45 @@ function testDurabilityEvaluation(): void {
   equal(sharedEvaluation.ready, true, 'Runtime profile: shared stores satisfy production profile');
 }
 
+function testStartupDiagnostics(): void {
+  const singleNode = resolveRuntimeProfile({
+    env: { [ATTESTOR_RUNTIME_PROFILE_ENV]: 'single-node-durable' },
+  });
+  const diagnostics = buildRuntimeProfileStartupDiagnostics(
+    singleNode,
+    CURRENT_RELEASE_RUNTIME_STORE_MODES,
+  );
+
+  equal(
+    diagnostics.version,
+    'attestor.runtime-profile-startup-diagnostics.v1',
+    'Runtime diagnostics: version is explicit',
+  );
+  equal(
+    diagnostics.profile.id,
+    'single-node-durable',
+    'Runtime diagnostics: selected profile is exposed',
+  );
+  equal(
+    diagnostics.durability.ready,
+    true,
+    'Runtime diagnostics: durable profile readiness is exposed',
+  );
+  equal(
+    diagnostics.releaseStores.length,
+    8,
+    'Runtime diagnostics: every release authority store is exposed',
+  );
+  ok(
+    diagnostics.releaseStores.every((store) => store.satisfiesSelectedProfile),
+    'Runtime diagnostics: store satisfaction is explicit',
+  );
+  ok(
+    diagnostics.releaseStores.some((store) => store.component === 'release-evidence-pack-store' && store.mode === 'file'),
+    'Runtime diagnostics: durable evidence pack mode is visible',
+  );
+}
+
 function testDurabilityAssertionAndBootstrap(): void {
   const localDev = resolveRuntimeProfile({ env: {} });
   const production = resolveRuntimeProfile({
@@ -203,6 +243,16 @@ function testDurabilityAssertionAndBootstrap(): void {
     'memory',
     'Runtime bootstrap: exposes current store mode inventory',
   );
+  equal(
+    localBootstrap.runtimeProfileDiagnostics.profile.id,
+    'local-dev',
+    'Runtime bootstrap: exposes startup diagnostics',
+  );
+  equal(
+    localBootstrap.runtimeProfileDiagnostics.durability.ready,
+    true,
+    'Runtime bootstrap: diagnostics expose durability readiness',
+  );
 
   assert.throws(
     () => assertReleaseRuntimeDurability(production),
@@ -227,7 +277,9 @@ function testDocsAndApiRuntimeAreWired(): void {
   );
   const readme = readProjectFile('README.md');
   const apiRouteRuntime = readProjectFile('src', 'service', 'bootstrap', 'api-route-runtime.ts');
+  const coreRoutes = readProjectFile('src', 'service', 'http', 'routes', 'core-routes.ts');
   const releaseRuntime = readProjectFile('src', 'service', 'bootstrap', 'release-runtime.ts');
+  const server = readProjectFile('src', 'service', 'bootstrap', 'server.ts');
   const packageJson = JSON.parse(readProjectFile('package.json')) as {
     scripts: Record<string, string>;
   };
@@ -237,13 +289,19 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(tracker, '`single-node-durable`', 'Runtime docs: single-node profile is documented');
   includes(tracker, '`production-shared`', 'Runtime docs: production profile is documented');
   includes(tracker, '| 01 | complete | Add the runtime profile contract |', 'Runtime docs: Step 01 is complete');
+  includes(tracker, '| 06 | complete | Wire runtime profile selection through API bootstrap |', 'Runtime docs: Step 06 is complete');
   includes(readme, 'production-runtime-hardening-buildout.md', 'Runtime docs: README links hardening tracker');
   includes(apiRouteRuntime, 'resolveRuntimeProfile()', 'Runtime docs: API route runtime resolves profile');
   includes(apiRouteRuntime, 'releaseRuntimeDurabilitySummary', 'Runtime docs: API route runtime exposes summary');
+  includes(apiRouteRuntime, 'runtimeProfileDiagnostics', 'Runtime docs: API route runtime exposes startup diagnostics');
+  includes(coreRoutes, 'runtimeProfileDiagnostics', 'Runtime docs: core routes expose runtime diagnostics');
+  includes(coreRoutes, 'checks.releaseRuntime', 'Runtime docs: readiness checks release runtime posture');
   includes(releaseRuntime, 'assertReleaseRuntimeDurability', 'Runtime docs: release runtime asserts profile');
+  includes(releaseRuntime, 'buildRuntimeProfileStartupDiagnostics', 'Runtime docs: release runtime builds startup diagnostics');
   includes(releaseRuntime, 'createFileBackedReleaseDecisionLogWriter', 'Runtime docs: release runtime can construct the durable decision log');
   includes(releaseRuntime, 'createFileBackedReleaseReviewerQueueStore', 'Runtime docs: release runtime can construct the durable reviewer queue');
   includes(releaseRuntime, 'createFileBackedReleaseTokenIntrospectionStore', 'Runtime docs: release runtime can construct durable token introspection');
+  includes(server, 'logRuntimeStartupDiagnostics', 'Runtime docs: server logs runtime startup diagnostics');
   includes(packageJson.scripts.test, 'tsx tests/production-runtime-profile.test.ts', 'Runtime docs: npm test runs profile guard');
   includes(packageJson.scripts.verify, 'npm run test:production-runtime-profile', 'Runtime docs: verify runs profile guard');
 }
@@ -252,6 +310,7 @@ testProfileCatalog();
 testProfileResolution();
 testCurrentStoreInventoryIsExplicit();
 testDurabilityEvaluation();
+testStartupDiagnostics();
 testDurabilityAssertionAndBootstrap();
 testDocsAndApiRuntimeAreWired();
 
