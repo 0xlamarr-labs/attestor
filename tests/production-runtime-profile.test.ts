@@ -290,6 +290,7 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(tracker, '`production-shared`', 'Runtime docs: production profile is documented');
   includes(tracker, '| 01 | complete | Add the runtime profile contract |', 'Runtime docs: Step 01 is complete');
   includes(tracker, '| 06 | complete | Wire runtime profile selection through API bootstrap |', 'Runtime docs: Step 06 is complete');
+  includes(tracker, '| 07 | complete | Add restart and recovery tests |', 'Runtime docs: Step 07 is complete');
   includes(readme, 'production-runtime-hardening-buildout.md', 'Runtime docs: README links hardening tracker');
   includes(apiRouteRuntime, 'resolveRuntimeProfile()', 'Runtime docs: API route runtime resolves profile');
   includes(apiRouteRuntime, 'releaseRuntimeDurabilitySummary', 'Runtime docs: API route runtime exposes summary');
@@ -303,7 +304,9 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(releaseRuntime, 'createFileBackedReleaseTokenIntrospectionStore', 'Runtime docs: release runtime can construct durable token introspection');
   includes(server, 'logRuntimeStartupDiagnostics', 'Runtime docs: server logs runtime startup diagnostics');
   includes(packageJson.scripts.test, 'tsx tests/production-runtime-profile.test.ts', 'Runtime docs: npm test runs profile guard');
+  includes(packageJson.scripts.test, 'tsx tests/production-runtime-restart-recovery.test.ts', 'Runtime docs: npm test runs restart recovery guard');
   includes(packageJson.scripts.verify, 'npm run test:production-runtime-profile', 'Runtime docs: verify runs profile guard');
+  includes(packageJson.scripts.verify, 'npm run test:production-runtime-restart-recovery', 'Runtime docs: verify runs restart recovery guard');
 }
 
 testProfileCatalog();
