@@ -60,17 +60,17 @@ Reviewed on 2026-04-23 before opening this track:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 6 |
-| Completed | 1 |
+| Completed | 2 |
 | In progress | 0 |
-| Not started | 5 |
-| Current posture | Step 01 is complete: the operating model, canonical vocabulary, surface mappings, docs links, and anti-drift test are in place. Next work should add the typed canonical admission contract before adding or widening any hosted route. |
+| Not started | 4 |
+| Current posture | Step 02 is complete: the typed canonical admission contract, native decision mappings, fail-closed problem shape, canonical request/response builders, and contract tests are in place. Next work should connect the existing finance hosted proof wedge to the contract without changing its route behavior prematurely. |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
 | 01 | complete | Codify the operating model and canonical admission vocabulary | `docs/01-overview/operating-model.md`, `docs/02-architecture/consequence-admission-buildout.md`, `tests/consequence-admission-operating-model.test.ts`, `README.md`, `docs/01-overview/purpose.md`, `docs/02-architecture/system-overview.md`, `docs/01-overview/hosted-first-api-call.md`, `docs/01-overview/finance-and-crypto-first-integrations.md`, `package.json` | Attestor now has a customer-facing truth source for proposed consequence -> explicit path -> policy/authority/evidence/freshness/enforcement checks -> canonical decision -> proof -> downstream enforcement. The docs explicitly map finance `pass` to canonical `admit`, crypto `needs-evidence` to `review`, and crypto `deny` to `block`, while blocking public hosted crypto route and universal admission route overclaims. |
-| 02 | not started | Add the typed canonical admission contract |  | Define stable TypeScript types for proposed consequences, pack family, decision, checks, reasons, fail-closed posture, proof references, and domain-native mappings. |
+| 02 | complete | Add the typed canonical admission contract | `src/consequence-admission/index.ts`, `tests/consequence-admission-contract.test.ts`, `package.json`, `docs/02-architecture/consequence-admission-buildout.md` | The canonical contract now defines versioned request/response types, pack families, explicit entry points, proposed consequence shape, policy/authority/evidence inputs, policy/authority/evidence/freshness/enforcement/adapter-readiness checks, `admit` / `narrow` / `review` / `block` decisions, proof refs, fail-closed problem details, canonical digests, and native mapping helpers for finance pipeline decisions and crypto execution-admission outcomes. Unknown native values fail closed, `narrow` requires explicit constraints, and `review` / `block` default to fail-closed posture. |
 | 03 | not started | Add finance decision mapping into the admission contract |  | Wrap the existing hosted finance proof wedge without changing its route behavior prematurely. The mapping should make `pass -> admit` explicit and preserve held/review/block semantics. |
 | 04 | not started | Add crypto package outcome mapping into the admission contract |  | Wrap `CryptoExecutionAdmissionPlan.outcome` so package-native `admit`, `needs-evidence`, and `deny` project into the shared admission decision vocabulary. |
 | 05 | not started | Add the first customer-facing admission facade |  | Add a small integration helper or hosted route only after the typed contract and mappings are tested. Do not claim a public hosted crypto HTTP route unless it is actually implemented and covered. |
@@ -78,5 +78,4 @@ Reviewed on 2026-04-23 before opening this track:
 
 ## Immediate Next Step
 
-Implement Step 02 before widening any public API story.
-
+Implement Step 03 before widening any public API story.

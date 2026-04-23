@@ -77,10 +77,11 @@ function testTrackerDefinesTheStepwisePathWithoutSplittingTheProduct(): void {
   includes(tracker, 'Do not claim a public hosted crypto HTTP route', 'Admission tracker: public crypto route overclaim blocked');
   includes(tracker, 'Do not claim a universal hosted admission route', 'Admission tracker: universal route overclaim blocked');
   includes(tracker, '| Total frozen steps | 6 |', 'Admission tracker: frozen step count is explicit');
-  includes(tracker, '| Completed | 1 |', 'Admission tracker: Step 01 is complete');
+  includes(tracker, '| Completed | 2 |', 'Admission tracker: Step 02 is complete');
   includes(tracker, '| 01 | complete | Codify the operating model and canonical admission vocabulary |', 'Admission tracker: Step 01 row is complete');
-  includes(tracker, '| 02 | not started | Add the typed canonical admission contract |', 'Admission tracker: Step 02 is next');
-  includes(tracker, 'Implement Step 02 before widening any public API story.', 'Admission tracker: next step blocks premature API widening');
+  includes(tracker, '| 02 | complete | Add the typed canonical admission contract |', 'Admission tracker: Step 02 row is complete');
+  includes(tracker, '| 03 | not started | Add finance decision mapping into the admission contract |', 'Admission tracker: Step 03 is next');
+  includes(tracker, 'Implement Step 03 before widening any public API story.', 'Admission tracker: next step blocks premature API widening');
   excludes(tracker, /\bfirst[- ]slice\b/iu, 'Admission tracker: no stale first-slice language');
 }
 

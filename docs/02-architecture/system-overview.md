@@ -133,6 +133,6 @@ Active priority:
 Hosted product flow status:
 
 - [Hosted product flow and adoption hardening](hosted-product-flow-buildout.md) is complete
-- [Consequence admission contract](consequence-admission-buildout.md) is active at Step 01 complete
+- [Consequence admission contract](consequence-admission-buildout.md) is active at Step 02 complete
 
 Future hosted product-flow changes should preserve the docs, contract, readiness, and probe gates before the public story expands again.

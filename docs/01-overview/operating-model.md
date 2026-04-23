@@ -48,6 +48,8 @@ This vocabulary is the customer-facing language. Some shipped surfaces still exp
 
 The next implementation work should make this mapping typed and explicit rather than relying on readers to infer it from pack-specific responses.
 
+That typed contract now lives in `src/consequence-admission/index.ts`. It defines the canonical request, response, check, proof, native-decision mapping, and fail-closed problem shapes without claiming a universal hosted admission route yet.
+
 ## What A Customer Actually Does
 
 1. The customer system prepares the proposed consequence and evidence it already has.
@@ -74,4 +76,3 @@ Every new Attestor entry point should answer the same customer question:
 > May this proposed consequence proceed, under this policy, with this authority, and with this evidence?
 
 If the answer is not `admit`, the downstream system must not quietly continue.
-
