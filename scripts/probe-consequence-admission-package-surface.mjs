@@ -50,6 +50,18 @@ assert.equal(
   admission.mapCryptoAdmissionOutcomeToAdmission('needs-evidence').mappedDecision,
   'review',
 );
+assert.equal(
+  admission.CONSEQUENCE_ADMISSION_CUSTOMER_GATE_VERSION,
+  'attestor.consequence-admission-customer-gate.v1',
+);
+assert.equal(
+  typeof admission.evaluateConsequenceAdmissionGate,
+  'function',
+);
+assert.equal(
+  typeof admission.assertConsequenceAdmissionGateAllows,
+  'function',
+);
 
 let blockedInternalPath = false;
 try {

@@ -41,6 +41,7 @@ Customer systems still choose the relevant Attestor surface explicitly.
 ## Where To Go Next
 
 - Need the shared admission vocabulary? Read [Consequence Admission Quickstart](consequence-admission-quickstart.md).
+- Need to wire the decision into your own app? Read [Customer admission gate](customer-admission-gate.md).
 - Need the first hosted call after signup? Read [First hosted API call](hosted-first-api-call.md).
 - Need the finance and crypto entry paths? Read [Finance and crypto first integrations](finance-and-crypto-first-integrations.md).
 - Need pricing, evaluation, or hosted trial details? Read [Commercial packaging, pricing, and evaluation](product-packaging.md).

@@ -28,6 +28,8 @@ Canonical admission vocabulary is shared across packs: `admit`, `narrow`, `revie
 
 The shared package facade is `attestor/consequence-admission`. It can project the current finance route result or a crypto execution plan into the canonical admission shape, but the caller must choose `finance-pipeline-run` or `crypto-execution-plan` explicitly. This keeps one product shape without pretending that crypto already has a hosted public route.
 
+For the customer-side enforcement helper that turns an admission response into `PROCEED` or `HOLD`, see [Customer admission gate](customer-admission-gate.md).
+
 ## Finance First Integration
 
 Finance is the deepest proven path today.
