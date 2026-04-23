@@ -46,10 +46,14 @@ function testDemoExplainsTheFirstUsefulAdmissionFlow(): void {
   includes(demo.output, 'Attestor first useful admission demo', 'Demo: output has title');
   includes(demo.output, 'public facade: attestor/consequence-admission', 'Demo: output names public facade');
   includes(demo.output, 'automatic pack detection: false', 'Demo: output rejects automatic routing');
-  includes(demo.output, 'canonical decision: admit', 'Demo: output shows admit');
-  includes(demo.output, 'canonical decision: block', 'Demo: output shows block');
-  includes(demo.output, 'downstream gate: PROCEED', 'Demo: output shows proceed gate');
-  includes(demo.output, 'downstream gate: HOLD', 'Demo: output shows hold gate');
+  includes(demo.output, 'Input:', 'Demo: output groups the input clearly');
+  includes(demo.output, 'Attestor decision:', 'Demo: output groups the decision clearly');
+  includes(demo.output, 'Proof refs:', 'Demo: output groups proof references clearly');
+  includes(demo.output, 'Downstream result:', 'Demo: output groups the downstream result clearly');
+  includes(demo.output, 'canonical: admit', 'Demo: output shows admit');
+  includes(demo.output, 'canonical: block', 'Demo: output shows block');
+  includes(demo.output, 'PROCEED ->', 'Demo: output shows proceed gate');
+  includes(demo.output, 'HOLD ->', 'Demo: output shows hold gate');
   includes(demo.output, 'Proof first. Action second.', 'Demo: output has the core takeaway');
   excludes(demo.output, /POST\s+\/api\/v1\/admit/u, 'Demo: output does not invent a universal admission route');
 }
@@ -76,4 +80,3 @@ testDemoExplainsTheFirstUsefulAdmissionFlow();
 testDemoIsReachableFromPackageScriptsAndDocs();
 
 console.log(`First useful admission demo tests: ${passed} passed, 0 failed`);
-

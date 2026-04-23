@@ -8,6 +8,8 @@ proposed consequence -> explicit surface -> admit | narrow | review | block -> p
 
 This quickstart does not add a new hosted route. It uses the public package facade exported as `attestor/consequence-admission`.
 
+For the shortest first run, start with [Try Attestor first](try-attestor-first.md).
+
 ## Run The Local Demo
 
 Use the first useful admission demo when you want the shortest runnable version of the model:

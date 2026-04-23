@@ -18,6 +18,17 @@ Built for teams that cannot let sensitive outputs or execution paths enter produ
 > [!NOTE]
 > This repository is source-available under Business Source License 1.1. Non-production use is allowed. Production use requires a commercial license until the Change Date in [LICENSE](LICENSE).
 
+## Try it in 60 seconds
+
+```bash
+npm install
+npm run example:admission
+```
+
+This runs the shortest local Attestor flow: two AI-assisted finance consequences go through the same admission facade. It shows: one is admitted, one is blocked fail-closed, and both return proof references and a downstream gate.
+
+For the guided first run, see [Try Attestor first](docs/01-overview/try-attestor-first.md).
+
 ## How Attestor works in practice
 
 - A customer system proposes a sensitive output, record, action, or programmable-money move.
@@ -157,6 +168,7 @@ npm run verify
 
 - [System overview](docs/02-architecture/system-overview.md)
 - [Attestor operating model](docs/01-overview/operating-model.md)
+- [Try Attestor first](docs/01-overview/try-attestor-first.md)
 - [Consequence admission quickstart](docs/01-overview/consequence-admission-quickstart.md)
 - [Release layer buildout](docs/02-architecture/release-layer-buildout.md)
 - [Policy control-plane buildout](docs/02-architecture/release-policy-control-plane-buildout.md)
@@ -170,6 +182,7 @@ npm run verify
 
 ## Start here
 
+- Want the shortest first run? Start with [Try Attestor first](docs/01-overview/try-attestor-first.md) or run `npm run example:admission`.
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
 - Want pricing, free evaluation, or hosted trial details? Start with [Commercial packaging, pricing, and evaluation](docs/01-overview/product-packaging.md).
 - Want the managed customer path, sign-up flow, and billing handoff? Start with [Hosted customer journey](docs/01-overview/hosted-customer-journey.md).

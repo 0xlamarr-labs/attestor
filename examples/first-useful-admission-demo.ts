@@ -120,7 +120,7 @@ function renderResult(result: Omit<FirstUsefulAdmissionDemoResult, 'output'>): s
     '',
     'What this proves:',
     '1. A customer system proposes a consequence.',
-    '2. It calls Attestor before the downstream action happens.',
+    '2. It calls Attestor before the downstream action writes, sends, files, or executes.',
     '3. Attestor returns admit, narrow, review, or block with proof references.',
     '4. The downstream system proceeds only when the decision allows it.',
     '',
@@ -130,17 +130,21 @@ function renderResult(result: Omit<FirstUsefulAdmissionDemoResult, 'output'>): s
     const { admission } = scenario;
     lines.push(
       `Scenario: ${scenario.label}`,
-      `proposed consequence: ${scenario.proposedConsequence}`,
-      `surface: finance-pipeline-run`,
-      `entry point: ${admission.request.entryPoint.route}`,
-      `native decision: ${admission.nativeDecision?.value ?? 'none'}`,
-      `canonical decision: ${admission.decision}`,
-      `allowed: ${String(admission.allowed)}`,
-      `fail closed: ${String(admission.failClosed)}`,
-      `proof refs: ${renderProofRefs(admission)}`,
+      'Input:',
+      `  proposed consequence: ${scenario.proposedConsequence}`,
+      `  surface: finance-pipeline-run`,
+      `  entry point: ${admission.request.entryPoint.route}`,
+      'Attestor decision:',
+      `  native: ${admission.nativeDecision?.value ?? 'none'}`,
+      `  canonical: ${admission.decision}`,
+      `  allowed: ${String(admission.allowed)}`,
+      `  fail closed: ${String(admission.failClosed)}`,
+      'Proof refs:',
+      `  ${renderProofRefs(admission)}`,
+      'Downstream result:',
       scenario.gate === 'proceed'
-        ? `downstream gate: PROCEED -> ${scenario.downstreamAction}`
-        : `downstream gate: HOLD -> ${scenario.downstreamAction}`,
+        ? `  PROCEED -> ${scenario.downstreamAction}`
+        : `  HOLD -> ${scenario.downstreamAction}`,
       '',
     );
   }
