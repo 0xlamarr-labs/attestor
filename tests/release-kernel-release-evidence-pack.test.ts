@@ -1,4 +1,7 @@
 import { strict as assert } from 'node:assert';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   buildFinanceFilingReleaseMaterial,
   buildFinanceFilingReleaseObservation,
@@ -13,8 +16,11 @@ import {
   createFinanceReviewerQueueItem,
 } from '../src/release-kernel/reviewer-queue.js';
 import {
+  ReleaseEvidencePackStoreError,
+  createFileBackedReleaseEvidencePackStore,
   createInMemoryReleaseEvidencePackStore,
   createReleaseEvidencePackIssuer,
+  resetFileBackedReleaseEvidencePackStoreForTests,
   verifyIssuedReleaseEvidencePack,
 } from '../src/release-kernel/release-evidence-pack.js';
 import { createReleaseTokenIssuer } from '../src/release-kernel/release-token.js';
@@ -258,6 +264,48 @@ async function main(): Promise<void> {
     issuedEvidencePack.evidencePack.id,
     'Release evidence pack: in-memory store round-trips the exported bundle',
   );
+
+  const fileBackedStorePath = join(
+    mkdtempSync(join(tmpdir(), 'attestor-release-evidence-pack-store-')),
+    'store.json',
+  );
+  resetFileBackedReleaseEvidencePackStoreForTests(fileBackedStorePath);
+  const fileBackedStore = createFileBackedReleaseEvidencePackStore(fileBackedStorePath);
+  fileBackedStore.upsert(issuedEvidencePack);
+  const reloadedFileBackedStore = createFileBackedReleaseEvidencePackStore(fileBackedStorePath);
+  const reloadedEvidencePack = reloadedFileBackedStore.get(issuedEvidencePack.evidencePack.id);
+  equal(
+    reloadedEvidencePack?.bundleDigest,
+    issuedEvidencePack.bundleDigest,
+    'Release evidence pack: file-backed store survives restart with bundle digest intact',
+  );
+  equal(
+    verifyIssuedReleaseEvidencePack({
+      issuedEvidencePack: reloadedEvidencePack!,
+    }).valid,
+    true,
+    'Release evidence pack: file-backed store reload remains verifiable',
+  );
+
+  const tamperedStoreFile = JSON.parse(readFileSync(fileBackedStorePath, 'utf8')) as {
+    packs: Array<{ bundleDigest: string }>;
+  };
+  tamperedStoreFile.packs[0]!.bundleDigest = 'sha256:deadbeef';
+  writeFileSync(fileBackedStorePath, `${JSON.stringify(tamperedStoreFile, null, 2)}\n`);
+  assert.throws(
+    () => createFileBackedReleaseEvidencePackStore(fileBackedStorePath),
+    ReleaseEvidencePackStoreError,
+    'Release evidence pack: file-backed store rejects tampered bundle digest on restart',
+  );
+  passed += 1;
+
+  writeFileSync(fileBackedStorePath, '{not-json');
+  assert.throws(
+    () => createFileBackedReleaseEvidencePackStore(fileBackedStorePath),
+    ReleaseEvidencePackStoreError,
+    'Release evidence pack: file-backed store rejects malformed persisted state',
+  );
+  passed += 1;
 
   let tamperedSignatureError: Error | null = null;
   try {

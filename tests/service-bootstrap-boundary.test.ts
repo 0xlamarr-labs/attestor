@@ -218,6 +218,7 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
     'createInMemoryReleaseTokenIntrospectionStore(',
     'createReleaseTokenIntrospector(',
     'createReleaseTokenIssuer(',
+    'createFileBackedReleaseEvidencePackStore(',
     'createInMemoryReleaseEvidencePackStore(',
     'createReleaseEvidencePackIssuer(',
     'createFileBackedDegradedModeGrantStore(',

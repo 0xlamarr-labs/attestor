@@ -43,7 +43,11 @@ const {
   createFileBackedReleaseDecisionLogWriter,
   createInMemoryReleaseDecisionLogWriter,
 } = decisionLog;
-const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
+const {
+  createFileBackedReleaseEvidencePackStore,
+  createInMemoryReleaseEvidencePackStore,
+  createReleaseEvidencePackIssuer,
+} = evidence;
 const {
   createFileBackedReleaseTokenIntrospectionStore,
   createInMemoryReleaseTokenIntrospectionStore,
@@ -86,6 +90,10 @@ function releaseRuntimeStoreModesForProfile(
       runtimeProfile.id === 'local-dev'
         ? 'memory'
         : CURRENT_RELEASE_RUNTIME_STORE_MODES['release-token-introspection'],
+    'release-evidence-pack-store':
+      runtimeProfile.id === 'local-dev'
+        ? 'memory'
+        : CURRENT_RELEASE_RUNTIME_STORE_MODES['release-evidence-pack-store'],
   });
 }
 
@@ -114,6 +122,15 @@ function createReleaseTokenIntrospectionStoreForProfile(
     return createInMemoryReleaseTokenIntrospectionStore();
   }
   return createFileBackedReleaseTokenIntrospectionStore();
+}
+
+function createReleaseEvidencePackStoreForProfile(
+  runtimeProfile: AttestorRuntimeProfile,
+): ReleaseEvidencePackStore {
+  if (runtimeProfile.id === 'local-dev') {
+    return createInMemoryReleaseEvidencePackStore();
+  }
+  return createFileBackedReleaseEvidencePackStore();
 }
 
 export interface ReleaseRuntimeBootstrap {
@@ -165,7 +182,7 @@ export function createReleaseRuntimeBootstrap(
     privateKeyPem: pki.signer.keyPair.privateKeyPem,
     publicKeyPem: pki.signer.keyPair.publicKeyPem,
   });
-  const apiReleaseEvidencePackStore = createInMemoryReleaseEvidencePackStore();
+  const apiReleaseEvidencePackStore = createReleaseEvidencePackStoreForProfile(runtimeProfile);
   const apiReleaseEvidencePackIssuer = createReleaseEvidencePackIssuer({
     issuer: RELEASE_ISSUER,
     privateKeyPem: pki.signer.keyPair.privateKeyPem,

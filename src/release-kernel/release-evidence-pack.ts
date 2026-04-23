@@ -1,4 +1,7 @@
 import { createHash, createPrivateKey, createPublicKey, randomUUID, sign, verify } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { withFileLock, writeTextFileAtomic } from '../platform/file-store.js';
 import type {
   EvidenceArtifactReference,
   EvidencePack,
@@ -30,6 +33,11 @@ export const RELEASE_EVIDENCE_PACK_DSSE_PAYLOAD_TYPE = 'application/vnd.in-toto+
 export const RELEASE_EVIDENCE_PACK_STATEMENT_TYPE = 'https://in-toto.io/Statement/v1';
 export const RELEASE_EVIDENCE_PACK_PREDICATE_TYPE =
   'https://attestor.ai/attestation/release-evidence/v1';
+export const ATTESTOR_RELEASE_EVIDENCE_PACK_STORE_PATH_ENV =
+  'ATTESTOR_RELEASE_EVIDENCE_PACK_STORE_PATH';
+
+const DEFAULT_RELEASE_EVIDENCE_PACK_STORE_PATH =
+  '.attestor/release-evidence-pack-store.json';
 
 export type ReleaseEvidencePackSigningAlgorithm = 'Ed25519';
 
@@ -180,6 +188,18 @@ export interface ReleaseEvidencePackIssuer {
 export interface ReleaseEvidencePackStore {
   upsert(pack: IssuedReleaseEvidencePack): IssuedReleaseEvidencePack;
   get(id: string): IssuedReleaseEvidencePack | null;
+}
+
+interface ReleaseEvidencePackStoreFile {
+  readonly version: 1;
+  packs: IssuedReleaseEvidencePack[];
+}
+
+export class ReleaseEvidencePackStoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReleaseEvidencePackStoreError';
+  }
 }
 
 function sha256Hex(value: string | Buffer): string {
@@ -594,37 +614,250 @@ export function verifyIssuedReleaseEvidencePack(
   };
 }
 
-export function createInMemoryReleaseEvidencePackStore(): ReleaseEvidencePackStore {
-  const items = new Map<string, IssuedReleaseEvidencePack>();
+function freezeEvidencePack(pack: EvidencePack): EvidencePack {
+  return Object.freeze({
+    ...pack,
+    findings: Object.freeze(pack.findings.map((finding) => Object.freeze({ ...finding }))),
+    artifacts: Object.freeze(pack.artifacts.map((artifact) => Object.freeze({ ...artifact }))),
+  });
+}
 
+function freezeReleaseEvidenceDecisionSummary(
+  summary: ReleaseEvidenceDecisionSummary,
+): ReleaseEvidenceDecisionSummary {
+  return Object.freeze({
+    ...summary,
+    override: summary.override
+      ? Object.freeze({ ...summary.override })
+      : null,
+  });
+}
+
+function freezeReleaseEvidenceDecisionLogSummary(
+  summary: ReleaseEvidenceDecisionLogSummary,
+): ReleaseEvidenceDecisionLogSummary {
+  return Object.freeze({
+    ...summary,
+    phases: Object.freeze([...summary.phases]),
+  });
+}
+
+function freezeReleaseEvidenceReviewSummary(
+  summary: ReleaseEvidenceReviewSummary | null,
+): ReleaseEvidenceReviewSummary | null {
+  return summary ? Object.freeze({ ...summary }) : null;
+}
+
+function freezeReleaseEvidenceTokenSummary(
+  summary: ReleaseEvidenceTokenSummary | null,
+): ReleaseEvidenceTokenSummary | null {
+  return summary ? Object.freeze({ ...summary }) : null;
+}
+
+function freezeReleaseEvidenceStatement(
+  statement: ReleaseEvidenceStatement,
+): ReleaseEvidenceStatement {
+  return Object.freeze({
+    ...statement,
+    subject: Object.freeze(
+      statement.subject.map((subject) =>
+        Object.freeze({
+          ...subject,
+          digest: Object.freeze({ ...subject.digest }),
+        }),
+      ),
+    ),
+    predicate: Object.freeze({
+      ...statement.predicate,
+      evidencePack: freezeEvidencePack(statement.predicate.evidencePack),
+      decision: freezeReleaseEvidenceDecisionSummary(statement.predicate.decision),
+      decisionLog: freezeReleaseEvidenceDecisionLogSummary(statement.predicate.decisionLog),
+      review: freezeReleaseEvidenceReviewSummary(statement.predicate.review),
+      releaseToken: freezeReleaseEvidenceTokenSummary(statement.predicate.releaseToken),
+    }),
+  });
+}
+
+function freezeIssuedReleaseEvidencePack(
+  pack: IssuedReleaseEvidencePack,
+): IssuedReleaseEvidencePack {
+  return Object.freeze({
+    ...pack,
+    evidencePack: freezeEvidencePack(pack.evidencePack),
+    statement: freezeReleaseEvidenceStatement(pack.statement),
+    envelope: Object.freeze({
+      ...pack.envelope,
+      signatures: Object.freeze(pack.envelope.signatures.map((entry) => Object.freeze({ ...entry }))),
+    }),
+    verificationKey: Object.freeze({ ...pack.verificationKey }),
+  });
+}
+
+function defaultReleaseEvidencePackStoreFile(): ReleaseEvidencePackStoreFile {
+  return {
+    version: 1,
+    packs: [],
+  };
+}
+
+function defaultReleaseEvidencePackStorePath(): string {
+  return resolve(
+    process.env[ATTESTOR_RELEASE_EVIDENCE_PACK_STORE_PATH_ENV] ??
+      DEFAULT_RELEASE_EVIDENCE_PACK_STORE_PATH,
+  );
+}
+
+function ensureReleaseEvidencePackStoreDirectory(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+}
+
+function verifyReleaseEvidencePackStoreFileIntegrity(
+  file: ReleaseEvidencePackStoreFile,
+  path: string,
+): void {
+  for (const pack of file.packs) {
+    try {
+      verifyIssuedReleaseEvidencePack({ issuedEvidencePack: pack });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new ReleaseEvidencePackStoreError(
+        `Release evidence pack store '${path}' failed integrity verification for pack '${pack.evidencePack?.id ?? 'unknown'}': ${message}`,
+      );
+    }
+  }
+}
+
+function normalizeReleaseEvidencePackStoreFile(
+  value: unknown,
+  path: string,
+): ReleaseEvidencePackStoreFile {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    (value as { version?: unknown }).version !== 1 ||
+    !Array.isArray((value as { packs?: unknown }).packs)
+  ) {
+    throw new ReleaseEvidencePackStoreError(
+      `Release evidence pack store '${path}' has an invalid file shape.`,
+    );
+  }
+
+  const file: ReleaseEvidencePackStoreFile = {
+    version: 1,
+    packs: (value as { packs: IssuedReleaseEvidencePack[] }).packs.map((pack) =>
+      freezeIssuedReleaseEvidencePack(pack),
+    ),
+  };
+  verifyReleaseEvidencePackStoreFileIntegrity(file, path);
+  return file;
+}
+
+function loadReleaseEvidencePackStoreFile(path: string): ReleaseEvidencePackStoreFile {
+  ensureReleaseEvidencePackStoreDirectory(path);
+  if (!existsSync(path)) return defaultReleaseEvidencePackStoreFile();
+
+  try {
+    return normalizeReleaseEvidencePackStoreFile(
+      JSON.parse(readFileSync(path, 'utf8')) as unknown,
+      path,
+    );
+  } catch (error) {
+    if (error instanceof ReleaseEvidencePackStoreError) throw error;
+    throw new ReleaseEvidencePackStoreError(
+      `Release evidence pack store '${path}' could not be parsed.`,
+    );
+  }
+}
+
+function saveReleaseEvidencePackStoreFile(
+  path: string,
+  file: ReleaseEvidencePackStoreFile,
+): void {
+  writeTextFileAtomic(
+    path,
+    `${JSON.stringify(
+      {
+        version: 1,
+        packs: file.packs,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
+function upsertIssuedReleaseEvidencePack(
+  file: ReleaseEvidencePackStoreFile,
+  pack: IssuedReleaseEvidencePack,
+): IssuedReleaseEvidencePack {
+  verifyIssuedReleaseEvidencePack({ issuedEvidencePack: pack });
+  const stored = freezeIssuedReleaseEvidencePack(pack);
+  const existingIndex = file.packs.findIndex(
+    (entry) => entry.evidencePack.id === stored.evidencePack.id,
+  );
+  if (existingIndex >= 0) {
+    file.packs[existingIndex] = stored;
+  } else {
+    file.packs.push(stored);
+  }
+  return stored;
+}
+
+function createReleaseEvidencePackStoreFromAccessors(accessors: {
+  readonly read: () => ReleaseEvidencePackStoreFile;
+  readonly mutate: <T>(action: (file: ReleaseEvidencePackStoreFile) => T) => T;
+}): ReleaseEvidencePackStore {
   return {
     upsert(pack: IssuedReleaseEvidencePack): IssuedReleaseEvidencePack {
-      const stored = Object.freeze({
-        ...pack,
-        evidencePack: Object.freeze({
-          ...pack.evidencePack,
-          findings: Object.freeze(pack.evidencePack.findings.map((finding) => Object.freeze({ ...finding }))),
-          artifacts: Object.freeze(pack.evidencePack.artifacts.map((artifact) => Object.freeze({ ...artifact }))),
-        }),
-        statement: Object.freeze({
-          ...pack.statement,
-          subject: Object.freeze(pack.statement.subject.map((subject) => Object.freeze({
-            ...subject,
-            digest: Object.freeze({ ...subject.digest }),
-          }))),
-          predicate: Object.freeze(pack.statement.predicate),
-        }),
-        envelope: Object.freeze({
-          ...pack.envelope,
-          signatures: Object.freeze(pack.envelope.signatures.map((entry) => Object.freeze({ ...entry }))),
-        }),
-        verificationKey: Object.freeze({ ...pack.verificationKey }),
-      });
-      items.set(stored.evidencePack.id, stored);
-      return stored;
+      return accessors.mutate((file) => upsertIssuedReleaseEvidencePack(file, pack));
     },
     get(id: string): IssuedReleaseEvidencePack | null {
-      return items.get(id) ?? null;
+      return accessors.read().packs.find((pack) => pack.evidencePack.id === id) ?? null;
     },
   };
+}
+
+export function createInMemoryReleaseEvidencePackStore(): ReleaseEvidencePackStore {
+  let file = defaultReleaseEvidencePackStoreFile();
+
+  return createReleaseEvidencePackStoreFromAccessors({
+    read: () => file,
+    mutate: (action) => {
+      const workingCopy: ReleaseEvidencePackStoreFile = {
+        version: 1,
+        packs: [...file.packs],
+      };
+      const result = action(workingCopy);
+      file = workingCopy;
+      return result;
+    },
+  });
+}
+
+export function createFileBackedReleaseEvidencePackStore(
+  path = defaultReleaseEvidencePackStorePath(),
+): ReleaseEvidencePackStore {
+  loadReleaseEvidencePackStoreFile(path);
+
+  return createReleaseEvidencePackStoreFromAccessors({
+    read: () => withFileLock(path, () => loadReleaseEvidencePackStoreFile(path)),
+    mutate: (action) =>
+      withFileLock(path, () => {
+        const file = loadReleaseEvidencePackStoreFile(path);
+        const result = action(file);
+        saveReleaseEvidencePackStoreFile(path, file);
+        return result;
+      }),
+  });
+}
+
+export function resetFileBackedReleaseEvidencePackStoreForTests(path?: string): void {
+  const resolvedPath = path ?? defaultReleaseEvidencePackStorePath();
+  if (existsSync(resolvedPath)) {
+    rmSync(resolvedPath, { force: true });
+  }
+  if (existsSync(`${resolvedPath}.lock`)) {
+    rmSync(`${resolvedPath}.lock`, { recursive: true, force: true });
+  }
 }

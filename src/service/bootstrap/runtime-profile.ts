@@ -112,7 +112,7 @@ export const CURRENT_RELEASE_RUNTIME_STORE_MODES: ReleaseRuntimeStoreModes = Obj
   'release-decision-log': 'file',
   'release-reviewer-queue': 'file',
   'release-token-introspection': 'file',
-  'release-evidence-pack-store': 'memory',
+  'release-evidence-pack-store': 'file',
   'release-degraded-mode-grants': 'file',
   'policy-control-plane-store': 'file',
   'policy-activation-approval-store': 'file',

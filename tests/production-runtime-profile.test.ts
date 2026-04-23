@@ -124,8 +124,8 @@ function testCurrentStoreInventoryIsExplicit(): void {
   );
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-evidence-pack-store'],
-    'memory',
-    'Runtime profile: current evidence pack mode is explicit',
+    'file',
+    'Runtime profile: durable evidence pack store mode is explicit',
   );
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-degraded-mode-grants'],
@@ -158,12 +158,12 @@ function testDurabilityEvaluation(): void {
   );
 
   const singleNodeEvaluation = evaluateReleaseRuntimeDurability(singleNode);
-  equal(singleNodeEvaluation.ready, false, 'Runtime profile: current stores do not satisfy durable profile');
-  equal(singleNodeEvaluation.violations.length, 1, 'Runtime profile: durable profile identifies one remaining in-memory release store');
+  equal(singleNodeEvaluation.ready, true, 'Runtime profile: current stores satisfy durable profile');
+  equal(singleNodeEvaluation.violations.length, 0, 'Runtime profile: durable profile has no in-memory release authority stores');
   includes(
     releaseRuntimeDurabilitySummary(singleNodeEvaluation),
-    '1 release runtime durability violation(s)',
-    'Runtime profile: summary names durable violations',
+    'requirements satisfied',
+    'Runtime profile: summary names satisfied durable profile',
   );
 
   const productionEvaluation = evaluateReleaseRuntimeDurability(production);
