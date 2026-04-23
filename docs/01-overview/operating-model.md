@@ -48,6 +48,8 @@ This vocabulary is the customer-facing language. Some shipped surfaces still exp
 
 The typed contract lives in `src/consequence-admission/index.ts`. It defines the canonical request, response, check, proof, native-decision mapping, and fail-closed problem shapes without claiming a universal hosted admission route yet.
 
+The first customer-facing facade is exported through `attestor/consequence-admission`. Callers must choose `finance-pipeline-run` or `crypto-execution-plan` explicitly. The facade does not auto-detect packs, does not claim a universal hosted admission route, and does not claim a hosted crypto route.
+
 The finance projection lives in `src/consequence-admission/finance.ts`. It wraps the existing finance hosted route response into the canonical admission response shape without changing `POST /api/v1/pipeline/run` behavior.
 
 The crypto projection lives in `src/consequence-admission/crypto.ts`. It wraps `CryptoExecutionAdmissionPlan` into the same canonical admission response shape through the package boundary, without claiming a public hosted crypto route.

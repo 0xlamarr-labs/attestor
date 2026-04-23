@@ -25,6 +25,8 @@ Attestor does not auto-detect finance or crypto from magic input. The customer c
 
 Canonical admission vocabulary is shared across packs: `admit`, `narrow`, `review`, or `block`. Current shipped surfaces may expose domain-native values; this guide names the mapping when that happens.
 
+The shared package facade is `attestor/consequence-admission`. It can project the current finance route result or a crypto execution plan into the canonical admission shape, but the caller must choose `finance-pipeline-run` or `crypto-execution-plan` explicitly. This keeps one product shape without pretending that crypto already has a hosted public route.
+
 ## Finance First Integration
 
 Finance is the deepest proven path today.

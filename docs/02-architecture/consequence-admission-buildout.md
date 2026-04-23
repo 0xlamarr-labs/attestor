@@ -50,6 +50,10 @@ Reviewed on 2026-04-23 before opening this track:
 - Step 04 research refreshed on 2026-04-23: EIP-7702 delegated EOAs make account authority and delegate-code approval explicit, so denied or missing delegation evidence should project to fail-closed admission: [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
 - Step 04 research refreshed on 2026-04-23: ERC-6900 modular accounts standardize plugin/module execution surfaces, supporting a package-boundary adapter model instead of a single magic crypto route: [ERC-6900](https://eips.ethereum.org/EIPS/eip-6900)
 - Step 04 research refreshed on 2026-04-23: x402 keeps payment evidence in the HTTP request/response path before a resource is served, matching Attestor's before-consequence admission posture: [x402 docs](https://docs.x402.org/)
+- Step 05 research refreshed on 2026-04-23: RFC 9457 keeps machine-readable HTTP problem details distinct from successful response contracts, so the facade should fail fast on unsupported surfaces rather than silently guessing: [RFC 9457](https://datatracker.ietf.org/doc/html/rfc9457)
+- Step 05 research refreshed on 2026-04-23: OpenAPI 3.1.1 keeps public API contracts explicit and versioned, so Attestor should publish a bounded package facade before claiming a universal hosted route: [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html)
+- Step 05 research refreshed on 2026-04-23: OPA decision logs keep policy decisions, inputs, results, IDs, and masking concerns explicit; Attestor's facade should preserve entry-point and proof references without merging pack-specific evidence into a vague blob: [OPA decision logs](https://www.openpolicyagent.org/docs/management-decision-logs)
+- Step 05 research refreshed on 2026-04-23: MCP authorization keeps authorization endpoints as explicit protocol surfaces; Attestor should require callers to choose `finance-pipeline-run` or `crypto-execution-plan` instead of auto-routing from ambiguous payloads: [MCP authorization](https://modelcontextprotocol.io/specification/2025-03-26/basic/authorization)
 
 ## Canonical Vocabulary
 
@@ -67,10 +71,10 @@ Reviewed on 2026-04-23 before opening this track:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 6 |
-| Completed | 4 |
+| Completed | 5 |
 | In progress | 0 |
-| Not started | 2 |
-| Current posture | Step 04 is complete: crypto execution-admission package outcomes can now be projected into the canonical admission response shape through `src/consequence-admission/crypto.ts` without claiming a public hosted crypto route. Next work should add the first customer-facing admission facade. |
+| Not started | 1 |
+| Current posture | Step 05 is complete: `attestor/consequence-admission` now exposes the first customer-facing admission facade with explicit `finance-pipeline-run` and `crypto-execution-plan` surfaces, while preserving finance as the hosted route and crypto as a package boundary with no public hosted crypto route claim. Next work should add admission readiness and quickstart gates. |
 
 ## Frozen Step List
 
@@ -80,9 +84,9 @@ Reviewed on 2026-04-23 before opening this track:
 | 02 | complete | Add the typed canonical admission contract | `src/consequence-admission/index.ts`, `tests/consequence-admission-contract.test.ts`, `package.json`, `docs/02-architecture/consequence-admission-buildout.md` | The canonical contract now defines versioned request/response types, pack families, explicit entry points, proposed consequence shape, policy/authority/evidence inputs, policy/authority/evidence/freshness/enforcement/adapter-readiness checks, `admit` / `narrow` / `review` / `block` decisions, proof refs, fail-closed problem details, canonical digests, and native mapping helpers for finance pipeline decisions and crypto execution-admission outcomes. Unknown native values fail closed, `narrow` requires explicit constraints, and `review` / `block` default to fail-closed posture. |
 | 03 | complete | Add finance decision mapping into the admission contract | `src/consequence-admission/finance.ts`, `src/consequence-admission/index.ts`, `tests/consequence-admission-finance.test.ts`, `docs/01-overview/operating-model.md`, `docs/01-overview/hosted-first-api-call.md`, `docs/01-overview/finance-and-crypto-first-integrations.md`, `package.json` | The finance adapter wraps the current hosted finance pipeline response into a canonical admission request/response without changing route behavior. It maps native pipeline `pass` to `admit`, accepted filing release status to `admit`, held/review-required status to fail-closed `review`, denied/expired/revoked/unknown paths to fail-closed `block`, and emits policy/authority/evidence/freshness/enforcement/adapter-readiness checks plus certificate, verification-kit, release-token, release-evidence-pack, and review-queue proof references when present. |
 | 04 | complete | Add crypto package outcome mapping into the admission contract | `src/consequence-admission/crypto.ts`, `src/consequence-admission/index.ts`, `tests/consequence-admission-crypto.test.ts`, `docs/01-overview/operating-model.md`, `docs/01-overview/finance-and-crypto-first-integrations.md`, `package.json` | The crypto adapter wraps `CryptoExecutionAdmissionPlan` into canonical admission request/response objects through a package-boundary entry point. Package-native `admit` maps to canonical `admit`, `needs-evidence` maps to fail-closed `review`, and `deny` maps to fail-closed `block`. The adapter emits policy/authority/evidence/freshness/enforcement/adapter-readiness checks plus admission-plan, simulation, and source-module proof references while explicitly keeping `route: null` for crypto. |
-| 05 | not started | Add the first customer-facing admission facade |  | Add a small integration helper or hosted route only after the typed contract and mappings are tested. Do not claim a public hosted crypto HTTP route unless it is actually implemented and covered. |
+| 05 | complete | Add the first customer-facing admission facade | `src/consequence-admission/facade.ts`, `src/consequence-admission/index.ts`, `tests/consequence-admission-facade.test.ts`, `scripts/probe-consequence-admission-package-surface.mjs`, `package.json`, `docs/01-overview/operating-model.md`, `docs/01-overview/finance-and-crypto-first-integrations.md`, `tests/consequence-admission-operating-model.test.ts` | The first public facade is exported through `attestor/consequence-admission`. It requires an explicit `finance-pipeline-run` or `crypto-execution-plan` surface, delegates to the tested finance and crypto projections, preserves `/api/v1/pipeline/run` as the finance hosted route, preserves `attestor/crypto-execution-admission` as the crypto package boundary, rejects automatic pack detection, and keeps `publicHostedCryptoRouteClaimed: false`. |
 | 06 | not started | Add admission readiness and quickstart gates |  | Add docs/tests that prove README, operating model, first-call docs, first-integration docs, package surfaces, and route/helper behavior stay aligned. |
 
 ## Immediate Next Step
 
-Implement Step 05 before widening any public API story.
+Implement Step 06 before widening the public admission quickstart or route story.
