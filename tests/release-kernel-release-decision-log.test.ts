@@ -1,9 +1,17 @@
 import { strict as assert } from 'node:assert';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createReleaseDecisionSkeleton } from '../src/release-kernel/object-model.js';
 import {
+  createFileBackedReleaseDecisionLogWriter,
   createInMemoryReleaseDecisionLogWriter,
   createReleaseDecisionLogEntry,
+  resetFileBackedReleaseDecisionLogForTests,
   RELEASE_DECISION_LOG_SPEC_VERSION,
+  ReleaseDecisionLogStoreError,
+  type ReleaseDecisionLogMetadata,
+  type ReleaseDecisionLogPhase,
   verifyReleaseDecisionLogChain,
 } from '../src/release-kernel/release-decision-log.js';
 import { createReleaseDecisionEngine } from '../src/release-kernel/release-decision-engine.js';
@@ -51,6 +59,38 @@ function makeDecision(status: 'hold' | 'review-required' | 'denied') {
   });
 }
 
+function makeMetadata(input: Partial<ReleaseDecisionLogMetadata> = {}): ReleaseDecisionLogMetadata {
+  return {
+    policyMatched: true,
+    pendingChecks: ['contract-shape'],
+    pendingEvidenceKinds: ['trace'],
+    requiresReview: true,
+    deterministicChecksCompleted: false,
+    effectivePolicyId: 'finance.structured-record-release.v1',
+    rolloutMode: 'enforce',
+    rolloutEvaluationMode: 'enforce',
+    rolloutReason: 'enforce',
+    rolloutCanaryBucket: null,
+    rolloutFallbackPolicyId: null,
+    ...input,
+  };
+}
+
+function appendDecisionLogEntry(
+  writer: ReturnType<typeof createInMemoryReleaseDecisionLogWriter>,
+  phase: ReleaseDecisionLogPhase,
+  status: 'hold' | 'review-required' | 'denied',
+): void {
+  writer.append({
+    occurredAt: '2026-04-17T17:00:00.000Z',
+    requestId: 'req_1',
+    phase,
+    matchedPolicyId: 'finance.structured-record-release.v1',
+    decision: makeDecision(status),
+    metadata: makeMetadata(),
+  });
+}
+
 async function main(): Promise<void> {
   const firstEntry = createReleaseDecisionLogEntry(
     {
@@ -59,19 +99,7 @@ async function main(): Promise<void> {
       phase: 'policy-resolution',
       matchedPolicyId: 'finance.structured-record-release.v1',
       decision: makeDecision('hold'),
-      metadata: {
-        policyMatched: true,
-        pendingChecks: ['contract-shape'],
-        pendingEvidenceKinds: ['trace'],
-        requiresReview: true,
-        deterministicChecksCompleted: false,
-        effectivePolicyId: 'finance.structured-record-release.v1',
-        rolloutMode: 'enforce',
-        rolloutEvaluationMode: 'enforce',
-        rolloutReason: 'enforce',
-        rolloutCanaryBucket: null,
-        rolloutFallbackPolicyId: null,
-      },
+      metadata: makeMetadata(),
     },
     1,
     null,
@@ -89,45 +117,18 @@ async function main(): Promise<void> {
   );
 
   const writer = createInMemoryReleaseDecisionLogWriter();
-  writer.append({
-    occurredAt: '2026-04-17T17:00:00.000Z',
-    requestId: 'req_1',
-    phase: 'policy-resolution',
-    matchedPolicyId: 'finance.structured-record-release.v1',
-    decision: makeDecision('hold'),
-    metadata: {
-      policyMatched: true,
-      pendingChecks: ['contract-shape'],
-      pendingEvidenceKinds: ['trace'],
-      requiresReview: true,
-      deterministicChecksCompleted: false,
-      effectivePolicyId: 'finance.structured-record-release.v1',
-      rolloutMode: 'enforce',
-      rolloutEvaluationMode: 'enforce',
-      rolloutReason: 'enforce',
-      rolloutCanaryBucket: null,
-      rolloutFallbackPolicyId: null,
-    },
-  });
+  appendDecisionLogEntry(writer, 'policy-resolution', 'hold');
   writer.append({
     occurredAt: '2026-04-17T17:00:01.000Z',
     requestId: 'req_1',
     phase: 'deterministic-checks',
     matchedPolicyId: 'finance.structured-record-release.v1',
     decision: makeDecision('review-required'),
-    metadata: {
-      policyMatched: true,
+    metadata: makeMetadata({
       pendingChecks: [],
       pendingEvidenceKinds: [],
-      requiresReview: true,
       deterministicChecksCompleted: true,
-      effectivePolicyId: 'finance.structured-record-release.v1',
-      rolloutMode: 'enforce',
-      rolloutEvaluationMode: 'enforce',
-      rolloutReason: 'enforce',
-      rolloutCanaryBucket: null,
-      rolloutFallbackPolicyId: null,
-    },
+    }),
   });
 
   const verification = writer.verify();
@@ -161,6 +162,64 @@ async function main(): Promise<void> {
     !verifyReleaseDecisionLogChain(tampered).valid,
     'Release decision log: changing a historical entry breaks chain verification',
   );
+
+  const tempDir = mkdtempSync(join(tmpdir(), 'attestor-release-decision-log-'));
+  const filePath = join(tempDir, 'release-decision-log.jsonl');
+  try {
+    const fileWriter = createFileBackedReleaseDecisionLogWriter({ path: filePath });
+    appendDecisionLogEntry(fileWriter, 'policy-resolution', 'hold');
+    appendDecisionLogEntry(fileWriter, 'deterministic-checks', 'review-required');
+    ok(fileWriter.verify().valid, 'Release decision log: file-backed log verifies after append');
+    equal(
+      fileWriter.entries().length,
+      2,
+      'Release decision log: file-backed writer returns appended entries',
+    );
+
+    const reloadedWriter = createFileBackedReleaseDecisionLogWriter({ path: filePath });
+    equal(
+      reloadedWriter.entries().length,
+      2,
+      'Release decision log: file-backed writer reloads entries after restart',
+    );
+    equal(
+      reloadedWriter.latestEntryDigest(),
+      fileWriter.latestEntryDigest(),
+      'Release decision log: reload preserves latest entry digest',
+    );
+    appendDecisionLogEntry(reloadedWriter, 'review', 'review-required');
+    equal(
+      createFileBackedReleaseDecisionLogWriter({ path: filePath }).entries().length,
+      3,
+      'Release decision log: file-backed writer continues the hash chain after reload',
+    );
+
+    const fileBackedSnapshot = reloadedWriter.entries() as unknown as Array<{
+      readonly entryId: string;
+    }>;
+    fileBackedSnapshot.pop();
+    equal(
+      reloadedWriter.entries().length,
+      3,
+      'Release decision log: mutating a file-backed snapshot cannot truncate the durable log',
+    );
+
+    const lines = readFileSync(filePath, 'utf8').trim().split(/\r?\n/u);
+    const tamperedEntry = JSON.parse(lines[1] ?? '{}') as { decisionStatus?: string };
+    tamperedEntry.decisionStatus = 'denied';
+    lines[1] = JSON.stringify(tamperedEntry);
+    writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8');
+
+    assert.throws(
+      () => createFileBackedReleaseDecisionLogWriter({ path: filePath }),
+      ReleaseDecisionLogStoreError,
+      'Release decision log: tampered file-backed log fails closed on reload',
+    );
+    passed += 1;
+  } finally {
+    resetFileBackedReleaseDecisionLogForTests(filePath);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 
   const engineLog = createInMemoryReleaseDecisionLogWriter();
   const engine = createReleaseDecisionEngine({ decisionLog: engineLog });

@@ -210,6 +210,7 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
 
   for (const releaseFactory of [
     'generatePkiHierarchy(',
+    'createFileBackedReleaseDecisionLogWriter(',
     'createInMemoryReleaseDecisionLogWriter(',
     'createInMemoryReleaseReviewerQueueStore(',
     'createInMemoryReleaseTokenIntrospectionStore(',

@@ -109,7 +109,7 @@ export const ATTESTOR_RUNTIME_PROFILES: readonly AttestorRuntimeProfile[] = Obje
 ]);
 
 export const CURRENT_RELEASE_RUNTIME_STORE_MODES: ReleaseRuntimeStoreModes = Object.freeze({
-  'release-decision-log': 'memory',
+  'release-decision-log': 'file',
   'release-reviewer-queue': 'memory',
   'release-token-introspection': 'memory',
   'release-evidence-pack-store': 'memory',

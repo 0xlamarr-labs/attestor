@@ -39,6 +39,7 @@ Reviewed on 2026-04-23 before opening this track:
 - PostgreSQL's reliability model centers on write-ahead logging for crash recovery and durable transaction history, which supports treating release authority state as a durable record in production: [PostgreSQL WAL reliability](https://www.postgresql.org/docs/current/wal.html)
 - BullMQ is a Redis-backed queue system, so production async/review posture depends on Redis connection and persistence choices rather than queue code alone: [BullMQ queues](https://docs.bullmq.io/guide/queues)
 - Node.js exposes environment variables through `process.env`, which is the right minimal mechanism for selecting an Attestor runtime profile without inventing a separate config service in Step 01: [Node.js environment variables](https://nodejs.org/api/environment_variables.html)
+- Node.js exposes synchronous file open/write/fsync/close primitives, which supports a small append-only restart-surviving decision log before a shared database backend is introduced: [Node.js file system API](https://nodejs.org/api/fs.html)
 
 ## Runtime Profile Vocabulary
 
@@ -53,17 +54,17 @@ Reviewed on 2026-04-23 before opening this track:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 1 |
+| Completed | 2 |
 | In progress | 0 |
-| Not started | 7 |
-| Current posture | Step 01 is complete: Attestor now has a typed runtime profile contract, environment-based profile resolution, current release store mode inventory, durability evaluation, fail-closed production/shared profile checks, API runtime wiring, and automated tests. The current default remains `local-dev`; `single-node-durable` and `production-shared` intentionally fail until later steps replace in-memory release stores. |
+| Not started | 6 |
+| Current posture | Step 02 is complete: Attestor now has a file-backed append-only release decision log writer with reload verification, durable append/fsync, tamper-detecting hash-chain validation, runtime bootstrap wiring, and restart tests. The default `local-dev` profile still keeps fast in-memory release logging; durable profile evaluation now has three remaining in-memory release authority stores to harden. |
 
 ## Frozen Step List
 
 | Step | Status | Deliverable | Evidence | Notes |
 |---|---|---|---|---|
 | 01 | complete | Add the runtime profile contract | `src/service/bootstrap/runtime-profile.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/api-route-runtime.ts`, `tests/production-runtime-profile.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md`, `README.md`, `package.json` | Runtime profiles are now explicit: `local-dev`, `single-node-durable`, and `production-shared`. The current store inventory names memory/file/shared posture for each release authority component. Unsupported profiles fail configuration. Profiles whose durability requirements are not met fail closed before the API runtime starts. |
-| 02 | not_started | Add a durable release decision log store |  | Replace the API release decision log's in-memory-only posture for durable profiles and prove restart survival. |
+| 02 | complete | Add a durable release decision log store | `src/release-kernel/release-decision-log.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/runtime-profile.ts`, `tests/release-kernel-release-decision-log.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | The release decision log now has a file-backed JSONL writer that appends under a file lock, fsyncs each append, reloads entries after restart, verifies the hash chain on load, fails closed on tampering, and is available to durable runtime profiles. `local-dev` intentionally keeps the in-memory writer for fast test/dev loops. |
 | 03 | not_started | Add a durable release reviewer queue store |  | Preserve reviewer queue items across restart and prepare the queue for shared production backends. |
 | 04 | not_started | Add durable release token introspection state |  | Preserve token status, revocation, freshness, replay, and use-count posture across runtime restart. |
 | 05 | not_started | Add a durable release evidence pack store |  | Preserve release evidence packs and proof references beyond process lifetime. |
@@ -73,4 +74,4 @@ Reviewed on 2026-04-23 before opening this track:
 
 ## Immediate Next Step
 
-Step 02 should add the first durable release decision log store and prove it survives restart under the `single-node-durable` profile.
+Step 03 should add a durable release reviewer queue store and prove reviewer queue items survive restart under the `single-node-durable` profile.

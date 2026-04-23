@@ -109,8 +109,8 @@ function testProfileResolution(): void {
 function testCurrentStoreInventoryIsExplicit(): void {
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-decision-log'],
-    'memory',
-    'Runtime profile: current decision log mode is explicit',
+    'file',
+    'Runtime profile: durable decision log mode is explicit',
   );
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-reviewer-queue'],
@@ -159,10 +159,10 @@ function testDurabilityEvaluation(): void {
 
   const singleNodeEvaluation = evaluateReleaseRuntimeDurability(singleNode);
   equal(singleNodeEvaluation.ready, false, 'Runtime profile: current stores do not satisfy durable profile');
-  equal(singleNodeEvaluation.violations.length, 4, 'Runtime profile: durable profile identifies four in-memory release stores');
+  equal(singleNodeEvaluation.violations.length, 3, 'Runtime profile: durable profile identifies three remaining in-memory release stores');
   includes(
     releaseRuntimeDurabilitySummary(singleNodeEvaluation),
-    '4 release runtime durability violation(s)',
+    '3 release runtime durability violation(s)',
     'Runtime profile: summary names durable violations',
   );
 
@@ -183,6 +183,11 @@ function testDurabilityAssertionAndBootstrap(): void {
   const localBootstrap = createReleaseRuntimeBootstrap({ runtimeProfile: localDev });
   equal(localBootstrap.runtimeProfile.id, 'local-dev', 'Runtime bootstrap: carries runtime profile');
   equal(localBootstrap.releaseRuntimeDurability.ready, true, 'Runtime bootstrap: local-dev starts');
+  equal(
+    localBootstrap.releaseRuntimeStoreModes['release-decision-log'],
+    'memory',
+    'Runtime bootstrap: local-dev keeps the decision log in memory for fast tests',
+  );
   equal(
     localBootstrap.releaseRuntimeStoreModes['release-token-introspection'],
     'memory',
@@ -226,6 +231,7 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(apiRouteRuntime, 'resolveRuntimeProfile()', 'Runtime docs: API route runtime resolves profile');
   includes(apiRouteRuntime, 'releaseRuntimeDurabilitySummary', 'Runtime docs: API route runtime exposes summary');
   includes(releaseRuntime, 'assertReleaseRuntimeDurability', 'Runtime docs: release runtime asserts profile');
+  includes(releaseRuntime, 'createFileBackedReleaseDecisionLogWriter', 'Runtime docs: release runtime can construct the durable decision log');
   includes(packageJson.scripts.test, 'tsx tests/production-runtime-profile.test.ts', 'Runtime docs: npm test runs profile guard');
   includes(packageJson.scripts.verify, 'npm run test:production-runtime-profile', 'Runtime docs: verify runs profile guard');
 }

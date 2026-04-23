@@ -39,7 +39,10 @@ import {
   type RuntimeProfileDurabilityEvaluation,
 } from './runtime-profile.js';
 
-const { createInMemoryReleaseDecisionLogWriter } = decisionLog;
+const {
+  createFileBackedReleaseDecisionLogWriter,
+  createInMemoryReleaseDecisionLogWriter,
+} = decisionLog;
 const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
 const { createInMemoryReleaseTokenIntrospectionStore, createReleaseTokenIntrospector } =
   introspection;
@@ -59,6 +62,27 @@ const RELEASE_ISSUER = 'attestor.api.release.local';
 const API_CA_SUBJECT = 'Attestor Keyless CA';
 const API_SIGNER_SUBJECT = 'API Runtime Signer';
 const API_REVIEWER_SUBJECT = 'API Reviewer';
+
+function releaseRuntimeStoreModesForProfile(
+  runtimeProfile: AttestorRuntimeProfile,
+): ReleaseRuntimeStoreModes {
+  return Object.freeze({
+    ...CURRENT_RELEASE_RUNTIME_STORE_MODES,
+    'release-decision-log':
+      runtimeProfile.id === 'local-dev'
+        ? 'memory'
+        : CURRENT_RELEASE_RUNTIME_STORE_MODES['release-decision-log'],
+  });
+}
+
+function createReleaseDecisionLogWriterForProfile(
+  runtimeProfile: AttestorRuntimeProfile,
+): ReleaseDecisionLogWriter {
+  if (runtimeProfile.id === 'local-dev') {
+    return createInMemoryReleaseDecisionLogWriter();
+  }
+  return createFileBackedReleaseDecisionLogWriter();
+}
 
 export interface ReleaseRuntimeBootstrap {
   runtimeProfile: AttestorRuntimeProfile;
@@ -92,14 +116,14 @@ export function createReleaseRuntimeBootstrap(
   input: CreateReleaseRuntimeBootstrapInput = {},
 ): ReleaseRuntimeBootstrap {
   const runtimeProfile = input.runtimeProfile ?? resolveRuntimeProfile();
-  const releaseRuntimeStoreModes = CURRENT_RELEASE_RUNTIME_STORE_MODES;
+  const releaseRuntimeStoreModes = releaseRuntimeStoreModesForProfile(runtimeProfile);
   const releaseRuntimeDurability = assertReleaseRuntimeDurability(
     runtimeProfile,
     releaseRuntimeStoreModes,
   );
   const pki = generatePkiHierarchy(API_CA_SUBJECT, API_SIGNER_SUBJECT, API_REVIEWER_SUBJECT);
   const pkiReady = true;
-  const financeReleaseDecisionLog = createInMemoryReleaseDecisionLogWriter();
+  const financeReleaseDecisionLog = createReleaseDecisionLogWriterForProfile(runtimeProfile);
   const apiReleaseReviewerQueueStore = createInMemoryReleaseReviewerQueueStore();
   const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
   const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
