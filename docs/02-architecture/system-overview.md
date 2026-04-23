@@ -1,6 +1,6 @@
 # System Overview
 
-Architecture of Attestor as of April 22, 2026.
+Architecture of Attestor as of April 23, 2026.
 
 This document is the short architectural truth source. The README gives the product view; the trackers and platform-surface docs give the detailed implementation view.
 
@@ -133,6 +133,6 @@ Active priority:
 Hosted product flow status:
 
 - [Hosted product flow and adoption hardening](hosted-product-flow-buildout.md) is complete
-- [Consequence admission contract](consequence-admission-buildout.md) is active at Step 02 complete
+- [Consequence admission contract](consequence-admission-buildout.md) is active at Step 03 complete
 
 Future hosted product-flow changes should preserve the docs, contract, readiness, and probe gates before the public story expands again.

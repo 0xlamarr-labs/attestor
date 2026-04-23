@@ -54,7 +54,7 @@ hosted signup
 
 Use [First hosted API call](hosted-first-api-call.md) for the concrete request shape.
 
-For the finance hosted route, `pass` maps to canonical `admit`. Non-allowed or held finance decisions must fail closed or route to canonical `review` / `block` according to the returned reason.
+For the finance hosted route, `pass` maps to canonical `admit`. Signed filing releases can also project accepted, held/review-required, denied, expired, revoked, and unknown statuses into `admit`, `review`, or fail-closed `block`. That typed projection lives in `src/consequence-admission/finance.ts` and does not change the hosted route contract.
 
 What Attestor is doing in this path:
 

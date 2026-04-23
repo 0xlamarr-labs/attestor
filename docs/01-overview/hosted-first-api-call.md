@@ -136,7 +136,7 @@ Expected shape:
 }
 ```
 
-This is the shipped finance route's domain-native finance decision. In the canonical admission vocabulary, `pass` is the finance allow branch and maps to canonical `admit`. Future canonical admission surfaces should expose `admit`, `narrow`, `review`, or `block` directly instead of asking callers to infer that mapping.
+This is the shipped finance route's domain-native finance decision. In the canonical admission vocabulary, `pass` is the finance allow branch and maps to canonical `admit`. The typed finance projection in `src/consequence-admission/finance.ts` now performs that mapping for the current hosted finance response without changing this route shape.
 
 The downstream system should gate on the returned decision. If the decision is not allowed for the consequence, do not write, send, file, execute, or settle.
 

@@ -34,6 +34,7 @@ function testOperatingModelDefinesCanonicalDecisionVocabulary(): void {
   }
 
   includes(operatingModel, '`pass` is the finance allow branch and maps to `admit`', 'Admission operating model: finance pass maps to admit');
+  includes(operatingModel, 'The finance projection lives in `src/consequence-admission/finance.ts`.', 'Admission operating model: finance projection is documented');
   includes(operatingModel, '`needs-evidence` maps to `review`', 'Admission operating model: crypto needs-evidence maps to review');
   includes(operatingModel, '`deny` maps to `block`', 'Admission operating model: crypto deny maps to block');
   includes(operatingModel, 'No public hosted crypto HTTP route is claimed', 'Admission operating model: hosted crypto route overclaim is blocked');
@@ -77,11 +78,12 @@ function testTrackerDefinesTheStepwisePathWithoutSplittingTheProduct(): void {
   includes(tracker, 'Do not claim a public hosted crypto HTTP route', 'Admission tracker: public crypto route overclaim blocked');
   includes(tracker, 'Do not claim a universal hosted admission route', 'Admission tracker: universal route overclaim blocked');
   includes(tracker, '| Total frozen steps | 6 |', 'Admission tracker: frozen step count is explicit');
-  includes(tracker, '| Completed | 2 |', 'Admission tracker: Step 02 is complete');
+  includes(tracker, '| Completed | 3 |', 'Admission tracker: Step 03 is complete');
   includes(tracker, '| 01 | complete | Codify the operating model and canonical admission vocabulary |', 'Admission tracker: Step 01 row is complete');
   includes(tracker, '| 02 | complete | Add the typed canonical admission contract |', 'Admission tracker: Step 02 row is complete');
-  includes(tracker, '| 03 | not started | Add finance decision mapping into the admission contract |', 'Admission tracker: Step 03 is next');
-  includes(tracker, 'Implement Step 03 before widening any public API story.', 'Admission tracker: next step blocks premature API widening');
+  includes(tracker, '| 03 | complete | Add finance decision mapping into the admission contract |', 'Admission tracker: Step 03 row is complete');
+  includes(tracker, '| 04 | not started | Add crypto package outcome mapping into the admission contract |', 'Admission tracker: Step 04 is next');
+  includes(tracker, 'Implement Step 04 before widening any public API story.', 'Admission tracker: next step blocks premature API widening');
   excludes(tracker, /\bfirst[- ]slice\b/iu, 'Admission tracker: no stale first-slice language');
 }
 
@@ -91,8 +93,11 @@ function testPackageScriptsExposeTheGuard(): void {
   };
 
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-operating-model', 'Admission operating model: script is exported');
+  includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-finance', 'Admission operating model: finance script is exported');
   includes(packageJson.scripts.test, 'tsx tests/consequence-admission-operating-model.test.ts', 'Admission operating model: npm test runs the guard');
+  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-finance.test.ts', 'Admission operating model: npm test runs finance projection');
   includes(packageJson.scripts.verify, 'npm run test:consequence-admission-operating-model', 'Admission operating model: npm run verify runs the guard');
+  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-finance', 'Admission operating model: npm run verify runs finance projection');
 }
 
 testOperatingModelDefinesCanonicalDecisionVocabulary();

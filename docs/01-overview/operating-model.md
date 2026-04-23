@@ -41,14 +41,14 @@ This vocabulary is the customer-facing language. Some shipped surfaces still exp
 
 | Surface | Current shipped entry point | Current native decision | Canonical reading |
 |---|---|---|---|
-| Finance hosted proof wedge | `POST /api/v1/pipeline/run` | `decision`, including the finance allow value `pass` | `pass` is the finance allow branch and maps to `admit`; non-allowed or held paths must fail closed or route to `review` / `block` according to the returned reason. |
+| Finance hosted proof wedge | `POST /api/v1/pipeline/run` | `decision`, including the finance allow value `pass`; signed runs can also include filing release status and proof material | `pass` is the finance allow branch and maps to `admit`; accepted filing releases map to `admit`; held/review-required paths map to `review`; denied, expired, revoked, or unknown paths map to `block`. |
 | Crypto package integration | `attestor/crypto-authorization-core` and `attestor/crypto-execution-admission` | `CryptoExecutionAdmissionPlan.outcome`: `admit`, `needs-evidence`, or `deny` | `admit` maps to `admit`; `needs-evidence` maps to `review`; `deny` maps to `block`. |
 | Local proof surface | `npm run proof:surface` | unified proof output decisions | Already uses `admit`, `narrow`, `review`, or `block`. |
 | Signed proof verification | `POST /api/v1/verify` | verification status | Verifies proof material; it does not create a new consequence decision by itself. |
 
-The next implementation work should make this mapping typed and explicit rather than relying on readers to infer it from pack-specific responses.
+The typed contract lives in `src/consequence-admission/index.ts`. It defines the canonical request, response, check, proof, native-decision mapping, and fail-closed problem shapes without claiming a universal hosted admission route yet.
 
-That typed contract now lives in `src/consequence-admission/index.ts`. It defines the canonical request, response, check, proof, native-decision mapping, and fail-closed problem shapes without claiming a universal hosted admission route yet.
+The finance projection lives in `src/consequence-admission/finance.ts`. It wraps the existing finance hosted route response into the canonical admission response shape without changing `POST /api/v1/pipeline/run` behavior.
 
 ## What A Customer Actually Does
 
@@ -64,7 +64,7 @@ That is the operating model whether the first integration is finance, crypto, or
 ## What Is Not Claimed Yet
 
 - No public hosted crypto HTTP route is claimed until a route contract, implementation, tests, and tracker step exist.
-- No universal hosted `admit` route is claimed until the canonical admission contract is implemented and tested.
+- No universal hosted `admit` route is claimed until a route contract, implementation, tests, and tracker step exist.
 - No automatic pack router is claimed.
 - No wallet, custody, model-runtime, agent-runtime, or orchestration ownership is claimed.
 - No downstream execution happens merely because Attestor returned a proof object; the customer-operated downstream system must enforce the returned decision.
