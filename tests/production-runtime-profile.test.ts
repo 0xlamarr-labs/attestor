@@ -114,8 +114,8 @@ function testCurrentStoreInventoryIsExplicit(): void {
   );
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-reviewer-queue'],
-    'memory',
-    'Runtime profile: current reviewer queue mode is explicit',
+    'file',
+    'Runtime profile: durable reviewer queue mode is explicit',
   );
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-token-introspection'],
@@ -159,10 +159,10 @@ function testDurabilityEvaluation(): void {
 
   const singleNodeEvaluation = evaluateReleaseRuntimeDurability(singleNode);
   equal(singleNodeEvaluation.ready, false, 'Runtime profile: current stores do not satisfy durable profile');
-  equal(singleNodeEvaluation.violations.length, 3, 'Runtime profile: durable profile identifies three remaining in-memory release stores');
+  equal(singleNodeEvaluation.violations.length, 2, 'Runtime profile: durable profile identifies two remaining in-memory release stores');
   includes(
     releaseRuntimeDurabilitySummary(singleNodeEvaluation),
-    '3 release runtime durability violation(s)',
+    '2 release runtime durability violation(s)',
     'Runtime profile: summary names durable violations',
   );
 
@@ -187,6 +187,11 @@ function testDurabilityAssertionAndBootstrap(): void {
     localBootstrap.releaseRuntimeStoreModes['release-decision-log'],
     'memory',
     'Runtime bootstrap: local-dev keeps the decision log in memory for fast tests',
+  );
+  equal(
+    localBootstrap.releaseRuntimeStoreModes['release-reviewer-queue'],
+    'memory',
+    'Runtime bootstrap: local-dev keeps the reviewer queue in memory for fast tests',
   );
   equal(
     localBootstrap.releaseRuntimeStoreModes['release-token-introspection'],
@@ -232,6 +237,7 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(apiRouteRuntime, 'releaseRuntimeDurabilitySummary', 'Runtime docs: API route runtime exposes summary');
   includes(releaseRuntime, 'assertReleaseRuntimeDurability', 'Runtime docs: release runtime asserts profile');
   includes(releaseRuntime, 'createFileBackedReleaseDecisionLogWriter', 'Runtime docs: release runtime can construct the durable decision log');
+  includes(releaseRuntime, 'createFileBackedReleaseReviewerQueueStore', 'Runtime docs: release runtime can construct the durable reviewer queue');
   includes(packageJson.scripts.test, 'tsx tests/production-runtime-profile.test.ts', 'Runtime docs: npm test runs profile guard');
   includes(packageJson.scripts.verify, 'npm run test:production-runtime-profile', 'Runtime docs: verify runs profile guard');
 }

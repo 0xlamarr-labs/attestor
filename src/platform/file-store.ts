@@ -1,5 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  rmSync,
+  writeSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 
 const SLEEP_BUFFER = new SharedArrayBuffer(4);
@@ -47,6 +55,12 @@ export function withFileLock<T>(
 export function writeTextFileAtomic(path: string, content: string): void {
   mkdirSync(dirname(path), { recursive: true });
   const tempPath = `${path}.${process.pid}.${randomUUID().replace(/-/g, '').slice(0, 8)}.tmp`;
-  writeFileSync(tempPath, content, 'utf8');
+  const fd = openSync(tempPath, 'w');
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
   renameSync(tempPath, path);
 }

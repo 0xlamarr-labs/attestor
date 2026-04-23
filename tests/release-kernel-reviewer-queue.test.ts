@@ -1,4 +1,7 @@
 import { strict as assert } from 'node:assert';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   buildFinanceFilingReleaseMaterial,
   buildFinanceFilingReleaseObservation,
@@ -10,9 +13,12 @@ import { createInMemoryReleaseDecisionLogWriter } from '../src/release-kernel/re
 import {
   applyBreakGlassOverride,
   applyReviewerDecision,
+  createFileBackedReleaseReviewerQueueStore,
   createFinanceReviewerQueueItem,
   createInMemoryReleaseReviewerQueueStore,
+  resetFileBackedReleaseReviewerQueueStoreForTests,
   ReleaseReviewerQueueError,
+  ReleaseReviewerQueueStoreError,
 } from '../src/release-kernel/reviewer-queue.js';
 
 let passed = 0;
@@ -134,6 +140,64 @@ async function main(): Promise<void> {
   ok(detail !== null, 'Reviewer queue: detail lookup resolves the queue item');
   equal(detail?.candidate.previewRows.length, 2, 'Reviewer queue: preview rows remain available on detail lookup');
   equal(detail?.timeline[0]?.phase, 'policy-resolution', 'Reviewer queue: timeline begins with policy resolution');
+
+  const tempDir = mkdtempSync(join(tmpdir(), 'attestor-release-reviewer-queue-'));
+  const filePath = join(tempDir, 'release-reviewer-queue-store.json');
+  try {
+    const fileStore = createFileBackedReleaseReviewerQueueStore(filePath);
+    fileStore.upsert(item);
+    equal(
+      fileStore.listPending().totalPending,
+      1,
+      'Reviewer queue: file-backed store lists the enqueued review item',
+    );
+
+    const reloadedStore = createFileBackedReleaseReviewerQueueStore(filePath);
+    equal(
+      reloadedStore.get(item.detail.id)?.candidate.rowCount,
+      2,
+      'Reviewer queue: file-backed store reloads review detail after restart',
+    );
+    equal(
+      reloadedStore.listPending().countsByRiskClass.R4,
+      1,
+      'Reviewer queue: file-backed store reloads pending risk counts after restart',
+    );
+
+    const reloadedApproval = applyReviewerDecision({
+      record: reloadedStore.getRecord(item.detail.id)!,
+      outcome: 'approved',
+      reviewerId: 'reviewer.delta',
+      reviewerName: 'Delta Reviewer',
+      reviewerRole: 'financial_reporting_manager',
+      decidedAt: '2026-04-17T23:10:30.000Z',
+      note: 'Restart-safe queue path preserves reviewer context.',
+    });
+    reloadedStore.upsert(reloadedApproval.record);
+
+    const approvalReload = createFileBackedReleaseReviewerQueueStore(filePath);
+    equal(
+      approvalReload.getRecord(item.detail.id)?.detail.approvalsRecorded,
+      1,
+      'Reviewer queue: file-backed store preserves reviewer decisions across restart',
+    );
+    equal(
+      approvalReload.listPending().totalPending,
+      1,
+      'Reviewer queue: file-backed store keeps partially approved dual-review items pending',
+    );
+
+    writeFileSync(filePath, '{bad json', 'utf8');
+    assert.throws(
+      () => createFileBackedReleaseReviewerQueueStore(filePath),
+      ReleaseReviewerQueueStoreError,
+      'Reviewer queue: file-backed store fails closed on corrupt persisted queue state',
+    );
+    passed += 1;
+  } finally {
+    resetFileBackedReleaseReviewerQueueStoreForTests(filePath);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 
   const afterFirstApproval = applyReviewerDecision({
     record: store.getRecord(item.detail.id)!,

@@ -212,6 +212,7 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
     'generatePkiHierarchy(',
     'createFileBackedReleaseDecisionLogWriter(',
     'createInMemoryReleaseDecisionLogWriter(',
+    'createFileBackedReleaseReviewerQueueStore(',
     'createInMemoryReleaseReviewerQueueStore(',
     'createInMemoryReleaseTokenIntrospectionStore(',
     'createReleaseTokenIntrospector(',
