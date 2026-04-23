@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { withFileLock, writeTextFileAtomic } from '../platform/file-store.js';
 import type { ReleaseDecision, ReleaseTokenClaims } from './object-model.js';
 import { releaseDecisionMaxUses } from './object-model.js';
 import type {
@@ -29,6 +32,11 @@ export const RELEASE_TOKEN_REGISTRY_SPEC_VERSION =
 export const RELEASE_TOKEN_INTROSPECTION_SPEC_VERSION =
   'attestor.release-introspection.v2';
 export const DEFAULT_RELEASE_TOKEN_TYPE_HINT = 'attestor_release_token';
+export const ATTESTOR_RELEASE_TOKEN_INTROSPECTION_STORE_PATH_ENV =
+  'ATTESTOR_RELEASE_TOKEN_INTROSPECTION_STORE_PATH';
+
+const DEFAULT_RELEASE_TOKEN_INTROSPECTION_STORE_PATH =
+  '.attestor/release-token-introspection-store.json';
 
 export type SupportedReleaseTokenTypeHint =
   | typeof DEFAULT_RELEASE_TOKEN_TYPE_HINT
@@ -110,6 +118,11 @@ export interface ReleaseTokenIntrospectionStore {
   recordTokenUse(input: RecordReleaseTokenUseInput): RecordedReleaseTokenUseResult;
 }
 
+interface ReleaseTokenIntrospectionStoreFile {
+  readonly version: 1;
+  records: RegisteredReleaseToken[];
+}
+
 export interface ReleaseTokenIntrospectionInput
   extends Pick<VerifyReleaseTokenInput, 'token' | 'verificationKey' | 'audience' | 'currentDate'> {
   readonly tokenTypeHint?: string;
@@ -168,6 +181,13 @@ export interface ReleaseTokenIntrospector {
   introspect(
     input: ReleaseTokenIntrospectionInput,
   ): Promise<ReleaseTokenIntrospectionResult>;
+}
+
+export class ReleaseTokenIntrospectionStoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReleaseTokenIntrospectionStoreError';
+  }
 }
 
 function introspectionTimestamp(currentDate?: string): string {
@@ -297,6 +317,104 @@ function buildRegisteredReleaseToken(
   });
 }
 
+function freezeRegisteredReleaseToken(record: RegisteredReleaseToken): RegisteredReleaseToken {
+  return Object.freeze({
+    ...record,
+  });
+}
+
+function defaultReleaseTokenIntrospectionStoreFile(): ReleaseTokenIntrospectionStoreFile {
+  return {
+    version: 1,
+    records: [],
+  };
+}
+
+function defaultReleaseTokenIntrospectionStorePath(): string {
+  return resolve(
+    process.env[ATTESTOR_RELEASE_TOKEN_INTROSPECTION_STORE_PATH_ENV] ??
+      DEFAULT_RELEASE_TOKEN_INTROSPECTION_STORE_PATH,
+  );
+}
+
+function ensureReleaseTokenIntrospectionStoreDirectory(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+}
+
+function normalizeReleaseTokenIntrospectionStoreFile(
+  value: unknown,
+  path: string,
+): ReleaseTokenIntrospectionStoreFile {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    (value as { version?: unknown }).version !== 1 ||
+    !Array.isArray((value as { records?: unknown }).records)
+  ) {
+    throw new ReleaseTokenIntrospectionStoreError(
+      `Release token introspection store '${path}' has an invalid file shape.`,
+    );
+  }
+
+  return {
+    version: 1,
+    records: (value as { records: RegisteredReleaseToken[] }).records.map((record) =>
+      freezeRegisteredReleaseToken(record),
+    ),
+  };
+}
+
+function loadReleaseTokenIntrospectionStoreFile(
+  path: string,
+): ReleaseTokenIntrospectionStoreFile {
+  ensureReleaseTokenIntrospectionStoreDirectory(path);
+  if (!existsSync(path)) return defaultReleaseTokenIntrospectionStoreFile();
+
+  try {
+    return normalizeReleaseTokenIntrospectionStoreFile(
+      JSON.parse(readFileSync(path, 'utf8')) as unknown,
+      path,
+    );
+  } catch (error) {
+    if (error instanceof ReleaseTokenIntrospectionStoreError) throw error;
+    throw new ReleaseTokenIntrospectionStoreError(
+      `Release token introspection store '${path}' could not be parsed.`,
+    );
+  }
+}
+
+function saveReleaseTokenIntrospectionStoreFile(
+  path: string,
+  file: ReleaseTokenIntrospectionStoreFile,
+): void {
+  writeTextFileAtomic(
+    path,
+    `${JSON.stringify(
+      {
+        version: 1,
+        records: file.records,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
+function upsertRegisteredReleaseToken(
+  file: ReleaseTokenIntrospectionStoreFile,
+  record: RegisteredReleaseToken,
+): RegisteredReleaseToken {
+  const frozen = freezeRegisteredReleaseToken(record);
+  const existingIndex = file.records.findIndex((entry) => entry.tokenId === frozen.tokenId);
+  if (existingIndex >= 0) {
+    file.records[existingIndex] = frozen;
+  } else {
+    file.records.push(frozen);
+  }
+  return frozen;
+}
+
 function normalizeLifecycleTimestamp(label: string, timestamp?: string): string {
   const normalized = introspectionTimestamp(timestamp);
   if (Number.isNaN(new Date(normalized).getTime())) {
@@ -365,76 +483,129 @@ function consumeRegisteredReleaseToken(
   });
 }
 
-export function createInMemoryReleaseTokenIntrospectionStore(): ReleaseTokenIntrospectionStore {
-  const records = new Map<string, RegisteredReleaseToken>();
-
+function createReleaseTokenIntrospectionStoreFromAccessors(accessors: {
+  readonly read: () => ReleaseTokenIntrospectionStoreFile;
+  readonly mutate: <T>(action: (file: ReleaseTokenIntrospectionStoreFile) => T) => T;
+}): ReleaseTokenIntrospectionStore {
   return {
     registerIssuedToken(input: RegisterIssuedReleaseTokenInput): RegisteredReleaseToken {
-      const record = buildRegisteredReleaseToken(input);
-      records.set(record.tokenId, record);
-      return record;
+      return accessors.mutate((file) =>
+        upsertRegisteredReleaseToken(file, buildRegisteredReleaseToken(input)),
+      );
     },
 
     findToken(tokenId: string): RegisteredReleaseToken | null {
-      return records.get(tokenId) ?? null;
+      return accessors.read().records.find((record) => record.tokenId === tokenId) ?? null;
     },
 
     revokeToken(input: RevokeReleaseTokenInput): RegisteredReleaseToken | null {
-      const existing = records.get(input.tokenId);
-      if (!existing) {
-        return null;
-      }
+      return accessors.mutate((file) => {
+        const existing = file.records.find((record) => record.tokenId === input.tokenId) ?? null;
+        if (!existing) {
+          return null;
+        }
 
-      const revoked = revokeRegisteredReleaseToken(existing, input);
-      records.set(revoked.tokenId, revoked);
-      return revoked;
+        const revoked = revokeRegisteredReleaseToken(existing, input);
+        return upsertRegisteredReleaseToken(file, revoked);
+      });
     },
 
     syncLifecycle(currentDate?: string): readonly RegisteredReleaseToken[] {
       const now = introspectionTimestamp(currentDate);
-      const expired: RegisteredReleaseToken[] = [];
+      return accessors.mutate((file) => {
+        const expired: RegisteredReleaseToken[] = [];
 
-      for (const [tokenId, record] of records.entries()) {
-        if (record.status === 'issued' && record.expiresAt <= now) {
-          const next = expireRegisteredReleaseToken(record);
-          records.set(tokenId, next);
-          expired.push(next);
+        for (const record of file.records) {
+          if (record.status === 'issued' && record.expiresAt <= now) {
+            expired.push(upsertRegisteredReleaseToken(file, expireRegisteredReleaseToken(record)));
+          }
         }
-      }
 
-      return Object.freeze(expired);
+        return Object.freeze(expired);
+      });
     },
 
     recordTokenUse(input: RecordReleaseTokenUseInput): RecordedReleaseTokenUseResult {
-      const expired = this.syncLifecycle(input.usedAt);
-      const existing = records.get(input.tokenId)
-        ?? expired.find((record) => record.tokenId === input.tokenId)
-        ?? null;
-      if (!existing) {
-        return Object.freeze({
-          accepted: false,
-          inactiveReason: 'unknown',
-          record: null,
-        });
-      }
+      return accessors.mutate((file) => {
+        const now = introspectionTimestamp(input.usedAt);
+        for (const record of file.records) {
+          if (record.status === 'issued' && record.expiresAt <= now) {
+            upsertRegisteredReleaseToken(file, expireRegisteredReleaseToken(record));
+          }
+        }
 
-      if (existing.status !== 'issued') {
-        return Object.freeze({
-          accepted: false,
-          inactiveReason: inactiveReasonForRegisteredReleaseToken(existing),
-          record: existing,
-        });
-      }
+        const existing =
+          file.records.find((record) => record.tokenId === input.tokenId) ?? null;
+        if (!existing) {
+          return Object.freeze({
+            accepted: false,
+            inactiveReason: 'unknown',
+            record: null,
+          });
+        }
 
-      const consumed = consumeRegisteredReleaseToken(existing, input);
-      records.set(consumed.tokenId, consumed);
-      return Object.freeze({
-        accepted: true,
-        inactiveReason: null,
-        record: consumed,
+        if (existing.status !== 'issued') {
+          return Object.freeze({
+            accepted: false,
+            inactiveReason: inactiveReasonForRegisteredReleaseToken(existing),
+            record: existing,
+          });
+        }
+
+        const consumed = consumeRegisteredReleaseToken(existing, input);
+        upsertRegisteredReleaseToken(file, consumed);
+        return Object.freeze({
+          accepted: true,
+          inactiveReason: null,
+          record: consumed,
+        });
       });
     },
   };
+}
+
+export function createInMemoryReleaseTokenIntrospectionStore(): ReleaseTokenIntrospectionStore {
+  let file = defaultReleaseTokenIntrospectionStoreFile();
+
+  return createReleaseTokenIntrospectionStoreFromAccessors({
+    read: () => file,
+    mutate: (action) => {
+      const workingCopy: ReleaseTokenIntrospectionStoreFile = {
+        version: 1,
+        records: [...file.records],
+      };
+      const result = action(workingCopy);
+      file = workingCopy;
+      return result;
+    },
+  });
+}
+
+export function createFileBackedReleaseTokenIntrospectionStore(
+  path = defaultReleaseTokenIntrospectionStorePath(),
+): ReleaseTokenIntrospectionStore {
+  loadReleaseTokenIntrospectionStoreFile(path);
+
+  return createReleaseTokenIntrospectionStoreFromAccessors({
+    read: () => withFileLock(path, () => loadReleaseTokenIntrospectionStoreFile(path)),
+    mutate: (action) =>
+      withFileLock(path, () => {
+        const file = loadReleaseTokenIntrospectionStoreFile(path);
+        const result = action(file);
+        saveReleaseTokenIntrospectionStoreFile(path, file);
+        return result;
+      }),
+  });
+}
+
+export function resetFileBackedReleaseTokenIntrospectionStoreForTests(path?: string): void {
+  const resolvedPath = path ?? defaultReleaseTokenIntrospectionStorePath();
+  if (existsSync(resolvedPath)) {
+    rmSync(resolvedPath, { force: true });
+  }
+  if (existsSync(`${resolvedPath}.lock`)) {
+    rmSync(`${resolvedPath}.lock`, { recursive: true, force: true });
+  }
 }
 
 export async function introspectReleaseToken(

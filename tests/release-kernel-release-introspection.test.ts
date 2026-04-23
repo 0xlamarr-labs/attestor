@@ -1,10 +1,16 @@
 import { strict as assert } from 'node:assert';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { generateKeyPair } from '../src/signing/keys.js';
 import { createReleaseDecisionSkeleton } from '../src/release-kernel/object-model.js';
 import { createReleaseTokenIssuer } from '../src/release-kernel/release-token.js';
 import {
+  createFileBackedReleaseTokenIntrospectionStore,
   createInMemoryReleaseTokenIntrospectionStore,
   createReleaseTokenIntrospector,
+  resetFileBackedReleaseTokenIntrospectionStoreForTests,
+  ReleaseTokenIntrospectionStoreError,
 } from '../src/release-kernel/release-introspection.js';
 
 let passed = 0;
@@ -102,6 +108,81 @@ async function main(): Promise<void> {
       'attestor.tests.release-introspection',
       'Release introspection: resource server id is echoed for audit correlation',
     );
+  }
+
+  const tempDir = mkdtempSync(join(tmpdir(), 'attestor-release-token-introspection-'));
+  const filePath = join(tempDir, 'release-token-introspection-store.json');
+  try {
+    const fileStore = createFileBackedReleaseTokenIntrospectionStore(filePath);
+    fileStore.registerIssuedToken({
+      issuedToken: issued,
+      decision,
+    });
+
+    const reloadedStore = createFileBackedReleaseTokenIntrospectionStore(filePath);
+    equal(
+      reloadedStore.findToken(issued.tokenId)?.status ?? null,
+      'issued',
+      'Release introspection: file-backed store reloads issued token state after restart',
+    );
+
+    const fileBackedIntrospector = createReleaseTokenIntrospector(reloadedStore);
+    const activeAfterRestart = await fileBackedIntrospector.introspect({
+      token: issued.token,
+      verificationKey,
+      audience: 'finance.reporting.record-store',
+      currentDate: '2026-04-17T23:01:00.000Z',
+      resourceServerId: 'attestor.tests.release-introspection.file-backed',
+    });
+    ok(
+      activeAfterRestart.active,
+      'Release introspection: file-backed store keeps registered tokens active after restart',
+    );
+
+    reloadedStore.revokeToken({
+      tokenId: issued.tokenId,
+      revokedAt: '2026-04-17T23:01:20.000Z',
+      reason: 'restart-safe revocation test',
+      revokedBy: 'release-introspection-test',
+    });
+    const revokedReload = createFileBackedReleaseTokenIntrospectionStore(filePath);
+    equal(
+      revokedReload.findToken(issued.tokenId)?.status ?? null,
+      'revoked',
+      'Release introspection: file-backed store preserves revoked token state after restart',
+    );
+
+    const durableSingleUse = await issuer.issue({
+      decision,
+      issuedAt: '2026-04-17T23:00:00.000Z',
+      tokenId: 'rt_file_backed_single_use_introspection',
+    });
+    revokedReload.registerIssuedToken({
+      issuedToken: durableSingleUse,
+      decision,
+    });
+    revokedReload.recordTokenUse({
+      tokenId: durableSingleUse.tokenId,
+      usedAt: '2026-04-17T23:01:30.000Z',
+      resourceServerId: 'attestor.tests.release-introspection.file-backed',
+    });
+    const consumedReload = createFileBackedReleaseTokenIntrospectionStore(filePath);
+    equal(
+      consumedReload.findToken(durableSingleUse.tokenId)?.status ?? null,
+      'consumed',
+      'Release introspection: file-backed store preserves consumed token state after restart',
+    );
+
+    writeFileSync(filePath, '{bad json', 'utf8');
+    assert.throws(
+      () => createFileBackedReleaseTokenIntrospectionStore(filePath),
+      ReleaseTokenIntrospectionStoreError,
+      'Release introspection: file-backed store fails closed on corrupt persisted token state',
+    );
+    passed += 1;
+  } finally {
+    resetFileBackedReleaseTokenIntrospectionStoreForTests(filePath);
+    rmSync(tempDir, { recursive: true, force: true });
   }
 
   const unregistered = await issuer.issue({

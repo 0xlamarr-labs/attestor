@@ -214,6 +214,7 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
     'createInMemoryReleaseDecisionLogWriter(',
     'createFileBackedReleaseReviewerQueueStore(',
     'createInMemoryReleaseReviewerQueueStore(',
+    'createFileBackedReleaseTokenIntrospectionStore(',
     'createInMemoryReleaseTokenIntrospectionStore(',
     'createReleaseTokenIntrospector(',
     'createReleaseTokenIssuer(',

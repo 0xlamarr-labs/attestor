@@ -41,6 +41,7 @@ Reviewed on 2026-04-23 before opening this track:
 - Node.js exposes environment variables through `process.env`, which is the right minimal mechanism for selecting an Attestor runtime profile without inventing a separate config service in Step 01: [Node.js environment variables](https://nodejs.org/api/environment_variables.html)
 - Node.js exposes synchronous file open/write/fsync/close primitives, which supports a small append-only restart-surviving decision log before a shared database backend is introduced: [Node.js file system API](https://nodejs.org/api/fs.html)
 - Redis AOF durability and PostgreSQL WAL both reinforce the same queue-state rule: pending authority work needs explicit persisted write state, not only an in-process queue, if restart recovery matters.
+- RFC 7662 defines token introspection around active token state, and RFC 7009 defines revocation as immediate invalidation; Attestor's release-token introspection state must therefore survive restart for revocation, expiry, replay, and use-count checks to remain meaningful.
 
 ## Runtime Profile Vocabulary
 
@@ -55,10 +56,10 @@ Reviewed on 2026-04-23 before opening this track:
 | Metric | Value |
 |---|---|
 | Total frozen steps | 8 |
-| Completed | 3 |
+| Completed | 4 |
 | In progress | 0 |
-| Not started | 5 |
-| Current posture | Step 03 is complete: Attestor now has file-backed release decision logging and a file-backed release reviewer queue store. Pending review items, risk counts, reviewer decisions, and partially approved dual-review paths survive restart. The default `local-dev` profile still keeps fast in-memory release logging and review queues; durable profile evaluation now has two remaining in-memory release authority stores to harden. |
+| Not started | 4 |
+| Current posture | Step 04 is complete: Attestor now has file-backed release decision logging, reviewer queue state, and release-token introspection state. Issued, revoked, expired, consumed, replay/use-count, and resource-server usage metadata survive restart. The default `local-dev` profile still keeps fast in-memory release authority stores; durable profile evaluation now has one remaining in-memory release authority store to harden. |
 
 ## Frozen Step List
 
@@ -67,7 +68,7 @@ Reviewed on 2026-04-23 before opening this track:
 | 01 | complete | Add the runtime profile contract | `src/service/bootstrap/runtime-profile.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/api-route-runtime.ts`, `tests/production-runtime-profile.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md`, `README.md`, `package.json` | Runtime profiles are now explicit: `local-dev`, `single-node-durable`, and `production-shared`. The current store inventory names memory/file/shared posture for each release authority component. Unsupported profiles fail configuration. Profiles whose durability requirements are not met fail closed before the API runtime starts. |
 | 02 | complete | Add a durable release decision log store | `src/release-kernel/release-decision-log.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/runtime-profile.ts`, `tests/release-kernel-release-decision-log.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | The release decision log now has a file-backed JSONL writer that appends under a file lock, fsyncs each append, reloads entries after restart, verifies the hash chain on load, fails closed on tampering, and is available to durable runtime profiles. `local-dev` intentionally keeps the in-memory writer for fast test/dev loops. |
 | 03 | complete | Add a durable release reviewer queue store | `src/release-kernel/reviewer-queue.ts`, `src/platform/file-store.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/runtime-profile.ts`, `tests/release-kernel-reviewer-queue.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | The reviewer queue now has a file-backed snapshot store guarded by file locks and atomic fsync-backed writes. It reloads pending review items, reviewer decisions, and partial dual-approval state after restart, and fails closed on corrupt persisted queue state. `local-dev` intentionally keeps the in-memory queue for fast test/dev loops. |
-| 04 | not_started | Add durable release token introspection state |  | Preserve token status, revocation, freshness, replay, and use-count posture across runtime restart. |
+| 04 | complete | Add durable release token introspection state | `src/release-kernel/release-introspection.ts`, `src/service/bootstrap/release-runtime.ts`, `src/service/bootstrap/runtime-profile.ts`, `tests/release-kernel-release-introspection.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `docs/02-architecture/production-runtime-hardening-buildout.md` | The release-token introspection store now has a file-backed snapshot store guarded by file locks and atomic fsync-backed writes. It reloads issued, revoked, consumed, and expired token state after restart, preserves resource-server usage metadata, rejects replay/use-count exhaustion after restart, and fails closed on corrupt persisted token state. `local-dev` intentionally keeps the in-memory store for fast test/dev loops. |
 | 05 | not_started | Add a durable release evidence pack store |  | Preserve release evidence packs and proof references beyond process lifetime. |
 | 06 | not_started | Wire runtime profile selection through API bootstrap |  | Complete profile-aware store construction across the remaining release stores and add explicit startup diagnostics for the selected runtime posture. |
 | 07 | not_started | Add restart and recovery tests |  | Prove decision log, reviewer queue, token introspection, evidence packs, policy state, and degraded-mode grants survive restart in durable profiles. |
@@ -75,4 +76,4 @@ Reviewed on 2026-04-23 before opening this track:
 
 ## Immediate Next Step
 
-Step 04 should add durable release token introspection state so token status, revocation, replay, freshness, and use-count posture survive runtime restart.
+Step 05 should add a durable release evidence pack store so release evidence packs and proof references survive runtime restart.

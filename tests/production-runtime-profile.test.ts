@@ -119,8 +119,8 @@ function testCurrentStoreInventoryIsExplicit(): void {
   );
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-token-introspection'],
-    'memory',
-    'Runtime profile: current token introspection mode is explicit',
+    'file',
+    'Runtime profile: durable token introspection mode is explicit',
   );
   equal(
     CURRENT_RELEASE_RUNTIME_STORE_MODES['release-evidence-pack-store'],
@@ -159,10 +159,10 @@ function testDurabilityEvaluation(): void {
 
   const singleNodeEvaluation = evaluateReleaseRuntimeDurability(singleNode);
   equal(singleNodeEvaluation.ready, false, 'Runtime profile: current stores do not satisfy durable profile');
-  equal(singleNodeEvaluation.violations.length, 2, 'Runtime profile: durable profile identifies two remaining in-memory release stores');
+  equal(singleNodeEvaluation.violations.length, 1, 'Runtime profile: durable profile identifies one remaining in-memory release store');
   includes(
     releaseRuntimeDurabilitySummary(singleNodeEvaluation),
-    '2 release runtime durability violation(s)',
+    '1 release runtime durability violation(s)',
     'Runtime profile: summary names durable violations',
   );
 
@@ -195,6 +195,11 @@ function testDurabilityAssertionAndBootstrap(): void {
   );
   equal(
     localBootstrap.releaseRuntimeStoreModes['release-token-introspection'],
+    'memory',
+    'Runtime bootstrap: local-dev keeps token introspection in memory for fast tests',
+  );
+  equal(
+    localBootstrap.releaseRuntimeStoreModes['release-evidence-pack-store'],
     'memory',
     'Runtime bootstrap: exposes current store mode inventory',
   );
@@ -238,6 +243,7 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(releaseRuntime, 'assertReleaseRuntimeDurability', 'Runtime docs: release runtime asserts profile');
   includes(releaseRuntime, 'createFileBackedReleaseDecisionLogWriter', 'Runtime docs: release runtime can construct the durable decision log');
   includes(releaseRuntime, 'createFileBackedReleaseReviewerQueueStore', 'Runtime docs: release runtime can construct the durable reviewer queue');
+  includes(releaseRuntime, 'createFileBackedReleaseTokenIntrospectionStore', 'Runtime docs: release runtime can construct durable token introspection');
   includes(packageJson.scripts.test, 'tsx tests/production-runtime-profile.test.ts', 'Runtime docs: npm test runs profile guard');
   includes(packageJson.scripts.verify, 'npm run test:production-runtime-profile', 'Runtime docs: verify runs profile guard');
 }

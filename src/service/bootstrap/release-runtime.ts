@@ -44,8 +44,11 @@ const {
   createInMemoryReleaseDecisionLogWriter,
 } = decisionLog;
 const { createInMemoryReleaseEvidencePackStore, createReleaseEvidencePackIssuer } = evidence;
-const { createInMemoryReleaseTokenIntrospectionStore, createReleaseTokenIntrospector } =
-  introspection;
+const {
+  createFileBackedReleaseTokenIntrospectionStore,
+  createInMemoryReleaseTokenIntrospectionStore,
+  createReleaseTokenIntrospector,
+} = introspection;
 const {
   createFileBackedReleaseReviewerQueueStore,
   createInMemoryReleaseReviewerQueueStore,
@@ -79,6 +82,10 @@ function releaseRuntimeStoreModesForProfile(
       runtimeProfile.id === 'local-dev'
         ? 'memory'
         : CURRENT_RELEASE_RUNTIME_STORE_MODES['release-reviewer-queue'],
+    'release-token-introspection':
+      runtimeProfile.id === 'local-dev'
+        ? 'memory'
+        : CURRENT_RELEASE_RUNTIME_STORE_MODES['release-token-introspection'],
   });
 }
 
@@ -98,6 +105,15 @@ function createReleaseReviewerQueueStoreForProfile(
     return createInMemoryReleaseReviewerQueueStore();
   }
   return createFileBackedReleaseReviewerQueueStore();
+}
+
+function createReleaseTokenIntrospectionStoreForProfile(
+  runtimeProfile: AttestorRuntimeProfile,
+): ReleaseTokenIntrospectionStore {
+  if (runtimeProfile.id === 'local-dev') {
+    return createInMemoryReleaseTokenIntrospectionStore();
+  }
+  return createFileBackedReleaseTokenIntrospectionStore();
 }
 
 export interface ReleaseRuntimeBootstrap {
@@ -141,7 +157,8 @@ export function createReleaseRuntimeBootstrap(
   const pkiReady = true;
   const financeReleaseDecisionLog = createReleaseDecisionLogWriterForProfile(runtimeProfile);
   const apiReleaseReviewerQueueStore = createReleaseReviewerQueueStoreForProfile(runtimeProfile);
-  const apiReleaseIntrospectionStore = createInMemoryReleaseTokenIntrospectionStore();
+  const apiReleaseIntrospectionStore =
+    createReleaseTokenIntrospectionStoreForProfile(runtimeProfile);
   const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
   const apiReleaseTokenIssuer = createReleaseTokenIssuer({
     issuer: RELEASE_ISSUER,
