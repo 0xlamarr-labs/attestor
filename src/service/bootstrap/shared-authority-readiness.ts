@@ -103,9 +103,8 @@ export interface SharedAuthorityRuntimeReadiness {
 
 export interface EvaluateSharedAuthorityRuntimeReadinessInput {
   readonly runtimeProfileId?: AttestorRuntimeProfileId | null;
+  readonly requestPathUsesSharedStores?: boolean;
 }
-
-const REQUEST_PATH_USES_SHARED_AUTHORITY_STORES = false;
 
 function metadataString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
@@ -248,7 +247,7 @@ export async function evaluateSharedAuthorityRuntimeReadiness(
   const configured = isReleaseAuthorityStoreConfigured();
   const mode = releaseAuthorityStoreMode();
   const runtimeProfileId = input.runtimeProfileId ?? null;
-  const requestPathUsesSharedStores = REQUEST_PATH_USES_SHARED_AUTHORITY_STORES;
+  const requestPathUsesSharedStores = input.requestPathUsesSharedStores ?? false;
 
   if (!configured) {
     const blockers = buildBlockers({

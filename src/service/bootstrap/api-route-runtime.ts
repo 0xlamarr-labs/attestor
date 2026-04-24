@@ -321,6 +321,7 @@ export function createApiHttpRouteRuntime(
   const runtimeProfile = resolveRuntimeProfile();
   const {
     releaseRuntimeStoreModes,
+    releaseRuntimeRequestPathDiagnostics,
     releaseRuntimeDurability,
     runtimeProfileDiagnostics,
     pki,
@@ -383,9 +384,12 @@ export function createApiHttpRouteRuntime(
     pkiReady,
     pki,
     runtimeProfileDiagnostics,
+    releaseRuntimeRequestPathDiagnostics,
     evaluateSharedAuthorityRuntimeReadiness: ({ runtimeProfileId }) =>
       evaluateSharedAuthorityRuntimeReadinessState({
         runtimeProfileId: runtimeProfileId === runtimeProfile.id ? runtimeProfile.id : null,
+        requestPathUsesSharedStores:
+          releaseRuntimeRequestPathDiagnostics.usesSharedAuthorityStores,
       }),
     rlsActivationResult,
   } satisfies ApiRouteDeps['core'];
@@ -741,6 +745,7 @@ export function createApiHttpRouteRuntime(
           ready: releaseRuntimeDurability.ready,
           summary: releaseRuntimeDurabilitySummary(releaseRuntimeDurability),
         },
+        releaseRuntimeRequestPathDiagnostics,
         runtimeProfileDiagnostics,
         rlsActivationResult,
         pkiReady,

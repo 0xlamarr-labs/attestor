@@ -254,6 +254,22 @@ function testDurabilityAssertionAndBootstrap(): void {
     'Runtime bootstrap: diagnostics expose durability readiness',
   );
   equal(
+    localBootstrap.releaseRuntimeRequestPathDiagnostics.version,
+    'attestor.release-runtime-request-path-diagnostics.v1',
+    'Runtime bootstrap: request-path diagnostics version is explicit',
+  );
+  equal(
+    localBootstrap.releaseRuntimeRequestPathDiagnostics.usesSharedAuthorityStores,
+    false,
+    'Runtime bootstrap: current request path does not overclaim shared authority stores',
+  );
+  ok(
+    localBootstrap.releaseRuntimeRequestPathDiagnostics.blockers.includes(
+      'release/policy request handlers still consume synchronous release-layer authority store contracts',
+    ),
+    'Runtime bootstrap: request-path diagnostics names the sync authority-store blocker',
+  );
+  equal(
     localBootstrap.releaseAuthorityStore.mode,
     'disabled',
     'Runtime bootstrap: shared release-authority substrate starts disabled by default',
@@ -320,9 +336,11 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(apiRouteRuntime, 'releaseRuntimeDurabilitySummary', 'Runtime docs: API route runtime exposes summary');
   includes(apiRouteRuntime, 'runtimeProfileDiagnostics', 'Runtime docs: API route runtime exposes startup diagnostics');
   includes(coreRoutes, 'runtimeProfileDiagnostics', 'Runtime docs: core routes expose runtime diagnostics');
+  includes(coreRoutes, 'releaseRuntimeRequestPathDiagnostics', 'Runtime docs: core routes expose request-path diagnostics');
   includes(coreRoutes, 'checks.releaseRuntime', 'Runtime docs: readiness checks release runtime posture');
   includes(releaseRuntime, 'assertReleaseRuntimeDurability', 'Runtime docs: release runtime asserts profile');
   includes(releaseRuntime, 'buildRuntimeProfileStartupDiagnostics', 'Runtime docs: release runtime builds startup diagnostics');
+  includes(releaseRuntime, 'buildReleaseRuntimeRequestPathDiagnostics', 'Runtime docs: release runtime builds request-path diagnostics');
   includes(releaseRuntime, 'releaseAuthorityStoreMode', 'Runtime docs: release runtime tracks shared release-authority substrate mode');
   includes(releaseRuntime, 'isReleaseAuthorityStoreConfigured', 'Runtime docs: release runtime tracks whether shared release-authority substrate is configured');
   includes(releaseRuntime, 'createFileBackedReleaseDecisionLogWriter', 'Runtime docs: release runtime can construct the durable decision log');

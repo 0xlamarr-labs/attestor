@@ -53,6 +53,14 @@ type RuntimeProfileDiagnostics = {
     }[];
   };
 };
+type ReleaseRuntimeRequestPathDiagnostics = {
+  version: string;
+  usesSharedAuthorityStores: boolean;
+  contract: string;
+  storeModes: Record<string, string>;
+  sharedComponents: readonly string[];
+  blockers: readonly string[];
+};
 type SharedAuthorityRuntimeReadiness = {
   version: string;
   evaluatedAt: string;
@@ -93,8 +101,10 @@ export interface CoreRouteDeps {
     reviewer: { certificate: { subject: string } };
   };
   runtimeProfileDiagnostics: RuntimeProfileDiagnostics;
+  releaseRuntimeRequestPathDiagnostics: ReleaseRuntimeRequestPathDiagnostics;
   evaluateSharedAuthorityRuntimeReadiness(input: {
     runtimeProfileId?: string | null;
+    requestPathUsesSharedStores?: boolean;
   }): Promise<SharedAuthorityRuntimeReadiness>;
   rlsActivationResult: {
     activated: boolean;
@@ -118,6 +128,7 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
     pkiReady,
     pki,
     runtimeProfileDiagnostics,
+    releaseRuntimeRequestPathDiagnostics,
     evaluateSharedAuthorityRuntimeReadiness,
     rlsActivationResult,
   } = deps;
@@ -161,9 +172,12 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
         diagnosticsVersion: runtimeProfileDiagnostics.version,
         durability: runtimeProfileDiagnostics.durability,
         stores: runtimeProfileDiagnostics.releaseStores,
+        requestPath: releaseRuntimeRequestPathDiagnostics,
       },
       sharedAuthorityRuntime: await evaluateSharedAuthorityRuntimeReadiness({
         runtimeProfileId: runtimeProfileDiagnostics.profile.id,
+        requestPathUsesSharedStores:
+          releaseRuntimeRequestPathDiagnostics.usesSharedAuthorityStores,
       }),
       highAvailability,
       engine: 'attestor',
@@ -215,6 +229,8 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
 
     const sharedAuthorityRuntime = await evaluateSharedAuthorityRuntimeReadiness({
       runtimeProfileId: runtimeProfileDiagnostics.profile.id,
+      requestPathUsesSharedStores:
+        releaseRuntimeRequestPathDiagnostics.usesSharedAuthorityStores,
     });
     checks.sharedAuthorityRuntime =
       runtimeProfileDiagnostics.profile.id === 'production-shared'
@@ -246,6 +262,7 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
       releaseRuntime: {
         durability: runtimeProfileDiagnostics.durability,
         stores: runtimeProfileDiagnostics.releaseStores,
+        requestPath: releaseRuntimeRequestPathDiagnostics,
       },
       sharedAuthorityRuntime,
       highAvailability,

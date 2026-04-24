@@ -36,6 +36,7 @@ import {
   buildRuntimeProfileStartupDiagnostics,
   resolveRuntimeProfile,
   type AttestorRuntimeProfile,
+  type ReleaseRuntimeStoreComponent,
   type ReleaseRuntimeStoreModes,
   type RuntimeProfileDurabilityEvaluation,
   type RuntimeProfileStartupDiagnostics,
@@ -78,6 +79,17 @@ const RELEASE_ISSUER = 'attestor.api.release.local';
 const API_CA_SUBJECT = 'Attestor Keyless CA';
 const API_SIGNER_SUBJECT = 'API Runtime Signer';
 const API_REVIEWER_SUBJECT = 'API Reviewer';
+export const RELEASE_RUNTIME_REQUEST_PATH_DIAGNOSTICS_SPEC_VERSION =
+  'attestor.release-runtime-request-path-diagnostics.v1';
+
+export interface ReleaseRuntimeRequestPathDiagnostics {
+  readonly version: typeof RELEASE_RUNTIME_REQUEST_PATH_DIAGNOSTICS_SPEC_VERSION;
+  readonly usesSharedAuthorityStores: boolean;
+  readonly contract: 'synchronous-local-authority-stores';
+  readonly storeModes: ReleaseRuntimeStoreModes;
+  readonly sharedComponents: readonly ReleaseRuntimeStoreComponent[];
+  readonly blockers: readonly string[];
+}
 
 function releaseRuntimeStoreModesForProfile(
   runtimeProfile: AttestorRuntimeProfile,
@@ -139,9 +151,29 @@ function createReleaseEvidencePackStoreForProfile(
   return createFileBackedReleaseEvidencePackStore();
 }
 
+export function buildReleaseRuntimeRequestPathDiagnostics(
+  storeModes: ReleaseRuntimeStoreModes,
+): ReleaseRuntimeRequestPathDiagnostics {
+  const sharedComponents = Object.entries(storeModes)
+    .filter(([, mode]) => mode === 'shared')
+    .map(([component]) => component as ReleaseRuntimeStoreComponent);
+
+  return Object.freeze({
+    version: RELEASE_RUNTIME_REQUEST_PATH_DIAGNOSTICS_SPEC_VERSION,
+    usesSharedAuthorityStores: false,
+    contract: 'synchronous-local-authority-stores',
+    storeModes,
+    sharedComponents: Object.freeze(sharedComponents),
+    blockers: Object.freeze([
+      'release/policy request handlers still consume synchronous release-layer authority store contracts',
+    ]),
+  });
+}
+
 export interface ReleaseRuntimeBootstrap {
   runtimeProfile: AttestorRuntimeProfile;
   releaseRuntimeStoreModes: ReleaseRuntimeStoreModes;
+  releaseRuntimeRequestPathDiagnostics: ReleaseRuntimeRequestPathDiagnostics;
   releaseRuntimeDurability: RuntimeProfileDurabilityEvaluation;
   runtimeProfileDiagnostics: RuntimeProfileStartupDiagnostics;
   releaseAuthorityStore: {
@@ -177,6 +209,8 @@ export function createReleaseRuntimeBootstrap(
 ): ReleaseRuntimeBootstrap {
   const runtimeProfile = input.runtimeProfile ?? resolveRuntimeProfile();
   const releaseRuntimeStoreModes = releaseRuntimeStoreModesForProfile(runtimeProfile);
+  const releaseRuntimeRequestPathDiagnostics =
+    buildReleaseRuntimeRequestPathDiagnostics(releaseRuntimeStoreModes);
   const releaseRuntimeDurability = assertReleaseRuntimeDurability(
     runtimeProfile,
     releaseRuntimeStoreModes,
@@ -245,6 +279,7 @@ export function createReleaseRuntimeBootstrap(
   return {
     runtimeProfile,
     releaseRuntimeStoreModes,
+    releaseRuntimeRequestPathDiagnostics,
     releaseRuntimeDurability,
     runtimeProfileDiagnostics,
     releaseAuthorityStore,

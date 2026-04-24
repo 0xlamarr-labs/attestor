@@ -128,6 +128,27 @@ async function run(): Promise<void> {
       readiness.components.every((component) => component.bootstrapWired === false),
       'Shared authority readiness: current shared stores preserve bootstrapWired=false',
     );
+
+    const requestPathReady = await evaluateSharedAuthorityRuntimeReadiness({
+      runtimeProfileId: 'production-shared',
+      requestPathUsesSharedStores: true,
+    });
+    equal(
+      requestPathReady.checks.requestPathUsesSharedStores,
+      true,
+      'Shared authority readiness: request-path cutover signal is caller-owned',
+    );
+    ok(
+      !requestPathReady.blockers.some(
+        (blocker) => blocker.code === 'release_authority_request_path_not_shared',
+      ),
+      'Shared authority readiness: request-path blocker clears only when runtime reports shared-store cutover',
+    );
+    equal(
+      requestPathReady.ready,
+      false,
+      'Shared authority readiness: bootstrap metadata still keeps production-shared fail-closed',
+    );
   } finally {
     await resetReleaseAuthorityStoreForTests();
     delete process.env[ATTESTOR_RELEASE_AUTHORITY_PG_URL_ENV];
