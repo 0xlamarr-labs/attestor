@@ -83,8 +83,8 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| Completed | 5 |',
-    'Shared authority docs: tracker records the completed shared token/evidence step',
+    '| Completed | 6 |',
+    'Shared authority docs: tracker records the completed shared policy authority step',
   );
   includes(
     tracker,
@@ -113,8 +113,13 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| 06 | pending | Add shared degraded-mode and policy-control-plane authority stores |',
-    'Shared authority docs: step 06 is now the next engineering step',
+    '| 06 | complete | Add shared degraded-mode and policy-control-plane authority stores |',
+    'Shared authority docs: step 06 is complete',
+  );
+  includes(
+    tracker,
+    '| 07 | pending | Wire `production-shared` bootstrap, health, and readiness truth |',
+    'Shared authority docs: step 07 is now the next engineering step',
   );
   includes(
     tracker,
