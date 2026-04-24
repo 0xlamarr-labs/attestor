@@ -48,6 +48,7 @@ export type SharedAuthorityRuntimeReadinessBlockerCode =
   | 'release_authority_component_count_mismatch'
   | 'release_authority_components_not_ready'
   | 'release_authority_bootstrap_not_wired'
+  | 'release_authority_request_path_not_shared'
   | 'release_authority_store_probe_failed';
 
 export interface SharedAuthorityRuntimeReadinessBlocker {
@@ -91,6 +92,7 @@ export interface SharedAuthorityRuntimeReadiness {
     readonly allComponentsSeeded: boolean;
     readonly allComponentsReady: boolean;
     readonly allComponentsBootstrapWired: boolean;
+    readonly requestPathUsesSharedStores: boolean;
     readonly storeSummariesReadable: boolean;
   };
   readonly summary: ReleaseAuthorityStoreSummary | null;
@@ -102,6 +104,8 @@ export interface SharedAuthorityRuntimeReadiness {
 export interface EvaluateSharedAuthorityRuntimeReadinessInput {
   readonly runtimeProfileId?: AttestorRuntimeProfileId | null;
 }
+
+const REQUEST_PATH_USES_SHARED_AUTHORITY_STORES = false;
 
 function metadataString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
@@ -169,10 +173,12 @@ async function probeSharedStoreSummaries(): Promise<SharedAuthorityRuntimeStoreS
 }
 
 function buildBlockers(input: {
+  runtimeProfileId: AttestorRuntimeProfileId | null;
   configured: boolean;
   allComponentsSeeded: boolean;
   pendingComponents: readonly ReleaseRuntimeStoreComponent[];
   unwiredComponents: readonly ReleaseRuntimeStoreComponent[];
+  requestPathUsesSharedStores: boolean;
   probeError: Error | null;
 }): readonly SharedAuthorityRuntimeReadinessBlocker[] {
   const blockers: SharedAuthorityRuntimeReadinessBlocker[] = [];
@@ -212,6 +218,18 @@ function buildBlockers(input: {
     });
   }
 
+  if (
+    input.runtimeProfileId === 'production-shared' &&
+    !input.requestPathUsesSharedStores
+  ) {
+    blockers.push({
+      code: 'release_authority_request_path_not_shared',
+      message:
+        'Production-shared request handling is still guarded because the release/policy runtime request path has not completed the shared-store contract cutover.',
+      components: Object.freeze([...RELEASE_AUTHORITY_COMPONENTS]),
+    });
+  }
+
   if (input.probeError) {
     blockers.push({
       code: 'release_authority_store_probe_failed',
@@ -229,19 +247,23 @@ export async function evaluateSharedAuthorityRuntimeReadiness(
   const evaluatedAt = new Date().toISOString();
   const configured = isReleaseAuthorityStoreConfigured();
   const mode = releaseAuthorityStoreMode();
+  const runtimeProfileId = input.runtimeProfileId ?? null;
+  const requestPathUsesSharedStores = REQUEST_PATH_USES_SHARED_AUTHORITY_STORES;
 
   if (!configured) {
     const blockers = buildBlockers({
+      runtimeProfileId,
       configured,
       allComponentsSeeded: false,
       pendingComponents: RELEASE_AUTHORITY_COMPONENTS,
       unwiredComponents: [],
+      requestPathUsesSharedStores,
       probeError: null,
     });
     return Object.freeze({
       version: SHARED_AUTHORITY_RUNTIME_READINESS_SPEC_VERSION,
       evaluatedAt,
-      runtimeProfileId: input.runtimeProfileId ?? null,
+      runtimeProfileId,
       mode,
       configured,
       ready: false,
@@ -251,6 +273,7 @@ export async function evaluateSharedAuthorityRuntimeReadiness(
         allComponentsSeeded: false,
         allComponentsReady: false,
         allComponentsBootstrapWired: false,
+        requestPathUsesSharedStores,
         storeSummariesReadable: false,
       }),
       summary: null,
@@ -290,10 +313,12 @@ export async function evaluateSharedAuthorityRuntimeReadiness(
     summary.mode === 'postgres' &&
     summary.componentCount === RELEASE_AUTHORITY_COMPONENTS.length;
   const blockers = buildBlockers({
+    runtimeProfileId,
     configured,
     allComponentsSeeded,
     pendingComponents,
     unwiredComponents,
+    requestPathUsesSharedStores,
     probeError,
   });
   const ready =
@@ -302,13 +327,14 @@ export async function evaluateSharedAuthorityRuntimeReadiness(
     allComponentsSeeded &&
     allComponentsReady &&
     allComponentsBootstrapWired &&
+    requestPathUsesSharedStores &&
     storeSummariesReadable &&
     blockers.length === 0;
 
   return Object.freeze({
     version: SHARED_AUTHORITY_RUNTIME_READINESS_SPEC_VERSION,
     evaluatedAt,
-    runtimeProfileId: input.runtimeProfileId ?? null,
+    runtimeProfileId,
     mode,
     configured,
     ready,
@@ -318,6 +344,7 @@ export async function evaluateSharedAuthorityRuntimeReadiness(
       allComponentsSeeded,
       allComponentsReady,
       allComponentsBootstrapWired,
+      requestPathUsesSharedStores,
       storeSummariesReadable,
     }),
     summary,

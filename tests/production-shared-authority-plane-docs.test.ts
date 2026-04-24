@@ -138,6 +138,11 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    'requestPathUsesSharedStores=false',
+    'Shared authority docs: step 07 keeps request-path cutover truth explicit',
+  );
+  includes(
+    tracker,
     'ATTESTOR_RELEASE_AUTHORITY_PG_URL',
     'Shared authority docs: tracker names the dedicated release-authority PostgreSQL env',
   );

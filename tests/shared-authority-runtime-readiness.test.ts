@@ -102,6 +102,11 @@ async function run(): Promise<void> {
       'Shared authority readiness: runtime bootstrap wiring is not overclaimed',
     );
     equal(
+      readiness.checks.requestPathUsesSharedStores,
+      false,
+      'Shared authority readiness: request path shared-store cutover is not overclaimed',
+    );
+    equal(
       readiness.ready,
       false,
       'Shared authority readiness: production-shared stays fail-closed until bootstrap metadata is wired',
@@ -109,6 +114,10 @@ async function run(): Promise<void> {
     ok(
       readiness.blockers.some((blocker) => blocker.code === 'release_authority_bootstrap_not_wired'),
       'Shared authority readiness: missing bootstrap wiring is an explicit blocker',
+    );
+    ok(
+      readiness.blockers.some((blocker) => blocker.code === 'release_authority_request_path_not_shared'),
+      'Shared authority readiness: production-shared request-path cutover is an explicit blocker',
     );
     equal(
       readiness.components.length,
