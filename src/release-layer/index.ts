@@ -53,6 +53,12 @@ export type DeterministicCheckObservation = deterministicChecks.DeterministicChe
 export type IssuedReleaseToken = token.IssuedReleaseToken;
 export type ReleaseTokenIssuer = token.ReleaseTokenIssuer;
 export type ReleaseTokenVerificationKey = token.ReleaseTokenVerificationKey;
+export type RegisteredReleaseToken = introspection.RegisteredReleaseToken;
+export type RegisterIssuedReleaseTokenInput = introspection.RegisterIssuedReleaseTokenInput;
+export type RevokeReleaseTokenInput = introspection.RevokeReleaseTokenInput;
+export type RecordReleaseTokenUseInput = introspection.RecordReleaseTokenUseInput;
+export type RecordedReleaseTokenUseResult = introspection.RecordedReleaseTokenUseResult;
+export type ReleaseTokenInactiveReason = introspection.ReleaseTokenInactiveReason;
 export type ReleaseTokenIntrospectionStore = introspection.ReleaseTokenIntrospectionStore;
 export type ReleaseTokenIntrospector = introspection.ReleaseTokenIntrospector;
 export type ReleaseVerificationContext = verification.ReleaseVerificationContext;
@@ -61,6 +67,8 @@ export type ReleaseVerificationInput = verification.ReleaseVerificationInput;
 export type IssuedReleaseEvidencePack = evidence.IssuedReleaseEvidencePack;
 export type ReleaseEvidencePackIssuer = evidence.ReleaseEvidencePackIssuer;
 export type ReleaseEvidencePackStore = evidence.ReleaseEvidencePackStore;
+export type ReleaseEvidencePackVerificationResult =
+  evidence.ReleaseEvidencePackVerificationResult;
 
 /**
  * Curated public platform surface for the Attestor release layer.

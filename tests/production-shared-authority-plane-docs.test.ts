@@ -83,8 +83,8 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| Completed | 4 |',
-    'Shared authority docs: tracker records the completed shared reviewer-queue step',
+    '| Completed | 5 |',
+    'Shared authority docs: tracker records the completed shared token/evidence step',
   );
   includes(
     tracker,
@@ -108,13 +108,23 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| 05 | pending | Add shared release token introspection and evidence-pack stores |',
-    'Shared authority docs: step 05 is now the next engineering step',
+    '| 05 | complete | Add shared release token introspection and evidence-pack stores |',
+    'Shared authority docs: step 05 is complete',
+  );
+  includes(
+    tracker,
+    '| 06 | pending | Add shared degraded-mode and policy-control-plane authority stores |',
+    'Shared authority docs: step 06 is now the next engineering step',
   );
   includes(
     tracker,
     'ATTESTOR_RELEASE_AUTHORITY_PG_URL',
     'Shared authority docs: tracker names the dedicated release-authority PostgreSQL env',
+  );
+  includes(
+    tracker,
+    'Carry the audit gaps forward on every remaining step',
+    'Shared authority docs: tracker carries the audit gap guard into future steps',
   );
 }
 
