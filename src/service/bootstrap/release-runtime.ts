@@ -34,6 +34,7 @@ import {
   CURRENT_RELEASE_RUNTIME_STORE_MODES,
   assertReleaseRuntimeDurability,
   buildRuntimeProfileStartupDiagnostics,
+  evaluateReleaseRuntimeDurability,
   resolveRuntimeProfile,
   type AttestorRuntimeProfile,
   type ReleaseRuntimeStoreComponent,
@@ -202,6 +203,7 @@ export interface ReleaseRuntimeBootstrap {
 
 export interface CreateReleaseRuntimeBootstrapInput {
   runtimeProfile?: AttestorRuntimeProfile;
+  allowPreflightOnDurabilityViolation?: boolean;
 }
 
 export function createReleaseRuntimeBootstrap(
@@ -211,10 +213,9 @@ export function createReleaseRuntimeBootstrap(
   const releaseRuntimeStoreModes = releaseRuntimeStoreModesForProfile(runtimeProfile);
   const releaseRuntimeRequestPathDiagnostics =
     buildReleaseRuntimeRequestPathDiagnostics(releaseRuntimeStoreModes);
-  const releaseRuntimeDurability = assertReleaseRuntimeDurability(
-    runtimeProfile,
-    releaseRuntimeStoreModes,
-  );
+  const releaseRuntimeDurability = input.allowPreflightOnDurabilityViolation === true
+    ? evaluateReleaseRuntimeDurability(runtimeProfile, releaseRuntimeStoreModes)
+    : assertReleaseRuntimeDurability(runtimeProfile, releaseRuntimeStoreModes);
   const runtimeProfileDiagnostics = buildRuntimeProfileStartupDiagnostics(
     runtimeProfile,
     releaseRuntimeStoreModes,

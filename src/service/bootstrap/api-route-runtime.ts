@@ -341,7 +341,10 @@ export function createApiHttpRouteRuntime(
     financeReleaseDecisionEngine,
     financeCommunicationReleaseShadowEvaluator,
     financeActionReleaseShadowEvaluator,
-  } = createReleaseRuntimeBootstrap({ runtimeProfile });
+  } = createReleaseRuntimeBootstrap({
+    runtimeProfile,
+    allowPreflightOnDurabilityViolation: runtimeProfile.id === 'production-shared',
+  });
   const {
     currentHostedAccount,
     readHostedBillingEntitlement,

@@ -148,6 +148,16 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    'production-shared-preflight-bootstrap.test.ts',
+    'Shared authority docs: step 07 evidence includes production-shared preflight bootstrap coverage',
+  );
+  includes(
+    tracker,
+    'production-shared` preflight mode',
+    'Shared authority docs: step 07 records that production-shared can boot only as preflight',
+  );
+  includes(
+    tracker,
     'non-preflight API paths fail-closed',
     'Shared authority docs: step 07 records the HTTP request path fail-closed guard',
   );

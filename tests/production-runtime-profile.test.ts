@@ -293,6 +293,31 @@ function testDurabilityAssertionAndBootstrap(): void {
     'Runtime bootstrap: production profile fails closed with current stores',
   );
   passed += 1;
+
+  const productionPreflight = createReleaseRuntimeBootstrap({
+    runtimeProfile: production,
+    allowPreflightOnDurabilityViolation: true,
+  });
+  equal(
+    productionPreflight.runtimeProfile.id,
+    'production-shared',
+    'Runtime bootstrap: production-shared preflight carries the selected profile',
+  );
+  equal(
+    productionPreflight.releaseRuntimeDurability.ready,
+    false,
+    'Runtime bootstrap: production-shared preflight keeps durability readiness false',
+  );
+  equal(
+    productionPreflight.releaseRuntimeDurability.violations.length,
+    8,
+    'Runtime bootstrap: production-shared preflight exposes all shared-store violations',
+  );
+  equal(
+    productionPreflight.releaseRuntimeRequestPathDiagnostics.usesSharedAuthorityStores,
+    false,
+    'Runtime bootstrap: production-shared preflight keeps request path fail-closed',
+  );
 }
 
 function testDocsAndApiRuntimeAreWired(): void {
@@ -333,6 +358,7 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(productionReadiness, 'GET /api/v1/ready', 'Runtime docs: production readiness guide points operators at readiness');
   includes(productionReadiness, 'releaseRuntime.durability.ready=true', 'Runtime docs: production readiness guide requires durable runtime readiness');
   includes(apiRouteRuntime, 'resolveRuntimeProfile()', 'Runtime docs: API route runtime resolves profile');
+  includes(apiRouteRuntime, 'allowPreflightOnDurabilityViolation', 'Runtime docs: API route runtime wires production-shared preflight');
   includes(apiRouteRuntime, 'releaseRuntimeDurabilitySummary', 'Runtime docs: API route runtime exposes summary');
   includes(apiRouteRuntime, 'runtimeProfileDiagnostics', 'Runtime docs: API route runtime exposes startup diagnostics');
   includes(coreRoutes, 'runtimeProfileDiagnostics', 'Runtime docs: core routes expose runtime diagnostics');

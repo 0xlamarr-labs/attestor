@@ -205,7 +205,8 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
   assert.doesNotMatch(apiServer, /from '\.\/bootstrap\/release-runtime\.js'/u);
   assert.doesNotMatch(apiServer, /createReleaseRuntimeBootstrap\(\)/u);
   assert.match(apiRouteRuntime, /from '\.\/release-runtime\.js'/u);
-  assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\{ runtimeProfile \}\)/u);
+  assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\{/u);
+  assert.match(apiRouteRuntime, /allowPreflightOnDurabilityViolation:\s*runtimeProfile\.id === 'production-shared'/u);
   assert.match(apiRouteRuntime, /resolveRuntimeProfile\(\)/u);
   assert.match(apiRouteRuntime, /releaseRuntimeDurabilitySummary/u);
   assert.match(apiRouteRuntime, /runtimeProfileDiagnostics/u);
