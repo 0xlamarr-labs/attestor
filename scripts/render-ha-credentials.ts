@@ -19,6 +19,7 @@ const runtimeSecretMappings: SecretMapping[] = [
   { envName: 'REDIS_USERNAME', secretKey: 'redis-username', remoteSuffix: 'redis-username' },
   { envName: 'ATTESTOR_CONTROL_PLANE_PG_URL', secretKey: 'control-plane-pg-url', remoteSuffix: 'control-plane-pg-url' },
   { envName: 'ATTESTOR_BILLING_LEDGER_PG_URL', secretKey: 'billing-ledger-pg-url', remoteSuffix: 'billing-ledger-pg-url' },
+  { envName: 'ATTESTOR_RELEASE_AUTHORITY_PG_URL', secretKey: 'release-authority-pg-url', remoteSuffix: 'release-authority-pg-url' },
   { envName: 'ATTESTOR_PG_URL', secretKey: 'runtime-pg-url', remoteSuffix: 'runtime-pg-url' },
   { envName: 'ATTESTOR_ADMIN_API_KEY', secretKey: 'admin-api-key', remoteSuffix: 'admin-api-key' },
   { envName: 'ATTESTOR_METRICS_API_KEY', secretKey: 'metrics-api-key', remoteSuffix: 'metrics-api-key' },
@@ -176,6 +177,7 @@ function main(): void {
       ['REDIS_URL or REDIS_ADDRESS', envOrFile('REDIS_URL') ?? envOrFile('REDIS_ADDRESS')],
       ['ATTESTOR_CONTROL_PLANE_PG_URL', envOrFile('ATTESTOR_CONTROL_PLANE_PG_URL')],
       ['ATTESTOR_BILLING_LEDGER_PG_URL', envOrFile('ATTESTOR_BILLING_LEDGER_PG_URL')],
+      ['ATTESTOR_RELEASE_AUTHORITY_PG_URL', envOrFile('ATTESTOR_RELEASE_AUTHORITY_PG_URL')],
       ['ATTESTOR_ADMIN_API_KEY', envOrFile('ATTESTOR_ADMIN_API_KEY')],
     ]);
   }

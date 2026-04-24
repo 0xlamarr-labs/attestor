@@ -13,6 +13,7 @@ import {
 type ObservabilityProvider = 'generic' | 'grafana-cloud' | 'grafana-alloy';
 type HaProvider = 'generic' | 'aws' | 'gke';
 type SecretMode = 'secret' | 'external-secret';
+type RuntimeProfile = 'local-dev' | 'single-node-durable' | 'production-shared';
 
 function arg(name: string, fallback?: string): string | undefined {
   const prefixed = `--${name}=`;
@@ -44,6 +45,51 @@ function benchmarkAgeHours(path: string): number {
   return (Date.now() - statSync(path).mtimeMs) / 3_600_000;
 }
 
+function evaluateRuntimeAuthority(profile: string | null): {
+  profile: string | null;
+  releaseAuthorityPgConfigured: boolean;
+  environmentInputsComplete: boolean;
+  promotionGatePassed: boolean;
+  missingInputs: string[];
+  issues: string[];
+  requiredProofs: string[];
+} {
+  const releaseAuthorityPgConfigured = Boolean(env('ATTESTOR_RELEASE_AUTHORITY_PG_URL'));
+  const missingInputs: string[] = [];
+  const issues: string[] = [];
+  const requiredProofs = [
+    'npm run test:production-runtime-profile',
+    ...(profile === 'single-node-durable' ? ['npm run test:production-runtime-restart-recovery'] : []),
+    ...(profile === 'production-shared' ? [
+      'npm run test:production-shared-request-path-cutover',
+      'npm run test:production-shared-multi-instance-recovery',
+    ] : []),
+    'GET /api/v1/ready',
+  ];
+
+  if (!profile) {
+    missingInputs.push('ATTESTOR_RUNTIME_PROFILE');
+    issues.push('ATTESTOR_RUNTIME_PROFILE is required before production promotion.');
+  } else if (!['local-dev', 'single-node-durable', 'production-shared'].includes(profile)) {
+    issues.push(`Unsupported ATTESTOR_RUNTIME_PROFILE: ${profile}`);
+  } else if (profile === 'local-dev') {
+    issues.push('ATTESTOR_RUNTIME_PROFILE=local-dev cannot drive production promotion.');
+  } else if (profile === 'production-shared' && !releaseAuthorityPgConfigured) {
+    missingInputs.push('ATTESTOR_RELEASE_AUTHORITY_PG_URL');
+    issues.push('production-shared requires ATTESTOR_RELEASE_AUTHORITY_PG_URL.');
+  }
+
+  return {
+    profile,
+    releaseAuthorityPgConfigured,
+    environmentInputsComplete: missingInputs.length === 0 && issues.length === 0,
+    promotionGatePassed: missingInputs.length === 0 && issues.length === 0,
+    missingInputs,
+    issues,
+    requiredProofs,
+  };
+}
+
 export interface ProductionReadinessPacket {
   generatedAt: string;
   readiness: {
@@ -72,6 +118,7 @@ export interface ProductionReadinessPacket {
     benchmarkAgeHours: number;
     packet: HaPromotionPacket;
   };
+  runtimeAuthority: ReturnType<typeof evaluateRuntimeAuthority>;
   artifacts: {
     outputDir: string;
     observabilityPacketDir: string;
@@ -92,6 +139,7 @@ export async function renderProductionReadinessPacket(options?: {
   outputDir?: string;
   observabilityBenchmarkMaxAgeHours?: number;
   haBenchmarkMaxAgeHours?: number;
+  runtimeProfile?: RuntimeProfile;
 }): Promise<ProductionReadinessPacket> {
   const observabilityProvider = (options?.observabilityProvider
     ?? arg('observability-provider', env('ATTESTOR_OBSERVABILITY_PROVIDER') ?? 'grafana-alloy')) as ObservabilityProvider;
@@ -121,6 +169,7 @@ export async function renderProductionReadinessPacket(options?: {
   const alertmanagerUrl = options?.alertmanagerUrl ?? arg('alertmanager-url', env('ATTESTOR_OBSERVABILITY_ALERTMANAGER_URL') ?? env('ALERTMANAGER_BASE_URL')) ?? null;
   const observabilityBenchmarkMaxAgeHours = options?.observabilityBenchmarkMaxAgeHours ?? numberArg('observability-max-age-hours', 24);
   const haBenchmarkMaxAgeHours = options?.haBenchmarkMaxAgeHours ?? numberArg('ha-max-age-hours', 72);
+  const runtimeAuthority = evaluateRuntimeAuthority(options?.runtimeProfile ?? arg('runtime-profile', env('ATTESTOR_RUNTIME_PROFILE') ?? undefined) ?? null);
 
   mkdirSync(outputDir, { recursive: true });
 
@@ -151,22 +200,26 @@ export async function renderProductionReadinessPacket(options?: {
   const missingInputs = [
     ...observabilityPacket.readiness.missingInputs.map((item) => `observability: ${item}`),
     ...haPacket.readiness.missingInputs.map((item) => `ha: ${item}`),
+    ...runtimeAuthority.missingInputs.map((item) => `runtime: ${item}`),
   ];
   const issues = [
     ...new Set([
       ...observabilityPacket.readiness.issues.map((item) => `observability: ${item}`),
       ...haPacket.readiness.issues.map((item) => `ha: ${item}`),
+      ...runtimeAuthority.issues.map((item) => `runtime: ${item}`),
       ...freshnessIssues,
     ]),
   ];
 
   const environmentInputsComplete = observabilityPacket.readiness.environmentInputsComplete
-    && haPacket.readiness.environmentInputsComplete;
+    && haPacket.readiness.environmentInputsComplete
+    && runtimeAuthority.environmentInputsComplete;
   const benchmarkFreshnessPassed = freshnessIssues.length === 0;
   const repoPipelineReady = observabilityPacket.readiness.repoPipelineReady
     && haPacket.readiness.repoPipelineReady;
   const promotionGatePassed = observabilityPacket.readiness.promotionGatePassed
-    && haPacket.readiness.promotionGatePassed;
+    && haPacket.readiness.promotionGatePassed
+    && runtimeAuthority.promotionGatePassed;
 
   const packet: ProductionReadinessPacket = {
     generatedAt: new Date().toISOString(),
@@ -198,6 +251,7 @@ export async function renderProductionReadinessPacket(options?: {
       benchmarkAgeHours: haAge,
       packet: haPacket,
     },
+    runtimeAuthority,
     artifacts: {
       outputDir,
       observabilityPacketDir,
@@ -228,6 +282,13 @@ Benchmark freshness:
 
 - observability benchmark age: ${observabilityAge.toFixed(2)}h (max ${observabilityBenchmarkMaxAgeHours}h)
 - HA benchmark age: ${haAge.toFixed(2)}h (max ${haBenchmarkMaxAgeHours}h)
+
+Runtime authority:
+
+- profile: ${runtimeAuthority.profile ?? 'not configured'}
+- release authority PostgreSQL configured: ${runtimeAuthority.releaseAuthorityPgConfigured}
+- required proofs:
+${formatChecklist(runtimeAuthority.requiredProofs)}
 
 Missing inputs:
 ${formatChecklist(packet.readiness.missingInputs)}

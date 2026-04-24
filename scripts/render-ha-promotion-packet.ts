@@ -43,6 +43,7 @@ function detectMissingInputs(provider: Provider, tlsMode: string): string[] {
   const requireOne = (name: string): void => {
     if (!env(name) && !env(`${name}_FILE`)) missing.push(name);
   };
+  const runtimeProfile = env('ATTESTOR_RUNTIME_PROFILE');
 
   requireOne('ATTESTOR_API_IMAGE');
   requireOne('ATTESTOR_WORKER_IMAGE');
@@ -50,6 +51,10 @@ function detectMissingInputs(provider: Provider, tlsMode: string): string[] {
   requireOne('REDIS_URL');
   requireOne('ATTESTOR_CONTROL_PLANE_PG_URL');
   requireOne('ATTESTOR_BILLING_LEDGER_PG_URL');
+  requireOne('ATTESTOR_RUNTIME_PROFILE');
+  if (runtimeProfile === 'production-shared') {
+    requireOne('ATTESTOR_RELEASE_AUTHORITY_PG_URL');
+  }
   requireOne('ATTESTOR_ADMIN_API_KEY');
   requireOne('ATTESTOR_METRICS_API_KEY');
   requireOne('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY');

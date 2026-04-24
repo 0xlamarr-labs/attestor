@@ -15,11 +15,11 @@ This guide uses the **recommended path today**:
 
 AWS remains supported. This guide chooses GKE because it is currently the cleanest repo-guided path end to end.
 
-For the next repo-side engineering frontier behind true multi-node release/policy truth, use [Production shared authority plane buildout](../02-architecture/production-shared-authority-plane-buildout.md).
+The repo-side shared release/policy authority-plane buildout is tracked in [Production shared authority plane buildout](../02-architecture/production-shared-authority-plane-buildout.md). That track now proves the shared authority plane with embedded PostgreSQL; this guide remains the boundary for promoting it into a real customer-operated or hosted environment.
 
 ## What "Ready" Means Here
 
-Attestor is ready for production promotion when all three are true:
+Attestor is ready for production promotion when all four are true:
 
 1. the **repo pipeline** is green
 2. the **environment inputs** are present and reachable
@@ -36,9 +36,9 @@ Set `ATTESTOR_RUNTIME_PROFILE` deliberately before starting the API runtime. Do 
 |---|---|---|---|
 | `local-dev` | Local development, demos, and repeatable tests. | `npm test` and local API checks may run quickly with memory-backed release state. | Production readiness |
 | `single-node-durable` | Customer-operated or hosted evaluation where one runtime must survive restart. | `npm run test:production-runtime-profile`, `npm run test:production-runtime-restart-recovery`, and `/api/v1/ready` reporting `checks.releaseRuntime=true`. | Multi-node production |
-| `production-shared` | Multi-node production authority plane target. | Shared release-authority stores must satisfy the profile before API bootstrap; otherwise startup fails closed. | Any production claim until shared release-authority state is actually wired and passing |
+| `production-shared` | Multi-node release/policy authority plane target. | `ATTESTOR_RELEASE_AUTHORITY_PG_URL` must point at reachable PostgreSQL, `npm run test:production-shared-request-path-cutover` and `npm run test:production-shared-multi-instance-recovery` must pass, and `/api/v1/ready` must report shared request-path readiness. | External customer-operated rollout until real environment render/probe packets and rehearsal pass |
 
-The current repository proves `single-node-durable` restart recovery. It does not claim that file-backed single-runtime release authority state is a multi-node production authority plane.
+The current repository proves `single-node-durable` restart recovery and proves `production-shared` shared authority behavior under embedded PostgreSQL multi-instance, concurrency, restart, reconnect, and recovery tests. It does not claim your external PostgreSQL, Redis, Kubernetes, secret, DNS, TLS, observability, or billing environment is production-ready until the render/probe packet chain and rehearsal pass against that environment.
 
 The runtime diagnostics are visible at:
 
@@ -63,7 +63,14 @@ ATTESTOR_POLICY_ACTIVATION_APPROVAL_STORE_PATH=/var/lib/attestor/policy-activati
 ATTESTOR_POLICY_MUTATION_AUDIT_LOG_PATH=/var/lib/attestor/policy-mutation-audit.json
 ```
 
-For `production-shared`, do not paper over the gate with file paths. Use it only after shared release-authority stores are implemented and the profile is satisfied without durability violations.
+For `production-shared`, do not paper over the gate with file paths. Use it only when the dedicated release-authority PostgreSQL substrate is configured, reachable, and reflected in `/api/v1/ready`.
+
+```bash
+ATTESTOR_RUNTIME_PROFILE=production-shared
+ATTESTOR_RELEASE_AUTHORITY_PG_URL=postgres://attestor:...@postgres.example.internal:5432/attestor_release_authority
+```
+
+In this profile, file-backed release-authority paths are no longer the authority-plane proof. The request path must use the async shared authority-store contract, and readiness must fail closed if the shared PostgreSQL substrate is missing or unreachable.
 
 ## Recommended Stack
 
@@ -171,6 +178,7 @@ is a **single OTLP gateway**, not a split metrics/logs/traces credential set:
 - `REDIS_URL`
 - `ATTESTOR_CONTROL_PLANE_PG_URL`
 - `ATTESTOR_BILLING_LEDGER_PG_URL`
+- `ATTESTOR_RELEASE_AUTHORITY_PG_URL` when `ATTESTOR_RUNTIME_PROFILE=production-shared`
 - optional `ATTESTOR_PG_URL`
 - `ATTESTOR_ADMIN_API_KEY`
 - TLS material if you are not delegating certificate issuance elsewhere
@@ -239,6 +247,8 @@ Before rendering the final production packet, run the repo-side runtime gates:
 ```bash
 npm run test:production-runtime-profile
 npm run test:production-runtime-restart-recovery
+npm run test:production-shared-request-path-cutover
+npm run test:production-shared-multi-instance-recovery
 ```
 
 Then render the final environment promotion packet:
@@ -295,7 +305,7 @@ You can call the deployment production-ready when all of these are true:
 - `/api/v1/ready` returns ready with `checks.releaseRuntime=true`
 - `/api/v1/health` reports the expected `runtimeProfile` and `releaseRuntime.durability.ready=true`
 - `single-node-durable` restart recovery has passed if you are running one API runtime
-- `production-shared` is only used if shared release-authority stores satisfy the profile
+- `production-shared` is only used if `ATTESTOR_RELEASE_AUTHORITY_PG_URL` is reachable and the shared request path reports the `async-shared-authority-stores` contract
 - observability packet is green
 - HA packet is green
 - real secrets are loaded from the chosen secret backend
@@ -316,6 +326,7 @@ The repository can now:
 - probe the endpoints
 - produce rollout checkpoints
 - prove `single-node-durable` release-authority restart recovery
+- prove the `production-shared` shared authority plane under embedded PostgreSQL multi-instance, concurrency, restart, reconnect, and recovery tests
 
 But it still cannot do these things without your real environment:
 
@@ -324,6 +335,6 @@ But it still cannot do these things without your real environment:
 - provide the final TLS material or let cert-manager mint certificates inside your own environment
 - provide your real OTLP / PagerDuty / webhook credentials
 - produce real production traffic on its own
-- turn file-backed single-runtime release-authority state into a multi-node shared authority plane
+- prove that your external PostgreSQL, Redis, Kubernetes, secret, DNS, TLS, observability, billing, and rollout environment behaves correctly without live promotion inputs and rehearsal
 
 That is not a weakness in the repo. It is the natural boundary between shipped software and real operations.

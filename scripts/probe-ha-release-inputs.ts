@@ -55,6 +55,25 @@ function pushInvalid(message: string, issues: string[]): void {
   issues.push(message);
 }
 
+function validateRuntimeProfile(issues: string[]): void {
+  const profile = env('ATTESTOR_RUNTIME_PROFILE');
+  if (!profile) {
+    required('ATTESTOR_RUNTIME_PROFILE', profile, issues);
+    return;
+  }
+  if (!['local-dev', 'single-node-durable', 'production-shared'].includes(profile)) {
+    pushInvalid('ATTESTOR_RUNTIME_PROFILE must be local-dev, single-node-durable, or production-shared.', issues);
+    return;
+  }
+  if (profile === 'local-dev') {
+    pushInvalid('ATTESTOR_RUNTIME_PROFILE=local-dev cannot drive production promotion.', issues);
+    return;
+  }
+  if (profile === 'production-shared') {
+    required('ATTESTOR_RELEASE_AUTHORITY_PG_URL', env('ATTESTOR_RELEASE_AUTHORITY_PG_URL'), issues);
+  }
+}
+
 export interface HaReleaseProbeSummary {
   provider: Provider;
   tlsMode: string;
@@ -97,6 +116,7 @@ export async function probeHaReleaseInputs(options?: {
   required('REDIS_URL', env('REDIS_URL'), issues);
   required('ATTESTOR_CONTROL_PLANE_PG_URL', env('ATTESTOR_CONTROL_PLANE_PG_URL'), issues);
   required('ATTESTOR_BILLING_LEDGER_PG_URL', env('ATTESTOR_BILLING_LEDGER_PG_URL'), issues);
+  validateRuntimeProfile(issues);
   required('ATTESTOR_ADMIN_API_KEY', env('ATTESTOR_ADMIN_API_KEY'), issues);
   required('ATTESTOR_METRICS_API_KEY', env('ATTESTOR_METRICS_API_KEY'), issues);
   required('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY', env('ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY'), issues);

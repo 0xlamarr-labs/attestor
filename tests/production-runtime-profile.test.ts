@@ -391,10 +391,13 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(readme, 'production-runtime-hardening-buildout.md', 'Runtime docs: README links hardening tracker');
   includes(productionReadiness, '## Runtime Profile Gate', 'Runtime docs: production readiness guide has a runtime profile gate');
   includes(productionReadiness, 'ATTESTOR_RUNTIME_PROFILE', 'Runtime docs: production readiness guide documents the runtime profile knob');
+  includes(productionReadiness, 'ATTESTOR_RELEASE_AUTHORITY_PG_URL', 'Runtime docs: production readiness guide documents the release-authority PostgreSQL knob');
   includes(productionReadiness, 'npm run test:production-runtime-restart-recovery', 'Runtime docs: production readiness guide documents restart recovery gate');
+  includes(productionReadiness, 'npm run test:production-shared-request-path-cutover', 'Runtime docs: production readiness guide documents shared request-path cutover gate');
+  includes(productionReadiness, 'npm run test:production-shared-multi-instance-recovery', 'Runtime docs: production readiness guide documents multi-instance shared recovery gate');
   includes(productionReadiness, '`single-node-durable` | Customer-operated or hosted evaluation where one runtime must survive restart.', 'Runtime docs: single-node durable is scoped to one runtime');
-  includes(productionReadiness, '`production-shared` | Multi-node production authority plane target.', 'Runtime docs: production-shared is the multi-node target');
-  includes(productionReadiness, 'It does not claim that file-backed single-runtime release authority state is a multi-node production authority plane.', 'Runtime docs: anti-overclaim language blocks file-backed multi-node claims');
+  includes(productionReadiness, '`production-shared` | Multi-node release/policy authority plane target.', 'Runtime docs: production-shared is the multi-node target');
+  includes(productionReadiness, 'external PostgreSQL, Redis, Kubernetes, secret, DNS, TLS, observability, or billing environment is production-ready', 'Runtime docs: anti-overclaim language blocks external production claims');
   includes(productionReadiness, 'GET /api/v1/ready', 'Runtime docs: production readiness guide points operators at readiness');
   includes(productionReadiness, 'releaseRuntime.durability.ready=true', 'Runtime docs: production readiness guide requires durable runtime readiness');
   includes(apiRouteRuntime, 'resolveRuntimeProfile()', 'Runtime docs: API route runtime resolves profile');

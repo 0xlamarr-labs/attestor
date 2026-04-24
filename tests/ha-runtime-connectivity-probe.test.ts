@@ -59,6 +59,8 @@ async function main(): Promise<void> {
     ATTESTOR_CONTROL_PLANE_PG_URL: process.env.ATTESTOR_CONTROL_PLANE_PG_URL,
     ATTESTOR_BILLING_LEDGER_PG_URL: process.env.ATTESTOR_BILLING_LEDGER_PG_URL,
     ATTESTOR_PG_URL: process.env.ATTESTOR_PG_URL,
+    ATTESTOR_RUNTIME_PROFILE: process.env.ATTESTOR_RUNTIME_PROFILE,
+    ATTESTOR_RELEASE_AUTHORITY_PG_URL: process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL,
     ATTESTOR_TLS_MODE: process.env.ATTESTOR_TLS_MODE,
     ATTESTOR_TLS_CERT_PEM_FILE: process.env.ATTESTOR_TLS_CERT_PEM_FILE,
     ATTESTOR_TLS_KEY_PEM_FILE: process.env.ATTESTOR_TLS_KEY_PEM_FILE,
@@ -70,6 +72,7 @@ async function main(): Promise<void> {
     await pg.createDatabase('control_plane');
     await pg.createDatabase('billing_ledger');
     await pg.createDatabase('runtime_db');
+    await pg.createDatabase('release_authority');
 
     const host = await redis.getHost();
     const redisPort = await redis.getPort();
@@ -83,6 +86,8 @@ async function main(): Promise<void> {
     process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
     process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
     process.env.ATTESTOR_PG_URL = `${basePg}/runtime_db`;
+    process.env.ATTESTOR_RUNTIME_PROFILE = 'production-shared';
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
     process.env.ATTESTOR_TLS_MODE = 'secret';
     process.env.ATTESTOR_TLS_CERT_PEM_FILE = certPath;
     process.env.ATTESTOR_TLS_KEY_PEM_FILE = keyPath;
@@ -93,7 +98,15 @@ async function main(): Promise<void> {
     ok(ready.checks.controlPlanePg.reachable === true, 'HA runtime connectivity: control-plane PG query succeeds');
     ok(ready.checks.billingLedgerPg.reachable === true, 'HA runtime connectivity: billing-ledger PG query succeeds');
     ok(ready.checks.runtimePg.reachable === true, 'HA runtime connectivity: runtime PG query succeeds');
+    ok(ready.checks.runtimeProfile.productionShared === true, 'HA runtime connectivity: production-shared profile is detected');
+    ok(ready.checks.releaseAuthorityPg.reachable === true, 'HA runtime connectivity: release-authority PG query succeeds');
     ok(ready.checks.tls.valid === true, 'HA runtime connectivity: TLS PEM material passes structural validation');
+
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/missing_release_authority`;
+    const brokenReleaseAuthority = await probeHaRuntimeConnectivity({ provider: 'generic', timeoutMs: 500 });
+    ok(brokenReleaseAuthority.overall.passed === false, 'HA runtime connectivity: broken release-authority PG endpoint blocks production-shared readiness');
+    ok(brokenReleaseAuthority.overall.issues.some((issue) => issue.includes('Release-authority PostgreSQL connectivity failed')), 'HA runtime connectivity: release-authority PG failure is surfaced');
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
 
     process.env.REDIS_URL = 'redis://127.0.0.1:1';
     const brokenRedis = await probeHaRuntimeConnectivity({ provider: 'generic', timeoutMs: 500 });

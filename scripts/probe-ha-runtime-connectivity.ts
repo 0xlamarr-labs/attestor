@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import IORedis from 'ioredis';
 
 type Provider = 'generic' | 'aws' | 'gke';
+type RuntimeProfile = 'local-dev' | 'single-node-durable' | 'production-shared';
 
 function arg(name: string, fallback?: string): string | undefined {
   const prefixed = `--${name}=`;
@@ -71,6 +72,36 @@ function validAcmArnList(value: string | null): boolean {
   const entries = value.split(',').map((entry) => entry.trim()).filter(Boolean);
   if (entries.length === 0) return false;
   return entries.every((entry) => /^arn:aws(-[\w]+)?:acm:[^:]+:\d{12}:certificate\/[A-Za-z0-9-]+$/.test(entry));
+}
+
+function runtimeProfileCheck(profile: string | null): { configured: boolean; valid: boolean; productionShared: boolean; value: string | null; detail: string; } {
+  if (!profile) {
+    return {
+      configured: false,
+      valid: false,
+      productionShared: false,
+      value: null,
+      detail: 'ATTESTOR_RUNTIME_PROFILE is required for production promotion.',
+    };
+  }
+  if (!['local-dev', 'single-node-durable', 'production-shared'].includes(profile)) {
+    return {
+      configured: true,
+      valid: false,
+      productionShared: false,
+      value: profile,
+      detail: `Unsupported ATTESTOR_RUNTIME_PROFILE: ${profile}`,
+    };
+  }
+  return {
+    configured: true,
+    valid: profile !== 'local-dev',
+    productionShared: profile === 'production-shared',
+    value: profile,
+    detail: profile === 'local-dev'
+      ? 'local-dev cannot drive production promotion.'
+      : `Runtime profile is ${profile}.`,
+  };
 }
 
 async function probeRedis(redisUrl: string | null, timeoutMs: number): Promise<{ configured: boolean; reachable: boolean; detail: string; }> {
@@ -147,6 +178,8 @@ export interface HaRuntimeConnectivitySummary {
     controlPlanePg: { configured: boolean; reachable: boolean; detail: string; };
     billingLedgerPg: { configured: boolean; reachable: boolean; detail: string; };
     runtimePg: { configured: boolean; reachable: boolean; detail: string; };
+    releaseAuthorityPg: { configured: boolean; reachable: boolean; detail: string; };
+    runtimeProfile: { configured: boolean; valid: boolean; productionShared: boolean; value: string | null; detail: string; };
     tls: { valid: boolean; detail: string; };
   };
   overall: {
@@ -172,6 +205,8 @@ export async function probeHaRuntimeConnectivity(options?: {
   const controlPlanePgUrl = env('ATTESTOR_CONTROL_PLANE_PG_URL');
   const billingLedgerPgUrl = env('ATTESTOR_BILLING_LEDGER_PG_URL');
   const runtimePgUrl = env('ATTESTOR_PG_URL');
+  const releaseAuthorityPgUrl = env('ATTESTOR_RELEASE_AUTHORITY_PG_URL');
+  const runtimeProfile = runtimeProfileCheck(env('ATTESTOR_RUNTIME_PROFILE') as RuntimeProfile | null);
 
   const hostnameCheck = {
     configured: Boolean(hostname),
@@ -190,11 +225,12 @@ export async function probeHaRuntimeConnectivity(options?: {
       : 'API and worker image references must be non-empty registry/image references.',
   };
 
-  const [redisCheck, controlPlanePgCheck, billingLedgerPgCheck, runtimePgCheck] = await Promise.all([
+  const [redisCheck, controlPlanePgCheck, billingLedgerPgCheck, runtimePgCheck, releaseAuthorityPgCheck] = await Promise.all([
     probeRedis(redisUrl, timeoutMs),
     probePg(controlPlanePgUrl, timeoutMs),
     probePg(billingLedgerPgUrl, timeoutMs),
     probePg(runtimePgUrl, timeoutMs),
+    probePg(releaseAuthorityPgUrl, timeoutMs),
   ]);
 
   const tlsCheck = (() => {
@@ -240,6 +276,13 @@ export async function probeHaRuntimeConnectivity(options?: {
   if (!controlPlanePgCheck.reachable) issues.push(`Control-plane PostgreSQL connectivity failed: ${controlPlanePgCheck.detail}`);
   if (!billingLedgerPgCheck.reachable) issues.push(`Billing-ledger PostgreSQL connectivity failed: ${billingLedgerPgCheck.detail}`);
   if (runtimePgCheck.configured && !runtimePgCheck.reachable) issues.push(`Runtime PostgreSQL connectivity failed: ${runtimePgCheck.detail}`);
+  if (!runtimeProfile.valid) issues.push(runtimeProfile.detail);
+  if (runtimeProfile.productionShared && !releaseAuthorityPgCheck.reachable) {
+    issues.push(`Release-authority PostgreSQL connectivity failed: ${releaseAuthorityPgCheck.detail}`);
+  }
+  if (!runtimeProfile.productionShared && releaseAuthorityPgCheck.configured && !releaseAuthorityPgCheck.reachable) {
+    issues.push(`Release-authority PostgreSQL connectivity failed: ${releaseAuthorityPgCheck.detail}`);
+  }
   if (!tlsCheck.valid) issues.push(tlsCheck.detail);
 
   return {
@@ -253,6 +296,8 @@ export async function probeHaRuntimeConnectivity(options?: {
       controlPlanePg: controlPlanePgCheck,
       billingLedgerPg: billingLedgerPgCheck,
       runtimePg: runtimePgCheck,
+      releaseAuthorityPg: releaseAuthorityPgCheck,
+      runtimeProfile,
       tls: tlsCheck,
     },
     overall: {

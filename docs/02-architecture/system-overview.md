@@ -124,7 +124,7 @@ So the honest architectural statement is:
 
 Active priority:
 
-- open and execute the [Production shared authority plane buildout](production-shared-authority-plane-buildout.md) so the `production-shared` runtime profile stops being only a fail-closed contract and becomes a real multi-node authority plane
+- keep the completed [Production shared authority plane buildout](production-shared-authority-plane-buildout.md) aligned with production promotion gates so `production-shared` remains a tested shared authority plane, not a loose marketing claim
 - keep the product story centered on one Attestor platform
 - keep the README and architecture docs aligned with the trackers
 - preserve the completed consequence-admission contract, quickstart, and readiness gates before widening public API claims
@@ -140,4 +140,4 @@ Hosted product flow status:
 
 Future hosted product-flow changes should preserve the docs, contract, readiness, and probe gates before the public story expands again.
 
-The next runtime/store work should come through [Production shared authority plane buildout](production-shared-authority-plane-buildout.md), not by reopening the completed production-runtime hardening tracker.
+Future runtime/store work should start from a new tracker only after the production readiness packet, HA probes, and real environment rehearsal show a concrete gap. Do not reopen completed runtime-hardening or shared-authority tracks just to widen the product story.

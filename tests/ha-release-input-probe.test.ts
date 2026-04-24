@@ -71,6 +71,8 @@ async function main(): Promise<void> {
     REDIS_URL: process.env.REDIS_URL,
     ATTESTOR_CONTROL_PLANE_PG_URL: process.env.ATTESTOR_CONTROL_PLANE_PG_URL,
     ATTESTOR_BILLING_LEDGER_PG_URL: process.env.ATTESTOR_BILLING_LEDGER_PG_URL,
+    ATTESTOR_RUNTIME_PROFILE: process.env.ATTESTOR_RUNTIME_PROFILE,
+    ATTESTOR_RELEASE_AUTHORITY_PG_URL: process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL,
     ATTESTOR_ADMIN_API_KEY: process.env.ATTESTOR_ADMIN_API_KEY,
     ATTESTOR_METRICS_API_KEY: process.env.ATTESTOR_METRICS_API_KEY,
     ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY: process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY,
@@ -101,6 +103,7 @@ async function main(): Promise<void> {
     await pg.start();
     await pg.createDatabase('control_plane');
     await pg.createDatabase('billing_ledger');
+    await pg.createDatabase('release_authority');
     const redisHost = await redis.getHost();
     const redisPort = await redis.getPort();
     const redisUrl = `redis://${redisHost}:${redisPort}`;
@@ -116,6 +119,8 @@ async function main(): Promise<void> {
     process.env.REDIS_URL = redisUrl;
     process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
     process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
+    process.env.ATTESTOR_RUNTIME_PROFILE = 'production-shared';
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_METRICS_API_KEY = 'metrics-key';
     process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'mfa-key';
@@ -138,6 +143,7 @@ async function main(): Promise<void> {
     ok(ready.rolloutReadiness.envComplete === true, 'HA release probe: env completeness passes with required inputs');
     ok(ready.rolloutReadiness.bundleRenderSucceeded === true, 'HA release probe: release bundle render succeeds in preflight');
     ok(ready.rolloutReadiness.connectivityProbeSucceeded === true, 'HA release probe: runtime connectivity passes in preflight');
+    ok(ready.connectivity?.checks.releaseAuthorityPg.reachable === true, 'HA release probe: release-authority PG connectivity is included in preflight');
     ok(ready.benchmark.p95LatencyMs === 620 && ready.benchmark.requestsPerSecond === 14.85, 'HA release probe: benchmark truth is echoed back');
     ok(ready.provider === 'generic' && ready.tlsMode === 'secret', 'HA release probe: provider and tls mode are captured');
 
@@ -146,6 +152,12 @@ async function main(): Promise<void> {
     ok(missingStripe.rolloutReadiness.envComplete === false, 'HA release probe: missing Stripe API key blocks public deployment readiness');
     ok(missingStripe.rolloutReadiness.issues.some((issue) => issue.includes('STRIPE_API_KEY')), 'HA release probe: missing Stripe API key issue is surfaced');
     process.env.STRIPE_API_KEY = 'sk_live_probe';
+
+    delete process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL;
+    const missingReleaseAuthority = await probeHaReleaseInputs({ provider: 'generic', benchmarkPath });
+    ok(missingReleaseAuthority.rolloutReadiness.envComplete === false, 'HA release probe: production-shared blocks when release-authority PG is missing');
+    ok(missingReleaseAuthority.rolloutReadiness.issues.some((issue) => issue.includes('ATTESTOR_RELEASE_AUTHORITY_PG_URL')), 'HA release probe: missing release-authority PG is surfaced');
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
 
     process.env.ATTESTOR_HA_RUNTIME_SECRET_MODE = 'external-secret';
     process.env.ATTESTOR_HA_SECRET_STORE = 'platform-secrets';

@@ -50,12 +50,14 @@ function main(): void {
     const catalog = readFileSync(resolve(tempDir, 'gke', 'catalog.json'), 'utf8');
     ok(catalog.includes('"logicalName": "observability/grafana-cloud"'), 'Secret manager bootstrap: observability logical catalog entry is emitted');
     ok(catalog.includes('"logicalName": "corp/attestor/control-plane-pg-url"'), 'Secret manager bootstrap: HA runtime logical path uses the configured prefix');
+    ok(catalog.includes('"logicalName": "corp/attestor/release-authority-pg-url"'), 'Secret manager bootstrap: HA catalog includes release-authority PostgreSQL');
     ok(catalog.includes('"remoteName": "corp-attestor-control-plane-pg-url"'), 'Secret manager bootstrap: GKE catalog normalizes remote secret ids for Google Secret Manager');
 
     const seed = readFileSync(resolve(tempDir, 'gke', 'seed.json'), 'utf8');
     ok(seed.includes('REPLACE_ME_OTLP_ENDPOINT'), 'Secret manager bootstrap: structured seed contains Grafana placeholder data');
     ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_ADMIN_API_KEY'), 'Secret manager bootstrap: runtime seed contains admin API key placeholder');
     ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY'), 'Secret manager bootstrap: runtime seed contains MFA encryption key placeholder');
+    ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_RELEASE_AUTHORITY_PG_URL'), 'Secret manager bootstrap: runtime seed contains release-authority PostgreSQL placeholder');
     ok(seed.includes('REPLACE_ME_FOR_ATTESTOR_HOSTED_OIDC_STATE_KEY'), 'Secret manager bootstrap: runtime seed contains hosted OIDC state key placeholder');
     ok(seed.includes('"corp-attestor-admin-api-key"'), 'Secret manager bootstrap: GKE seed uses normalized remote secret ids');
 

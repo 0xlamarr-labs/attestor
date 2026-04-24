@@ -104,6 +104,8 @@ async function main(): Promise<void> {
     REDIS_URL: process.env.REDIS_URL,
     ATTESTOR_CONTROL_PLANE_PG_URL: process.env.ATTESTOR_CONTROL_PLANE_PG_URL,
     ATTESTOR_BILLING_LEDGER_PG_URL: process.env.ATTESTOR_BILLING_LEDGER_PG_URL,
+    ATTESTOR_RUNTIME_PROFILE: process.env.ATTESTOR_RUNTIME_PROFILE,
+    ATTESTOR_RELEASE_AUTHORITY_PG_URL: process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL,
     ATTESTOR_ADMIN_API_KEY: process.env.ATTESTOR_ADMIN_API_KEY,
     ATTESTOR_METRICS_API_KEY: process.env.ATTESTOR_METRICS_API_KEY,
     ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY: process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY,
@@ -146,6 +148,7 @@ async function main(): Promise<void> {
     await pg.start();
     await pg.createDatabase('control_plane');
     await pg.createDatabase('billing_ledger');
+    await pg.createDatabase('release_authority');
     const redisHost = await redis.getHost();
     const redisPort = await redis.getPort();
     const redisUrl = `redis://${redisHost}:${redisPort}`;
@@ -178,6 +181,8 @@ async function main(): Promise<void> {
     process.env.REDIS_URL = redisUrl;
     process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
     process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
+    process.env.ATTESTOR_RUNTIME_PROFILE = 'production-shared';
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_METRICS_API_KEY = 'metrics-key';
     process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'mfa-key';
@@ -213,6 +218,23 @@ async function main(): Promise<void> {
     ok(blocked.readiness.issues.some((item) => item.includes('Observability benchmark is stale')), 'Production readiness packet: stale benchmark issue is surfaced');
     ok(readFileSync(resolve(tempDir, 'blocked', 'README.md'), 'utf8').includes('blocked-on-environment-inputs'), 'Production readiness packet: blocked README is written');
 
+    delete process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL;
+    const missingReleaseAuthority = await renderProductionReadinessPacket({
+      observabilityProvider: 'grafana-alloy',
+      observabilitySecretMode: 'external-secret',
+      observabilityBenchmarkPath,
+      prometheusUrl: `http://127.0.0.1:${prometheusPort}`,
+      alertmanagerUrl: `http://127.0.0.1:${alertmanagerPort}`,
+      haProvider: 'generic',
+      haBenchmarkPath,
+      observabilityBenchmarkMaxAgeHours: 72,
+      haBenchmarkMaxAgeHours: 72,
+      outputDir: resolve(tempDir, 'missing-release-authority'),
+    });
+    ok(missingReleaseAuthority.readiness.state === 'blocked-on-environment-inputs', 'Production readiness packet: production-shared blocks without release-authority PG');
+    ok(missingReleaseAuthority.readiness.missingInputs.some((item) => item.includes('ATTESTOR_RELEASE_AUTHORITY_PG_URL')), 'Production readiness packet: missing release-authority PG is surfaced');
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
+
     const now = new Date();
     utimesSync(observabilityBenchmarkPath, now, now);
     const ready = await renderProductionReadinessPacket({
@@ -232,6 +254,9 @@ async function main(): Promise<void> {
     ok(ready.artifacts.observabilityPacketDir.endsWith('observability'), 'Production readiness packet: observability artifact path is captured');
     ok(ready.artifacts.haPacketDir.endsWith('ha'), 'Production readiness packet: HA artifact path is captured');
     ok(ready.observability.provider === 'grafana-alloy', 'Production readiness packet: Grafana Alloy can drive the observability side of the final handoff');
+    ok(ready.runtimeAuthority.profile === 'production-shared', 'Production readiness packet: runtime profile truth is captured');
+    ok(ready.runtimeAuthority.releaseAuthorityPgConfigured === true, 'Production readiness packet: release-authority PG is captured');
+    ok(readFileSync(resolve(tempDir, 'ready', 'README.md'), 'utf8').includes('Runtime authority'), 'Production readiness packet: runtime authority section is written');
 
     console.log(`\nProduction readiness packet tests: ${passed} passed, 0 failed`);
   } finally {

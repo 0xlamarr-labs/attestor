@@ -34,8 +34,8 @@ function testTrackerIsLinkedFromCurrentTruthSources(): void {
   );
   includes(
     systemOverview,
-    'Production shared authority plane buildout',
-    'Shared authority docs: system overview points at the active frontier',
+    'completed [Production shared authority plane buildout](production-shared-authority-plane-buildout.md)',
+    'Shared authority docs: system overview points at the completed shared authority track',
   );
   includes(
     readiness,
@@ -83,13 +83,13 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| Completed | 8 |',
-    'Shared authority docs: tracker records the completed multi-instance recovery step',
+    '| Completed | 9 |',
+    'Shared authority docs: tracker records the completed shared authority track',
   );
   includes(
     tracker,
-    '| In progress | 0 |',
-    'Shared authority docs: tracker records no active shared authority step after Step 07',
+    '| Not started | 0 |',
+    'Shared authority docs: tracker records no remaining shared authority steps',
   );
   includes(
     tracker,
@@ -133,6 +133,11 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    '| 09 | complete | Update promotion docs, readiness packets, and anti-overclaim gates |',
+    'Shared authority docs: step 09 is complete',
+  );
+  includes(
+    tracker,
     'shared-authority-readiness.ts',
     'Shared authority docs: step 07 evidence includes runtime readiness wiring',
   );
@@ -173,6 +178,16 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    'render-production-readiness-packet.ts',
+    'Shared authority docs: step 09 evidence includes production readiness packet wiring',
+  );
+  includes(
+    tracker,
+    'ha-runtime-connectivity-probe.test.ts',
+    'Shared authority docs: step 09 evidence includes HA runtime connectivity probe coverage',
+  );
+  includes(
+    tracker,
     'closes the shared PostgreSQL pool, reconnects a new runtime',
     'Shared authority docs: step 08 records reconnect recovery proof',
   );
@@ -203,13 +218,13 @@ function testTrackerKeepsCurrentRuntimeTruthHonest(): void {
 
   includes(
     tracker,
-    'Step 08 now proves the third line under multi-instance concurrency, restart, reconnect, and recovery pressure using the embedded PostgreSQL harness.',
+    'Step 08 proves the third line under multi-instance concurrency, restart, reconnect, and recovery pressure using the embedded PostgreSQL harness.',
     'Shared authority docs: tracker states the tested runtime boundary honestly',
   );
   includes(
     tracker,
-    'Step 09 remains to align promotion docs, readiness packets, and anti-overclaim gates.',
-    'Shared authority docs: tracker keeps promotion work out of Step 08',
+    'Step 09 now aligns production promotion docs, HA/runtime probes, readiness packets, and anti-overclaim tests with that code truth',
+    'Shared authority docs: tracker records completed promotion/readiness alignment',
   );
   includes(
     tracker,
@@ -218,8 +233,8 @@ function testTrackerKeepsCurrentRuntimeTruthHonest(): void {
   );
   includes(
     readiness,
-    'The current repository proves `single-node-durable` restart recovery.',
-    'Shared authority docs: production readiness still records the proven posture',
+    'The current repository proves `single-node-durable` restart recovery and proves `production-shared` shared authority behavior under embedded PostgreSQL',
+    'Shared authority docs: production readiness records the updated proven posture',
   );
   excludes(
     tracker,

@@ -67,6 +67,7 @@ function main(): void {
           REDIS_URL: 'redis://cache.example.invalid:6379/0',
           ATTESTOR_CONTROL_PLANE_PG_URL: 'postgres://user:pass@db/control',
           ATTESTOR_BILLING_LEDGER_PG_URL: 'postgres://user:pass@db/billing',
+          ATTESTOR_RELEASE_AUTHORITY_PG_URL: 'postgres://user:pass@db/release_authority',
           ATTESTOR_ADMIN_API_KEY: 'admin-key',
         },
       },
@@ -74,10 +75,14 @@ function main(): void {
     ok(aws.status === 0, `HA release bundle: AWS render exits successfully\nstdout:\n${aws.stdout}\nstderr:\n${aws.stderr}`);
     const awsKustomization = readFileSync(resolve(awsOut, 'kustomization.yaml'), 'utf8');
     const awsIngress = readFileSync(resolve(awsOut, 'ingress.yaml'), 'utf8');
+    const awsConfigMap = readFileSync(resolve(awsOut, 'configmap.yaml'), 'utf8');
+    const awsApiDeployment = readFileSync(resolve(awsOut, 'api-deployment.yaml'), 'utf8');
     const awsApiScaled = readFileSync(resolve(awsOut, 'api-scaledobject.yaml'), 'utf8');
     const awsSummary = JSON.parse(readFileSync(resolve(awsOut, 'summary.json'), 'utf8')) as any;
     ok(awsKustomization.includes('ingress.yaml') && !awsKustomization.includes('gateway.yaml'), 'HA release bundle: AWS bundle uses ingress instead of gateway resources');
     ok(awsIngress.includes('certificate-arn') && awsIngress.includes('ELBSecurityPolicy-TLS13-1-2-2021-06'), 'HA release bundle: AWS ingress carries ACM TLS wiring');
+    ok(awsConfigMap.includes('ATTESTOR_RUNTIME_PROFILE') && awsConfigMap.includes('production-shared'), 'HA release bundle: AWS config keeps production-shared runtime profile');
+    ok(awsApiDeployment.includes('ATTESTOR_RELEASE_AUTHORITY_PG_URL'), 'HA release bundle: AWS API deployment wires release-authority PostgreSQL');
     ok(awsApiScaled.includes('threshold: "18"') && awsApiScaled.includes('activationThreshold: "3"'), 'HA release bundle: AWS KEDA scaler is benchmark-tuned');
     ok(awsSummary.provider === 'aws' && awsSummary.apiImage.includes(':1.2.3'), 'HA release bundle: AWS summary captures provider and image refs');
 
@@ -105,6 +110,7 @@ function main(): void {
           REDIS_URL: 'redis://cache.example.invalid:6379/0',
           ATTESTOR_CONTROL_PLANE_PG_URL: 'postgres://user:pass@db/control',
           ATTESTOR_BILLING_LEDGER_PG_URL: 'postgres://user:pass@db/billing',
+          ATTESTOR_RELEASE_AUTHORITY_PG_URL: 'postgres://user:pass@db/release_authority',
           ATTESTOR_ADMIN_API_KEY: 'admin-key',
           ATTESTOR_TLS_CERT_PEM_FILE: certPath,
           ATTESTOR_TLS_KEY_PEM_FILE: keyPath,

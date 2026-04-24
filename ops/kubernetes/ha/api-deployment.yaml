@@ -10,8 +10,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 1
-      maxSurge: 0
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: attestor-api
@@ -93,6 +93,11 @@ spec:
                 secretKeyRef:
                   name: attestor-runtime-secrets
                   key: billing-ledger-pg-url
+            - name: ATTESTOR_RELEASE_AUTHORITY_PG_URL
+              valueFrom:
+                secretKeyRef:
+                  name: attestor-runtime-secrets
+                  key: release-authority-pg-url
             - name: ATTESTOR_ADMIN_API_KEY
               valueFrom:
                 secretKeyRef:

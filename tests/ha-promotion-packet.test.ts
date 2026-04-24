@@ -71,6 +71,8 @@ async function main(): Promise<void> {
     REDIS_URL: process.env.REDIS_URL,
     ATTESTOR_CONTROL_PLANE_PG_URL: process.env.ATTESTOR_CONTROL_PLANE_PG_URL,
     ATTESTOR_BILLING_LEDGER_PG_URL: process.env.ATTESTOR_BILLING_LEDGER_PG_URL,
+    ATTESTOR_RUNTIME_PROFILE: process.env.ATTESTOR_RUNTIME_PROFILE,
+    ATTESTOR_RELEASE_AUTHORITY_PG_URL: process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL,
     ATTESTOR_ADMIN_API_KEY: process.env.ATTESTOR_ADMIN_API_KEY,
     ATTESTOR_METRICS_API_KEY: process.env.ATTESTOR_METRICS_API_KEY,
     ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY: process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY,
@@ -95,6 +97,7 @@ async function main(): Promise<void> {
     await pg.start();
     await pg.createDatabase('control_plane');
     await pg.createDatabase('billing_ledger');
+    await pg.createDatabase('release_authority');
     const redisHost = await redis.getHost();
     const redisPort = await redis.getPort();
     const redisUrl = `redis://${redisHost}:${redisPort}`;
@@ -114,6 +117,8 @@ async function main(): Promise<void> {
     process.env.REDIS_URL = redisUrl;
     process.env.ATTESTOR_CONTROL_PLANE_PG_URL = `${basePg}/control_plane`;
     process.env.ATTESTOR_BILLING_LEDGER_PG_URL = `${basePg}/billing_ledger`;
+    process.env.ATTESTOR_RUNTIME_PROFILE = 'production-shared';
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
     process.env.ATTESTOR_ADMIN_API_KEY = 'admin-key';
     process.env.ATTESTOR_METRICS_API_KEY = 'metrics-key';
     process.env.ATTESTOR_ACCOUNT_MFA_ENCRYPTION_KEY = 'mfa-key';
@@ -142,6 +147,16 @@ async function main(): Promise<void> {
     ok(ready.artifacts.releaseSummaryPath !== null, 'HA promotion packet: release summary is present when environment is complete');
     ok(readFileSync(resolve(tempDir, 'ready', 'README.md'), 'utf8').includes('Recommended apply flow'), 'HA promotion packet: rollout README is written');
     ok(readFileSync(resolve(tempDir, 'ready', 'summary.json'), 'utf8').includes('ready-for-environment-promotion'), 'HA promotion packet: summary captures the final readiness state');
+
+    delete process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL;
+    const missingReleaseAuthority = await renderHaPromotionPacket({
+      provider: 'generic',
+      benchmarkPath,
+      outputDir: resolve(tempDir, 'missing-release-authority'),
+    });
+    ok(missingReleaseAuthority.readiness.state === 'blocked-on-environment-inputs', 'HA promotion packet: production-shared blocks without release-authority PG');
+    ok(missingReleaseAuthority.readiness.missingInputs.some((item) => item.includes('ATTESTOR_RELEASE_AUTHORITY_PG_URL')), 'HA promotion packet: missing release-authority PG is surfaced');
+    process.env.ATTESTOR_RELEASE_AUTHORITY_PG_URL = `${basePg}/release_authority`;
 
     delete process.env.STRIPE_API_KEY;
     const missingStripe = await renderHaPromotionPacket({

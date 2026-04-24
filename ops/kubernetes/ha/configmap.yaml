@@ -5,6 +5,7 @@ metadata:
 data:
   PORT: "3700"
   ATTESTOR_HA_MODE: "true"
+  ATTESTOR_RUNTIME_PROFILE: "production-shared"
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://attestor-observability-receiver.attestor-observability.svc.cluster.local:4318"
   OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
   OTEL_SERVICE_NAME: "attestor-api"

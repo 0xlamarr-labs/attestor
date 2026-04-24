@@ -43,6 +43,7 @@ function main(): void {
           REDIS_URL: 'redis://cache.example.invalid:6379/0',
           ATTESTOR_CONTROL_PLANE_PG_URL_FILE: pgPath,
           ATTESTOR_BILLING_LEDGER_PG_URL: 'postgres://attestor:test@db.example.invalid:5432/billing',
+          ATTESTOR_RELEASE_AUTHORITY_PG_URL: 'postgres://attestor:test@db.example.invalid:5432/release_authority',
           ATTESTOR_ADMIN_API_KEY: 'admin-inline',
           ATTESTOR_HA_SECRET_STORE: 'platform-secrets',
           ATTESTOR_HA_SECRET_PREFIX: 'prod/attestor',
@@ -60,6 +61,7 @@ function main(): void {
     ok(inlineTlsSecret.includes('-----BEGIN CERTIFICATE-----') && inlineTlsSecret.includes('tls.key:'), 'HA credentials render: inline TLS manifest contains cert and key');
     ok(inlineGatewayPatch.includes('hostname: attestor.example.invalid') && inlineGatewayPatch.includes('certificateRefs:'), 'HA credentials render: Gateway patch rewires hostname and TLS secret');
     ok(inlineExternalSecret.includes('prod-attestor-control-plane-pg-url') && inlineExternalSecret.includes('platform-secrets'), 'HA credentials render: GKE runtime ExternalSecret normalizes remote keys for Google Secret Manager');
+    ok(inlineExternalSecret.includes('prod-attestor-release-authority-pg-url'), 'HA credentials render: runtime ExternalSecret includes release-authority PostgreSQL');
     ok(inlineExternalSecret.includes('account-mfa-encryption-key') && inlineExternalSecret.includes('hosted-oidc-state-key'), 'HA credentials render: runtime ExternalSecret includes hosted auth secret refs');
     ok(inlineGkePatch.includes('sslPolicy: attestor-modern-tls'), 'HA credentials render: GKE patch carries configured SSL policy');
     ok(inlineSummary.runtimeSecrets.remoteSecretProvider === 'gke', 'HA credentials render: summary captures GKE remote secret provider');
@@ -83,6 +85,7 @@ function main(): void {
           REDIS_URL: 'redis://cache.example.invalid:6379/0',
           ATTESTOR_CONTROL_PLANE_PG_URL: 'postgres://attestor:test@db.example.invalid:5432/control',
           ATTESTOR_BILLING_LEDGER_PG_URL: 'postgres://attestor:test@db.example.invalid:5432/billing',
+          ATTESTOR_RELEASE_AUTHORITY_PG_URL: 'postgres://attestor:test@db.example.invalid:5432/release_authority',
           ATTESTOR_ADMIN_API_KEY: 'admin-aws',
         },
       },

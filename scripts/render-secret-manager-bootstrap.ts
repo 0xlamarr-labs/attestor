@@ -94,6 +94,14 @@ function buildCatalog(prefix: string, provider: ConcreteProvider): SecretCatalog
       env: 'ATTESTOR_BILLING_LEDGER_PG_URL',
     },
     {
+      logicalName: `${prefix}/release-authority-pg-url`,
+      remoteName: remoteSecretKey(provider, `${prefix}/release-authority-pg-url`),
+      type: 'string',
+      required: true,
+      consumer: 'ha',
+      env: 'ATTESTOR_RELEASE_AUTHORITY_PG_URL',
+    },
+    {
       logicalName: `${prefix}/runtime-pg-url`,
       remoteName: remoteSecretKey(provider, `${prefix}/runtime-pg-url`),
       type: 'string',
