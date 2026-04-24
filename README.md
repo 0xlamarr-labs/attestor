@@ -15,7 +15,7 @@ It is not an agent framework, model runtime, wallet, custody platform, or orches
 
 Built for teams that cannot let sensitive outputs or execution paths enter production on informal trust.
 
-![Attestor platform flow: proof before consequence](docs/assets/attestor-gateway.png)
+![Attestor platform flow: proof before consequence](docs/assets/attestor-platform-flow.png)
 
 > [!NOTE]
 > This repository is source-available under Business Source License 1.1. Non-production use is allowed. Production use requires a commercial license until the Change Date in [LICENSE](LICENSE).
