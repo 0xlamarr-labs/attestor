@@ -88,6 +88,11 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    '| In progress | 1 |',
+    'Shared authority docs: tracker records Step 07 as in progress',
+  );
+  includes(
+    tracker,
     '| 01 | complete | Define the production-shared authority-plane scope, cut line, and storage model |',
     'Shared authority docs: step 01 is complete',
   );
@@ -118,8 +123,18 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| 07 | pending | Wire `production-shared` bootstrap, health, and readiness truth |',
-    'Shared authority docs: step 07 is now the next engineering step',
+    '| 07 | in_progress | Wire `production-shared` bootstrap, health, and readiness truth |',
+    'Shared authority docs: step 07 is now in progress',
+  );
+  includes(
+    tracker,
+    'shared-authority-readiness.ts',
+    'Shared authority docs: step 07 evidence includes runtime readiness wiring',
+  );
+  includes(
+    tracker,
+    'bootstrapWired=false',
+    'Shared authority docs: step 07 keeps bootstrap-wiring truth explicit',
   );
   includes(
     tracker,

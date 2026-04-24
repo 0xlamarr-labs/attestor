@@ -284,6 +284,9 @@ import { tenantKeyStorePolicy } from '../tenant-key-store.js';
 import type { AppRegistries } from './registries.js';
 import { createReleaseRuntimeBootstrap } from './release-runtime.js';
 import {
+  evaluateSharedAuthorityRuntimeReadiness as evaluateSharedAuthorityRuntimeReadinessState,
+} from './shared-authority-readiness.js';
+import {
   releaseRuntimeDurabilitySummary,
   resolveRuntimeProfile,
 } from './runtime-profile.js';
@@ -380,6 +383,10 @@ export function createApiHttpRouteRuntime(
     pkiReady,
     pki,
     runtimeProfileDiagnostics,
+    evaluateSharedAuthorityRuntimeReadiness: ({ runtimeProfileId }) =>
+      evaluateSharedAuthorityRuntimeReadinessState({
+        runtimeProfileId: runtimeProfileId === runtimeProfile.id ? runtimeProfile.id : null,
+      }),
     rlsActivationResult,
   } satisfies ApiRouteDeps['core'];
 

@@ -53,6 +53,23 @@ type RuntimeProfileDiagnostics = {
     }[];
   };
 };
+type SharedAuthorityRuntimeReadiness = {
+  version: string;
+  evaluatedAt: string;
+  runtimeProfileId: string | null;
+  mode: 'postgres' | 'disabled';
+  configured: boolean;
+  ready: boolean;
+  checks: Record<string, boolean>;
+  summary: unknown;
+  components: readonly unknown[];
+  storeSummaries: unknown;
+  blockers: readonly {
+    code: string;
+    message: string;
+    components: readonly string[];
+  }[];
+};
 
 export interface CoreRouteDeps {
   evaluateApiHighAvailabilityState(input: {
@@ -76,6 +93,9 @@ export interface CoreRouteDeps {
     reviewer: { certificate: { subject: string } };
   };
   runtimeProfileDiagnostics: RuntimeProfileDiagnostics;
+  evaluateSharedAuthorityRuntimeReadiness(input: {
+    runtimeProfileId?: string | null;
+  }): Promise<SharedAuthorityRuntimeReadiness>;
   rlsActivationResult: {
     activated: boolean;
     policiesFound: number;
@@ -98,10 +118,11 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
     pkiReady,
     pki,
     runtimeProfileDiagnostics,
+    evaluateSharedAuthorityRuntimeReadiness,
     rlsActivationResult,
   } = deps;
 
-  app.get('/api/v1/health', (c) => {
+  app.get('/api/v1/health', async (c) => {
     const highAvailability = evaluateApiHighAvailabilityState({
       redisMode: redisMode as 'external' | 'localhost' | 'embedded' | 'none' | 'unavailable',
       asyncBackendMode: asyncBackendMode as 'bullmq' | 'in_process' | 'none',
@@ -141,6 +162,9 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
         durability: runtimeProfileDiagnostics.durability,
         stores: runtimeProfileDiagnostics.releaseStores,
       },
+      sharedAuthorityRuntime: await evaluateSharedAuthorityRuntimeReadiness({
+        runtimeProfileId: runtimeProfileDiagnostics.profile.id,
+      }),
       highAvailability,
       engine: 'attestor',
     });
@@ -170,7 +194,7 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
     return c.json({ connectors });
   });
 
-  app.get('/api/v1/ready', (c) => {
+  app.get('/api/v1/ready', async (c) => {
     const checks: Record<string, boolean> = {};
     let ready = true;
     const highAvailability = evaluateApiHighAvailabilityState({
@@ -188,6 +212,15 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
 
     checks.releaseRuntime = runtimeProfileDiagnostics.durability.ready;
     if (!checks.releaseRuntime) ready = false;
+
+    const sharedAuthorityRuntime = await evaluateSharedAuthorityRuntimeReadiness({
+      runtimeProfileId: runtimeProfileDiagnostics.profile.id,
+    });
+    checks.sharedAuthorityRuntime =
+      runtimeProfileDiagnostics.profile.id === 'production-shared'
+        ? sharedAuthorityRuntime.ready
+        : true;
+    if (!checks.sharedAuthorityRuntime) ready = false;
 
     checks.domains = domainRegistry.listIds().length > 0;
     if (!checks.domains) ready = false;
@@ -214,6 +247,7 @@ export function registerCoreRoutes(app: Hono, deps: CoreRouteDeps): void {
         durability: runtimeProfileDiagnostics.durability,
         stores: runtimeProfileDiagnostics.releaseStores,
       },
+      sharedAuthorityRuntime,
       highAvailability,
     }, status);
   });

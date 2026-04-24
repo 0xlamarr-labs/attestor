@@ -231,7 +231,7 @@ async function run(): Promise<void> {
 
     const reclaimed = await store.claimNextPending({
       claimedBy: 'worker-d',
-      claimedAt: '2026-04-24T18:32:30.000Z',
+      claimedAt: '2026-04-24T18:31:30.000Z',
       leaseMs: 60_000,
     });
     equal(
