@@ -27,7 +27,9 @@ function testReadmeHasAFirstImpressionPath(): void {
 
   includes(readme, '## Try it in 60 seconds', 'README: exposes a fast first run near the top');
   includes(readme, 'npm run example:admission', 'README: shows the first runnable command');
-  includes(readme, 'one is admitted, one is blocked fail-closed', 'README: explains the demo outcome');
+  includes(readme, 'one path is admitted with proof references', 'README: explains admitted proof refs');
+  includes(readme, 'one path is blocked fail-closed', 'README: explains blocked fail-closed path');
+  includes(readme, 'the downstream gate only proceeds when the decision allows it', 'README: explains downstream gate behavior');
   includes(readme, '[Try Attestor first](docs/01-overview/try-attestor-first.md)', 'README: links to the guided first run');
 }
 

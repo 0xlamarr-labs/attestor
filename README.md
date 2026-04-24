@@ -27,9 +27,10 @@ npm install
 npm run example:admission
 ```
 
-This runs the shortest local Attestor flow: two AI-assisted finance consequences go through the same admission facade. It shows: one is admitted, one is blocked fail-closed, and both return proof references and a downstream gate.
+This runs the shortest local Attestor flow: two AI-assisted finance consequences go through the same admission facade. It shows: one path is admitted with proof references, one path is blocked fail-closed, and the downstream gate only proceeds when the decision allows it.
 
 For the guided first run, see [Try Attestor first](docs/01-overview/try-attestor-first.md).
+For an outside-review packet that explains what to run and what is proven, see [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md).
 For the first customer-side enforcement step, see [Customer admission gate](docs/01-overview/customer-admission-gate.md).
 For concrete use cases, see [What you can do with Attestor](docs/01-overview/what-you-can-do.md).
 For copyable placement recipes, see [Customer integration recipes](docs/01-overview/customer-integration-recipes.md).
@@ -191,10 +192,12 @@ npm run verify
 - [Production runtime hardening buildout](docs/02-architecture/production-runtime-hardening-buildout.md)
 - [Production shared authority plane buildout](docs/02-architecture/production-shared-authority-plane-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
+- [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md)
 
 ## Start here
 
 - Want the shortest first run? Start with [Try Attestor first](docs/01-overview/try-attestor-first.md) or run `npm run example:admission`.
+- Want a compact outside-review packet? Start with [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md).
 - Want to wire the decision into your own app? Start with [Customer admission gate](docs/01-overview/customer-admission-gate.md) or run `npm run example:customer-gate`.
 - Want to know exactly where to put Attestor in your app? Start with [Customer integration recipes](docs/01-overview/customer-integration-recipes.md).
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).
