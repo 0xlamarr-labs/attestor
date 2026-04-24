@@ -83,8 +83,8 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| Completed | 7 |',
-    'Shared authority docs: tracker records the completed request-path cutover step',
+    '| Completed | 8 |',
+    'Shared authority docs: tracker records the completed multi-instance recovery step',
   );
   includes(
     tracker,
@@ -128,6 +128,11 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    '| 08 | complete | Add multi-instance concurrency, restart, and recovery tests |',
+    'Shared authority docs: step 08 is complete',
+  );
+  includes(
+    tracker,
     'shared-authority-readiness.ts',
     'Shared authority docs: step 07 evidence includes runtime readiness wiring',
   );
@@ -163,6 +168,16 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    'production-shared-multi-instance-recovery.test.ts',
+    'Shared authority docs: step 08 evidence includes multi-instance shared recovery coverage',
+  );
+  includes(
+    tracker,
+    'closes the shared PostgreSQL pool, reconnects a new runtime',
+    'Shared authority docs: step 08 records reconnect recovery proof',
+  );
+  includes(
+    tracker,
     'missing shared store configuration, unreachable PostgreSQL, contract mismatch, and guard blockers remain fail-closed.',
     'Shared authority docs: step 07 records request-path failure cases',
   );
@@ -188,8 +203,13 @@ function testTrackerKeepsCurrentRuntimeTruthHonest(): void {
 
   includes(
     tracker,
-    'Step 08 still has to prove the third line under multi-instance concurrency, restart, reconnect, and recovery pressure.',
-    'Shared authority docs: tracker states the remaining runtime boundary honestly',
+    'Step 08 now proves the third line under multi-instance concurrency, restart, reconnect, and recovery pressure using the embedded PostgreSQL harness.',
+    'Shared authority docs: tracker states the tested runtime boundary honestly',
+  );
+  includes(
+    tracker,
+    'Step 09 remains to align promotion docs, readiness packets, and anti-overclaim gates.',
+    'Shared authority docs: tracker keeps promotion work out of Step 08',
   );
   includes(
     tracker,

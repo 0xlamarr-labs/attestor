@@ -376,3 +376,20 @@ export async function resetReleaseAuthorityStoreForTests(): Promise<void> {
   await pool.query(`DROP SCHEMA IF EXISTS ${RELEASE_AUTHORITY_SCHEMA} CASCADE`);
   await pool.end();
 }
+
+export async function closeReleaseAuthorityStorePoolForTests(): Promise<void> {
+  const existingPoolPromise = poolPromise;
+  poolPromise = null;
+  initPromise = null;
+
+  if (!existingPoolPromise) {
+    return;
+  }
+
+  try {
+    const pool = await existingPoolPromise;
+    await pool.end();
+  } catch {
+    // Test reconnect probes intentionally exercise failed or closed pools.
+  }
+}
