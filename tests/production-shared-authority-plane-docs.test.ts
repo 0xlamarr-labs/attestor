@@ -83,8 +83,8 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| Completed | 3 |',
-    'Shared authority docs: tracker records the completed shared decision-log step',
+    '| Completed | 4 |',
+    'Shared authority docs: tracker records the completed shared reviewer-queue step',
   );
   includes(
     tracker,
@@ -103,8 +103,13 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| 04 | pending | Add shared release reviewer queue store and claim discipline |',
-    'Shared authority docs: step 04 is now the next engineering step',
+    '| 04 | complete | Add shared release reviewer queue store and claim discipline |',
+    'Shared authority docs: step 04 is complete',
+  );
+  includes(
+    tracker,
+    '| 05 | pending | Add shared release token introspection and evidence-pack stores |',
+    'Shared authority docs: step 05 is now the next engineering step',
   );
   includes(
     tracker,

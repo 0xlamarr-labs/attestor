@@ -661,6 +661,12 @@ function freezeRecord(record: ReleaseReviewerQueueRecord): ReleaseReviewerQueueR
   });
 }
 
+export function coerceReleaseReviewerQueueRecord(
+  record: ReleaseReviewerQueueRecord,
+): ReleaseReviewerQueueRecord {
+  return freezeRecord(record);
+}
+
 function defaultReleaseReviewerQueueStoreFile(): ReleaseReviewerQueueStoreFile {
   return {
     version: 1,
