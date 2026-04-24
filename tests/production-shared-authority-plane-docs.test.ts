@@ -83,8 +83,8 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| Completed | 2 |',
-    'Shared authority docs: tracker records the completed shared-store substrate step',
+    '| Completed | 3 |',
+    'Shared authority docs: tracker records the completed shared decision-log step',
   );
   includes(
     tracker,
@@ -98,8 +98,13 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| 03 | pending | Add shared release decision log store |',
-    'Shared authority docs: step 03 is the next engineering step',
+    '| 03 | complete | Add shared release decision log store |',
+    'Shared authority docs: step 03 is complete',
+  );
+  includes(
+    tracker,
+    '| 04 | pending | Add shared release reviewer queue store and claim discipline |',
+    'Shared authority docs: step 04 is now the next engineering step',
   );
   includes(
     tracker,

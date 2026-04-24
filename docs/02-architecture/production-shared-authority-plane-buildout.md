@@ -102,10 +102,10 @@ The `production-shared` profile is blocked until all 8 release-authority compone
 | Metric | Value |
 |---|---|
 | Total frozen steps | 9 |
-| Completed | 2 |
+| Completed | 3 |
 | In progress | 0 |
-| Not started | 7 |
-| Current posture | Step 02 is complete: the shared release-authority PostgreSQL substrate now exists under `ATTESTOR_RELEASE_AUTHORITY_PG_URL`, with schema bootstrap, pooled connections, transaction helpers, advisory-lock helpers, and a shared component registry for the 8 release/policy authority stores. The runtime still truthfully stops at `single-node-durable` until the individual stores are promoted off file-backed implementations. |
+| Not started | 6 |
+| Current posture | Step 03 is complete: the shared release decision log now has a PostgreSQL-backed implementation on the release-authority substrate, with durable ordering, append serialization, hash-chain verification, and fail-closed tamper detection. The runtime still truthfully stops at `single-node-durable` until the shared stores are actually wired through bootstrap in the later runtime steps. |
 
 ## Frozen Step List
 
@@ -113,7 +113,7 @@ The `production-shared` profile is blocked until all 8 release-authority compone
 |---|---|---|---|---|
 | 01 | complete | Define the production-shared authority-plane scope, cut line, and storage model | `docs/02-architecture/production-shared-authority-plane-buildout.md`, `docs/02-architecture/system-overview.md`, `docs/02-architecture/production-runtime-hardening-buildout.md`, `docs/08-deployment/production-readiness.md`, `README.md`, `tests/production-shared-authority-plane-docs.test.ts`, `package.json` | The next runtime frontier is now frozen as its own tracker. The truth source explicitly keeps one-product framing, keeps `single-node-durable` as the current proven posture, and sets PostgreSQL as the authoritative shared store target for release/policy state while Redis stays in coordination roles. |
 | 02 | complete | Add shared release-authority PostgreSQL substrate | `src/service/release-authority-store.ts`, `src/service/bootstrap/release-runtime.ts`, `tests/release-authority-store.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `tests/production-shared-authority-plane-docs.test.ts`, `package.json`, `docs/02-architecture/production-shared-authority-plane-buildout.md` | A dedicated shared PostgreSQL substrate now exists for release/policy authority state under `ATTESTOR_RELEASE_AUTHORITY_PG_URL`. It bootstraps the `attestor_release_authority` schema, seeds the 8 authority components into a shared registry, exposes pooled transaction and advisory-lock helpers, and gives the release bootstrap an explicit config view of whether the substrate is present. This step does not yet promote the individual release/policy stores off their file-backed implementations. |
-| 03 | pending | Add shared release decision log store | | Promote the release decision log from file-backed JSONL to a PostgreSQL-backed shared store with durable ordering, hash-chain preservation, and anti-tamper verification semantics that survive multi-node writers and readers. |
+| 03 | complete | Add shared release decision log store | `src/service/release-decision-log-store.ts`, `src/release-kernel/release-decision-log.ts`, `tests/release-decision-log-store.test.ts`, `tests/production-shared-authority-plane-docs.test.ts`, `package.json`, `docs/02-architecture/production-shared-authority-plane-buildout.md` | The release decision log now has a PostgreSQL-backed shared store on the release-authority substrate. Appends serialize through transaction-scoped advisory locking, sequence numbers stay contiguous without relying on non-rollback-safe database sequences, the hash chain is re-verified on read, and tampered persisted rows fail closed. The shared store is implemented and registry-marked as ready, while runtime bootstrap wiring still remains for the later production-shared cutover steps. |
 | 04 | pending | Add shared release reviewer queue store and claim discipline | | Promote the reviewer queue to a shared PostgreSQL-backed store with deterministic pending views, durable dual-review state, and explicit queue-claim discipline for multi-consumer reviewer workflows. Queue-claim semantics may use `SKIP LOCKED`, but authoritative reads must remain direct record reads. |
 | 05 | pending | Add shared release token introspection and evidence-pack stores | | Promote release token introspection and release evidence packs to shared authoritative stores so issued, consumed, revoked, expired, and proof-carrying records survive multi-node verification and replay checks. |
 | 06 | pending | Add shared degraded-mode and policy-control-plane authority stores | | Promote degraded-mode grants, policy bundle state, activation approvals, and policy mutation audit history onto shared authoritative storage so release and policy truth no longer diverge across nodes. |
@@ -123,4 +123,4 @@ The `production-shared` profile is blocked until all 8 release-authority compone
 
 ## Immediate Next Step
 
-Step 03 is next: promote the release decision log onto the shared release-authority PostgreSQL substrate while preserving durable ordering, hash-chain integrity, and anti-tamper verification semantics.
+Step 04 is next: promote the release reviewer queue onto the shared release-authority PostgreSQL substrate with explicit multi-consumer claim discipline and deterministic pending-review views.

@@ -42,8 +42,12 @@ export type ReleaseReviewerQueueListOptions = review.ReleaseReviewerQueueListOpt
 export type ReleaseReviewerQueueRecord = review.ReleaseReviewerQueueRecord;
 export type ReleaseReviewerQueueStore = review.ReleaseReviewerQueueStore;
 export type ReleaseDecision = model.ReleaseDecision;
+export type ReleaseDecisionLogAppendInput = decisionLog.ReleaseDecisionLogAppendInput;
 export type ReleaseDecisionLogEntry = decisionLog.ReleaseDecisionLogEntry;
+export type ReleaseDecisionLogMetadata = decisionLog.ReleaseDecisionLogMetadata;
 export type ReleaseDecisionLogPhase = decisionLog.ReleaseDecisionLogPhase;
+export type ReleaseDecisionLogVerificationResult =
+  decisionLog.ReleaseDecisionLogVerificationResult;
 export type ReleaseDecisionLogWriter = decisionLog.ReleaseDecisionLogWriter;
 export type DeterministicCheckObservation = deterministicChecks.DeterministicCheckObservation;
 export type IssuedReleaseToken = token.IssuedReleaseToken;

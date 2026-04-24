@@ -26,7 +26,7 @@ export const ATTESTOR_RELEASE_DECISION_LOG_PATH_ENV = 'ATTESTOR_RELEASE_DECISION
 
 const DEFAULT_RELEASE_DECISION_LOG_PATH = '.attestor/release-decision-log.jsonl';
 
-const RELEASE_DECISION_LOG_PHASES = Object.freeze([
+export const RELEASE_DECISION_LOG_PHASES = Object.freeze([
   'policy-resolution',
   'deterministic-checks',
   'review',
@@ -298,6 +298,13 @@ function normalizeLoadedMetadata(
   });
 }
 
+export function coerceReleaseDecisionLogMetadata(
+  value: unknown,
+  lineNumber = 1,
+): ReleaseDecisionLogMetadata {
+  return normalizeLoadedMetadata(value, lineNumber);
+}
+
 function normalizeLoadedReleaseDecisionLogEntry(
   value: unknown,
   lineNumber: number,
@@ -333,6 +340,13 @@ function normalizeLoadedReleaseDecisionLogEntry(
     metadata: normalizeLoadedMetadata(value.metadata, lineNumber),
     entryDigest: requireString(value.entryDigest, 'entryDigest', lineNumber),
   });
+}
+
+export function coerceReleaseDecisionLogEntry(
+  value: unknown,
+  lineNumber = 1,
+): ReleaseDecisionLogEntry {
+  return normalizeLoadedReleaseDecisionLogEntry(value, lineNumber);
 }
 
 function defaultReleaseDecisionLogPath(): string {
