@@ -278,8 +278,8 @@ function testAdminRouteRequiresSharedDegradedModeGrantStore(): void {
     'release-runtime.ts',
   );
 
-  assert.match(adminRoute, /releaseDegradedModeGrantStore: DegradedModeGrantStore;/u);
-  assert.doesNotMatch(adminRoute, /releaseDegradedModeGrantStore\?: DegradedModeGrantStore;/u);
+  assert.match(adminRoute, /releaseDegradedModeGrantStore: RequestPathDegradedModeGrantStore;/u);
+  assert.doesNotMatch(adminRoute, /releaseDegradedModeGrantStore\?: RequestPathDegradedModeGrantStore;/u);
   assert.doesNotMatch(adminRoute, /createInMemoryDegradedModeGrantStore/u);
   assert.match(apiRouteRuntime, /createReleaseRuntimeBootstrap\(\{/u);
   assert.match(apiRouteRuntime, /allowPreflightOnDurabilityViolation:\s*runtimeProfile\.id === 'production-shared'/u);
@@ -287,7 +287,7 @@ function testAdminRouteRequiresSharedDegradedModeGrantStore(): void {
   assert.match(apiRouteRuntime, /releaseDegradedModeGrantStore:\s*apiReleaseDegradedModeGrantStore/u);
   assert.match(
     releaseRuntime,
-    /const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore\(\);/u,
+    /sharedAuthorityRequestPath\?\.apiReleaseDegradedModeGrantStore[\s\S]*createFileBackedDegradedModeGrantStore\(\)/u,
   );
 }
 

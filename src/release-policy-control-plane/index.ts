@@ -131,6 +131,10 @@ export type PolicyActivationApprovalState =
 export type PolicyActivationApprovalStore =
   activationApprovals.PolicyActivationApprovalStore;
 export type PolicyMutationAuditEntry = auditLog.PolicyMutationAuditEntry;
+export type PolicyMutationAuditAppendInput =
+  auditLog.PolicyMutationAuditAppendInput;
+export type PolicyMutationAuditVerificationResult =
+  auditLog.PolicyMutationAuditVerificationResult;
 export type PolicyMutationAuditLogWriter = auditLog.PolicyMutationAuditLogWriter;
 export type PolicyBundleCacheDescriptor = bundleCache.PolicyBundleCacheDescriptor;
 export type PolicyActivationRecord = objectModel.PolicyActivationRecord;

@@ -164,7 +164,7 @@ async function main(): Promise<void> {
   try {
     configureDurableRuntimePaths(root);
     const profile = resolveRuntimeProfile({ env: process.env });
-    const first = createReleaseRuntimeBootstrap({ runtimeProfile: profile });
+    const first = await createReleaseRuntimeBootstrap({ runtimeProfile: profile });
 
     equal(first.runtimeProfile.id, 'single-node-durable', 'Runtime recovery: durable runtime profile is selected');
     equal(first.runtimeProfileDiagnostics.durability.ready, true, 'Runtime recovery: durable profile passes startup durability checks');
@@ -385,7 +385,7 @@ async function main(): Promise<void> {
     });
     equal(consumedGrant?.remainingUses, 1, 'Runtime recovery: degraded-mode grant use budget is consumed before restart');
 
-    const second = createReleaseRuntimeBootstrap({ runtimeProfile: profile });
+    const second = await createReleaseRuntimeBootstrap({ runtimeProfile: profile });
     equal(second.runtimeProfileDiagnostics.durability.ready, true, 'Runtime recovery: restarted runtime passes durable diagnostics');
     equal(
       second.financeReleaseDecisionLog.verify().valid,

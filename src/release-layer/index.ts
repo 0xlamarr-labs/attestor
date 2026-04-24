@@ -170,6 +170,9 @@ export type ReleasePolicyRolloutResolution =
   policyRollout.ReleasePolicyRolloutResolution;
 export type ReleaseEvaluationScopeContext = decision.ReleaseEvaluationScopeContext;
 export type ReleaseEvaluationRequest = decision.ReleaseEvaluationRequest;
+export type ReleaseEvaluationResult = decision.ReleaseEvaluationResult;
+export type ReleaseDeterministicEvaluationResult =
+  decision.ReleaseDeterministicEvaluationResult;
 export type ReleaseDecisionEngine = decision.ReleaseDecisionEngine;
 export type ShadowModeReleaseEvaluator = shadow.ShadowModeReleaseEvaluator;
 

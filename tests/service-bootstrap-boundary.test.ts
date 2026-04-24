@@ -77,7 +77,7 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   assert.match(registries, /export function createRegistries\(\): AppRegistries/u);
   assert.match(
     releaseRuntime,
-    /export function createReleaseRuntimeBootstrap\(\s*input: CreateReleaseRuntimeBootstrapInput = \{\},\s*\): ReleaseRuntimeBootstrap/u,
+    /export async function createReleaseRuntimeBootstrap\(\s*input: CreateReleaseRuntimeBootstrapInput = \{\},\s*\): Promise<ReleaseRuntimeBootstrap>/u,
   );
   assert.match(releaseRuntime, /export interface CreateReleaseRuntimeBootstrapInput/u);
   assert.match(routes, /export function registerAllRoutes<Packet>\(app: Hono, runtime: AppRuntime<Packet>\): void/u);
@@ -91,7 +91,7 @@ function testBootstrapModulesOwnTheirBoundaries(): void {
   assert.match(httpRouteBuilders, /export function buildAdminRouteDeps/u);
   assert.match(httpRouteBuilders, /export function buildPipelineRouteDeps/u);
   assert.match(httpRouteBuilders, /export function buildWebhookRouteDeps/u);
-  assert.match(apiRouteRuntime, /export function createApiHttpRouteRuntime/u);
+  assert.match(apiRouteRuntime, /export async function createApiHttpRouteRuntime/u);
 }
 
 function testRuntimeUsesStructuredComposition(): void {

@@ -83,13 +83,13 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| Completed | 6 |',
-    'Shared authority docs: tracker records the completed shared policy authority step',
+    '| Completed | 7 |',
+    'Shared authority docs: tracker records the completed request-path cutover step',
   );
   includes(
     tracker,
-    '| In progress | 1 |',
-    'Shared authority docs: tracker records Step 07 as in progress',
+    '| In progress | 0 |',
+    'Shared authority docs: tracker records no active shared authority step after Step 07',
   );
   includes(
     tracker,
@@ -123,8 +123,8 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    '| 07 | in_progress | Wire `production-shared` bootstrap, health, and readiness truth |',
-    'Shared authority docs: step 07 is now in progress',
+    '| 07 | complete | Wire `production-shared` bootstrap, health, and readiness truth |',
+    'Shared authority docs: step 07 is complete',
   );
   includes(
     tracker,
@@ -133,13 +133,13 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    'bootstrapWired=false',
-    'Shared authority docs: step 07 keeps bootstrap-wiring truth explicit',
+    'bootstrapWired=true',
+    'Shared authority docs: step 07 records runtime bootstrap wiring truth',
   );
   includes(
     tracker,
-    'requestPathUsesSharedStores=false',
-    'Shared authority docs: step 07 keeps request-path cutover truth explicit',
+    'requestPathUsesSharedStores=true',
+    'Shared authority docs: step 07 records successful request-path cutover truth',
   );
   includes(
     tracker,
@@ -158,13 +158,13 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
-    'production-shared` preflight mode',
-    'Shared authority docs: step 07 records that production-shared can boot only as preflight',
+    'production-shared-request-path-cutover.test.ts',
+    'Shared authority docs: step 07 evidence includes actual shared request-path cutover coverage',
   );
   includes(
     tracker,
-    'non-preflight API paths fail-closed',
-    'Shared authority docs: step 07 records the HTTP request path fail-closed guard',
+    'missing shared store configuration, unreachable PostgreSQL, contract mismatch, and guard blockers remain fail-closed.',
+    'Shared authority docs: step 07 records request-path failure cases',
   );
   includes(
     tracker,
@@ -188,8 +188,8 @@ function testTrackerKeepsCurrentRuntimeTruthHonest(): void {
 
   includes(
     tracker,
-    'The repository already proves the first two lines. It does not yet prove the third.',
-    'Shared authority docs: tracker states the current runtime boundary honestly',
+    'Step 08 still has to prove the third line under multi-instance concurrency, restart, reconnect, and recovery pressure.',
+    'Shared authority docs: tracker states the remaining runtime boundary honestly',
   );
   includes(
     tracker,

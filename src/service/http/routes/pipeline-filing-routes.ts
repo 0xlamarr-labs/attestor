@@ -8,15 +8,15 @@ import type {
   ReleaseVerificationContext,
   ReleaseVerificationErrorConstructor,
   ReleaseVerificationInput,
-  ReleaseTokenIntrospectionStore,
   ReleaseTokenIntrospector,
   ReleaseTokenVerificationKey,
 } from '../../../release-layer/index.js';
+import type { RequestPathReleaseTokenIntrospectionStore } from '../../release-authority-request-path.js';
 
 export interface PipelineFilingRoutesDeps {
   FINANCE_FILING_ADAPTER_ID: string;
   buildFinanceFilingReleaseMaterial(candidate: FinanceFilingReleaseCandidate): FinanceFilingReleaseMaterial;
-  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
+  apiReleaseIntrospectionStore: RequestPathReleaseTokenIntrospectionStore;
   filingRegistry: Pick<FilingAdapterRegistry, 'get' | 'list'>;
   buildCounterpartyEnvelope(
     runId: string,

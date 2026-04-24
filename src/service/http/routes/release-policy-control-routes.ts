@@ -8,6 +8,7 @@ import {
   impactSummary as controlPlaneImpactSummary,
   objectModel as controlPlaneObjectModel,
   simulation as controlPlaneSimulation,
+  store as controlPlaneStore,
   types as controlPlaneTypes,
   type PolicyActivationApprovalGateResult,
   type PolicyActivationApprovalRequest,
@@ -26,6 +27,11 @@ import {
   type PolicyPackLifecycleState,
   type PolicyMutationAction,
 } from '../../../release-policy-control-plane/index.js';
+import type {
+  RequestPathPolicyActivationApprovalStore,
+  RequestPathPolicyControlPlaneStore,
+  RequestPathPolicyMutationAuditLogWriter,
+} from '../../release-authority-request-path.js';
 import type {
   ReleaseActorReference,
   ReleasePolicyRolloutMode,
@@ -68,9 +74,9 @@ type JsonRecord = Record<string, unknown>;
 
 export interface ReleasePolicyControlRouteDeps {
   currentAdminAuthorized(c: Context): Response | null;
-  policyControlPlaneStore: PolicyControlPlaneStore;
-  policyActivationApprovalStore: PolicyActivationApprovalStore;
-  policyMutationAuditLog: PolicyMutationAuditLogWriter;
+  policyControlPlaneStore: RequestPathPolicyControlPlaneStore;
+  policyActivationApprovalStore: RequestPathPolicyActivationApprovalStore;
+  policyMutationAuditLog: RequestPathPolicyMutationAuditLogWriter;
   adminMutationRequest?: (
     c: Context,
     routeId: string,
@@ -521,13 +527,29 @@ async function finishMutation(
   });
 }
 
-function publishStoreMetadata(
-  store: PolicyControlPlaneStore,
+async function snapshotPolicyStore(
+  store: RequestPathPolicyControlPlaneStore,
+): Promise<PolicyControlPlaneStore> {
+  return controlPlaneStore.createInMemoryPolicyControlPlaneStoreFromSnapshot(
+    await store.exportSnapshot(),
+  );
+}
+
+async function snapshotApprovalStore(
+  store: RequestPathPolicyActivationApprovalStore,
+): Promise<PolicyActivationApprovalStore> {
+  return controlPlaneActivationApprovals.createInMemoryPolicyActivationApprovalStoreFromSnapshot(
+    await store.exportSnapshot(),
+  );
+}
+
+async function publishStoreMetadata(
+  store: RequestPathPolicyControlPlaneStore,
   bundle: StoredPolicyBundleRecord,
   latestActivationId: string | null,
-): void {
-  const previous = store.getMetadata();
-  store.setMetadata(
+): Promise<void> {
+  const previous = await store.getMetadata();
+  await store.setMetadata(
     createPolicyControlPlaneMetadata(
       store.kind,
       previous?.discoveryMode ?? 'scoped-active',
@@ -537,12 +559,51 @@ function publishStoreMetadata(
   );
 }
 
-function findRequiredBundle(
-  store: PolicyControlPlaneStore,
+async function findRequiredBundle(
+  store: RequestPathPolicyControlPlaneStore,
   packId: string,
   bundleId: string,
-): StoredPolicyBundleRecord | null {
+): Promise<StoredPolicyBundleRecord | null> {
   return store.getBundle(packId, bundleId);
+}
+
+async function requestActivationApproval(
+  store: RequestPathPolicyActivationApprovalStore,
+  input: Parameters<typeof requestPolicyActivationApproval>[1],
+): Promise<PolicyActivationApprovalRequest> {
+  const localStore = await snapshotApprovalStore(store);
+  const request = requestPolicyActivationApproval(localStore, input);
+  return store.upsert(request);
+}
+
+async function recordActivationApprovalDecision(
+  store: RequestPathPolicyActivationApprovalStore,
+  input: Parameters<typeof recordPolicyActivationApprovalDecision>[1],
+): Promise<PolicyActivationApprovalRequest> {
+  const localStore = await snapshotApprovalStore(store);
+  const request = recordPolicyActivationApprovalDecision(localStore, input);
+  return store.upsert(request);
+}
+
+async function evaluateActivationApprovalGate(
+  store: RequestPathPolicyActivationApprovalStore,
+  input: Parameters<typeof evaluatePolicyActivationApprovalGate>[1],
+): Promise<PolicyActivationApprovalGateResult> {
+  const localStore = await snapshotApprovalStore(store);
+  return evaluatePolicyActivationApprovalGate(localStore, input);
+}
+
+async function applyPolicyLifecycle(
+  store: RequestPathPolicyControlPlaneStore,
+  action: (localStore: PolicyControlPlaneStore) => ReturnType<typeof activatePolicyBundle>,
+): Promise<ReturnType<typeof activatePolicyBundle>> {
+  const localStore = await snapshotPolicyStore(store);
+  const lifecycle = action(localStore);
+  await store.upsertActivation(lifecycle.appliedRecord);
+  if (lifecycle.updatedHistoricalRecord) {
+    await store.upsertActivation(lifecycle.updatedHistoricalRecord);
+  }
+  return lifecycle;
 }
 
 function parseBundleUpsertInput(body: JsonRecord): UpsertStoredPolicyBundleInput {
@@ -570,12 +631,12 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     policyMutationAuditLog: auditLog,
   } = deps;
 
-  app.get('/api/v1/admin/release-policy/control-plane', (c) => {
+  app.get('/api/v1/admin/release-policy/control-plane', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const snapshot = store.exportSnapshot();
-    const auditVerification = auditLog.verify();
+    const snapshot = await store.exportSnapshot();
+    const auditVerification = await auditLog.verify();
     noStore(c);
     return c.json({
       storeKind: store.kind,
@@ -584,22 +645,22 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         packs: snapshot.packs.length,
         bundles: snapshot.bundles.length,
         activations: snapshot.activations.length,
-        activationApprovals: approvalStore.list().length,
-        auditEntries: auditLog.entries().length,
+        activationApprovals: (await approvalStore.list()).length,
+        auditEntries: (await auditLog.entries()).length,
       },
       audit: {
         valid: auditVerification.valid,
-        latestEntryDigest: auditLog.latestEntryDigest(),
+        latestEntryDigest: await auditLog.latestEntryDigest(),
       },
     });
   });
 
-  app.get('/api/v1/admin/release-policy/packs', (c) => {
+  app.get('/api/v1/admin/release-policy/packs', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
     noStore(c);
-    return c.json({ packs: store.listPacks().map(packView) });
+    return c.json({ packs: (await store.listPacks()).map(packView) });
   });
 
   app.post('/api/v1/admin/release-policy/packs', async (c) => {
@@ -614,8 +675,8 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
 
     try {
       const pack = parsePackMetadata(body.pack ?? body);
-      const stored = store.upsertPack(pack);
-      const audit = auditLog.append({
+      const stored = await store.upsertPack(pack);
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'create-pack',
         actor: routeAdminActor(c),
@@ -644,11 +705,11 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     }
   });
 
-  app.get('/api/v1/admin/release-policy/packs/:packId', (c) => {
+  app.get('/api/v1/admin/release-policy/packs/:packId', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const pack = store.getPack(c.req.param('packId'));
+    const pack = await store.getPack(c.req.param('packId'));
     if (!pack) {
       return c.json({ error: `Policy pack '${c.req.param('packId')}' not found.` }, 404);
     }
@@ -656,25 +717,25 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     return c.json({ pack: packView(pack) });
   });
 
-  app.get('/api/v1/admin/release-policy/packs/:packId/bundles', (c) => {
+  app.get('/api/v1/admin/release-policy/packs/:packId/bundles', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
     noStore(c);
     return c.json({
       packId: c.req.param('packId'),
-      bundles: store.listBundleHistory(c.req.param('packId')).map(bundleSummaryView),
+      bundles: (await store.listBundleHistory(c.req.param('packId'))).map(bundleSummaryView),
     });
   });
 
-  app.get('/api/v1/admin/release-policy/packs/:packId/versions', (c) => {
+  app.get('/api/v1/admin/release-policy/packs/:packId/versions', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
     noStore(c);
     return c.json({
       packId: c.req.param('packId'),
-      versions: store.listBundleHistory(c.req.param('packId')).map(bundleSummaryView),
+      versions: (await store.listBundleHistory(c.req.param('packId'))).map(bundleSummaryView),
     });
   });
 
@@ -691,14 +752,14 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     try {
       const input = parseBundleUpsertInput(body);
       const pack = input.artifact.statement.predicate.pack as PolicyPackMetadata;
-      store.upsertPack({
+      await store.upsertPack({
         ...pack,
         latestBundleRef: input.manifest.bundle,
         updatedAt: input.storedAt ?? new Date().toISOString(),
       });
-      const record = store.upsertBundle(input);
-      publishStoreMetadata(store, record, null);
-      const audit = auditLog.append({
+      const record = await store.upsertBundle(input);
+      await publishStoreMetadata(store, record, null);
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'publish-bundle',
         actor: routeAdminActor(c),
@@ -731,11 +792,11 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     }
   });
 
-  app.get('/api/v1/admin/release-policy/packs/:packId/bundles/:bundleId', (c) => {
+  app.get('/api/v1/admin/release-policy/packs/:packId/bundles/:bundleId', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const record = findRequiredBundle(store, c.req.param('packId'), c.req.param('bundleId'));
+    const record = await findRequiredBundle(store, c.req.param('packId'), c.req.param('bundleId'));
     if (!record) {
       return c.json({
         error: `Policy bundle '${c.req.param('bundleId')}' in pack '${c.req.param('packId')}' not found.`,
@@ -746,7 +807,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
       c.req.header('if-none-match'),
       {
         now: new Date().toISOString(),
-        persisted: store.kind === 'file-backed',
+        persisted: store.kind === 'file-backed' || store.kind === 'postgres',
       },
     );
     applyBundleCacheHeaders(c, conditional.descriptor);
@@ -759,12 +820,12 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     });
   });
 
-  app.get('/api/v1/admin/release-policy/activation-approvals', (c) => {
+  app.get('/api/v1/admin/release-policy/activation-approvals', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
     try {
-      const requests = approvalStore.list({
+      const requests = await approvalStore.list({
         state: parseApprovalState(c.req.query('state')),
         targetLabel: c.req.query('targetLabel')?.trim() || null,
         packId: c.req.query('packId')?.trim() || null,
@@ -791,12 +852,12 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
       const packId = requiredString(body, 'packId');
       const bundleId = requiredString(body, 'bundleId');
       const target = parseActivationTarget(body.target);
-      const bundle = findRequiredBundle(store, packId, bundleId);
+      const bundle = await findRequiredBundle(store, packId, bundleId);
       if (!bundle) {
         return c.json({ error: `Policy bundle '${bundleId}' in pack '${packId}' not found.` }, 404);
       }
 
-      const approvalRequest = requestPolicyActivationApproval(approvalStore, {
+      const approvalRequest = await requestActivationApproval(approvalStore, {
         id: optionalString(body, 'approvalRequestId') ?? undefined,
         target,
         bundleRecord: bundle,
@@ -808,7 +869,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
           optionalString(body, 'rationale') ??
           `Request approval to activate policy bundle ${bundle.bundleId}.`,
       });
-      const audit = auditLog.append({
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'request-activation-approval',
         actor: routeAdminActor(c),
@@ -850,11 +911,11 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     }
   });
 
-  app.get('/api/v1/admin/release-policy/activation-approvals/:id', (c) => {
+  app.get('/api/v1/admin/release-policy/activation-approvals/:id', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const approvalRequest = approvalStore.get(c.req.param('id'));
+    const approvalRequest = await approvalStore.get(c.req.param('id'));
     if (!approvalRequest) {
       return c.json({
         error: `Policy activation approval request '${c.req.param('id')}' not found.`,
@@ -875,7 +936,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     if (mutation instanceof Response) return mutation;
 
     try {
-      const approvalRequest = recordPolicyActivationApprovalDecision(approvalStore, {
+      const approvalRequest = await recordActivationApprovalDecision(approvalStore, {
         requestId: c.req.param('id'),
         decision: 'approve',
         reviewer: routeAdminActor(c),
@@ -883,7 +944,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         rationale: optionalString(body, 'rationale') ?? 'Approve policy activation request.',
       });
       const latestDecision = approvalRequest.decisions.at(-1)!;
-      const audit = auditLog.append({
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'approve-activation',
         actor: routeAdminActor(c),
@@ -936,7 +997,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     if (mutation instanceof Response) return mutation;
 
     try {
-      const approvalRequest = recordPolicyActivationApprovalDecision(approvalStore, {
+      const approvalRequest = await recordActivationApprovalDecision(approvalStore, {
         requestId: c.req.param('id'),
         decision: 'reject',
         reviewer: routeAdminActor(c),
@@ -944,7 +1005,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         rationale: optionalString(body, 'rationale') ?? 'Reject policy activation request.',
       });
       const latestDecision = approvalRequest.decisions.at(-1)!;
-      const audit = auditLog.append({
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'reject-activation',
         actor: routeAdminActor(c),
@@ -986,14 +1047,14 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     }
   });
 
-  app.get('/api/v1/admin/release-policy/activations', (c) => {
+  app.get('/api/v1/admin/release-policy/activations', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
     const targetLabel = c.req.query('targetLabel')?.trim();
     const state = c.req.query('state')?.trim();
-    const activations = store
-      .listActivations()
+    const activations = (await store
+      .listActivations())
       .filter((record) => !targetLabel || record.targetLabel === targetLabel)
       .filter((record) => !state || record.state === state);
     noStore(c);
@@ -1014,11 +1075,11 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
       const packId = requiredString(body, 'packId');
       const bundleId = requiredString(body, 'bundleId');
       const target = parseActivationTarget(body.target);
-      const bundle = findRequiredBundle(store, packId, bundleId);
+      const bundle = await findRequiredBundle(store, packId, bundleId);
       if (!bundle) {
         return c.json({ error: `Policy bundle '${bundleId}' in pack '${packId}' not found.` }, 404);
       }
-      const approvalGate = evaluatePolicyActivationApprovalGate(approvalStore, {
+      const approvalGate = await evaluateActivationApprovalGate(approvalStore, {
         target,
         bundleRecord: bundle,
         approvalRequestId: optionalString(body, 'approvalRequestId'),
@@ -1030,7 +1091,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
           approval: approvalGateView(approvalGate),
         }, 409);
       }
-      const lifecycle = activatePolicyBundle(store, {
+      const lifecycle = await applyPolicyLifecycle(store, (localStore) => activatePolicyBundle(localStore, {
         id: optionalString(body, 'activationId') ?? `activation_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
         target,
         bundle: bundle.manifest.bundle,
@@ -1039,9 +1100,9 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         rolloutMode: parseRolloutMode(body.rolloutMode),
         reasonCode: optionalString(body, 'reasonCode') ?? 'activate-bundle',
         rationale: optionalString(body, 'rationale') ?? `Activate policy bundle ${bundle.bundleId}.`,
-      });
-      publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
-      const audit = auditLog.append({
+      }));
+      await publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'activate-bundle',
         actor: routeAdminActor(c),
@@ -1080,11 +1141,11 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     }
   });
 
-  app.get('/api/v1/admin/release-policy/activations/:id', (c) => {
+  app.get('/api/v1/admin/release-policy/activations/:id', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const record = store.getActivation(c.req.param('id'));
+    const record = await store.getActivation(c.req.param('id'));
     if (!record) {
       return c.json({ error: `Policy activation '${c.req.param('id')}' not found.` }, 404);
     }
@@ -1103,11 +1164,11 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     if (mutation instanceof Response) return mutation;
 
     try {
-      const rollbackTarget = store.getActivation(c.req.param('id'));
+      const rollbackTarget = await store.getActivation(c.req.param('id'));
       if (!rollbackTarget) {
         return c.json({ error: `Policy activation '${c.req.param('id')}' not found.` }, 404);
       }
-      const lifecycle = rollbackPolicyActivation(store, {
+      const lifecycle = await applyPolicyLifecycle(store, (localStore) => rollbackPolicyActivation(localStore, {
         id: optionalString(body, 'activationId') ?? `rollback_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
         target: rollbackTarget.target,
         rollbackTargetActivationId: rollbackTarget.id,
@@ -1115,16 +1176,16 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         activatedAt: optionalString(body, 'activatedAt') ?? new Date().toISOString(),
         reasonCode: optionalString(body, 'reasonCode') ?? 'rollback',
         rationale: optionalString(body, 'rationale') ?? `Rollback to policy activation ${rollbackTarget.id}.`,
-      });
-      const bundle = findRequiredBundle(
+      }));
+      const bundle = await findRequiredBundle(
         store,
         lifecycle.appliedRecord.bundle.packId,
         lifecycle.appliedRecord.bundle.bundleId,
       );
       if (bundle) {
-        publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
+        await publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
       }
-      const audit = auditLog.append({
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'rollback-activation',
         actor: routeAdminActor(c),
@@ -1180,12 +1241,12 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         return c.json({ error: 'Emergency freeze requires both packId and bundleId when either is provided.' }, 400);
       }
 
-      const currentActive = findLatestActiveExactTargetActivation(store, target);
+      const currentActive = findLatestActiveExactTargetActivation(await snapshotPolicyStore(store), target);
       const bundle =
         packId && bundleId
-          ? findRequiredBundle(store, packId, bundleId)
+          ? await findRequiredBundle(store, packId, bundleId)
           : currentActive
-            ? findRequiredBundle(store, currentActive.bundle.packId, currentActive.bundle.bundleId)
+            ? await findRequiredBundle(store, currentActive.bundle.packId, currentActive.bundle.bundleId)
             : null;
       if (!bundle) {
         return c.json({
@@ -1195,7 +1256,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         }, packId && bundleId ? 404 : 400);
       }
 
-      const lifecycle = freezePolicyActivationScope(store, {
+      const lifecycle = await applyPolicyLifecycle(store, (localStore) => freezePolicyActivationScope(localStore, {
         id: optionalString(body, 'activationId') ?? `freeze_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
         target,
         bundle: bundle.manifest.bundle,
@@ -1204,9 +1265,9 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         reasonCode: breakGlass.reasonCode,
         rationale: breakGlass.rationale,
         freezeReason: optionalString(body, 'freezeReason') ?? breakGlass.rationale,
-      });
-      publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
-      const audit = auditLog.append({
+      }));
+      await publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'freeze-scope',
         actor: breakGlass.actor,
@@ -1269,11 +1330,11 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
 
     try {
       const rollbackTargetId = requiredString(body, 'rollbackTargetActivationId');
-      const rollbackTarget = store.getActivation(rollbackTargetId);
+      const rollbackTarget = await store.getActivation(rollbackTargetId);
       if (!rollbackTarget) {
         return c.json({ error: `Policy activation '${rollbackTargetId}' not found.` }, 404);
       }
-      const lifecycle = rollbackPolicyActivation(store, {
+      const lifecycle = await applyPolicyLifecycle(store, (localStore) => rollbackPolicyActivation(localStore, {
         id: optionalString(body, 'activationId') ?? `emergency_rollback_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
         target: rollbackTarget.target,
         rollbackTargetActivationId: rollbackTarget.id,
@@ -1281,16 +1342,16 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
         activatedAt: optionalString(body, 'activatedAt') ?? new Date().toISOString(),
         reasonCode: breakGlass.reasonCode,
         rationale: breakGlass.rationale,
-      });
-      const bundle = findRequiredBundle(
+      }));
+      const bundle = await findRequiredBundle(
         store,
         lifecycle.appliedRecord.bundle.packId,
         lifecycle.appliedRecord.bundle.bundleId,
       );
       if (bundle) {
-        publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
+        await publishStoreMetadata(store, bundle, lifecycle.appliedRecord.id);
       }
-      const audit = auditLog.append({
+      const audit = await auditLog.append({
         occurredAt: new Date().toISOString(),
         action: 'rollback-activation',
         actor: breakGlass.actor,
@@ -1348,7 +1409,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     if (body instanceof Response) return body;
     try {
       const resolverInput = (body.resolverInput ?? body.input ?? body) as never;
-      const result = createPolicySimulationApi(store).resolveCurrent(resolverInput);
+      const result = createPolicySimulationApi(await snapshotPolicyStore(store)).resolveCurrent(resolverInput);
       noStore(c);
       return c.json({ resolution: result });
     } catch (error) {
@@ -1369,7 +1430,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
       }
       const packId = requiredString(overlaySource, 'packId');
       const bundleId = requiredString(overlaySource, 'bundleId');
-      const bundle = findRequiredBundle(store, packId, bundleId);
+      const bundle = await findRequiredBundle(store, packId, bundleId);
       if (!bundle) {
         return c.json({ error: `Policy bundle '${bundleId}' in pack '${packId}' not found.` }, 404);
       }
@@ -1377,7 +1438,7 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
       if (!resolverInput) {
         return c.json({ error: 'resolverInput is required.' }, 400);
       }
-      const preview = createPolicyImpactApi(store).previewCandidateActivation(resolverInput, {
+      const preview = createPolicyImpactApi(await snapshotPolicyStore(store)).previewCandidateActivation(resolverInput, {
         bundleRecord: bundle,
         target: parseActivationTarget(overlaySource.target),
         discoveryMode: (optionalString(overlaySource, 'discoveryMode') ?? undefined) as never,
@@ -1396,30 +1457,30 @@ export function registerReleasePolicyControlRoutes(app: Hono, deps: ReleasePolic
     }
   });
 
-  app.get('/api/v1/admin/release-policy/audit', (c) => {
+  app.get('/api/v1/admin/release-policy/audit', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const entries = filterAuditEntries(auditLog.entries(), c);
+    const entries = filterAuditEntries(await auditLog.entries(), c);
     if (entries instanceof Response) return entries;
     const includeSnapshots = c.req.query('includeSnapshots') === 'true';
-    const verification = auditLog.verify();
+    const verification = await auditLog.verify();
     noStore(c);
     return c.json({
       verification,
-      latestEntryDigest: auditLog.latestEntryDigest(),
+      latestEntryDigest: await auditLog.latestEntryDigest(),
       entries: entries.map((entry) => auditEntryView(entry, includeSnapshots)),
     });
   });
 
-  app.get('/api/v1/admin/release-policy/audit/verify', (c) => {
+  app.get('/api/v1/admin/release-policy/audit/verify', async (c) => {
     const unauthorized = deps.currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
     noStore(c);
     return c.json({
-      verification: auditLog.verify(),
-      latestEntryDigest: auditLog.latestEntryDigest(),
+      verification: await auditLog.verify(),
+      latestEntryDigest: await auditLog.latestEntryDigest(),
     });
   });
 }

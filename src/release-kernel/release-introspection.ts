@@ -183,6 +183,14 @@ export interface ReleaseTokenIntrospector {
   ): Promise<ReleaseTokenIntrospectionResult>;
 }
 
+export type AwaitableReleaseTokenIntrospectionStore = {
+  [K in keyof ReleaseTokenIntrospectionStore]: ReleaseTokenIntrospectionStore[K] extends (
+    ...args: infer Args
+  ) => infer Result
+    ? (...args: Args) => Result | Promise<Result>
+    : ReleaseTokenIntrospectionStore[K];
+};
+
 export class ReleaseTokenIntrospectionStoreError extends Error {
   constructor(message: string) {
     super(message);
@@ -610,7 +618,7 @@ export function resetFileBackedReleaseTokenIntrospectionStoreForTests(path?: str
 
 export async function introspectReleaseToken(
   input: ReleaseTokenIntrospectionInput & {
-    readonly store: ReleaseTokenIntrospectionStore;
+    readonly store: AwaitableReleaseTokenIntrospectionStore;
   },
 ): Promise<ReleaseTokenIntrospectionResult> {
   const tokenTypeHint = normalizeSupportedTokenTypeHint(input.tokenTypeHint);
@@ -622,7 +630,7 @@ export async function introspectReleaseToken(
     );
   }
 
-  input.store.syncLifecycle(input.currentDate);
+  await input.store.syncLifecycle(input.currentDate);
 
   let verified;
   try {
@@ -651,7 +659,7 @@ export async function introspectReleaseToken(
     );
   }
 
-  const record = input.store.findToken(verified.claims.jti);
+  const record = await input.store.findToken(verified.claims.jti);
   if (!record) {
     return inactiveReleaseTokenIntrospection(
       'unknown',
@@ -714,7 +722,7 @@ export async function introspectReleaseToken(
 }
 
 export function createReleaseTokenIntrospector(
-  store: ReleaseTokenIntrospectionStore,
+  store: AwaitableReleaseTokenIntrospectionStore,
 ): ReleaseTokenIntrospector {
   return {
     introspect(

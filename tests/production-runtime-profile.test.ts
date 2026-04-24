@@ -217,13 +217,13 @@ function testStartupDiagnostics(): void {
   );
 }
 
-function testDurabilityAssertionAndBootstrap(): void {
+async function testDurabilityAssertionAndBootstrap(): Promise<void> {
   const localDev = resolveRuntimeProfile({ env: {} });
   const production = resolveRuntimeProfile({
     env: { [ATTESTOR_RUNTIME_PROFILE_ENV]: 'production-shared' },
   });
 
-  const localBootstrap = createReleaseRuntimeBootstrap({ runtimeProfile: localDev });
+  const localBootstrap = await createReleaseRuntimeBootstrap({ runtimeProfile: localDev });
   equal(localBootstrap.runtimeProfile.id, 'local-dev', 'Runtime bootstrap: carries runtime profile');
   equal(localBootstrap.releaseRuntimeDurability.ready, true, 'Runtime bootstrap: local-dev starts');
   equal(
@@ -300,14 +300,14 @@ function testDurabilityAssertionAndBootstrap(): void {
   );
   passed += 1;
 
-  assert.throws(
+  await assert.rejects(
     () => createReleaseRuntimeBootstrap({ runtimeProfile: production }),
     RuntimeProfileDurabilityError,
     'Runtime bootstrap: production profile fails closed with current stores',
   );
   passed += 1;
 
-  const productionPreflight = createReleaseRuntimeBootstrap({
+  const productionPreflight = await createReleaseRuntimeBootstrap({
     runtimeProfile: production,
     allowPreflightOnDurabilityViolation: true,
   });
@@ -419,12 +419,19 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(packageJson.scripts.verify, 'npm run test:production-runtime-restart-recovery', 'Runtime docs: verify runs restart recovery guard');
 }
 
-testProfileCatalog();
-testProfileResolution();
-testCurrentStoreInventoryIsExplicit();
-testDurabilityEvaluation();
-testStartupDiagnostics();
-testDurabilityAssertionAndBootstrap();
-testDocsAndApiRuntimeAreWired();
+async function run(): Promise<void> {
+  testProfileCatalog();
+  testProfileResolution();
+  testCurrentStoreInventoryIsExplicit();
+  testDurabilityEvaluation();
+  testStartupDiagnostics();
+  await testDurabilityAssertionAndBootstrap();
+  testDocsAndApiRuntimeAreWired();
 
-console.log(`Production runtime profile tests: ${passed} passed, 0 failed`);
+  console.log(`Production runtime profile tests: ${passed} passed, 0 failed`);
+}
+
+run().catch((error) => {
+  console.error('Production runtime profile tests failed:', error);
+  process.exit(1);
+});

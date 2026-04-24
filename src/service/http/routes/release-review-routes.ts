@@ -6,18 +6,20 @@ import {
   type IssuedReleaseToken,
   type ReleaseDecision,
   type ReleaseDecisionLogPhase,
-  type ReleaseDecisionLogWriter,
   type ReleaseEvidencePackIssuer,
-  type ReleaseEvidencePackStore,
   type ReleaseReviewerQueueDetail,
   type ReleaseReviewerQueueListOptions,
   type ReleaseReviewerQueueListResult,
   type ReleaseReviewerQueueRecord,
-  type ReleaseReviewerQueueStore,
-  type ReleaseTokenIntrospectionStore,
   type ReleaseTokenIssuer,
 } from '../../../release-layer/index.js';
 import type { AdminAuditAction } from '../../admin-audit-log.js';
+import type {
+  RequestPathReleaseDecisionLogWriter,
+  RequestPathReleaseEvidencePackStore,
+  RequestPathReleaseReviewerQueueStore,
+  RequestPathReleaseTokenIntrospectionStore,
+} from '../../release-authority-request-path.js';
 
 const {
   ReleaseReviewerQueueError,
@@ -51,14 +53,14 @@ interface AdminMutationFinalizationInput {
 
 export interface ReleaseReviewRouteDeps {
   currentAdminAuthorized(c: Context): Response | null;
-  apiReleaseReviewerQueueStore: ReleaseReviewerQueueStore;
+  apiReleaseReviewerQueueStore: RequestPathReleaseReviewerQueueStore;
   renderReleaseReviewerQueueInboxPage(result: ReleaseReviewerQueueListResult): string;
   renderReleaseReviewerQueueDetailPage(detail: ReleaseReviewerQueueDetail): string;
-  financeReleaseDecisionLog: ReleaseDecisionLogWriter;
+  financeReleaseDecisionLog: RequestPathReleaseDecisionLogWriter;
   apiReleaseTokenIssuer: ReleaseTokenIssuer;
-  apiReleaseEvidencePackStore: ReleaseEvidencePackStore;
+  apiReleaseEvidencePackStore: RequestPathReleaseEvidencePackStore;
   apiReleaseEvidencePackIssuer: ReleaseEvidencePackIssuer;
-  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
+  apiReleaseIntrospectionStore: RequestPathReleaseTokenIntrospectionStore;
   adminMutationRequest(
     c: Context,
     routeId: string,
@@ -180,8 +182,8 @@ function buildIssuedEvidencePackResponse(
   };
 }
 
-function appendReviewerTimelineToDecisionLog(
-  writer: ReleaseDecisionLogWriter,
+async function appendReviewerTimelineToDecisionLog(
+  writer: RequestPathReleaseDecisionLogWriter,
   decision: ReleaseDecision,
   occurredAt: string,
   requestId: string,
@@ -189,8 +191,8 @@ function appendReviewerTimelineToDecisionLog(
     ReleaseDecisionLogPhase,
     'review' | 'override' | 'evidence-pack' | 'terminal-accept' | 'terminal-deny'
   >,
-): void {
-  writer.append({
+): Promise<void> {
+  await writer.append({
     occurredAt,
     requestId,
     phase,
@@ -227,11 +229,11 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
     finalizeAdminMutation,
   } = deps;
 
-  app.get('/api/v1/admin/release-evidence/:id', (c) => {
+  app.get('/api/v1/admin/release-evidence/:id', async (c) => {
     const unauthorized = currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const pack = apiReleaseEvidencePackStore.get(c.req.param('id'));
+    const pack = await apiReleaseEvidencePackStore.get(c.req.param('id'));
     if (!pack) {
       return c.json({ error: `Release evidence pack '${c.req.param('id')}' not found.` }, 404);
     }
@@ -240,7 +242,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
     return c.json({ evidencePack: pack });
   });
 
-  app.get('/api/v1/admin/release-reviews', (c) => {
+  app.get('/api/v1/admin/release-reviews', async (c) => {
     const unauthorized = currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
@@ -249,7 +251,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       return c.json({ error: 'limit must be a positive integer.' }, 400);
     }
 
-    const result = apiReleaseReviewerQueueStore.listPending(readReviewListOptions(c));
+    const result = await apiReleaseReviewerQueueStore.listPending(readReviewListOptions(c));
 
     c.header('cache-control', 'no-store');
     return c.json({
@@ -260,7 +262,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
     });
   });
 
-  app.get('/api/v1/admin/release-reviews/inbox', (c) => {
+  app.get('/api/v1/admin/release-reviews/inbox', async (c) => {
     const unauthorized = currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
@@ -269,18 +271,18 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       return c.json({ error: 'limit must be a positive integer.' }, 400);
     }
 
-    const result = apiReleaseReviewerQueueStore.listPending(readReviewListOptions(c));
+    const result = await apiReleaseReviewerQueueStore.listPending(readReviewListOptions(c));
 
     c.header('content-type', 'text/html; charset=utf-8');
     c.header('cache-control', 'no-store');
     return c.body(renderReleaseReviewerQueueInboxPage(result));
   });
 
-  app.get('/api/v1/admin/release-reviews/:id', (c) => {
+  app.get('/api/v1/admin/release-reviews/:id', async (c) => {
     const unauthorized = currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const item = apiReleaseReviewerQueueStore.get(c.req.param('id'));
+    const item = await apiReleaseReviewerQueueStore.get(c.req.param('id'));
     if (!item) {
       return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
     }
@@ -289,11 +291,11 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
     return c.json({ review: item });
   });
 
-  app.get('/api/v1/admin/release-reviews/:id/view', (c) => {
+  app.get('/api/v1/admin/release-reviews/:id/view', async (c) => {
     const unauthorized = currentAdminAuthorized(c);
     if (unauthorized) return unauthorized;
 
-    const item = apiReleaseReviewerQueueStore.get(c.req.param('id'));
+    const item = await apiReleaseReviewerQueueStore.get(c.req.param('id'));
     if (!item) {
       return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
     }
@@ -314,7 +316,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       return mutation;
     }
 
-    const record = apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
+    const record = await apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
     if (!record) {
       return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
     }
@@ -331,7 +333,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         decidedAt,
       });
 
-      appendReviewerTimelineToDecisionLog(
+      await appendReviewerTimelineToDecisionLog(
         financeReleaseDecisionLog,
         transition.record.releaseDecision,
         decidedAt,
@@ -343,7 +345,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       let responseToken: IssuedReleaseTokenResponse | null = null;
       let responseEvidencePack: IssuedEvidencePackResponse | null = null;
       if (transition.record.detail.authorityState === 'approved') {
-        appendReviewerTimelineToDecisionLog(
+        await appendReviewerTimelineToDecisionLog(
           financeReleaseDecisionLog,
           transition.record.releaseDecision,
           decidedAt,
@@ -354,7 +356,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
           decision: transition.record.releaseDecision,
           issuedAt: decidedAt,
         });
-        apiReleaseIntrospectionStore.registerIssuedToken({
+        await apiReleaseIntrospectionStore.registerIssuedToken({
           issuedToken,
           decision: transition.record.releaseDecision,
         });
@@ -368,7 +370,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
           ...finalRecord.releaseDecision,
           evidencePackId,
         };
-        appendReviewerTimelineToDecisionLog(
+        await appendReviewerTimelineToDecisionLog(
           financeReleaseDecisionLog,
           releaseDecisionWithEvidence,
           decidedAt,
@@ -379,14 +381,13 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
           decision: releaseDecisionWithEvidence,
           evidencePackId,
           issuedAt: decidedAt,
-          decisionLogEntries: financeReleaseDecisionLog
-            .entries()
+          decisionLogEntries: (await financeReleaseDecisionLog.entries())
             .filter((entry) => entry.decisionId === releaseDecisionWithEvidence.id),
-          decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
+          decisionLogChainIntact: (await financeReleaseDecisionLog.verify()).valid,
           review: finalRecord.detail,
           releaseToken: issuedToken,
         });
-        apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
+        await apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
         finalRecord = {
           detail: {
             ...finalRecord.detail,
@@ -409,7 +410,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         responseEvidencePack = buildIssuedEvidencePackResponse(issuedEvidencePack);
       }
 
-      const stored = apiReleaseReviewerQueueStore.upsert(finalRecord);
+      const stored = await apiReleaseReviewerQueueStore.upsert(finalRecord);
       c.header('cache-control', 'no-store');
       return c.json(
         await finalizeAdminMutation({
@@ -462,7 +463,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       return mutation;
     }
 
-    const record = apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
+    const record = await apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
     if (!record) {
       return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
     }
@@ -479,14 +480,14 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         decidedAt,
       });
 
-      appendReviewerTimelineToDecisionLog(
+      await appendReviewerTimelineToDecisionLog(
         financeReleaseDecisionLog,
         transition.record.releaseDecision,
         decidedAt,
         `review:${transition.record.detail.id}:reject`,
         'review',
       );
-      appendReviewerTimelineToDecisionLog(
+      await appendReviewerTimelineToDecisionLog(
         financeReleaseDecisionLog,
         transition.record.releaseDecision,
         decidedAt,
@@ -494,7 +495,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         'terminal-deny',
       );
 
-      const stored = apiReleaseReviewerQueueStore.upsert(transition.record);
+      const stored = await apiReleaseReviewerQueueStore.upsert(transition.record);
       c.header('cache-control', 'no-store');
       return c.json(
         await finalizeAdminMutation({
@@ -544,7 +545,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
       return mutation;
     }
 
-    const record = apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
+    const record = await apiReleaseReviewerQueueStore.getRecord(c.req.param('id'));
     if (!record) {
       return c.json({ error: `Release review '${c.req.param('id')}' not found.` }, 404);
     }
@@ -562,14 +563,14 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         decidedAt,
       });
 
-      appendReviewerTimelineToDecisionLog(
+      await appendReviewerTimelineToDecisionLog(
         financeReleaseDecisionLog,
         overriddenRecord.releaseDecision,
         decidedAt,
         `review:${overriddenRecord.detail.id}:override`,
         'override',
       );
-      appendReviewerTimelineToDecisionLog(
+      await appendReviewerTimelineToDecisionLog(
         financeReleaseDecisionLog,
         overriddenRecord.releaseDecision,
         decidedAt,
@@ -582,7 +583,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         issuedAt: decidedAt,
         ttlSeconds: 60,
       });
-      apiReleaseIntrospectionStore.registerIssuedToken({
+      await apiReleaseIntrospectionStore.registerIssuedToken({
         issuedToken,
         decision: overriddenRecord.releaseDecision,
       });
@@ -596,7 +597,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         ...finalRecord.releaseDecision,
         evidencePackId,
       };
-      appendReviewerTimelineToDecisionLog(
+      await appendReviewerTimelineToDecisionLog(
         financeReleaseDecisionLog,
         releaseDecisionWithEvidence,
         decidedAt,
@@ -607,14 +608,13 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         decision: releaseDecisionWithEvidence,
         evidencePackId,
         issuedAt: decidedAt,
-        decisionLogEntries: financeReleaseDecisionLog
-          .entries()
+        decisionLogEntries: (await financeReleaseDecisionLog.entries())
           .filter((entry) => entry.decisionId === releaseDecisionWithEvidence.id),
-        decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
+        decisionLogChainIntact: (await financeReleaseDecisionLog.verify()).valid,
         review: finalRecord.detail,
         releaseToken: issuedToken,
       });
-      apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
+      await apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
       const finalRecordWithEvidence: ReleaseReviewerQueueRecord = {
         detail: {
           ...finalRecord.detail,
@@ -635,7 +635,7 @@ export function registerReleaseReviewRoutes(app: Hono, deps: ReleaseReviewRouteD
         releaseDecision: releaseDecisionWithEvidence,
       };
 
-      const stored = apiReleaseReviewerQueueStore.upsert(finalRecordWithEvidence);
+      const stored = await apiReleaseReviewerQueueStore.upsert(finalRecordWithEvidence);
       const responseToken = buildIssuedReleaseTokenResponse(issuedToken);
       const responseEvidencePack = buildIssuedEvidencePackResponse(issuedEvidencePack);
       c.header('cache-control', 'no-store');

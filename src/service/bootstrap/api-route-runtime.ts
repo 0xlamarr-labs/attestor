@@ -313,9 +313,9 @@ export interface CreateApiHttpRouteRuntimeInput {
 
 type ApiRouteDeps = AppRouteDeps<typeof committedFinancialPacket>;
 
-export function createApiHttpRouteRuntime(
+export async function createApiHttpRouteRuntime(
   input: CreateApiHttpRouteRuntimeInput,
-): AppRuntime<typeof committedFinancialPacket> {
+): Promise<AppRuntime<typeof committedFinancialPacket>> {
   const { registries, serviceInstanceId, startTime } = input;
   const { domainRegistry, connectorRegistry, filingRegistry } = registries;
   const runtimeProfile = resolveRuntimeProfile();
@@ -341,7 +341,7 @@ export function createApiHttpRouteRuntime(
     financeReleaseDecisionEngine,
     financeCommunicationReleaseShadowEvaluator,
     financeActionReleaseShadowEvaluator,
-  } = createReleaseRuntimeBootstrap({
+  } = await createReleaseRuntimeBootstrap({
     runtimeProfile,
     allowPreflightOnDurabilityViolation: runtimeProfile.id === 'production-shared',
   });

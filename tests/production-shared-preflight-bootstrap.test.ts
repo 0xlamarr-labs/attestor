@@ -25,7 +25,7 @@ async function run(): Promise<void> {
   process.env[ATTESTOR_RUNTIME_PROFILE_ENV] = 'production-shared';
 
   try {
-    const runtime = createApiHttpRouteRuntime({
+    const runtime = await createApiHttpRouteRuntime({
       registries: createRegistries(),
       serviceInstanceId: 'production-shared-preflight-test',
       startTime: Date.now(),

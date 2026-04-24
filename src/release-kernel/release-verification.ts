@@ -10,9 +10,9 @@ import {
 } from './release-token.js';
 import type {
   ActiveReleaseTokenIntrospectionResult,
+  AwaitableReleaseTokenIntrospectionStore,
   ReleaseTokenIntrospectionResult,
   ReleaseTokenIntrospector,
-  ReleaseTokenIntrospectionStore,
 } from './release-introspection.js';
 
 /**
@@ -44,7 +44,7 @@ export interface ReleaseVerificationInput extends VerifyReleaseTokenInput {
   readonly expectedOutputHash?: string;
   readonly expectedConsequenceHash?: string;
   readonly introspector?: ReleaseTokenIntrospector;
-  readonly usageStore?: ReleaseTokenIntrospectionStore;
+  readonly usageStore?: AwaitableReleaseTokenIntrospectionStore;
   readonly consumeOnSuccess?: boolean;
   readonly tokenTypeHint?: string;
   readonly resourceServerId?: string;
@@ -107,8 +107,10 @@ export interface CreateReleaseVerificationMiddlewareInput {
     | ReleaseTokenIntrospector
     | ((context: Context) => ReleaseTokenIntrospector | Promise<ReleaseTokenIntrospector>);
   readonly usageStore?:
-    | ReleaseTokenIntrospectionStore
-    | ((context: Context) => ReleaseTokenIntrospectionStore | Promise<ReleaseTokenIntrospectionStore>);
+    | AwaitableReleaseTokenIntrospectionStore
+    | ((
+        context: Context,
+      ) => AwaitableReleaseTokenIntrospectionStore | Promise<AwaitableReleaseTokenIntrospectionStore>);
   readonly consumeOnSuccess?: ResolveMaybe<boolean | undefined>;
   readonly tokenTypeHint?: ResolveMaybe<string | undefined>;
   readonly resourceServerId?: ResolveMaybe<string | undefined>;
@@ -362,7 +364,7 @@ export async function verifyReleaseAuthorization(
       );
     }
 
-    const consumed = input.usageStore.recordTokenUse({
+    const consumed = await input.usageStore.recordTokenUse({
       tokenId: verification.claims.jti,
       usedAt: input.currentDate,
       resourceServerId: input.resourceServerId,

@@ -27,7 +27,11 @@ import type * as PlanCatalog from '../../plan-catalog.js';
 import type { TenantKeyRecord } from '../../tenant-key-store.js';
 import type { InProcessAsyncJob, TenantAsyncBackendMode } from '../../runtime/tenant-runtime.js';
 import type * as TenantRuntime from '../../runtime/tenant-runtime.js';
-import type { ReleaseActorReference, ReleaseTokenIntrospectionStore } from '../../../release-layer/index.js';
+import type { ReleaseActorReference } from '../../../release-layer/index.js';
+import type {
+  RequestPathDegradedModeGrantStore,
+  RequestPathReleaseTokenIntrospectionStore,
+} from '../../release-authority-request-path.js';
 import type {
   EnforcementBoundaryKind,
   EnforcementBreakGlassReason,
@@ -41,7 +45,6 @@ import {
   degradedModeGrantStatus,
   degradedModeGrantView,
   type DegradedModeGrantState,
-  type DegradedModeGrantStore,
   type DegradedModeScope,
   type ListDegradedModeGrantOptions,
 } from '../../../release-enforcement-plane/degraded-mode.js';
@@ -87,8 +90,8 @@ export interface AdminRouteDeps {
   inProcessTenantQueueSnapshot: typeof TenantRuntime.inProcessTenantQueueSnapshot;
   listFailedPipelineJobs: typeof AsyncPipeline.listFailedPipelineJobs;
   retryFailedPipelineJob: typeof AsyncPipeline.retryFailedPipelineJob;
-  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
-  releaseDegradedModeGrantStore: DegradedModeGrantStore;
+  apiReleaseIntrospectionStore: RequestPathReleaseTokenIntrospectionStore;
+  releaseDegradedModeGrantStore: RequestPathDegradedModeGrantStore;
 }
 
 function adminDegradedModeActor(value: unknown): ReleaseActorReference {
@@ -319,7 +322,7 @@ export function registerAdminRoutes(app: Hono, deps: AdminRouteDeps): void {
     apiReleaseIntrospectionStore,
     releaseDegradedModeGrantStore,
   } = deps;
-  const degradedModeGrantStore: DegradedModeGrantStore = releaseDegradedModeGrantStore;
+  const degradedModeGrantStore = releaseDegradedModeGrantStore;
 
   async function beginAdminMutation(
     context: Context,
@@ -1427,12 +1430,12 @@ app.post('/api/v1/admin/release-tokens/:id/revoke', async (c) => {
   const adminMutation = await beginAdminMutation(c, 'admin.release_tokens.revoke', requestPayload);
   if (adminMutation instanceof Response) return adminMutation;
 
-  const existing = apiReleaseIntrospectionStore.findToken(c.req.param('id'));
+  const existing = await apiReleaseIntrospectionStore.findToken(c.req.param('id'));
   if (!existing) {
     return c.json({ error: 'Release token not found' }, 404);
   }
 
-  const revoked = apiReleaseIntrospectionStore.revokeToken({
+  const revoked = await apiReleaseIntrospectionStore.revokeToken({
     tokenId: existing.tokenId,
     revokedAt: new Date().toISOString(),
     reason: reason || undefined,
@@ -1497,9 +1500,10 @@ app.get('/api/v1/admin/release-enforcement/degraded-mode/grants', async (c) => {
     return c.json({ error: 'status must be active, not-yet-valid, expired, revoked, exhausted, or all.' }, 400);
   }
 
-  const grants = degradedModeGrantStore.listGrants({
+  const grants = await degradedModeGrantStore.listGrants({
     status: statusQuery ?? 'all',
   });
+  const auditHead = await degradedModeGrantStore.auditHead();
   const now = new Date().toISOString();
   return c.json({
     version: 'attestor.release-enforcement-degraded-mode.admin.v1',
@@ -1507,7 +1511,7 @@ app.get('/api/v1/admin/release-enforcement/degraded-mode/grants', async (c) => {
     summary: {
       grantCount: grants.length,
       activeCount: grants.filter((grant) => degradedModeGrantStatus(grant, now) === 'active').length,
-      auditHead: degradedModeGrantStore.auditHead(),
+      auditHead,
     },
   });
 });
@@ -1560,7 +1564,8 @@ app.post('/api/v1/admin/release-enforcement/degraded-mode/grants', async (c) => 
       maxUses: typeof body.maxUses === 'number' ? body.maxUses : undefined,
       remainingUses: typeof body.remainingUses === 'number' ? body.remainingUses : undefined,
     });
-    degradedModeGrantStore.registerGrant(grant);
+    await degradedModeGrantStore.registerGrant(grant);
+    const auditHead = await degradedModeGrantStore.auditHead();
 
     const responseBody = await adminMutationService.finalize({
       idempotencyKey: adminMutation.idempotencyKey,
@@ -1569,7 +1574,7 @@ app.post('/api/v1/admin/release-enforcement/degraded-mode/grants', async (c) => 
       statusCode: 201,
       responseBody: {
         grant: degradedModeGrantView(grant),
-        auditHead: degradedModeGrantStore.auditHead(),
+        auditHead,
       },
       audit: {
         action: 'release_enforcement.degraded_mode.grant_created',
@@ -1583,7 +1588,7 @@ app.post('/api/v1/admin/release-enforcement/degraded-mode/grants', async (c) => 
           maxUses: grant.maxUses,
           remainingUses: grant.remainingUses,
           auditDigest: grant.auditDigest,
-          auditHead: degradedModeGrantStore.auditHead(),
+          auditHead,
         },
       },
     });
@@ -1615,7 +1620,7 @@ app.post('/api/v1/admin/release-enforcement/degraded-mode/grants/:id/revoke', as
   if (adminMutation instanceof Response) return adminMutation;
 
   try {
-    const revoked = degradedModeGrantStore.revokeGrant({
+    const revoked = await degradedModeGrantStore.revokeGrant({
       id: c.req.param('id'),
       revokedAt: new Date().toISOString(),
       revokedBy: adminDegradedModeActor(body.revokedBy ?? body.actor),
@@ -1625,6 +1630,7 @@ app.post('/api/v1/admin/release-enforcement/degraded-mode/grants/:id/revoke', as
       return c.json({ error: 'Release enforcement degraded mode grant not found.' }, 404);
     }
 
+    const auditHead = await degradedModeGrantStore.auditHead();
     const responseBody = await adminMutationService.finalize({
       idempotencyKey: adminMutation.idempotencyKey,
       routeId: 'admin.release_enforcement.degraded_mode.grants.revoke',
@@ -1632,7 +1638,7 @@ app.post('/api/v1/admin/release-enforcement/degraded-mode/grants/:id/revoke', as
       statusCode: 200,
       responseBody: {
         grant: degradedModeGrantView(revoked),
-        auditHead: degradedModeGrantStore.auditHead(),
+        auditHead,
       },
       audit: {
         action: 'release_enforcement.degraded_mode.grant_revoked',
@@ -1645,7 +1651,7 @@ app.post('/api/v1/admin/release-enforcement/degraded-mode/grants/:id/revoke', as
           revokedAt: revoked.revokedAt,
           revokedBy: revoked.revokedBy,
           auditDigest: revoked.auditDigest,
-          auditHead: degradedModeGrantStore.auditHead(),
+          auditHead,
         },
       },
     });

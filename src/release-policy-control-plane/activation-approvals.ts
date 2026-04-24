@@ -462,6 +462,25 @@ export function createInMemoryPolicyActivationApprovalStore(): PolicyActivationA
   });
 }
 
+export function createInMemoryPolicyActivationApprovalStoreFromSnapshot(
+  snapshot: PolicyActivationApprovalStoreSnapshot,
+): PolicyActivationApprovalStore {
+  let file: PolicyActivationApprovalStoreFile = {
+    version: 1,
+    requests: snapshot.requests.map((request) => structuredClone(request)),
+  };
+
+  return createStoreFromAccessors('embedded-memory', {
+    read: () => file,
+    mutate: (action) => {
+      const workingCopy = structuredClone(file) as PolicyActivationApprovalStoreFile;
+      const result = action(workingCopy);
+      file = workingCopy;
+      return result;
+    },
+  });
+}
+
 export function createFileBackedPolicyActivationApprovalStore(
   path = defaultStorePath(),
 ): PolicyActivationApprovalStore {

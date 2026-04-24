@@ -74,7 +74,7 @@ app.use('/api/*', createRequestObservabilityMiddleware({
 // Apply tenant isolation middleware to all API routes
 app.use('/api/*', tenantMiddleware());
 
-const runtime = createApiHttpRouteRuntime({
+const runtime = await createApiHttpRouteRuntime({
   registries,
   serviceInstanceId,
   startTime,

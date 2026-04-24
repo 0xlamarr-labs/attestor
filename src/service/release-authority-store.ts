@@ -350,23 +350,29 @@ export async function recordReleaseAuthorityComponentState(
 }
 
 export async function resetReleaseAuthorityStoreForTests(): Promise<void> {
-  if (!poolPromise && !connectionString()) {
-    return;
-  }
-
-  if (!isReleaseAuthorityStoreConfigured()) {
-    if (poolPromise) {
-      const pool = await poolPromise;
-      await pool.end();
-    }
-    poolPromise = null;
-    initPromise = null;
-    return;
-  }
-
-  const pool = await getPool();
-  await pool.query(`DROP SCHEMA IF EXISTS ${RELEASE_AUTHORITY_SCHEMA} CASCADE`);
-  await pool.end();
+  const existingPoolPromise = poolPromise;
+  const configured = isReleaseAuthorityStoreConfigured();
   poolPromise = null;
   initPromise = null;
+
+  if (!existingPoolPromise && !connectionString()) {
+    return;
+  }
+
+  if (!configured) {
+    if (existingPoolPromise) {
+      try {
+        const pool = await existingPoolPromise;
+        await pool.end();
+      } catch {
+        // Test cleanup must be able to recover after an intentionally
+        // unreachable shared-store URL leaves the lazy pool promise rejected.
+      }
+    }
+    return;
+  }
+
+  const pool = existingPoolPromise ? await existingPoolPromise : await getPool();
+  await pool.query(`DROP SCHEMA IF EXISTS ${RELEASE_AUTHORITY_SCHEMA} CASCADE`);
+  await pool.end();
 }

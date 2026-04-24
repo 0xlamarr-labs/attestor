@@ -7,11 +7,12 @@ import {
   shadow,
   token,
   type ReleaseDecisionEngine,
-  type ReleaseDecisionLogWriter,
+  type DeterministicCheckObservation,
+  type ReleaseDeterministicEvaluationResult,
+  type ReleaseDecisionLogPhase,
   type ReleaseEvidencePackIssuer,
-  type ReleaseEvidencePackStore,
-  type ReleaseReviewerQueueStore,
-  type ReleaseTokenIntrospectionStore,
+  type ReleaseEvaluationResult,
+  type ReleaseEvaluationRequest,
   type ReleaseTokenIntrospector,
   type ReleaseTokenIssuer,
   type ReleaseTokenVerificationKey,
@@ -24,11 +25,9 @@ import {
   store as controlPlaneStore,
   type PolicyActivationApprovalStore,
   type PolicyControlPlaneStore,
-  type PolicyMutationAuditLogWriter,
 } from '../../release-policy-control-plane/index.js';
 import {
   createFileBackedDegradedModeGrantStore,
-  type DegradedModeGrantStore,
 } from '../../release-enforcement-plane/degraded-mode.js';
 import {
   CURRENT_RELEASE_RUNTIME_STORE_MODES,
@@ -44,8 +43,43 @@ import {
 } from './runtime-profile.js';
 import {
   isReleaseAuthorityStoreConfigured,
+  listReleaseAuthorityComponents,
+  recordReleaseAuthorityComponentState,
   releaseAuthorityStoreMode,
 } from '../release-authority-store.js';
+import {
+  createSharedReleaseDecisionLogStore,
+} from '../release-decision-log-store.js';
+import {
+  createSharedReleaseReviewerQueueStore,
+} from '../release-reviewer-queue-store.js';
+import {
+  createSharedReleaseTokenIntrospectionStore,
+} from '../release-token-introspection-store.js';
+import {
+  createSharedReleaseEvidencePackStore,
+} from '../release-evidence-pack-store.js';
+import {
+  createSharedReleaseDegradedModeGrantStore,
+} from '../release-degraded-mode-grant-store.js';
+import {
+  createSharedPolicyActivationApprovalStore,
+  createSharedPolicyControlPlaneStore,
+  createSharedPolicyMutationAuditLogWriter,
+} from '../release-policy-authority-store.js';
+import type {
+  Awaitable,
+  RequestPathDegradedModeGrantStore,
+  RequestPathPolicyActivationApprovalStore,
+  RequestPathPolicyControlPlaneStore,
+  RequestPathPolicyMutationAuditLogWriter,
+  RequestPathReleaseDecisionEngine,
+  RequestPathReleaseDecisionLogWriter,
+  RequestPathReleaseEvidencePackStore,
+  RequestPathReleaseReviewerQueueStore,
+  RequestPathReleaseShadowEvaluator,
+  RequestPathReleaseTokenIntrospectionStore,
+} from '../release-authority-request-path.js';
 
 const {
   createFileBackedReleaseDecisionLogWriter,
@@ -107,7 +141,21 @@ export interface BuildReleaseRuntimeRequestPathDiagnosticsInput {
 
 function releaseRuntimeStoreModesForProfile(
   runtimeProfile: AttestorRuntimeProfile,
+  sharedRequestPathReady = false,
 ): ReleaseRuntimeStoreModes {
+  if (runtimeProfile.id === 'production-shared' && sharedRequestPathReady) {
+    return Object.freeze({
+      'release-decision-log': 'shared',
+      'release-reviewer-queue': 'shared',
+      'release-token-introspection': 'shared',
+      'release-evidence-pack-store': 'shared',
+      'release-degraded-mode-grants': 'shared',
+      'policy-control-plane-store': 'shared',
+      'policy-activation-approval-store': 'shared',
+      'policy-mutation-audit-log': 'shared',
+    });
+  }
+
   return Object.freeze({
     ...CURRENT_RELEASE_RUNTIME_STORE_MODES,
     'release-decision-log':
@@ -131,7 +179,7 @@ function releaseRuntimeStoreModesForProfile(
 
 function createReleaseDecisionLogWriterForProfile(
   runtimeProfile: AttestorRuntimeProfile,
-): ReleaseDecisionLogWriter {
+): RequestPathReleaseDecisionLogWriter {
   if (runtimeProfile.id === 'local-dev') {
     return createInMemoryReleaseDecisionLogWriter();
   }
@@ -140,7 +188,7 @@ function createReleaseDecisionLogWriterForProfile(
 
 function createReleaseReviewerQueueStoreForProfile(
   runtimeProfile: AttestorRuntimeProfile,
-): ReleaseReviewerQueueStore {
+): RequestPathReleaseReviewerQueueStore {
   if (runtimeProfile.id === 'local-dev') {
     return createInMemoryReleaseReviewerQueueStore();
   }
@@ -149,7 +197,7 @@ function createReleaseReviewerQueueStoreForProfile(
 
 function createReleaseTokenIntrospectionStoreForProfile(
   runtimeProfile: AttestorRuntimeProfile,
-): ReleaseTokenIntrospectionStore {
+): RequestPathReleaseTokenIntrospectionStore {
   if (runtimeProfile.id === 'local-dev') {
     return createInMemoryReleaseTokenIntrospectionStore();
   }
@@ -158,11 +206,459 @@ function createReleaseTokenIntrospectionStoreForProfile(
 
 function createReleaseEvidencePackStoreForProfile(
   runtimeProfile: AttestorRuntimeProfile,
-): ReleaseEvidencePackStore {
+): RequestPathReleaseEvidencePackStore {
   if (runtimeProfile.id === 'local-dev') {
     return createInMemoryReleaseEvidencePackStore();
   }
   return createFileBackedReleaseEvidencePackStore();
+}
+
+type FinanceControlPlaneFlow = Parameters<
+  typeof createFinanceControlPlaneReleaseDecisionEngine
+>[0]['flow'];
+
+interface SharedReleaseAuthorityRequestPath {
+  readonly financeReleaseDecisionLog: RequestPathReleaseDecisionLogWriter;
+  readonly apiReleaseReviewerQueueStore: RequestPathReleaseReviewerQueueStore;
+  readonly apiReleaseIntrospectionStore: RequestPathReleaseTokenIntrospectionStore;
+  readonly apiReleaseEvidencePackStore: RequestPathReleaseEvidencePackStore;
+  readonly apiReleaseDegradedModeGrantStore: RequestPathDegradedModeGrantStore;
+  readonly policyControlPlaneStore: RequestPathPolicyControlPlaneStore;
+  readonly policyActivationApprovalStore: RequestPathPolicyActivationApprovalStore;
+  readonly policyMutationAuditLog: RequestPathPolicyMutationAuditLogWriter;
+  readonly financeReleaseDecisionEngine: RequestPathReleaseDecisionEngine;
+  readonly financeCommunicationReleaseShadowEvaluator: RequestPathReleaseShadowEvaluator<
+    ReturnType<ShadowModeReleaseEvaluator['evaluate']>
+  >;
+  readonly financeActionReleaseShadowEvaluator: RequestPathReleaseShadowEvaluator<
+    ReturnType<ShadowModeReleaseEvaluator['evaluate']>
+  >;
+}
+
+function unavailableAuthorityError(component: string): Error {
+  return new Error(
+    `Production-shared release authority request path is fail-closed because ${component} is not wired to the shared authority store.`,
+  );
+}
+
+function unavailableDecisionLog(): RequestPathReleaseDecisionLogWriter {
+  return {
+    append: () => {
+      throw unavailableAuthorityError('release decision log');
+    },
+    entries: () => {
+      throw unavailableAuthorityError('release decision log');
+    },
+    latestEntryDigest: () => {
+      throw unavailableAuthorityError('release decision log');
+    },
+    verify: () => {
+      throw unavailableAuthorityError('release decision log');
+    },
+  };
+}
+
+function unavailableReviewerQueue(): RequestPathReleaseReviewerQueueStore {
+  return {
+    upsert: () => {
+      throw unavailableAuthorityError('release reviewer queue');
+    },
+    get: () => {
+      throw unavailableAuthorityError('release reviewer queue');
+    },
+    getRecord: () => {
+      throw unavailableAuthorityError('release reviewer queue');
+    },
+    listPending: () => {
+      throw unavailableAuthorityError('release reviewer queue');
+    },
+  };
+}
+
+function unavailableTokenIntrospection(): RequestPathReleaseTokenIntrospectionStore {
+  return {
+    registerIssuedToken: () => {
+      throw unavailableAuthorityError('release token introspection store');
+    },
+    findToken: () => {
+      throw unavailableAuthorityError('release token introspection store');
+    },
+    revokeToken: () => {
+      throw unavailableAuthorityError('release token introspection store');
+    },
+    syncLifecycle: () => {
+      throw unavailableAuthorityError('release token introspection store');
+    },
+    recordTokenUse: () => {
+      throw unavailableAuthorityError('release token introspection store');
+    },
+  };
+}
+
+function unavailableEvidencePackStore(): RequestPathReleaseEvidencePackStore {
+  return {
+    upsert: () => {
+      throw unavailableAuthorityError('release evidence pack store');
+    },
+    get: () => {
+      throw unavailableAuthorityError('release evidence pack store');
+    },
+  };
+}
+
+function unavailableDegradedModeGrantStore(): RequestPathDegradedModeGrantStore {
+  return {
+    registerGrant: () => {
+      throw unavailableAuthorityError('release degraded-mode grant store');
+    },
+    findGrant: () => {
+      throw unavailableAuthorityError('release degraded-mode grant store');
+    },
+    listGrants: () => {
+      throw unavailableAuthorityError('release degraded-mode grant store');
+    },
+    revokeGrant: () => {
+      throw unavailableAuthorityError('release degraded-mode grant store');
+    },
+    consumeGrant: () => {
+      throw unavailableAuthorityError('release degraded-mode grant store');
+    },
+    listAuditRecords: () => {
+      throw unavailableAuthorityError('release degraded-mode grant store');
+    },
+    auditHead: () => {
+      throw unavailableAuthorityError('release degraded-mode grant store');
+    },
+  };
+}
+
+function unavailablePolicyStore(): RequestPathPolicyControlPlaneStore {
+  return {
+    kind: 'postgres',
+    getMetadata: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    setMetadata: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    upsertPack: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    getPack: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    listPacks: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    upsertBundle: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    getBundle: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    listBundleHistory: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    listBundles: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    upsertActivation: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    getActivation: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    listActivations: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+    exportSnapshot: () => {
+      throw unavailableAuthorityError('policy control-plane store');
+    },
+  };
+}
+
+function unavailableApprovalStore(): RequestPathPolicyActivationApprovalStore {
+  return {
+    kind: 'postgres',
+    upsert: () => {
+      throw unavailableAuthorityError('policy activation approval store');
+    },
+    get: () => {
+      throw unavailableAuthorityError('policy activation approval store');
+    },
+    list: () => {
+      throw unavailableAuthorityError('policy activation approval store');
+    },
+    exportSnapshot: () => {
+      throw unavailableAuthorityError('policy activation approval store');
+    },
+  };
+}
+
+function unavailablePolicyAuditLog(): RequestPathPolicyMutationAuditLogWriter {
+  return {
+    kind: 'postgres',
+    append: () => {
+      throw unavailableAuthorityError('policy mutation audit log');
+    },
+    entries: () => {
+      throw unavailableAuthorityError('policy mutation audit log');
+    },
+    latestEntryDigest: () => {
+      throw unavailableAuthorityError('policy mutation audit log');
+    },
+    verify: () => {
+      throw unavailableAuthorityError('policy mutation audit log');
+    },
+    exportSnapshot: () => {
+      throw unavailableAuthorityError('policy mutation audit log');
+    },
+  };
+}
+
+function unavailableReleaseDecisionEngine(): RequestPathReleaseDecisionEngine {
+  return {
+    evaluate: () => {
+      throw unavailableAuthorityError('release decision engine');
+    },
+    evaluateWithDeterministicChecks: () => {
+      throw unavailableAuthorityError('release decision engine');
+    },
+  };
+}
+
+function unavailableShadowEvaluator(): RequestPathReleaseShadowEvaluator<
+  ReturnType<ShadowModeReleaseEvaluator['evaluate']>
+> {
+  return {
+    evaluate: () => {
+      throw unavailableAuthorityError('release shadow evaluator');
+    },
+  };
+}
+
+function sharedPolicyStore(
+  store: ReturnType<typeof createSharedPolicyControlPlaneStore>,
+): RequestPathPolicyControlPlaneStore {
+  return Object.freeze({
+    kind: 'postgres' as const,
+    ...store,
+  });
+}
+
+function sharedApprovalStore(
+  store: ReturnType<typeof createSharedPolicyActivationApprovalStore>,
+): RequestPathPolicyActivationApprovalStore {
+  return Object.freeze({
+    kind: 'postgres' as const,
+    ...store,
+  });
+}
+
+function sharedPolicyAuditLog(
+  writer: ReturnType<typeof createSharedPolicyMutationAuditLogWriter>,
+): RequestPathPolicyMutationAuditLogWriter {
+  return Object.freeze({
+    kind: 'postgres' as const,
+    ...writer,
+  });
+}
+
+async function seedFinancePoliciesInSharedStore(
+  store: RequestPathPolicyControlPlaneStore,
+  environment: string,
+): Promise<void> {
+  const localStore = controlPlaneStore.createInMemoryPolicyControlPlaneStoreFromSnapshot(
+    await store.exportSnapshot(),
+  );
+  ensureFinanceProvingPolicies(localStore, { environment });
+  const snapshot = localStore.exportSnapshot();
+  for (const pack of snapshot.packs) {
+    await store.upsertPack(pack);
+  }
+  for (const bundle of snapshot.bundles) {
+    await store.upsertBundle({
+      manifest: bundle.manifest,
+      artifact: bundle.artifact,
+      signedBundle: bundle.signedBundle,
+      verificationKey: bundle.verificationKey,
+      storedAt: bundle.storedAt,
+    });
+  }
+  for (const activation of snapshot.activations) {
+    await store.upsertActivation(activation);
+  }
+  if (snapshot.metadata) {
+    await store.setMetadata(snapshot.metadata);
+  }
+}
+
+async function markSharedAuthorityBootstrapWired(): Promise<void> {
+  const records = await listReleaseAuthorityComponents();
+  const wiredAt = new Date().toISOString();
+  await Promise.all(
+    records.map((record) =>
+      recordReleaseAuthorityComponentState({
+        component: record.component,
+        status: 'ready',
+        migratedAt: record.migratedAt ?? wiredAt,
+        metadata: {
+          ...record.metadata,
+          bootstrapWired: true,
+          bootstrapWiredAt: wiredAt,
+          requestPathContract: 'async-shared-authority-stores',
+        },
+      }),
+    ),
+  );
+}
+
+function appendDecisionLog(
+  writer: RequestPathReleaseDecisionLogWriter | undefined,
+  request: ReleaseEvaluationRequest,
+  result: ReleaseEvaluationResult,
+  phase: ReleaseDecisionLogPhase,
+  deterministicChecksCompleted: boolean,
+): Awaitable<unknown> {
+  return writer?.append({
+    occurredAt: request.createdAt,
+    requestId: request.id,
+    phase,
+    matchedPolicyId: result.matchedPolicyId,
+    decision: result.decision,
+    metadata: {
+      policyMatched: result.policyMatched,
+      pendingChecks: result.plan.pendingChecks,
+      pendingEvidenceKinds: result.plan.pendingEvidenceKinds,
+      requiresReview: result.plan.requiresReview,
+      deterministicChecksCompleted,
+      effectivePolicyId: result.plan.effectivePolicyId,
+      rolloutMode: result.plan.rolloutMode,
+      rolloutEvaluationMode: result.plan.rolloutEvaluationMode,
+      rolloutReason: result.plan.rolloutReason,
+      rolloutCanaryBucket: result.plan.rolloutCanaryBucket,
+      rolloutFallbackPolicyId: result.plan.rolloutFallbackPolicyId,
+    },
+  });
+}
+
+async function snapshotFinanceEngine(input: {
+  readonly store: RequestPathPolicyControlPlaneStore;
+  readonly flow: FinanceControlPlaneFlow;
+  readonly environment: string;
+}): Promise<ReleaseDecisionEngine> {
+  const snapshotStore = controlPlaneStore.createInMemoryPolicyControlPlaneStoreFromSnapshot(
+    await input.store.exportSnapshot(),
+  );
+  return createFinanceControlPlaneReleaseDecisionEngine({
+    store: snapshotStore,
+    flow: input.flow,
+    environment: input.environment,
+  });
+}
+
+function createAsyncFinanceControlPlaneEngine(input: {
+  readonly store: RequestPathPolicyControlPlaneStore;
+  readonly flow: FinanceControlPlaneFlow;
+  readonly environment: string;
+  readonly decisionLog?: RequestPathReleaseDecisionLogWriter;
+}): RequestPathReleaseDecisionEngine {
+  return {
+    async evaluate(request: ReleaseEvaluationRequest): Promise<ReleaseEvaluationResult> {
+      const engine = await snapshotFinanceEngine(input);
+      const result = engine.evaluate(request);
+      await appendDecisionLog(input.decisionLog, request, result, 'policy-resolution', false);
+      return result;
+    },
+
+    async evaluateWithDeterministicChecks(
+      request: ReleaseEvaluationRequest,
+      observation: DeterministicCheckObservation,
+    ): Promise<ReleaseDeterministicEvaluationResult> {
+      const engine = await snapshotFinanceEngine(input);
+      const initial = engine.evaluate(request);
+      await appendDecisionLog(input.decisionLog, request, initial, 'policy-resolution', false);
+      const result = engine.evaluateWithDeterministicChecks(request, observation);
+      await appendDecisionLog(input.decisionLog, request, result, 'deterministic-checks', true);
+      return result;
+    },
+  };
+}
+
+function createAsyncShadowEvaluator(input: {
+  readonly store: RequestPathPolicyControlPlaneStore;
+  readonly flow: FinanceControlPlaneFlow;
+  readonly environment: string;
+}): RequestPathReleaseShadowEvaluator<ReturnType<ShadowModeReleaseEvaluator['evaluate']>> {
+  return {
+    async evaluate(request, observation) {
+      const engine = await snapshotFinanceEngine(input);
+      return createShadowModeReleaseEvaluator({ engine }).evaluate(request, observation);
+    },
+  };
+}
+
+async function createSharedReleaseAuthorityRequestPath(
+  financePolicyEnvironment: string,
+): Promise<SharedReleaseAuthorityRequestPath | null> {
+  if (!isReleaseAuthorityStoreConfigured()) {
+    return null;
+  }
+
+  const financeReleaseDecisionLog = createSharedReleaseDecisionLogStore();
+  const apiReleaseReviewerQueueStore = createSharedReleaseReviewerQueueStore();
+  const apiReleaseIntrospectionStore = createSharedReleaseTokenIntrospectionStore();
+  const apiReleaseEvidencePackStore = createSharedReleaseEvidencePackStore();
+  const apiReleaseDegradedModeGrantStore = createSharedReleaseDegradedModeGrantStore();
+  const rawPolicyControlPlaneStore = createSharedPolicyControlPlaneStore();
+  const rawPolicyActivationApprovalStore = createSharedPolicyActivationApprovalStore();
+  const rawPolicyMutationAuditLog = createSharedPolicyMutationAuditLogWriter();
+  const policyControlPlaneStore = sharedPolicyStore(rawPolicyControlPlaneStore);
+  const policyActivationApprovalStore = sharedApprovalStore(rawPolicyActivationApprovalStore);
+  const policyMutationAuditLog = sharedPolicyAuditLog(rawPolicyMutationAuditLog);
+
+  const sharedStoreProbes = [
+    () => financeReleaseDecisionLog.summary(),
+    () => apiReleaseReviewerQueueStore.summary(),
+    () => apiReleaseIntrospectionStore.summary(),
+    () => apiReleaseEvidencePackStore.summary(),
+    () => apiReleaseDegradedModeGrantStore.summary(),
+    () => rawPolicyControlPlaneStore.summary(),
+    () => rawPolicyActivationApprovalStore.summary(),
+    () => rawPolicyMutationAuditLog.summary(),
+  ];
+  for (const probe of sharedStoreProbes) {
+    await probe();
+  }
+  await seedFinancePoliciesInSharedStore(policyControlPlaneStore, financePolicyEnvironment);
+  await markSharedAuthorityBootstrapWired();
+
+  return Object.freeze({
+    financeReleaseDecisionLog,
+    apiReleaseReviewerQueueStore,
+    apiReleaseIntrospectionStore,
+    apiReleaseEvidencePackStore,
+    apiReleaseDegradedModeGrantStore,
+    policyControlPlaneStore,
+    policyActivationApprovalStore,
+    policyMutationAuditLog,
+    financeReleaseDecisionEngine: createAsyncFinanceControlPlaneEngine({
+      store: policyControlPlaneStore,
+      flow: 'record',
+      environment: financePolicyEnvironment,
+      decisionLog: financeReleaseDecisionLog,
+    }),
+    financeCommunicationReleaseShadowEvaluator: createAsyncShadowEvaluator({
+      store: policyControlPlaneStore,
+      flow: 'communication',
+      environment: financePolicyEnvironment,
+    }),
+    financeActionReleaseShadowEvaluator: createAsyncShadowEvaluator({
+      store: policyControlPlaneStore,
+      flow: 'action',
+      environment: financePolicyEnvironment,
+    }),
+  });
 }
 
 export function buildReleaseRuntimeRequestPathDiagnostics(
@@ -217,22 +713,26 @@ export interface ReleaseRuntimeBootstrap {
   };
   pki: ReturnType<typeof generatePkiHierarchy>;
   pkiReady: boolean;
-  financeReleaseDecisionLog: ReleaseDecisionLogWriter;
-  apiReleaseReviewerQueueStore: ReleaseReviewerQueueStore;
-  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
+  financeReleaseDecisionLog: RequestPathReleaseDecisionLogWriter;
+  apiReleaseReviewerQueueStore: RequestPathReleaseReviewerQueueStore;
+  apiReleaseIntrospectionStore: RequestPathReleaseTokenIntrospectionStore;
   apiReleaseIntrospector: ReleaseTokenIntrospector;
   apiReleaseTokenIssuer: ReleaseTokenIssuer;
-  apiReleaseEvidencePackStore: ReleaseEvidencePackStore;
+  apiReleaseEvidencePackStore: RequestPathReleaseEvidencePackStore;
   apiReleaseEvidencePackIssuer: ReleaseEvidencePackIssuer;
   apiReleaseVerificationKeyPromise: Promise<ReleaseTokenVerificationKey>;
-  apiReleaseDegradedModeGrantStore: DegradedModeGrantStore;
-  policyControlPlaneStore: PolicyControlPlaneStore;
-  policyActivationApprovalStore: PolicyActivationApprovalStore;
-  policyMutationAuditLog: PolicyMutationAuditLogWriter;
+  apiReleaseDegradedModeGrantStore: RequestPathDegradedModeGrantStore;
+  policyControlPlaneStore: RequestPathPolicyControlPlaneStore;
+  policyActivationApprovalStore: RequestPathPolicyActivationApprovalStore;
+  policyMutationAuditLog: RequestPathPolicyMutationAuditLogWriter;
   financePolicyEnvironment: string;
-  financeReleaseDecisionEngine: ReleaseDecisionEngine;
-  financeCommunicationReleaseShadowEvaluator: ShadowModeReleaseEvaluator;
-  financeActionReleaseShadowEvaluator: ShadowModeReleaseEvaluator;
+  financeReleaseDecisionEngine: RequestPathReleaseDecisionEngine;
+  financeCommunicationReleaseShadowEvaluator: RequestPathReleaseShadowEvaluator<
+    ReturnType<ShadowModeReleaseEvaluator['evaluate']>
+  >;
+  financeActionReleaseShadowEvaluator: RequestPathReleaseShadowEvaluator<
+    ReturnType<ShadowModeReleaseEvaluator['evaluate']>
+  >;
 }
 
 export interface CreateReleaseRuntimeBootstrapInput {
@@ -240,13 +740,28 @@ export interface CreateReleaseRuntimeBootstrapInput {
   allowPreflightOnDurabilityViolation?: boolean;
 }
 
-export function createReleaseRuntimeBootstrap(
+export async function createReleaseRuntimeBootstrap(
   input: CreateReleaseRuntimeBootstrapInput = {},
-): ReleaseRuntimeBootstrap {
+): Promise<ReleaseRuntimeBootstrap> {
   const runtimeProfile = input.runtimeProfile ?? resolveRuntimeProfile();
-  const releaseRuntimeStoreModes = releaseRuntimeStoreModesForProfile(runtimeProfile);
+  const financePolicyEnvironment =
+    process.env.ATTESTOR_RELEASE_POLICY_ENVIRONMENT?.trim() ||
+    FINANCE_PROVING_POLICY_ENVIRONMENT;
+  const sharedAuthorityRequestPath =
+    runtimeProfile.id === 'production-shared'
+      ? await createSharedReleaseAuthorityRequestPath(financePolicyEnvironment).catch(() => null)
+      : null;
+  const releaseRuntimeStoreModes = releaseRuntimeStoreModesForProfile(
+    runtimeProfile,
+    sharedAuthorityRequestPath !== null,
+  );
   const releaseRuntimeRequestPathDiagnostics =
-    buildReleaseRuntimeRequestPathDiagnostics(releaseRuntimeStoreModes);
+    buildReleaseRuntimeRequestPathDiagnostics(releaseRuntimeStoreModes, {
+      contract:
+        sharedAuthorityRequestPath !== null
+          ? 'async-shared-authority-stores'
+          : 'synchronous-local-authority-stores',
+    });
   const releaseRuntimeDurability = input.allowPreflightOnDurabilityViolation === true
     ? evaluateReleaseRuntimeDurability(runtimeProfile, releaseRuntimeStoreModes)
     : assertReleaseRuntimeDurability(runtimeProfile, releaseRuntimeStoreModes);
@@ -261,55 +776,97 @@ export function createReleaseRuntimeBootstrap(
   });
   const pki = generatePkiHierarchy(API_CA_SUBJECT, API_SIGNER_SUBJECT, API_REVIEWER_SUBJECT);
   const pkiReady = true;
-  const financeReleaseDecisionLog = createReleaseDecisionLogWriterForProfile(runtimeProfile);
-  const apiReleaseReviewerQueueStore = createReleaseReviewerQueueStoreForProfile(runtimeProfile);
+  const financeReleaseDecisionLog =
+    sharedAuthorityRequestPath?.financeReleaseDecisionLog ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableDecisionLog()
+      : createReleaseDecisionLogWriterForProfile(runtimeProfile));
+  const apiReleaseReviewerQueueStore =
+    sharedAuthorityRequestPath?.apiReleaseReviewerQueueStore ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableReviewerQueue()
+      : createReleaseReviewerQueueStoreForProfile(runtimeProfile));
   const apiReleaseIntrospectionStore =
-    createReleaseTokenIntrospectionStoreForProfile(runtimeProfile);
+    sharedAuthorityRequestPath?.apiReleaseIntrospectionStore ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableTokenIntrospection()
+      : createReleaseTokenIntrospectionStoreForProfile(runtimeProfile));
   const apiReleaseIntrospector = createReleaseTokenIntrospector(apiReleaseIntrospectionStore);
   const apiReleaseTokenIssuer = createReleaseTokenIssuer({
     issuer: RELEASE_ISSUER,
     privateKeyPem: pki.signer.keyPair.privateKeyPem,
     publicKeyPem: pki.signer.keyPair.publicKeyPem,
   });
-  const apiReleaseEvidencePackStore = createReleaseEvidencePackStoreForProfile(runtimeProfile);
+  const apiReleaseEvidencePackStore =
+    sharedAuthorityRequestPath?.apiReleaseEvidencePackStore ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableEvidencePackStore()
+      : createReleaseEvidencePackStoreForProfile(runtimeProfile));
   const apiReleaseEvidencePackIssuer = createReleaseEvidencePackIssuer({
     issuer: RELEASE_ISSUER,
     privateKeyPem: pki.signer.keyPair.privateKeyPem,
     publicKeyPem: pki.signer.keyPair.publicKeyPem,
   });
   const apiReleaseVerificationKeyPromise = apiReleaseTokenIssuer.exportVerificationKey();
-  const apiReleaseDegradedModeGrantStore = createFileBackedDegradedModeGrantStore();
-  const policyControlPlaneStore = createFileBackedPolicyControlPlaneStore();
-  const policyActivationApprovalStore = createFileBackedPolicyActivationApprovalStore();
-  const policyMutationAuditLog = createFileBackedPolicyMutationAuditLogWriter();
-  const financePolicyEnvironment =
-    process.env.ATTESTOR_RELEASE_POLICY_ENVIRONMENT?.trim() ||
-    FINANCE_PROVING_POLICY_ENVIRONMENT;
+  const apiReleaseDegradedModeGrantStore =
+    sharedAuthorityRequestPath?.apiReleaseDegradedModeGrantStore ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableDegradedModeGrantStore()
+      : createFileBackedDegradedModeGrantStore());
+  const policyControlPlaneStore =
+    sharedAuthorityRequestPath?.policyControlPlaneStore ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailablePolicyStore()
+      : createFileBackedPolicyControlPlaneStore());
+  const policyActivationApprovalStore =
+    sharedAuthorityRequestPath?.policyActivationApprovalStore ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableApprovalStore()
+      : createFileBackedPolicyActivationApprovalStore());
+  const policyMutationAuditLog =
+    sharedAuthorityRequestPath?.policyMutationAuditLog ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailablePolicyAuditLog()
+      : createFileBackedPolicyMutationAuditLogWriter());
 
-  ensureFinanceProvingPolicies(policyControlPlaneStore, {
-    environment: financePolicyEnvironment,
-  });
+  if (runtimeProfile.id !== 'production-shared') {
+    ensureFinanceProvingPolicies(policyControlPlaneStore as PolicyControlPlaneStore, {
+      environment: financePolicyEnvironment,
+    });
+  }
 
-  const financeReleaseDecisionEngine = createFinanceControlPlaneReleaseDecisionEngine({
-    store: policyControlPlaneStore,
-    flow: 'record',
-    environment: financePolicyEnvironment,
-    decisionLog: financeReleaseDecisionLog,
-  });
-  const financeCommunicationReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
-    engine: createFinanceControlPlaneReleaseDecisionEngine({
-      store: policyControlPlaneStore,
-      flow: 'communication',
-      environment: financePolicyEnvironment,
-    }),
-  });
-  const financeActionReleaseShadowEvaluator = createShadowModeReleaseEvaluator({
-    engine: createFinanceControlPlaneReleaseDecisionEngine({
-      store: policyControlPlaneStore,
-      flow: 'action',
-      environment: financePolicyEnvironment,
-    }),
-  });
+  const financeReleaseDecisionEngine =
+    sharedAuthorityRequestPath?.financeReleaseDecisionEngine ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableReleaseDecisionEngine()
+      : createFinanceControlPlaneReleaseDecisionEngine({
+          store: policyControlPlaneStore as PolicyControlPlaneStore,
+          flow: 'record',
+          environment: financePolicyEnvironment,
+          decisionLog: financeReleaseDecisionLog as never,
+        }));
+  const financeCommunicationReleaseShadowEvaluator =
+    sharedAuthorityRequestPath?.financeCommunicationReleaseShadowEvaluator ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableShadowEvaluator()
+      : createShadowModeReleaseEvaluator({
+          engine: createFinanceControlPlaneReleaseDecisionEngine({
+            store: policyControlPlaneStore as PolicyControlPlaneStore,
+            flow: 'communication',
+            environment: financePolicyEnvironment,
+          }),
+        }));
+  const financeActionReleaseShadowEvaluator =
+    sharedAuthorityRequestPath?.financeActionReleaseShadowEvaluator ??
+    (runtimeProfile.id === 'production-shared'
+      ? unavailableShadowEvaluator()
+      : createShadowModeReleaseEvaluator({
+          engine: createFinanceControlPlaneReleaseDecisionEngine({
+            store: policyControlPlaneStore as PolicyControlPlaneStore,
+            flow: 'action',
+            environment: financePolicyEnvironment,
+          }),
+        }));
 
   return {
     runtimeProfile,

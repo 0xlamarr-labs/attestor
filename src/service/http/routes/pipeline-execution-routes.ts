@@ -32,17 +32,12 @@ import type {
   DeterministicCheckObservation,
   ReleaseActorReference,
   ReleaseDecision,
-  ReleaseDecisionEngine,
   ReleaseDecisionLogEntry,
-  ReleaseDecisionLogWriter,
   ReleaseEvaluationRequest,
   ReleaseEvaluationScopeContext,
   ReleaseEvidencePackIssuer,
-  ReleaseEvidencePackStore,
   ReleaseReviewerQueueRecord,
-  ReleaseReviewerQueueStore,
   ReleaseTargetKind,
-  ReleaseTokenIntrospectionStore,
   ReleaseTokenIssuer,
   ShadowModeReleaseEvaluator,
   OutputContractDescriptor,
@@ -50,6 +45,14 @@ import type {
 import type { TenantRateLimitContext, TenantRateLimitDecision } from '../../rate-limit.js';
 import type { TenantContext } from '../../tenant-isolation.js';
 import type { PipelineUsageService } from '../../application/pipeline-usage-service.js';
+import type {
+  RequestPathReleaseDecisionEngine,
+  RequestPathReleaseDecisionLogWriter,
+  RequestPathReleaseEvidencePackStore,
+  RequestPathReleaseReviewerQueueStore,
+  RequestPathReleaseShadowEvaluator,
+  RequestPathReleaseTokenIntrospectionStore,
+} from '../../release-authority-request-path.js';
 
 type ConnectorSchemaAttestation = NonNullable<ConnectorExecutionResult['schemaAttestation']>;
 
@@ -159,7 +162,9 @@ export interface PipelineExecutionRoutesDeps {
     material: FinanceCommunicationReleaseMaterial,
     report: FinancialRunReport,
   ): DeterministicCheckObservation;
-  financeCommunicationReleaseShadowEvaluator: ShadowModeReleaseEvaluator;
+  financeCommunicationReleaseShadowEvaluator: RequestPathReleaseShadowEvaluator<
+    ReturnType<ShadowModeReleaseEvaluator['evaluate']>
+  >;
   createFinanceActionReleaseCandidateFromReport(
     report: FinancialRunReport,
   ): FinanceActionReleaseCandidate | null;
@@ -168,14 +173,16 @@ export interface PipelineExecutionRoutesDeps {
     material: FinanceActionReleaseMaterial,
     report: FinancialRunReport,
   ): DeterministicCheckObservation;
-  financeActionReleaseShadowEvaluator: ShadowModeReleaseEvaluator;
+  financeActionReleaseShadowEvaluator: RequestPathReleaseShadowEvaluator<
+    ReturnType<ShadowModeReleaseEvaluator['evaluate']>
+  >;
   createFinanceFilingReleaseCandidateFromReport(
     report: FinancialRunReport,
   ): FinanceFilingReleaseCandidate | null;
   FINANCE_FILING_ADAPTER_ID: string;
   buildFinanceFilingReleaseMaterial(candidate: FinanceFilingReleaseCandidate): FinanceFilingReleaseMaterial;
-  financeReleaseDecisionEngine: ReleaseDecisionEngine;
-  financeReleaseDecisionLog: ReleaseDecisionLogWriter;
+  financeReleaseDecisionEngine: RequestPathReleaseDecisionEngine;
+  financeReleaseDecisionLog: RequestPathReleaseDecisionLogWriter;
   buildFinanceFilingReleaseObservation(
     material: FinanceFilingReleaseMaterial,
     report: FinancialRunReport,
@@ -192,11 +199,11 @@ export interface PipelineExecutionRoutesDeps {
     report: FinancialRunReport;
     logEntries: readonly ReleaseDecisionLogEntry[];
   }): ReleaseReviewerQueueRecord;
-  apiReleaseReviewerQueueStore: ReleaseReviewerQueueStore;
+  apiReleaseReviewerQueueStore: RequestPathReleaseReviewerQueueStore;
   apiReleaseTokenIssuer: ReleaseTokenIssuer;
-  apiReleaseEvidencePackStore: ReleaseEvidencePackStore;
+  apiReleaseEvidencePackStore: RequestPathReleaseEvidencePackStore;
   apiReleaseEvidencePackIssuer: ReleaseEvidencePackIssuer;
-  apiReleaseIntrospectionStore: ReleaseTokenIntrospectionStore;
+  apiReleaseIntrospectionStore: RequestPathReleaseTokenIntrospectionStore;
   schemaAttestationSummaryFromFull(attestation: SchemaAttestation): unknown;
   schemaAttestationSummaryFromConnector(
     connectorExecution: PipelineConnectorExecution | null,
@@ -462,7 +469,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
       const filingCandidate = createFinanceFilingReleaseCandidateFromReport(report);
       if (filingCandidate?.adapterId === FINANCE_FILING_ADAPTER_ID) {
         const material = buildFinanceFilingReleaseMaterial(filingCandidate);
-        const evaluation = financeReleaseDecisionEngine.evaluateWithDeterministicChecks(
+        const evaluation = await financeReleaseDecisionEngine.evaluateWithDeterministicChecks(
           releaseEvaluationRequest({
             id: `release_${randomUUID()}`,
             createdAt: report.timestamp,
@@ -479,12 +486,12 @@ app.post('/api/v1/pipeline/run', async (c) => {
         const reviewQueueItem =
           releaseDecision.reviewAuthority.minimumReviewerCount > 0 &&
           (releaseDecision.status === 'review-required' || releaseDecision.status === 'hold')
-            ? apiReleaseReviewerQueueStore.upsert(
+            ? await apiReleaseReviewerQueueStore.upsert(
                 createFinanceReviewerQueueItem({
                   decision: releaseDecision,
                   candidate: filingCandidate,
                   report,
-                  logEntries: financeReleaseDecisionLog.entries(),
+                  logEntries: await financeReleaseDecisionLog.entries(),
                 }),
               )
             : null;
@@ -502,7 +509,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
             }
           : releaseDecision;
         if (issuedReleaseToken) {
-          apiReleaseIntrospectionStore.registerIssuedToken({
+          await apiReleaseIntrospectionStore.registerIssuedToken({
             issuedToken: issuedReleaseToken,
             decision: releaseDecision,
           });
@@ -512,10 +519,9 @@ app.post('/api/v1/pipeline/run', async (c) => {
             ? await apiReleaseEvidencePackIssuer.issue({
                 decision: decisionForEvidence,
                 issuedAt: report.timestamp,
-                decisionLogEntries: financeReleaseDecisionLog
-                  .entries()
+                decisionLogEntries: (await financeReleaseDecisionLog.entries())
                   .filter((entry) => entry.decisionId === releaseDecision.id),
-                decisionLogChainIntact: financeReleaseDecisionLog.verify().valid,
+                decisionLogChainIntact: (await financeReleaseDecisionLog.verify()).valid,
                 releaseToken: issuedReleaseToken,
                 artifactReferences: Object.freeze(
                   report.evidenceChain?.terminalHash
@@ -533,7 +539,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
               })
             : null;
         if (issuedEvidencePack) {
-          apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
+          await apiReleaseEvidencePackStore.upsert(issuedEvidencePack);
         }
 
         financeFilingRelease = {
@@ -568,7 +574,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
     const communicationCandidate = createFinanceCommunicationReleaseCandidateFromReport(report);
     if (communicationCandidate) {
       const communicationMaterial = buildFinanceCommunicationReleaseMaterial(communicationCandidate);
-      const communicationShadow = financeCommunicationReleaseShadowEvaluator.evaluate(
+      const communicationShadow = await financeCommunicationReleaseShadowEvaluator.evaluate(
         releaseEvaluationRequest({
           id: `release_comm_${randomUUID()}`,
           createdAt: report.timestamp,
@@ -602,7 +608,7 @@ app.post('/api/v1/pipeline/run', async (c) => {
     const actionCandidate = createFinanceActionReleaseCandidateFromReport(report);
     if (actionCandidate) {
       const actionMaterial = buildFinanceActionReleaseMaterial(actionCandidate);
-      const actionShadow = financeActionReleaseShadowEvaluator.evaluate(
+      const actionShadow = await financeActionReleaseShadowEvaluator.evaluate(
         releaseEvaluationRequest({
           id: `release_action_${randomUUID()}`,
           createdAt: report.timestamp,
