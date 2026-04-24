@@ -78,4 +78,4 @@ Reviewed on 2026-04-23 before opening this track:
 
 ## Immediate Next Step
 
-This buildout track is complete. The next production-runtime frontier is a separate shared-store implementation track for the `production-shared` authority plane; do not fold that work back into this frozen 8-step tracker.
+This buildout track is complete. The next production-runtime frontier is [Production shared authority plane buildout](production-shared-authority-plane-buildout.md); do not fold that work back into this frozen 8-step tracker.

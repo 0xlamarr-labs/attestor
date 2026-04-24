@@ -185,6 +185,7 @@ npm run verify
 - [Proof surface buildout](docs/02-architecture/proof-console-buildout.md)
 - [Hosted product flow buildout](docs/02-architecture/hosted-product-flow-buildout.md)
 - [Production runtime hardening buildout](docs/02-architecture/production-runtime-hardening-buildout.md)
+- [Production shared authority plane buildout](docs/02-architecture/production-shared-authority-plane-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
 
 ## Start here

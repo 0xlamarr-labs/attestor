@@ -253,6 +253,16 @@ function testDurabilityAssertionAndBootstrap(): void {
     true,
     'Runtime bootstrap: diagnostics expose durability readiness',
   );
+  equal(
+    localBootstrap.releaseAuthorityStore.mode,
+    'disabled',
+    'Runtime bootstrap: shared release-authority substrate starts disabled by default',
+  );
+  equal(
+    localBootstrap.releaseAuthorityStore.configured,
+    false,
+    'Runtime bootstrap: shared release-authority substrate reports unconfigured by default',
+  );
 
   assert.throws(
     () => assertReleaseRuntimeDurability(production),
@@ -313,6 +323,8 @@ function testDocsAndApiRuntimeAreWired(): void {
   includes(coreRoutes, 'checks.releaseRuntime', 'Runtime docs: readiness checks release runtime posture');
   includes(releaseRuntime, 'assertReleaseRuntimeDurability', 'Runtime docs: release runtime asserts profile');
   includes(releaseRuntime, 'buildRuntimeProfileStartupDiagnostics', 'Runtime docs: release runtime builds startup diagnostics');
+  includes(releaseRuntime, 'releaseAuthorityStoreMode', 'Runtime docs: release runtime tracks shared release-authority substrate mode');
+  includes(releaseRuntime, 'isReleaseAuthorityStoreConfigured', 'Runtime docs: release runtime tracks whether shared release-authority substrate is configured');
   includes(releaseRuntime, 'createFileBackedReleaseDecisionLogWriter', 'Runtime docs: release runtime can construct the durable decision log');
   includes(releaseRuntime, 'createFileBackedReleaseReviewerQueueStore', 'Runtime docs: release runtime can construct the durable reviewer queue');
   includes(releaseRuntime, 'createFileBackedReleaseTokenIntrospectionStore', 'Runtime docs: release runtime can construct durable token introspection');

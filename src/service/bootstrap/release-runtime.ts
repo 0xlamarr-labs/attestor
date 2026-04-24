@@ -40,6 +40,10 @@ import {
   type RuntimeProfileDurabilityEvaluation,
   type RuntimeProfileStartupDiagnostics,
 } from './runtime-profile.js';
+import {
+  isReleaseAuthorityStoreConfigured,
+  releaseAuthorityStoreMode,
+} from '../release-authority-store.js';
 
 const {
   createFileBackedReleaseDecisionLogWriter,
@@ -140,6 +144,10 @@ export interface ReleaseRuntimeBootstrap {
   releaseRuntimeStoreModes: ReleaseRuntimeStoreModes;
   releaseRuntimeDurability: RuntimeProfileDurabilityEvaluation;
   runtimeProfileDiagnostics: RuntimeProfileStartupDiagnostics;
+  releaseAuthorityStore: {
+    mode: 'postgres' | 'disabled';
+    configured: boolean;
+  };
   pki: ReturnType<typeof generatePkiHierarchy>;
   pkiReady: boolean;
   financeReleaseDecisionLog: ReleaseDecisionLogWriter;
@@ -178,6 +186,10 @@ export function createReleaseRuntimeBootstrap(
     releaseRuntimeStoreModes,
     releaseRuntimeDurability,
   );
+  const releaseAuthorityStore = Object.freeze({
+    mode: releaseAuthorityStoreMode(),
+    configured: isReleaseAuthorityStoreConfigured(),
+  });
   const pki = generatePkiHierarchy(API_CA_SUBJECT, API_SIGNER_SUBJECT, API_REVIEWER_SUBJECT);
   const pkiReady = true;
   const financeReleaseDecisionLog = createReleaseDecisionLogWriterForProfile(runtimeProfile);
@@ -235,6 +247,7 @@ export function createReleaseRuntimeBootstrap(
     releaseRuntimeStoreModes,
     releaseRuntimeDurability,
     runtimeProfileDiagnostics,
+    releaseAuthorityStore,
     pki,
     pkiReady,
     financeReleaseDecisionLog,

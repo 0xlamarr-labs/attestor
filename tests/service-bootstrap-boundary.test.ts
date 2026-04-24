@@ -211,9 +211,13 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
   assert.match(apiRouteRuntime, /runtimeProfileDiagnostics/u);
   assert.match(apiServer, /startupDiagnostics: runtime\.infra\.security/u);
   assert.match(releaseRuntime, /buildRuntimeProfileStartupDiagnostics/u);
+  assert.match(releaseRuntime, /releaseAuthorityStoreMode/u);
+  assert.match(releaseRuntime, /isReleaseAuthorityStoreConfigured/u);
 
   for (const releaseFactory of [
     'generatePkiHierarchy(',
+    'releaseAuthorityStoreMode(',
+    'isReleaseAuthorityStoreConfigured(',
     'createFileBackedReleaseDecisionLogWriter(',
     'createInMemoryReleaseDecisionLogWriter(',
     'createFileBackedReleaseReviewerQueueStore(',

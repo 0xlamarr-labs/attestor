@@ -15,6 +15,8 @@ This guide uses the **recommended path today**:
 
 AWS remains supported. This guide chooses GKE because it is currently the cleanest repo-guided path end to end.
 
+For the next repo-side engineering frontier behind true multi-node release/policy truth, use [Production shared authority plane buildout](../02-architecture/production-shared-authority-plane-buildout.md).
+
 ## What "Ready" Means Here
 
 Attestor is ready for production promotion when all three are true:

@@ -1,0 +1,126 @@
+# Production Shared Authority Plane Buildout Tracker
+
+This tracker covers the next Attestor runtime frontier after the completed production-runtime hardening track: turning the `production-shared` profile into a real multi-node authority plane with shared authoritative release and policy state.
+
+The goal is not to add a new product, a new crypto branch, or a new public API surface. The goal is to finish the runtime cut line honestly: one Attestor platform core, one shared authority plane, and explicit fail-closed truth about what can and cannot be claimed in production.
+
+## Guardrails For This Tracker
+
+- The numbered step list below is frozen for this buildout track.
+- Step ids and titles do not get rewritten or renumbered later.
+- We may append clarifying notes, acceptance criteria, or sub-notes.
+- We may only change the `Status`, `Evidence`, and `Notes` columns as work progresses.
+- Keep Attestor as one product with one platform core and modular packs.
+- Do not add a new hosted crypto route as part of shared-runtime work.
+- Do not widen the public product story from runtime internals.
+- Keep `single-node-durable` as the truthful proven posture until the shared authority plane is actually wired and tested.
+- Use PostgreSQL-backed shared state for authoritative release and policy records; do not promote Redis into the sole authority record for release or policy truth.
+- Keep Redis in its existing coordination roles where it already fits: async execution, queueing, rate-limit windows, and other shared runtime coordination that is not the durable authority record.
+
+## Why This Track Exists
+
+Attestor's major platform tracks are now complete:
+
+- release layer
+- release policy control plane
+- release enforcement plane
+- crypto authorization core
+- crypto execution admission
+- consequence admission
+- hosted product flow
+- proof surface
+- production runtime hardening
+- service/API boundary refactor
+
+The main remaining engineering gap is the last runtime claim:
+
+```text
+local-dev -> memory-backed state is allowed
+single-node-durable -> one runtime survives restart with durable file-backed state
+production-shared -> multiple runtimes share authoritative release and policy state
+```
+
+The repository already proves the first two lines. It does not yet prove the third.
+
+The code truth today is clear:
+
+- the runtime profile contract already names `production-shared`
+- the production profile already requires all 8 authority-state components to be `shared`
+- the current bootstrap still instantiates file-backed release/policy stores, not shared ones
+- the runtime therefore correctly fails closed before claiming `production-shared`
+
+This tracker closes that gap without muddying the product story.
+
+## Architecture Decision
+
+Start the shared authority plane inside the existing Attestor modular monolith and reuse the repository's existing shared-PostgreSQL patterns.
+
+- authoritative shared record: PostgreSQL
+- coordination infrastructure: Redis where already appropriate
+- service boundary: still one Attestor service/runtime family
+- extraction rule: do not split this into a separate service first; finish the shared authority-plane contract and tests inside the repo before deciding on extraction
+
+The reason is already visible in the codebase:
+
+- `src/service/control-plane-store.ts` already uses a PostgreSQL-backed shared truth model with `pg.Pool`, schema bootstrap, transactions, unique constraints, and `ON CONFLICT` upserts
+- the release/policy authority stores still live behind file-backed implementations
+- the missing work is therefore not "invent a distributed platform"; it is "promote the release/policy authority state onto the same honest shared-store discipline"
+
+The dedicated connection contract for this track is `ATTESTOR_RELEASE_AUTHORITY_PG_URL`.
+That env var names the shared PostgreSQL substrate for release and policy authority state; it is separate from `ATTESTOR_CONTROL_PLANE_PG_URL`, `ATTESTOR_BILLING_LEDGER_PG_URL`, and `ATTESTOR_PG_URL`.
+
+## Fresh Research Anchors
+
+Reviewed on 2026-04-24 before opening this track:
+
+- PostgreSQL documents Serializable as the strictest isolation level and notes that applications must be prepared to retry serialization failures, which fits authority-plane mutations that need correctness under concurrency: [PostgreSQL transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html)
+- PostgreSQL documents `INSERT ... ON CONFLICT` as a deterministic statement with explicit arbiter constraints and `RETURNING`, which fits idempotent shared-store upserts for release and policy records: [PostgreSQL INSERT](https://www.postgresql.org/docs/current/sql-insert.html)
+- PostgreSQL documents advisory locks as application-defined locks, with transaction-level advisory locks automatically released at transaction end, which fits short-lived coordination around shared authority mutations without inventing a second lock service: [PostgreSQL explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html)
+- PostgreSQL documents `SKIP LOCKED` as providing an inconsistent view that is suitable for queue-like tables but not for general-purpose state access, which fits reviewer-queue claim paths but not authoritative record reads: [PostgreSQL SELECT locking clause](https://www.postgresql.org/docs/current/sql-select.html)
+- PostgreSQL documents `LISTEN`/`NOTIFY` as simple interprocess communication where notifications are delivered between transactions and after commit, which fits cache invalidation or wake-up signals but not durable authority truth by itself: [LISTEN](https://www.postgresql.org/docs/current/sql-listen.html), [NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html)
+- PostgreSQL's reliability model is explicitly centered on the Write-Ahead Log, which supports treating shared release/policy authority state as durable database record rather than in-memory coordination state: [PostgreSQL WAL reliability](https://www.postgresql.org/docs/current/wal.html)
+- Redis documents persistence through RDB and AOF and separately emphasizes backup discipline, which supports keeping Redis as explicit coordination infrastructure rather than silently treating it as the only authority record for release/policy history: [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
+- node-postgres documents that transactions must use the same checked-out client and that most applications should use a connection pool, which matches the repository's existing shared-control-plane PostgreSQL pattern: [node-postgres transactions](https://node-postgres.com/features/transactions), [node-postgres pooling](https://node-postgres.com/features/pooling)
+
+## Shared Authority Components
+
+The `production-shared` profile is blocked until all 8 release-authority components are truly shared:
+
+| Component | Current mode | Required mode for `production-shared` |
+|---|---|---|
+| release decision log | file | shared |
+| release reviewer queue | file | shared |
+| release token introspection | file | shared |
+| release evidence pack store | file | shared |
+| release degraded-mode grants | file | shared |
+| policy control plane store | file | shared |
+| policy activation approval store | file | shared |
+| policy mutation audit log | file | shared |
+
+## Progress Summary
+
+| Metric | Value |
+|---|---|
+| Total frozen steps | 9 |
+| Completed | 2 |
+| In progress | 0 |
+| Not started | 7 |
+| Current posture | Step 02 is complete: the shared release-authority PostgreSQL substrate now exists under `ATTESTOR_RELEASE_AUTHORITY_PG_URL`, with schema bootstrap, pooled connections, transaction helpers, advisory-lock helpers, and a shared component registry for the 8 release/policy authority stores. The runtime still truthfully stops at `single-node-durable` until the individual stores are promoted off file-backed implementations. |
+
+## Frozen Step List
+
+| Step | Status | Deliverable | Evidence | Notes |
+|---|---|---|---|---|
+| 01 | complete | Define the production-shared authority-plane scope, cut line, and storage model | `docs/02-architecture/production-shared-authority-plane-buildout.md`, `docs/02-architecture/system-overview.md`, `docs/02-architecture/production-runtime-hardening-buildout.md`, `docs/08-deployment/production-readiness.md`, `README.md`, `tests/production-shared-authority-plane-docs.test.ts`, `package.json` | The next runtime frontier is now frozen as its own tracker. The truth source explicitly keeps one-product framing, keeps `single-node-durable` as the current proven posture, and sets PostgreSQL as the authoritative shared store target for release/policy state while Redis stays in coordination roles. |
+| 02 | complete | Add shared release-authority PostgreSQL substrate | `src/service/release-authority-store.ts`, `src/service/bootstrap/release-runtime.ts`, `tests/release-authority-store.test.ts`, `tests/production-runtime-profile.test.ts`, `tests/service-bootstrap-boundary.test.ts`, `tests/production-shared-authority-plane-docs.test.ts`, `package.json`, `docs/02-architecture/production-shared-authority-plane-buildout.md` | A dedicated shared PostgreSQL substrate now exists for release/policy authority state under `ATTESTOR_RELEASE_AUTHORITY_PG_URL`. It bootstraps the `attestor_release_authority` schema, seeds the 8 authority components into a shared registry, exposes pooled transaction and advisory-lock helpers, and gives the release bootstrap an explicit config view of whether the substrate is present. This step does not yet promote the individual release/policy stores off their file-backed implementations. |
+| 03 | pending | Add shared release decision log store | | Promote the release decision log from file-backed JSONL to a PostgreSQL-backed shared store with durable ordering, hash-chain preservation, and anti-tamper verification semantics that survive multi-node writers and readers. |
+| 04 | pending | Add shared release reviewer queue store and claim discipline | | Promote the reviewer queue to a shared PostgreSQL-backed store with deterministic pending views, durable dual-review state, and explicit queue-claim discipline for multi-consumer reviewer workflows. Queue-claim semantics may use `SKIP LOCKED`, but authoritative reads must remain direct record reads. |
+| 05 | pending | Add shared release token introspection and evidence-pack stores | | Promote release token introspection and release evidence packs to shared authoritative stores so issued, consumed, revoked, expired, and proof-carrying records survive multi-node verification and replay checks. |
+| 06 | pending | Add shared degraded-mode and policy-control-plane authority stores | | Promote degraded-mode grants, policy bundle state, activation approvals, and policy mutation audit history onto shared authoritative storage so release and policy truth no longer diverge across nodes. |
+| 07 | pending | Wire `production-shared` bootstrap, health, and readiness truth | | Extend bootstrap so the production-shared runtime actually instantiates shared stores, reports shared-store diagnostics honestly, and continues to fail closed when any required shared authority component is missing or degraded. |
+| 08 | pending | Add multi-instance concurrency, restart, and recovery tests | | Prove the shared authority plane under concurrent API runtimes, restart/reconnect cycles, reviewer-queue claims, token use/revocation, and policy mutations using the repository's embedded PostgreSQL test harness. |
+| 09 | pending | Update promotion docs, readiness packets, and anti-overclaim gates | | Close the track by aligning production docs, render/probe assets, and runtime-profile gates with the newly implemented shared authority plane, without claiming more than the tests and readiness packets can prove. |
+
+## Immediate Next Step
+
+Step 03 is next: promote the release decision log onto the shared release-authority PostgreSQL substrate while preserving durable ordering, hash-chain integrity, and anti-tamper verification semantics.
