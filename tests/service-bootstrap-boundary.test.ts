@@ -210,6 +210,10 @@ function testReleaseRuntimeBootstrapOwnsReleaseSetup(): void {
   assert.match(apiRouteRuntime, /releaseRuntimeDurabilitySummary/u);
   assert.match(apiRouteRuntime, /runtimeProfileDiagnostics/u);
   assert.match(apiServer, /startupDiagnostics: runtime\.infra\.security/u);
+  assert.match(
+    readProjectFile('src', 'service', 'bootstrap', 'routes.ts'),
+    /installProductionSharedRequestGuard\(app, runtime\)/u,
+  );
   assert.match(releaseRuntime, /buildRuntimeProfileStartupDiagnostics/u);
   assert.match(releaseRuntime, /releaseAuthorityStoreMode/u);
   assert.match(releaseRuntime, /isReleaseAuthorityStoreConfigured/u);

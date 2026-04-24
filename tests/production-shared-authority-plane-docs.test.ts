@@ -143,6 +143,16 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    'production-shared-request-guard.ts',
+    'Shared authority docs: step 07 evidence includes the production-shared HTTP request guard',
+  );
+  includes(
+    tracker,
+    'non-preflight API paths fail-closed',
+    'Shared authority docs: step 07 records the HTTP request path fail-closed guard',
+  );
+  includes(
+    tracker,
     'ATTESTOR_RELEASE_AUTHORITY_PG_URL',
     'Shared authority docs: tracker names the dedicated release-authority PostgreSQL env',
   );

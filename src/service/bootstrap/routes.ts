@@ -7,6 +7,7 @@ import { registerPublicSiteRoutes } from '../http/routes/public-site-routes.js';
 import { registerReleasePolicyControlRoutes } from '../http/routes/release-policy-control-routes.js';
 import { registerReleaseReviewRoutes } from '../http/routes/release-review-routes.js';
 import { registerWebhookRoutes } from '../http/routes/webhook-routes.js';
+import { installProductionSharedRequestGuard } from './production-shared-request-guard.js';
 import type { AppRuntime } from './runtime.js';
 
 export function createPublicSiteRouteDeps<Packet>(runtime: AppRuntime<Packet>) {
@@ -42,6 +43,7 @@ export function createReleasePolicyControlRouteDeps<Packet>(runtime: AppRuntime<
 }
 
 export function registerAllRoutes<Packet>(app: Hono, runtime: AppRuntime<Packet>): void {
+  installProductionSharedRequestGuard(app, runtime);
   registerPublicSiteRoutes(app, createPublicSiteRouteDeps(runtime));
   registerCoreRoutes(app, createCoreRouteDeps(runtime));
   registerAccountRoutes(app, createAccountRouteDeps(runtime));
