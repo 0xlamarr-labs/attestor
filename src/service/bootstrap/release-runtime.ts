@@ -82,14 +82,27 @@ const API_SIGNER_SUBJECT = 'API Runtime Signer';
 const API_REVIEWER_SUBJECT = 'API Reviewer';
 export const RELEASE_RUNTIME_REQUEST_PATH_DIAGNOSTICS_SPEC_VERSION =
   'attestor.release-runtime-request-path-diagnostics.v1';
+export const RELEASE_RUNTIME_REQUEST_PATH_CONTRACTS = Object.freeze([
+  'synchronous-local-authority-stores',
+  'async-shared-authority-stores',
+] as const);
+
+export type ReleaseRuntimeRequestPathContract =
+  typeof RELEASE_RUNTIME_REQUEST_PATH_CONTRACTS[number];
 
 export interface ReleaseRuntimeRequestPathDiagnostics {
   readonly version: typeof RELEASE_RUNTIME_REQUEST_PATH_DIAGNOSTICS_SPEC_VERSION;
   readonly usesSharedAuthorityStores: boolean;
-  readonly contract: 'synchronous-local-authority-stores';
+  readonly contract: ReleaseRuntimeRequestPathContract;
   readonly storeModes: ReleaseRuntimeStoreModes;
   readonly sharedComponents: readonly ReleaseRuntimeStoreComponent[];
+  readonly localComponents: readonly ReleaseRuntimeStoreComponent[];
+  readonly requiredSharedComponents: readonly ReleaseRuntimeStoreComponent[];
   readonly blockers: readonly string[];
+}
+
+export interface BuildReleaseRuntimeRequestPathDiagnosticsInput {
+  readonly contract?: ReleaseRuntimeRequestPathContract;
 }
 
 function releaseRuntimeStoreModesForProfile(
@@ -154,20 +167,41 @@ function createReleaseEvidencePackStoreForProfile(
 
 export function buildReleaseRuntimeRequestPathDiagnostics(
   storeModes: ReleaseRuntimeStoreModes,
+  input: BuildReleaseRuntimeRequestPathDiagnosticsInput = {},
 ): ReleaseRuntimeRequestPathDiagnostics {
+  const contract = input.contract ?? 'synchronous-local-authority-stores';
   const sharedComponents = Object.entries(storeModes)
     .filter(([, mode]) => mode === 'shared')
     .map(([component]) => component as ReleaseRuntimeStoreComponent);
+  const localComponents = Object.entries(storeModes)
+    .filter(([, mode]) => mode !== 'shared')
+    .map(([component]) => component as ReleaseRuntimeStoreComponent);
+  const requiredSharedComponents = Object.keys(storeModes) as ReleaseRuntimeStoreComponent[];
+  const allComponentsShared = localComponents.length === 0;
+  const usesSharedAuthorityStores =
+    contract === 'async-shared-authority-stores' && allComponentsShared;
+  const blockers = [
+    ...(allComponentsShared
+      ? []
+      : [
+          `release runtime components still use non-shared modes: ${localComponents.join(', ')}`,
+        ]),
+    ...(contract === 'async-shared-authority-stores'
+      ? []
+      : [
+          'release/policy request handlers still consume synchronous release-layer authority store contracts',
+        ]),
+  ];
 
   return Object.freeze({
     version: RELEASE_RUNTIME_REQUEST_PATH_DIAGNOSTICS_SPEC_VERSION,
-    usesSharedAuthorityStores: false,
-    contract: 'synchronous-local-authority-stores',
+    usesSharedAuthorityStores,
+    contract,
     storeModes,
     sharedComponents: Object.freeze(sharedComponents),
-    blockers: Object.freeze([
-      'release/policy request handlers still consume synchronous release-layer authority store contracts',
-    ]),
+    localComponents: Object.freeze(localComponents),
+    requiredSharedComponents: Object.freeze(requiredSharedComponents),
+    blockers: Object.freeze(blockers),
   });
 }
 

@@ -143,6 +143,11 @@ function testTrackerFreezesTheCutLineCleanly(): void {
   );
   includes(
     tracker,
+    '`async-shared-authority-stores`',
+    'Shared authority docs: step 07 names the async shared-store request path contract',
+  );
+  includes(
+    tracker,
     'production-shared-request-guard.ts',
     'Shared authority docs: step 07 evidence includes the production-shared HTTP request guard',
   );

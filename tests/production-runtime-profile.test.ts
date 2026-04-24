@@ -15,7 +15,10 @@ import {
   runtimeProfileIds,
   type ReleaseRuntimeStoreModes,
 } from '../src/service/bootstrap/runtime-profile.js';
-import { createReleaseRuntimeBootstrap } from '../src/service/bootstrap/release-runtime.js';
+import {
+  buildReleaseRuntimeRequestPathDiagnostics,
+  createReleaseRuntimeBootstrap,
+} from '../src/service/bootstrap/release-runtime.js';
 
 let passed = 0;
 
@@ -270,6 +273,16 @@ function testDurabilityAssertionAndBootstrap(): void {
     'Runtime bootstrap: request-path diagnostics names the sync authority-store blocker',
   );
   equal(
+    localBootstrap.releaseRuntimeRequestPathDiagnostics.localComponents.length,
+    8,
+    'Runtime bootstrap: request-path diagnostics inventories local authority stores',
+  );
+  equal(
+    localBootstrap.releaseRuntimeRequestPathDiagnostics.requiredSharedComponents.length,
+    8,
+    'Runtime bootstrap: request-path diagnostics inventories required shared stores',
+  );
+  equal(
     localBootstrap.releaseAuthorityStore.mode,
     'disabled',
     'Runtime bootstrap: shared release-authority substrate starts disabled by default',
@@ -317,6 +330,33 @@ function testDurabilityAssertionAndBootstrap(): void {
     productionPreflight.releaseRuntimeRequestPathDiagnostics.usesSharedAuthorityStores,
     false,
     'Runtime bootstrap: production-shared preflight keeps request path fail-closed',
+  );
+
+  const sharedModesStillSync = buildReleaseRuntimeRequestPathDiagnostics(allSharedModes());
+  equal(
+    sharedModesStillSync.usesSharedAuthorityStores,
+    false,
+    'Runtime bootstrap: all-shared modes do not clear request path while contract stays synchronous',
+  );
+  ok(
+    sharedModesStillSync.blockers.includes(
+      'release/policy request handlers still consume synchronous release-layer authority store contracts',
+    ),
+    'Runtime bootstrap: sync contract remains an explicit cutover blocker',
+  );
+
+  const asyncSharedContract = buildReleaseRuntimeRequestPathDiagnostics(allSharedModes(), {
+    contract: 'async-shared-authority-stores',
+  });
+  equal(
+    asyncSharedContract.usesSharedAuthorityStores,
+    true,
+    'Runtime bootstrap: async shared contract plus all-shared modes is the only ready request-path signal',
+  );
+  equal(
+    asyncSharedContract.blockers.length,
+    0,
+    'Runtime bootstrap: async shared contract has no request-path blockers when every component is shared',
   );
 }
 
