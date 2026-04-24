@@ -1,19 +1,21 @@
 # Attestor
 
-**Policy-bound release and authorization platform that sits before real consequence.**
+**Attestor is a fail-closed approval layer for AI-assisted actions before they affect real systems.**
 
-One product. One platform core. Hosted and customer-operated delivery paths. Modular packs for finance, crypto, and later consequence domains.
+Use it when an AI agent, automation, or workflow wants to write records, send controlled output, approve a financial result, or trigger programmable-money execution, and you need a policy decision plus durable proof before that action becomes real.
 
-![Attestor gateway: proof before consequence](docs/assets/attestor-gateway.png)
+Attestor returns a bounded release decision:
 
-Attestor sits between a proposed consequence and the system that would make it real. Teams use it before accepting AI-assisted outputs, writing financial records, sending controlled communications, or allowing programmable-money execution.
+- `admit` — allow the action
+- `narrow` — allow only a safer bounded version
+- `review` — require human or external review
+- `block` — reject fail-closed
 
-Its job is simple: decide whether the proposed consequence may proceed, under what policy, with what authority, and with what durable evidence left behind.
+It is not an agent framework, model runtime, wallet, custody platform, or orchestration system. It sits in front of those systems as a control point.
 
 Built for teams that cannot let sensitive outputs or execution paths enter production on informal trust.
 
-> [!IMPORTANT]
-> Attestor is the release / authorization / evidence layer before consequence. It is not the model, agent runtime, wallet, custody platform, or orchestration layer.
+![Attestor platform flow: proof before consequence](docs/assets/attestor-gateway.png)
 
 > [!NOTE]
 > This repository is source-available under Business Source License 1.1. Non-production use is allowed. Production use requires a commercial license until the Change Date in [LICENSE](LICENSE).
@@ -46,6 +48,8 @@ For the canonical customer-facing operating model and decision vocabulary, see [
 ## One product, modular packs
 
 Attestor is one product, not a collection of unrelated products.
+
+One product. One platform core. Hosted and customer-operated delivery paths. Modular packs for finance, crypto, and later consequence domains.
 
 The same platform core stays in place across domains: release decisions, policy activation, enforcement verification, and portable authorization objects. Finance and crypto sit on top of that shared core as modular packs.
 
