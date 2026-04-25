@@ -36,11 +36,33 @@ function testEvaluationPacketNamesRunnableProofPath(): void {
 
   includes(packet, '# Attestor Evaluation Packet v0.1', 'Evaluation packet docs: packet title is stable');
   includes(packet, 'AI output -> structured financial record release', 'Evaluation packet docs: packet keeps the concrete proof wedge');
+  includes(packet, '### If You Have 15 Minutes', 'Evaluation packet docs: packet has a short outside-review path');
+  includes(packet, '### If You Have 45 Minutes', 'Evaluation packet docs: packet has a deeper outside-review path');
+  includes(packet, 'npm ci', 'Evaluation packet docs: packet uses reproducible install for outside reviewers');
   includes(packet, 'npm run example:admission', 'Evaluation packet docs: packet includes the shortest admission demo');
   includes(packet, 'npm run example:customer-gate', 'Evaluation packet docs: packet includes the customer-side gate demo');
   includes(packet, 'npm run proof:surface', 'Evaluation packet docs: packet includes proof-surface rendering');
+  includes(packet, 'npm run showcase:proof:hybrid', 'Evaluation packet docs: packet includes the proof showcase path');
+  includes(packet, 'npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json', 'Evaluation packet docs: packet includes independent kit verification');
   includes(packet, '.attestor/proof-surface/latest/', 'Evaluation packet docs: packet says where local proof output is written');
+  includes(packet, '.attestor/showcase/latest/', 'Evaluation packet docs: packet says where the showcase packet is written');
   includes(packet, 'npm run verify', 'Evaluation packet docs: packet includes the full local repository gate');
+}
+
+function testEvaluationPacketNamesConcreteReviewMarkersAndArtifacts(): void {
+  const packet = readProjectFile('docs', '00-evaluation', 'v0.1-evaluation-packet.md');
+
+  includes(packet, 'Expected markers:', 'Evaluation packet docs: packet gives concrete expected output markers');
+  includes(packet, 'Scenario: Allowed finance consequence', 'Evaluation packet docs: packet names the admitted scenario marker');
+  includes(packet, 'canonical: admit', 'Evaluation packet docs: packet names the admitted decision marker');
+  includes(packet, 'canonical: block', 'Evaluation packet docs: packet names the blocked decision marker');
+  includes(packet, 'PROCEED', 'Evaluation packet docs: packet names the downstream proceed marker');
+  includes(packet, 'HOLD', 'Evaluation packet docs: packet names the downstream hold marker');
+  includes(packet, '## Artifact Map', 'Evaluation packet docs: packet has an artifact map');
+  includes(packet, '| Command | Primary output | What to inspect | Why it matters |', 'Evaluation packet docs: artifact map has reviewer columns');
+  includes(packet, 'manifest.json', 'Evaluation packet docs: artifact map points to proof-surface manifest');
+  includes(packet, 'evidence/kit.json', 'Evaluation packet docs: artifact map points to verifiable evidence kit');
+  includes(packet, 'The hybrid showcase command may create source run artifacts under `.attestor-financial/runs/`', 'Evaluation packet docs: packet is explicit about hybrid source artifacts');
 }
 
 function testEvaluationPacketNamesFailureAndProductionTruthGates(): void {
@@ -100,6 +122,7 @@ function testEvaluationPacketDoesNotReintroduceTrackerNoise(): void {
 
 testReadmeLinksEvaluationPacket();
 testEvaluationPacketNamesRunnableProofPath();
+testEvaluationPacketNamesConcreteReviewMarkersAndArtifacts();
 testEvaluationPacketNamesFailureAndProductionTruthGates();
 testEvaluationPacketCommandsExistInPackageScripts();
 testEvaluationPacketKeepsClaimBoundaries();
