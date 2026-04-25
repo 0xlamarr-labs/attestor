@@ -80,6 +80,8 @@ function testReleaseNotesAreLinkedAndBounded(): void {
   includes(notes, 'PROOF_DEGRADED', 'Evaluation release: release notes are explicit about degraded local proof verification');
   includes(notes, 'Evaluation Smoke', 'Evaluation release: CI smoke gate is documented');
   includes(notes, 'proof-surface', 'Evaluation release: proof-surface artifact is documented');
+  includes(notes, 'idle-client shutdown errors', 'Evaluation release: shared authority pool lifecycle hardening is documented');
+  includes(notes, 'GitHub Actions `Full Verify`', 'Evaluation release: full verify workflow evidence is documented');
 }
 
 function testReleaseNotesCommandsExist(): void {

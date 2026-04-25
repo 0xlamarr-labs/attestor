@@ -10,6 +10,7 @@ type PgPool = {
   query: (sql: string, params?: unknown[]) => Promise<{ rows: PgQueryResultRow[] }>;
   connect: () => Promise<ReleaseAuthorityPgClient>;
   end: () => Promise<void>;
+  on?: (event: 'error', listener: (error: Error) => void) => void;
 };
 
 export const ATTESTOR_RELEASE_AUTHORITY_PG_URL_ENV =
@@ -139,7 +140,15 @@ async function getPool(): Promise<PgPool> {
       if (!Pool) {
         throw new Error('pg.Pool is not available for the release authority shared store.');
       }
-      return new Pool({ connectionString: connectionUrl }) as PgPool;
+      const pool = new Pool({ connectionString: connectionUrl }) as PgPool;
+      pool.on?.('error', (error) => {
+        const errorWithCode = error as Error & { code?: unknown };
+        const code = typeof errorWithCode.code === 'string' ? errorWithCode.code : 'unknown';
+        console.warn(
+          `[release-authority-store] idle PostgreSQL client error (${code}): ${error.message}`,
+        );
+      });
+      return pool;
     })();
   }
   return poolPromise;
