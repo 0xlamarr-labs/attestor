@@ -14,15 +14,11 @@
  * - future: asymmetric signing / Sigstore / KMS is not yet implemented
  */
 
-import { createHash, createHmac } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import type { FinancialRunReport, VerificationSubResults } from './types.js';
 import { verifyLiveProof } from './types.js';
 import { canonicalOutputPackHash, canonicalDossierHash } from './canonical.js';
 import { verifyEvidenceChain } from './evidence-chain.js';
-
-function h(data: string): string {
-  return createHash('sha256').update(data).digest('hex').slice(0, 16);
-}
 
 export interface AttestationPack {
   version: '1.1';

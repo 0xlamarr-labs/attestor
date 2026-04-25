@@ -72,7 +72,7 @@ export function buildGptRequestBody(params: GptCallParams) {
 }
 
 export async function callGpt(params: GptCallParams): Promise<GptCallResult> {
-  const { systemPrompt, userMessage, stage, effort = 'high', maxTokens = 32000 } = params;
+  const { stage, effort = 'high' } = params;
 
   logger.info(stage, `Calling OpenAI reasoning model ${MODEL} (effort: ${effort})...`);
 

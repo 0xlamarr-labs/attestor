@@ -34,7 +34,6 @@ import {
   type OnlineReleaseVerification,
 } from './online-verifier.js';
 import {
-  HTTP_MESSAGE_SIGNATURE_TAG,
   httpReleaseTokenDigest,
   type HttpMessageForSignature,
 } from './http-message-signatures.js';

@@ -5,7 +5,7 @@
  * in addition to the original governance evidence sections.
  */
 
-import type { FinancialRunReport, OutputPack, RegulatoryAlignmentNote } from './types.js';
+import type { FinancialRunReport, OutputPack } from './types.js';
 import { warrantSummary } from './warrant.js';
 import { receiptSummary } from './receipt.js';
 import { escrowSummary } from './escrow.js';

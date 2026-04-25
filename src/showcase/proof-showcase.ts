@@ -73,12 +73,6 @@ export interface BuildProofShowcasePacketInput {
   schemaAttestation?: SchemaAttestationLike | null;
 }
 
-function normalizeProofSourcePath(value: string): string {
-  const normalized = value.replaceAll('\\', '/');
-  const cwd = process.cwd().replaceAll('\\', '/').replace(/\/+$/u, '');
-  return normalized.startsWith(`${cwd}/`) ? normalized.slice(cwd.length + 1) : normalized;
-}
-
 function titleCase(value: string): string {
   return value
     .split(/[_\s-]+/u)

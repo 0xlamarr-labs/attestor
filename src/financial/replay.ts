@@ -12,7 +12,6 @@
 import type {
   BenchmarkScenario,
   FinancialRunReport,
-  FinancialDecision,
 } from './types.js';
 import { runFinancialPipeline, type FinancialPipelineInput } from './pipeline.js';
 

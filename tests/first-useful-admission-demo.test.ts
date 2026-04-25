@@ -67,8 +67,8 @@ function testDemoIsReachableFromPackageScriptsAndDocs(): void {
 
   equal(packageJson.scripts['example:admission'], 'tsx examples/first-useful-admission-demo.ts', 'Demo: example script is exported');
   equal(packageJson.scripts['test:first-useful-admission-demo'], 'tsx tests/first-useful-admission-demo.test.ts', 'Demo: test script is exported');
-  includes(packageJson.scripts.test, 'tsx tests/first-useful-admission-demo.test.ts', 'Demo: npm test runs demo guard');
-  includes(packageJson.scripts.verify, 'npm run test:first-useful-admission-demo', 'Demo: verify runs demo guard');
+  includes(packageJson.scripts.test, 'scripts/run-suite.mjs test', 'Demo: npm test delegates to the suite runner');
+  includes(packageJson.scripts.verify, 'scripts/run-suite.mjs verify', 'Demo: verify delegates to the suite runner');
 
   includes(readme, 'npm run example:admission', 'Demo: README quick start includes demo command');
   includes(readme, 'First useful admission demo', 'Demo: README names the demo');

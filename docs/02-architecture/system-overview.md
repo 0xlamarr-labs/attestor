@@ -43,6 +43,8 @@ The public package surfaces already reflect that shared core:
 
 These are stable import boundaries inside one modular monolith. They are not a claim that every layer is already a separately operated service.
 
+They are also not a public npm availability claim. The repository package remains `private: true`; the `exports` map defines curated import boundaries for local builds, self-hosted evaluation, and commercial/customer-operated packaging unless a separate public npm release decision is made.
+
 ## Pack Model
 
 The pack model is:

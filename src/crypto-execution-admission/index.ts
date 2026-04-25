@@ -7,7 +7,6 @@ import type {
   CryptoAuthorizationSimulationResult,
   CryptoSimulationCheck,
   CryptoSimulationObservation,
-  CryptoSimulationObservationStatus,
   CryptoSimulationPreflightSource,
 } from '../crypto-authorization-core/authorization-simulation.js';
 import type { CryptoExecutionAdapterKind } from '../crypto-authorization-core/types.js';

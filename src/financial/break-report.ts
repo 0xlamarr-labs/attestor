@@ -19,7 +19,6 @@ import type {
   ReviewPolicyResult,
   ReconciliationClass,
   BreakHandling,
-  ControlTotal,
 } from './types.js';
 
 /**

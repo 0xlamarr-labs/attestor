@@ -16,8 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { verifyCertificate, type AttestationCertificate } from './certificate.js';
 import { buildVerificationSummary, type VerificationKit, type AuthorityBundle } from './bundle.js';
-import { verifyReviewerEndorsement } from './reviewer-endorsement.js';
-import { verifyTrustChain, type TrustChain } from './pki-chain.js';
+import { verifyTrustChain } from './pki-chain.js';
 import { derivePublicKeyIdentity } from './keys.js';
 
 function main(): void {

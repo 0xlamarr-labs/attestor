@@ -40,11 +40,6 @@ interface RateLimitBucket {
   used: number;
 }
 
-interface TenantRateLimiterConfig {
-  redisUrl: string | null;
-  redisMode: string | null;
-}
-
 interface RedisWindowState {
   key: string;
   windowStartedAtMs: number;

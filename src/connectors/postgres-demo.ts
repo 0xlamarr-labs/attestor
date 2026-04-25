@@ -19,7 +19,7 @@
  * 3. attestor_demo.position_reconciliation (reconciliation scenario — expected: fail)
  */
 
-import { loadPostgresConfig, isPostgresConfigured, isPostgresDriverAvailable, type PostgresConfig } from './postgres.js';
+import { loadPostgresConfig, isPostgresConfigured, isPostgresDriverAvailable } from './postgres.js';
 
 // ─── SQL Definitions ────────────────────────────────────────────────────────
 

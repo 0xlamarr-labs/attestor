@@ -181,20 +181,23 @@ async function run(): Promise<void> {
       'Shared reviewer queue: detail lookup reloads record JSON from PostgreSQL',
     );
 
+    const activeClaimedAt = new Date().toISOString();
+    const reclaimedAt = new Date(Date.parse(activeClaimedAt) + 30_000).toISOString();
+    const expiredLeaseClaimedAt = new Date(Date.parse(activeClaimedAt) + 4 * 60_000).toISOString();
     const [claimA, claimB, claimC] = await Promise.all([
       store.claimNextPending({
         claimedBy: 'worker-a',
-        claimedAt: '2026-04-24T18:31:00.000Z',
+        claimedAt: activeClaimedAt,
         leaseMs: 60_000,
       }),
       store.claimNextPending({
         claimedBy: 'worker-b',
-        claimedAt: '2026-04-24T18:31:00.000Z',
+        claimedAt: activeClaimedAt,
         leaseMs: 60_000,
       }),
       store.claimNextPending({
         claimedBy: 'worker-c',
-        claimedAt: '2026-04-24T18:31:00.000Z',
+        claimedAt: activeClaimedAt,
         leaseMs: 60_000,
       }),
     ]);
@@ -231,7 +234,7 @@ async function run(): Promise<void> {
 
     const reclaimed = await store.claimNextPending({
       claimedBy: 'worker-d',
-      claimedAt: '2026-04-24T18:31:30.000Z',
+      claimedAt: reclaimedAt,
       leaseMs: 60_000,
     });
     equal(
@@ -257,7 +260,7 @@ async function run(): Promise<void> {
 
     const expiredClaim = await store.claimNextPending({
       claimedBy: 'worker-e',
-      claimedAt: '2026-04-24T18:35:00.000Z',
+      claimedAt: expiredLeaseClaimedAt,
       leaseMs: 60_000,
     });
     ok(

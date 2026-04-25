@@ -235,14 +235,6 @@ function normalizeHexBytes(value: string | null | undefined, fieldName: string):
   return normalized;
 }
 
-function normalizeOptionalHexBytes(
-  value: string | null | undefined,
-  fieldName: string,
-): string | null {
-  if (value === undefined || value === null) return null;
-  return normalizeHexBytes(value, fieldName);
-}
-
 function normalizeSelector(
   value: string | null | undefined,
   fieldName: string,

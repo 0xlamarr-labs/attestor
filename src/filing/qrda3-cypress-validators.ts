@@ -43,14 +43,6 @@ export interface CypressLayerResult {
 // ─── XML Extraction Helpers ────────────────────────────────────────────────
 // Simple regex-based extraction from QRDA III XML (no DOM parser needed)
 
-function extractAttrValues(xml: string, elementPattern: string, attrName: string): string[] {
-  const regex = new RegExp(`<${elementPattern}[^>]*?${attrName}="([^"]*)"`, 'g');
-  const values: string[] = [];
-  let m;
-  while ((m = regex.exec(xml)) !== null) values.push(m[1]);
-  return values;
-}
-
 interface PopulationData {
   measureId: string;
   populations: Map<string, number>;
@@ -81,8 +73,6 @@ function extractMeasures(xml: string): PopulationData[] {
     const populations = new Map<string, number>();
 
     // Find all CD code values (population types) - these are the Measure Data observations
-    const cdPattern = /xsi:type="CD"[^>]*?code="(IPP|DENOM|DENEX|DENEXCEP|NUMER|NUMEX)"/g;
-    let cdMatch;
     // For each CD match, find the nearest following INT value within the same component
     const components = orgXml.split(/<component>/);
     for (const comp of components) {

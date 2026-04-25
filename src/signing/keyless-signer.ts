@@ -36,7 +36,6 @@ import {
   buildTrustChain,
   verifyTrustChain,
   type CaCertificate,
-  type LeafCertificate,
   type TrustChain,
   type ChainVerification,
 } from './pki-chain.js';

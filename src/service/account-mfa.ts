@@ -22,7 +22,6 @@ import {
 import {
   createPasswordHashState,
   verifyAccountUserPasswordRecord,
-  type AccountUserPasswordState,
   type AccountUserRecoveryCodeRecord,
   type AccountUserTotpState,
 } from './account-user-store.js';

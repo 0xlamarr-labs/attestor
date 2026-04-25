@@ -10,12 +10,7 @@ import type {
   ReleaseReviewerQueueListOptions,
   ReleaseReviewerQueueListResult,
   ReleaseReviewerQueueRecord,
-  RegisteredReleaseToken,
-  RegisterIssuedReleaseTokenInput,
   ReleaseTokenIntrospectionStore,
-  RevokeReleaseTokenInput,
-  RecordedReleaseTokenUseResult,
-  RecordReleaseTokenUseInput,
   IssuedReleaseEvidencePack,
 } from '../release-layer/index.js';
 import type {

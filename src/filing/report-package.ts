@@ -198,7 +198,6 @@ function renderXbrlCsvPackage(pkg: FilingPackage): {
   const content = pkg.content as Record<string, any>;
   const tables = Array.isArray(content.tables) ? content.tables : [];
   const taxonomyVersion = typeof content.taxonomyVersion === 'string' ? content.taxonomyVersion : 'Unknown';
-  const templateId = typeof content.metadata?.templateId === 'string' ? content.metadata.templateId : 'attestor_template';
   const currency = typeof content.metadata?.currency === 'string' ? content.metadata.currency : 'USD';
   const period = '2026-03-28T00:00:00';
   const csvFiles: Array<{ path: string; mediaType: string; text: string }> = [];

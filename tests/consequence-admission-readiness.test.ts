@@ -124,9 +124,8 @@ function testPackageAndDescriptorStayAligned(): void {
   equal(mapCryptoAdmissionOutcomeToAdmission('needs-evidence').mappedDecision, 'review', 'Admission readiness: crypto needs-evidence maps to review');
   equal(mapCryptoAdmissionOutcomeToAdmission('deny').mappedDecision, 'block', 'Admission readiness: crypto deny maps to block');
 
-  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-readiness.test.ts', 'Admission readiness: npm test runs readiness gate');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-readiness', 'Admission readiness: verify runs readiness gate');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-package-surface', 'Admission readiness: verify runs package surface gate');
+  includes(packageJson.scripts.test, 'scripts/run-suite.mjs test', 'Admission readiness: npm test delegates to the suite runner');
+  includes(packageJson.scripts.verify, 'scripts/run-suite.mjs verify', 'Admission readiness: verify delegates to the suite runner');
 }
 
 function testFacadeBehaviorMatchesTheDocs(): void {
@@ -159,4 +158,3 @@ testPackageAndDescriptorStayAligned();
 testFacadeBehaviorMatchesTheDocs();
 
 console.log(`Consequence admission readiness tests: ${passed} passed, 0 failed`);
-

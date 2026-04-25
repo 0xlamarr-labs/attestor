@@ -72,14 +72,8 @@ export async function verifyOidcToken(
   config: OidcConfig,
 ): Promise<OidcVerificationResult> {
   try {
-    // Discover JWKS URI from OIDC well-known config
-    const JWKS = jose.createRemoteJWKSet(
-      new URL(`${config.issuer.replace(/\/$/, '')}/.well-known/openid-configuration`),
-      // jose automatically handles JWKS discovery from the openid-configuration
-    );
-
-    // Actually: jose needs the jwks_uri directly, not the openid-configuration
-    // Let's fetch the config first, then use the jwks_uri
+    // Discover JWKS URI from OIDC well-known config.
+    // jose needs the jwks_uri directly, not the openid-configuration document.
     const discoveryUrl = `${config.issuer.replace(/\/$/, '')}/.well-known/openid-configuration`;
     const discoveryResponse = await fetch(discoveryUrl);
     if (!discoveryResponse.ok) {

@@ -44,9 +44,8 @@ import { verifyCertificate } from '../signing/certificate.js';
 import { buildVerificationKit } from '../signing/bundle.js';
 import type { TrustChain } from '../signing/pki-chain.js';
 import { runPostgresProve } from '../connectors/postgres-prove.js';
-import { isPostgresConfigured } from '../connectors/postgres.js';
 import { runMultiQueryPipeline, type MultiQueryUnit } from './multi-query-pipeline.js';
-import { buildMultiQueryOutputPack, buildMultiQueryDossier, buildMultiQueryManifest, buildMultiQueryVerificationKit, renderMultiQuerySummary } from './multi-query-proof.js';
+import { buildMultiQueryOutputPack, buildMultiQueryDossier, buildMultiQueryVerificationKit, renderMultiQuerySummary } from './multi-query-proof.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
   COUNTERPARTY_REPORT_CONTRACT, COUNTERPARTY_REPORT, COUNTERPARTY_LIVE_DATABASES,
@@ -583,7 +582,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   }
 
   // Step 1a-pki: Generate PKI trust chain for this prove run
-  const { generatePkiHierarchy, verifyTrustChain } = await import('../signing/pki-chain.js');
+  const { generatePkiHierarchy } = await import('../signing/pki-chain.js');
   const pkiHierarchy = generatePkiHierarchy('Attestor CLI CA', 'CLI Runtime Signer', 'CLI Reviewer');
   // Use the PKI signer key as the signing key (PKI-backed by default)
   keyPair = pkiHierarchy.signer.keyPair;
@@ -618,7 +617,7 @@ async function runProductProof(scenarioId: string, keyDir?: string, reviewerKeyD
   let oidcTokenPath: 'cached' | 'refreshed' | 'device_flow' | 'none' = 'none';
   const { isOidcConfigured, loadOidcConfig, executeDeviceFlow } = await import('../identity/oidc-device-flow.js');
   const { loadCachedTokens, saveCachedTokens, isTokenExpired, isTokenExpiringSoon } = await import('../identity/token-cache.js');
-  const { loadSession, saveSession, isSessionValid, isSessionExpiringSoon, refreshSession, getSessionBackendName } = await import('../identity/keychain-session.js');
+  const { loadSession, saveSession, refreshSession, getSessionBackendName } = await import('../identity/keychain-session.js');
   // Keychain-first: OS keychain (Windows/macOS/Linux) with encrypted-file fallback.
   const keychainBackend = await getSessionBackendName();
   const loadTokens = async () => {
@@ -1338,7 +1337,7 @@ async function runHealthcareCloseout(): Promise<void> {
  * fixture scenarios, so `prove counterparty` can run against real Postgres.
  */
 async function runPgDemoInit(): Promise<void> {
-  const { runDemoBootstrap, getDemoBootstrapPlan, getDemoCounterpartySql, getDemoAllowedSchemas } = await import('../connectors/postgres-demo.js');
+  const { runDemoBootstrap, getDemoBootstrapPlan, getDemoAllowedSchemas } = await import('../connectors/postgres-demo.js');
 
   console.log(`\n  Attestor PostgreSQL Demo Bootstrap`);
   console.log(`  This creates a demo schema with deterministic data for real DB proof.\n`);
@@ -1399,7 +1398,7 @@ async function runPgDemoTeardown(): Promise<void> {
  * connectivity probe (SELECT version(), current_schemas, read-only txn).
  */
 async function runDoctor(): Promise<void> {
-  const { reportPostgresReadiness, isPostgresConfigured, runPostgresProbe } = await import('../connectors/postgres.js');
+  const { reportPostgresReadiness, runPostgresProbe } = await import('../connectors/postgres.js');
   const { existsSync } = await import('node:fs');
 
   console.log(`\n  Attestor Doctor — Product Proof Readiness`);

@@ -23,7 +23,6 @@ import {
   auditLog as controlPlaneAuditLog,
   financeProving as controlPlaneFinanceProving,
   store as controlPlaneStore,
-  type PolicyActivationApprovalStore,
   type PolicyControlPlaneStore,
 } from '../../release-policy-control-plane/index.js';
 import {

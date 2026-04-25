@@ -8,8 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runFinancialPipeline } from './pipeline.js';
 import { verifyLiveProof, buildLiveProof, buildOfflineProof, assessLiveReadiness, buildLiveProofReviewerSummary } from './types.js';
-import { verifyCapsule } from './capsule.js';
-import { runBenchmarkCorpus, type BenchmarkEntry } from './replay.js';
+import { runBenchmarkCorpus } from './replay.js';
 import { executeSqliteQuery, materializeSqliteFixtureDatabases } from './execution.js';
 import {
   COUNTERPARTY_SQL, COUNTERPARTY_INTENT, COUNTERPARTY_FIXTURE,
@@ -291,7 +290,6 @@ export async function runFinancialTests(): Promise<number> {
   console.log('\n  [Semantic Clause Evaluation]');
   {
     const { evaluateSemanticClauses } = await import('./semantic-clauses.js');
-    const { SemanticClause, ExecutionEvidence } = await import('./types.js') as any;
 
     // Mock execution evidence: counterparty exposure with known values
     const execEvidence = {
@@ -1379,7 +1377,6 @@ export async function runFinancialTests(): Promise<number> {
   console.log('\n  [Multi-Query Signed Certificate]');
   {
     const { runMultiQueryPipeline } = await import('./multi-query-pipeline.js');
-    const { buildMultiQueryVerificationKit } = await import('./multi-query-proof.js');
     const { issueMultiQueryCertificate, verifyMultiQueryCertificate } = await import('../signing/multi-query-certificate.js');
     const { generateKeyPair } = await import('../signing/keys.js');
 

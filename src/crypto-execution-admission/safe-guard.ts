@@ -169,14 +169,6 @@ function normalizeHash(value: string | null | undefined, fieldName: string): str
   return normalized;
 }
 
-function normalizeOptionalHash(
-  value: string | null | undefined,
-  fieldName: string,
-): string | null {
-  if (value === undefined || value === null) return null;
-  return normalizeHash(value, fieldName);
-}
-
 function normalizeOptionalDelay(value: number | null | undefined): number | null {
   if (value === undefined || value === null) return null;
   if (!Number.isInteger(value) || value < 0) {

@@ -13,7 +13,7 @@ import type {
   FinancialQueryIntent, FinancialRunReport, GeneratedReport, ReportContract,
   HumanOversight, IndependenceProof, TimelinessProof, StageTimingEntry, ReplayMetadata, SnapshotIdentity, LiveProofInput,
 } from './types.js';
-import { buildLiveProof, buildOfflineProof, assessLiveReadiness, type LiveReadinessResult } from './types.js';
+import { buildLiveProof, buildOfflineProof, assessLiveReadiness } from './types.js';
 import { governSql } from './sql-governance.js';
 import { evaluatePolicy } from './policy.js';
 import { evaluateGuardrails } from './execution-guardrails.js';
@@ -45,15 +45,10 @@ import { signReviewerEndorsement } from '../signing/reviewer-endorsement.js';
 import { issueReceipt } from './receipt.js';
 import { buildEscrow } from './escrow.js';
 import { buildDecisionCapsule } from './capsule.js';
-import { issueWarrant, validateWarrantStage, validateWarrantSnapshot, fulfillWarrantObligation, finalizeWarrant, recordWarrantViolation, warrantSummary } from './warrant.js';
+import { issueWarrant, validateWarrantStage, validateWarrantSnapshot, fulfillWarrantObligation, finalizeWarrant, recordWarrantViolation } from './warrant.js';
 
 function h(text: string): string {
   return createHash('sha256').update(text).digest('hex').slice(0, 16);
-}
-
-/** Canonical hash of a runtime artifact (stable JSON serialization). */
-function canonicalHash(artifact: unknown): string {
-  return h(JSON.stringify(artifact, Object.keys(artifact as object).sort()));
 }
 
 export interface FinancialPipelineInput {

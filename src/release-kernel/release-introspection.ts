@@ -5,8 +5,6 @@ import type { ReleaseDecision, ReleaseTokenClaims } from './object-model.js';
 import { releaseDecisionMaxUses } from './object-model.js';
 import type {
   IssuedReleaseToken,
-  ReleaseTokenVerificationFailure,
-  ReleaseTokenVerificationKey,
   VerifyReleaseTokenInput,
 } from './release-token.js';
 import {

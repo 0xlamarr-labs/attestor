@@ -20,7 +20,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { MultiQueryRunReport, MultiQueryUnitResult } from './multi-query-pipeline.js';
+import type { MultiQueryRunReport } from './multi-query-pipeline.js';
 
 // ─── Types ──────────────────────��────────────────���──────────────────────────
 

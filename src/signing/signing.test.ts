@@ -144,7 +144,7 @@ async function runSigningTests(): Promise<number> {
   // ═══ PKI TRUST CHAIN ═══
   console.log('\n  [PKI Trust Chain]');
   {
-    const { createCaCertificate, issueLeafCertificate, buildTrustChain, verifyTrustChain, generatePkiHierarchy } = await import('./pki-chain.js');
+    const { verifyTrustChain, generatePkiHierarchy } = await import('./pki-chain.js');
 
     // Generate full PKI hierarchy
     const pki = generatePkiHierarchy('Test CA', 'Test Signer', 'Test Reviewer');

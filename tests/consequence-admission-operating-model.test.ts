@@ -108,17 +108,8 @@ function testPackageScriptsExposeTheGuard(): void {
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-facade', 'Admission operating model: facade script is exported');
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-readiness', 'Admission operating model: readiness script is exported');
   includes(JSON.stringify(packageJson.scripts), 'test:consequence-admission-package-surface', 'Admission operating model: package surface script is exported');
-  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-operating-model.test.ts', 'Admission operating model: npm test runs the guard');
-  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-finance.test.ts', 'Admission operating model: npm test runs finance projection');
-  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-crypto.test.ts', 'Admission operating model: npm test runs crypto projection');
-  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-facade.test.ts', 'Admission operating model: npm test runs facade projection');
-  includes(packageJson.scripts.test, 'tsx tests/consequence-admission-readiness.test.ts', 'Admission operating model: npm test runs readiness guard');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-operating-model', 'Admission operating model: npm run verify runs the guard');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-finance', 'Admission operating model: npm run verify runs finance projection');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-crypto', 'Admission operating model: npm run verify runs crypto projection');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-facade', 'Admission operating model: npm run verify runs facade projection');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-readiness', 'Admission operating model: npm run verify runs readiness guard');
-  includes(packageJson.scripts.verify, 'npm run test:consequence-admission-package-surface', 'Admission operating model: npm run verify runs package surface probe');
+  includes(packageJson.scripts.test, 'scripts/run-suite.mjs test', 'Admission operating model: npm test delegates to the suite runner');
+  includes(packageJson.scripts.verify, 'scripts/run-suite.mjs verify', 'Admission operating model: npm run verify delegates to the suite runner');
 }
 
 testOperatingModelDefinesCanonicalDecisionVocabulary();

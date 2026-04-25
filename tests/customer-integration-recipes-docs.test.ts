@@ -74,8 +74,8 @@ function testDocsPointToRecipes(): void {
   includes(readme, '[Customer integration recipes](docs/01-overview/customer-integration-recipes.md)', 'Recipes: README names the guide plainly');
   includes(useCases, '[Customer integration recipes](customer-integration-recipes.md)', 'Recipes: use-case bridge links the recipes');
   includes(customerGate, '[Customer integration recipes](customer-integration-recipes.md)', 'Recipes: customer gate doc links the recipes');
-  includes(packageJson.scripts.test, 'tsx tests/customer-integration-recipes-docs.test.ts', 'Recipes: npm test runs the recipe guard');
-  includes(packageJson.scripts.verify, 'npm run test:customer-integration-recipes-docs', 'Recipes: verify runs the recipe guard');
+  includes(packageJson.scripts.test, 'scripts/run-suite.mjs test', 'Recipes: npm test delegates to the suite runner');
+  includes(packageJson.scripts.verify, 'scripts/run-suite.mjs verify', 'Recipes: verify delegates to the suite runner');
 }
 
 testRecipesExplainWhereAttestorGoes();

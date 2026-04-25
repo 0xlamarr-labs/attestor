@@ -73,8 +73,8 @@ function testPackageScriptsProtectThePath(): void {
 
   includes(packageJson.scripts['example:admission'], 'examples/first-useful-admission-demo.ts', 'Package: exposes the admission example');
   includes(packageJson.scripts['test:first-impression-path'], 'tests/first-impression-path.test.ts', 'Package: exposes the first impression guard');
-  includes(packageJson.scripts.test, 'tsx tests/first-impression-path.test.ts', 'Package: npm test runs first impression guard');
-  includes(packageJson.scripts.verify, 'npm run test:first-impression-path', 'Package: verify runs first impression guard');
+  includes(packageJson.scripts.test, 'scripts/run-suite.mjs test', 'Package: npm test delegates to the suite runner');
+  includes(packageJson.scripts.verify, 'scripts/run-suite.mjs verify', 'Package: verify delegates to the suite runner');
 }
 
 testReadmeHasAFirstImpressionPath();

@@ -67,10 +67,6 @@ function textOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-function numberOrNull(value: number | null | undefined): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
 function contextWithoutUndefined(
   input: Readonly<Record<string, OperationalPrimitive | undefined>>,
 ): Readonly<Record<string, OperationalPrimitive>> {

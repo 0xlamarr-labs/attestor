@@ -288,13 +288,6 @@ export const CRYPTO_SIMULATION_ADAPTER_PREFLIGHT_PROFILES = Object.freeze({
   CryptoSimulationAdapterPreflightProfile
 >);
 
-const REVIEW_AUTHORITY_RANK: Record<ReviewAuthorityMode, number> = {
-  auto: 0,
-  'named-reviewer': 1,
-  'dual-approval': 2,
-  'break-glass': 3,
-};
-
 function normalizeIdentifier(value: string | null | undefined, fieldName: string): string {
   const normalized = value?.trim() ?? '';
   if (normalized.length === 0) {

@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto';
 import { runFinancialPipeline, type FinancialPipelineInput } from './pipeline.js';
 import type {
-  FinancialRunReport, FinancialQueryIntent, FinancialDecision,
+  FinancialRunReport, FinancialDecision,
 } from './types.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -275,4 +275,3 @@ export function runMultiQueryPipeline(
     multiQueryHash,
   };
 }
-

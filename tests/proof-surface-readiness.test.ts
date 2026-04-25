@@ -222,12 +222,12 @@ function testReadinessGateIsWiredIntoVerification(): void {
     'Proof surface readiness: package script exposes readiness gate',
   );
   ok(
-    scripts.test.includes('tsx tests/proof-surface-readiness.test.ts'),
-    'Proof surface readiness: npm test runs readiness gate',
+    scripts.test.includes('scripts/run-suite.mjs test'),
+    'Proof surface readiness: npm test delegates to the suite runner',
   );
   ok(
-    scripts.verify.includes('npm run test:proof-surface-readiness'),
-    'Proof surface readiness: npm run verify runs readiness gate',
+    scripts.verify.includes('scripts/run-suite.mjs verify'),
+    'Proof surface readiness: npm run verify delegates to the suite runner',
   );
 }
 

@@ -19,7 +19,7 @@
 
 import type {
   FilingAdapter, FilingFormat, DecisionEnvelope, DecisionField,
-  TaxonomyMapping, MappedField, UnmappedField, FilingPackage, FilingValidation,
+  TaxonomyMapping, MappedField, UnmappedField, FilingPackage,
 } from './filing-adapter.js';
 
 // ─── US-GAAP Taxonomy Concept Mapping Table ─────────────────────────────────

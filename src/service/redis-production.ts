@@ -14,7 +14,6 @@
  */
 
 import { Queue, Worker, type Job } from 'bullmq';
-import type IORedis from 'ioredis';
 
 export interface RedisProductionConfig {
   host: string;

@@ -9,7 +9,7 @@
  * This is called by `prove` when ATTESTOR_PG_URL is configured.
  */
 
-import { executePostgresQuery, loadPostgresConfig, isPostgresConfigured, reportPostgresReadiness, type PostgresConfig, type PostgresExecutionResult } from './postgres.js';
+import { executePostgresQuery, loadPostgresConfig, reportPostgresReadiness } from './postgres.js';
 import { runPredictivePreflight, type PredictiveGuardrailResult } from './predictive-guardrails.js';
 import { captureSchemaAttestation, type HistoricalSchemaComparison, type SchemaAttestation } from './schema-attestation.js';
 import { buildSchemaAttestationHistoryKey, recordSchemaAttestationHistory } from './schema-attestation-history.js';

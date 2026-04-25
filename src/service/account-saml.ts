@@ -227,13 +227,6 @@ function samlClockDriftMs(): number {
   return seconds * 1000;
 }
 
-function stripPemHeaders(value: string): string {
-  return value
-    .replace(/-----BEGIN CERTIFICATE-----/g, '')
-    .replace(/-----END CERTIFICATE-----/g, '')
-    .replace(/\s+/g, '');
-}
-
 function ensureSchemaValidatorConfigured(): void {
   if (schemaValidatorConfigured) return;
   samlify.setSchemaValidator({

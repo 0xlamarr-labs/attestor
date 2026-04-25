@@ -18,7 +18,7 @@
  */
 
 import { create } from 'xmlbuilder2';
-import type { MeasureEvaluation, PopulationCount } from '../domains/healthcare-measures.js';
+import type { MeasureEvaluation } from '../domains/healthcare-measures.js';
 
 // ─── CMS Template OIDs ──────────────────────────────────────────────────────
 

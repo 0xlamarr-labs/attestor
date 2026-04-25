@@ -6,15 +6,11 @@
  */
 
 import type { FinancialRunReport, DecisionDossier, FinancialScore, DossierEvent, DossierEvidence, DossierBlocker, DossierReviewPath, DossierSummarySection } from './types.js';
-import { warrantSummary } from './warrant.js';
-import { receiptSummary } from './receipt.js';
-import { escrowSummary } from './escrow.js';
-import { capsuleSummary } from './capsule.js';
 
 export function buildDecisionDossier(report: FinancialRunReport): DecisionDossier {
   const timeline: DossierEvent[] = report.audit.entries
     .filter((e) => e.category !== 'lifecycle')
-    .map((e) => ({ seq: e.seq, stage: e.stage, outcome: e.action, significance: classifySignificance(e.stage, e.action) }));
+    .map((e) => ({ seq: e.seq, stage: e.stage, outcome: e.action, significance: classifySignificance(e.action) }));
 
   const criticalEvidence: DossierEvidence[] = report.scoring.scores.map((s) => ({
     scorer: s.scorer, value: String(s.value), verdict: s.verdict, significance: classifyScoreSignificance(s),
@@ -118,7 +114,7 @@ export function buildDecisionDossier(report: FinancialRunReport): DecisionDossie
   return { runId: report.runId, generatedAt: new Date().toISOString(), decision: report.decision, timeline, criticalEvidence, blockers, reviewPath, unresolvedRisks, artifactHashes, reviewerSummary };
 }
 
-function classifySignificance(stage: string, action: string): DossierEvent['significance'] {
+function classifySignificance(action: string): DossierEvent['significance'] {
   if (action === 'fail' || action === 'failure' || action === 'block' || action === 'rejected') return 'critical';
   if (action === 'escalated' || action === 'pending' || action === 'incomplete') return 'notable';
   return 'routine';

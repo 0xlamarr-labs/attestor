@@ -172,14 +172,6 @@ function normalizeIsoTimestamp(value: string, fieldName: string): string {
   return timestamp.toISOString();
 }
 
-function normalizeOptionalIsoTimestamp(
-  value: string | null | undefined,
-  fieldName: string,
-): string | null {
-  if (value === undefined || value === null) return null;
-  return normalizeIsoTimestamp(value, fieldName);
-}
-
 function normalizeAddress(value: string | null | undefined, fieldName: string): string {
   const normalized = normalizeIdentifier(value, fieldName).toLowerCase();
   if (!/^0x[0-9a-f]{40}$/u.test(normalized)) {

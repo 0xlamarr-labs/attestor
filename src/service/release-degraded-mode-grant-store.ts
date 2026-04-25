@@ -23,7 +23,6 @@ type PgQueryResultRow = Record<string, unknown>;
 type DegradedModeGrant = degradedMode.DegradedModeGrant;
 type DegradedModeAuditRecord = degradedMode.DegradedModeAuditRecord;
 type DegradedModeAuditAction = degradedMode.DegradedModeAuditAction;
-type DegradedModeGrantStatus = degradedMode.DegradedModeGrantStatus;
 type ListDegradedModeGrantOptions = degradedMode.ListDegradedModeGrantOptions;
 type RevokeDegradedModeGrantInput = degradedMode.RevokeDegradedModeGrantInput;
 type ConsumeDegradedModeGrantInput = degradedMode.ConsumeDegradedModeGrantInput;

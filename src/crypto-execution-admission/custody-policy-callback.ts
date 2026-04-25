@@ -187,13 +187,6 @@ export interface CustodyPolicyAdmissionCallbackDescriptor {
   readonly standards: readonly string[];
 }
 
-function includesValue<T extends string>(
-  values: readonly T[],
-  candidate: string,
-): candidate is T {
-  return (values as readonly string[]).includes(candidate);
-}
-
 function normalizeIdentifier(value: string | null | undefined, fieldName: string): string {
   const normalized = value?.trim() ?? '';
   if (!normalized) {

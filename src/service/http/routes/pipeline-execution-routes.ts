@@ -318,7 +318,7 @@ export function registerPipelineExecutionRoutes(app: Hono, deps: PipelineExecuti
 app.post('/api/v1/pipeline/run', async (c) => {
   try {
     const body = await c.req.json();
-    const { scenarioId, candidateSql, intent, sign } = body;
+    const { candidateSql, intent, sign } = body;
 
     if (!candidateSql || !intent) {
       return c.json({ error: 'candidateSql and intent are required' }, 400);
