@@ -61,18 +61,36 @@ function testCurrentReviewerWorkflowsStayReadOnly(): void {
   excludes(verify, /id-token:\s*write/iu, 'Security baseline: full verify must not yet request id-token write');
 }
 
-function testAttestationPlanKeepsFuturePermissionsScoped(): void {
+function testReleaseProvenanceWorkflowKeepsElevatedPermissionsScoped(): void {
+  const workflow = readProjectFile('.github', 'workflows', 'release-provenance.yml');
+
+  includes(workflow, 'name: Release Provenance', 'Security baseline: release provenance workflow title is stable');
+  includes(workflow, 'workflow_dispatch:', 'Security baseline: release provenance supports manual dispatch');
+  includes(workflow, 'tags:', 'Security baseline: release provenance is tag-triggered');
+  includes(workflow, '- "v*-evaluation"', 'Security baseline: release provenance only targets evaluation tags');
+  includes(workflow, 'contents: read', 'Security baseline: release provenance keeps contents read-only');
+  includes(workflow, 'attestations: write', 'Security baseline: release provenance has attestation permission');
+  includes(workflow, 'id-token: write', 'Security baseline: release provenance has OIDC permission');
+  includes(workflow, 'uses: actions/attest@v4', 'Security baseline: release provenance uses the current attest action');
+  includes(workflow, 'npm run proof:surface', 'Security baseline: release provenance renders proof surface');
+  includes(workflow, 'npm run showcase:proof', 'Security baseline: release provenance renders the offline-capable proof showcase');
+  excludes(workflow, /showcase:proof:hybrid/iu, 'Security baseline: release provenance must not depend on live-upstream hybrid proof');
+}
+
+function testAttestationPlanKeepsPermissionsAndClaimsScoped(): void {
   const plan = readProjectFile('docs', '08-deployment', 'artifact-attestation-plan.md');
 
   includes(plan, '# Artifact Attestation Plan', 'Security baseline: attestation plan title is stable');
   includes(plan, 'Evaluation Smoke', 'Security baseline: plan names the current smoke workflow');
   includes(plan, 'Full Verify', 'Security baseline: plan names the current full verify workflow');
+  includes(plan, 'Release Provenance', 'Security baseline: plan names the dedicated provenance workflow');
   includes(plan, 'permissions:\n  contents: read', 'Security baseline: plan captures the current read-only baseline');
   includes(plan, 'attestations: write', 'Security baseline: plan scopes future attestation permission');
   includes(plan, 'id-token: write', 'Security baseline: plan scopes future OIDC permission');
-  includes(plan, 'separate release-only workflow', 'Security baseline: plan keeps provenance off the smoke path');
-  includes(plan, 'does not claim that Attestor already publishes artifact attestations today', 'Security baseline: plan stays honest about current state');
-  excludes(plan, /\bartifact attestations are already available for this release\b/iu, 'Security baseline: plan must not claim existing provenance publication');
+  includes(plan, 'release-provenance.yml', 'Security baseline: plan points at the concrete workflow file');
+  includes(plan, 'gh attestation verify evaluation-artifacts.tar.gz -R 0xlamarr-labs/attestor', 'Security baseline: plan documents reviewer verification');
+  includes(plan, 'does not claim full production supply-chain provenance', 'Security baseline: plan stays honest about scope');
+  excludes(plan, /\bfull production supply-chain provenance is complete\b/iu, 'Security baseline: plan must not overclaim provenance scope');
 }
 
 function testPackageExposesSecurityDocsGuard(): void {
@@ -92,7 +110,8 @@ testSecurityPolicyExplainsEvaluationBoundary();
 testSecurityPolicyKeepsReportingPathHonest();
 testReadmePinsReviewerAndSecurityEntry();
 testCurrentReviewerWorkflowsStayReadOnly();
-testAttestationPlanKeepsFuturePermissionsScoped();
+testReleaseProvenanceWorkflowKeepsElevatedPermissionsScoped();
+testAttestationPlanKeepsPermissionsAndClaimsScoped();
 testPackageExposesSecurityDocsGuard();
 
 console.log(`Security baseline docs tests: ${passed} passed, 0 failed`);

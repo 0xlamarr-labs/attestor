@@ -1,0 +1,58 @@
+name: Release Provenance
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*-evaluation"
+
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+
+jobs:
+  release-provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Render proof surface
+        run: npm run proof:surface
+
+      - name: Render proof showcase
+        run: npm run showcase:proof
+
+      - name: Package release evaluation artifacts
+        run: |
+          mkdir -p .attestor/release-provenance
+          tar -czf .attestor/release-provenance/evaluation-artifacts.tar.gz \
+            .attestor/proof-surface/latest \
+            .attestor/showcase/latest \
+            docs/00-evaluation \
+            SECURITY.md \
+            docs/08-deployment/artifact-attestation-plan.md
+
+      - name: Upload release evaluation artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: evaluation-artifacts
+          path: .attestor/release-provenance/evaluation-artifacts.tar.gz
+          if-no-files-found: error
+
+      - name: Attest release evaluation artifacts
+        uses: actions/attest@v4
+        with:
+          subject-path: .attestor/release-provenance/evaluation-artifacts.tar.gz

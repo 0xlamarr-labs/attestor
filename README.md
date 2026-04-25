@@ -149,6 +149,8 @@ npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
 
 That path generates a local PostgreSQL-backed proof packet, then verifies the resulting kit outside the main runtime. Without a live upstream model, `verify:cert` reports `PROOF_DEGRADED` and exits non-zero by design; the full local release gate remains `npm run verify`.
 
+For tagged evaluation releases, the separate [Release Provenance workflow](.github/workflows/release-provenance.yml) packages the review artifacts and publishes a GitHub artifact attestation for the resulting `evaluation-artifacts.tar.gz` bundle. Scope and non-claims are in [Artifact attestation plan](docs/08-deployment/artifact-attestation-plan.md).
+
 ## Quick start
 
 ```bash

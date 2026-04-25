@@ -48,8 +48,9 @@ The current repository trust baseline keeps reviewer-facing CI workflows read-on
 
 - [evaluation-smoke.yml](.github/workflows/evaluation-smoke.yml) uses `permissions: contents: read`
 - [full-verify.yml](.github/workflows/full-verify.yml) uses `permissions: contents: read`
+- [release-provenance.yml](.github/workflows/release-provenance.yml) is the only workflow that carries `attestations: write` and `id-token: write`, and it is limited to tagged evaluation releases or explicit manual dispatch
 
-That matches GitHub's least-privilege guidance for `GITHUB_TOKEN`. Additional permissions such as `attestations: write` or `id-token: write` should only be introduced in a separate release-provenance workflow when provenance publication is actually implemented.
+That matches GitHub's least-privilege guidance for `GITHUB_TOKEN`. Elevated permissions for provenance publication stay isolated to the release-only workflow and do not expand the push or PR reviewer path.
 
 ## Evaluation Boundary
 
