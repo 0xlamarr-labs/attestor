@@ -56,6 +56,7 @@
     "test:customer-integration-recipes-docs": "tsx tests/customer-integration-recipes-docs.test.ts",
     "test:evaluation-packet-docs": "tsx tests/evaluation-packet-docs.test.ts",
     "test:evaluation-release-notes": "tsx tests/evaluation-release-notes.test.ts",
+    "test:security-baseline-docs": "tsx tests/security-baseline-docs.test.ts",
     "test:package-script-runner": "tsx tests/package-script-runner.test.ts",
     "test:production-shared-authority-plane-docs": "tsx tests/production-shared-authority-plane-docs.test.ts",
     "test:release-authority-store": "tsx tests/release-authority-store.test.ts",

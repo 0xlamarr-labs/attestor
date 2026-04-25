@@ -20,6 +20,9 @@ Built for teams that cannot let sensitive outputs or execution paths enter produ
 > [!NOTE]
 > This repository is source-available under Business Source License 1.1. Non-production use is allowed. Production use requires a commercial license until the Change Date in [LICENSE](LICENSE).
 
+> [!IMPORTANT]
+> Start reviewer evaluation with the [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md), the [v0.1.1-evaluation release notes](docs/00-evaluation/v0.1.1-evaluation-release-notes.md), the [Security Policy](SECURITY.md), and the current [Evaluation Smoke workflow](.github/workflows/evaluation-smoke.yml).
+
 ## Try it in 60 seconds
 
 ```bash
@@ -193,6 +196,7 @@ npm run verify
 - [Production runtime hardening buildout](docs/02-architecture/production-runtime-hardening-buildout.md)
 - [Production shared authority plane buildout](docs/02-architecture/production-shared-authority-plane-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
+- [Artifact attestation plan](docs/08-deployment/artifact-attestation-plan.md)
 - [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md)
 - [v0.1.1-evaluation release notes](docs/00-evaluation/v0.1.1-evaluation-release-notes.md)
 
@@ -201,6 +205,7 @@ npm run verify
 - Want the shortest first run? Start with [Try Attestor first](docs/01-overview/try-attestor-first.md) or run `npm run example:admission`.
 - Want a compact outside-review packet? Start with [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md).
 - Want the exact release boundary and known limitations? Start with [v0.1.1-evaluation release notes](docs/00-evaluation/v0.1.1-evaluation-release-notes.md).
+- Want the current disclosure path and CI trust boundary? Start with [Security Policy](SECURITY.md) and [Artifact attestation plan](docs/08-deployment/artifact-attestation-plan.md).
 - Want to wire the decision into your own app? Start with [Customer admission gate](docs/01-overview/customer-admission-gate.md) or run `npm run example:customer-gate`.
 - Want to know exactly where to put Attestor in your app? Start with [Customer integration recipes](docs/01-overview/customer-integration-recipes.md).
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).

@@ -83,6 +83,7 @@ function testFastSuiteKeepsCriticalCoverage(): void {
     'test:proof-surface-readiness',
     'test:evaluation-packet-docs',
     'test:evaluation-release-notes',
+    'test:security-baseline-docs',
     'test:package-script-runner',
     'tsx tests/account-session-cookie-security.test.ts',
     'tsx tests/release-kernel-release-decision-engine.test.ts',

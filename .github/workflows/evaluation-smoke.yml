@@ -38,6 +38,9 @@ jobs:
       - name: Evaluation release notes
         run: npm run test:evaluation-release-notes
 
+      - name: Security baseline docs
+        run: npm run test:security-baseline-docs
+
       - name: Package script runner contract
         run: npm run test:package-script-runner
 
