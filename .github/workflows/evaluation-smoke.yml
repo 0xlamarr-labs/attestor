@@ -1,0 +1,58 @@
+name: Evaluation Smoke
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  evaluation-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Evaluation packet docs
+        run: npm run test:evaluation-packet-docs
+
+      - name: Evaluation release notes
+        run: npm run test:evaluation-release-notes
+
+      - name: Package script runner contract
+        run: npm run test:package-script-runner
+
+      - name: Admission demo
+        run: npm run example:admission
+
+      - name: Customer gate demo
+        run: npm run example:customer-gate
+
+      - name: Render proof surface
+        run: npm run proof:surface
+
+      - name: Upload proof surface artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-surface
+          path: .attestor/proof-surface/latest/
+          if-no-files-found: error
