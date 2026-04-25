@@ -31,6 +31,7 @@ This runs the shortest local Attestor flow: two AI-assisted finance consequences
 
 For the guided first run, see [Try Attestor first](docs/01-overview/try-attestor-first.md).
 For an outside-review packet that explains what to run and what is proven, see [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md).
+For the first evaluation release boundary and known limitations, see [v0.1.0-evaluation release notes](docs/00-evaluation/v0.1.0-evaluation-release-notes.md).
 For the first customer-side enforcement step, see [Customer admission gate](docs/01-overview/customer-admission-gate.md).
 For concrete use cases, see [What you can do with Attestor](docs/01-overview/what-you-can-do.md).
 For copyable placement recipes, see [Customer integration recipes](docs/01-overview/customer-integration-recipes.md).
@@ -139,11 +140,11 @@ That command writes `.attestor/proof-surface/latest/` with a manifest, machine-r
 Shortest proof path:
 
 ```bash
-npm run showcase:proof:hybrid
+npm run showcase:proof
 npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json
 ```
 
-That path generates a live hybrid packet, then verifies the resulting kit outside the main runtime.
+That path generates a local PostgreSQL-backed proof packet, then verifies the resulting kit outside the main runtime. Without a live upstream model, `verify:cert` reports `PROOF_DEGRADED` and exits non-zero by design; the full local release gate remains `npm run verify`.
 
 ## Quick start
 
@@ -165,8 +166,8 @@ npm run scenario -- counterparty
 # Generate a signed proof for the same scenario
 npm run prove -- counterparty
 
-# Generate a live hybrid packet
-npm run showcase:proof:hybrid
+# Generate a portable proof-showcase packet
+npm run showcase:proof
 
 # Run the local verification gate
 npm run verify
@@ -193,11 +194,13 @@ npm run verify
 - [Production shared authority plane buildout](docs/02-architecture/production-shared-authority-plane-buildout.md)
 - [Production readiness](docs/08-deployment/production-readiness.md)
 - [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md)
+- [v0.1.0-evaluation release notes](docs/00-evaluation/v0.1.0-evaluation-release-notes.md)
 
 ## Start here
 
 - Want the shortest first run? Start with [Try Attestor first](docs/01-overview/try-attestor-first.md) or run `npm run example:admission`.
 - Want a compact outside-review packet? Start with [Attestor Evaluation Packet v0.1](docs/00-evaluation/v0.1-evaluation-packet.md).
+- Want the exact release boundary and known limitations? Start with [v0.1.0-evaluation release notes](docs/00-evaluation/v0.1.0-evaluation-release-notes.md).
 - Want to wire the decision into your own app? Start with [Customer admission gate](docs/01-overview/customer-admission-gate.md) or run `npm run example:customer-gate`.
 - Want to know exactly where to put Attestor in your app? Start with [Customer integration recipes](docs/01-overview/customer-integration-recipes.md).
 - Want the deepest proof wedge? Start with [Financial reporting acceptance](docs/01-overview/financial-reporting-acceptance.md).

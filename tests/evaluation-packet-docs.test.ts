@@ -42,7 +42,8 @@ function testEvaluationPacketNamesRunnableProofPath(): void {
   includes(packet, 'npm run example:admission', 'Evaluation packet docs: packet includes the shortest admission demo');
   includes(packet, 'npm run example:customer-gate', 'Evaluation packet docs: packet includes the customer-side gate demo');
   includes(packet, 'npm run proof:surface', 'Evaluation packet docs: packet includes proof-surface rendering');
-  includes(packet, 'npm run showcase:proof:hybrid', 'Evaluation packet docs: packet includes the proof showcase path');
+  includes(packet, 'npm run showcase:proof', 'Evaluation packet docs: packet includes the default proof showcase path');
+  includes(packet, 'npm run showcase:proof:hybrid', 'Evaluation packet docs: packet includes the optional live-upstream proof showcase path');
   includes(packet, 'npm run verify:cert -- .attestor/showcase/latest/evidence/kit.json', 'Evaluation packet docs: packet includes independent kit verification');
   includes(packet, '.attestor/proof-surface/latest/', 'Evaluation packet docs: packet says where local proof output is written');
   includes(packet, '.attestor/showcase/latest/', 'Evaluation packet docs: packet says where the showcase packet is written');
@@ -62,7 +63,8 @@ function testEvaluationPacketNamesConcreteReviewMarkersAndArtifacts(): void {
   includes(packet, '| Command | Primary output | What to inspect | Why it matters |', 'Evaluation packet docs: artifact map has reviewer columns');
   includes(packet, 'manifest.json', 'Evaluation packet docs: artifact map points to proof-surface manifest');
   includes(packet, 'evidence/kit.json', 'Evaluation packet docs: artifact map points to verifiable evidence kit');
-  includes(packet, 'The hybrid showcase command may create source run artifacts under `.attestor-financial/runs/`', 'Evaluation packet docs: packet is explicit about hybrid source artifacts');
+  includes(packet, 'Overall: PROOF_DEGRADED', 'Evaluation packet docs: packet is explicit about default degraded verification posture');
+  includes(packet, 'requires `OPENAI_API_KEY`', 'Evaluation packet docs: packet is explicit about the optional live-upstream credential requirement');
 }
 
 function testEvaluationPacketNamesFailureAndProductionTruthGates(): void {
